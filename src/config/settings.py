@@ -18,7 +18,7 @@ class Config:
     HUD_BORDER_COLOR_NG = (0, 0, 255)
     HUD_BORDER_THICKNESS = 4
 
-    # --- NOVO: Assinaturas de Cor do Layout da IOT (Formato HSV do OpenCV) ---
+    # --- NOVO: Assinaturas de Cor do Layout da AOI (Formato HSV do OpenCV) ---
     # Azul (Barra Sample)
     COLOR_BLUE_LOWER = (100, 150, 50)
     COLOR_BLUE_UPPER = (130, 255, 255)

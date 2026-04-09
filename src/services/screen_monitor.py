@@ -1,5 +1,5 @@
 """
-Módulo responsável pela captura de tela e detecção do Layout da IoT.
+Módulo responsável pela captura de tela e detecção do Layout da AOI.
 Modo One-Shot: Tira um único print ao encontrar o layout e encerra a thread para poupar CPU.
 """
 import cv2
@@ -66,16 +66,16 @@ class ScreenMonitor(QThread):
                             
                             # Emite o sinal e DESLIGA A VARREDURA (One-Shot)
                             self.layout_detected.emit(crop_sample, crop_ng)
-                            self.log_updated.emit("Monitor IoT: SNAPSHOT CAPTURADO! Parando varredura.")
+                            self.log_updated.emit("Monitor AOI: SNAPSHOT CAPTURADO! Parando varredura.")
                             self.running = False
                             break # Sai do loop infinito instantaneamente
 
                 frame_count += 1
                 if frame_count % 15 == 0:
                     if has_blue_header and has_red_header:
-                        self.log_updated.emit("Monitor IoT: LAYOUT DETECTADO! 📡 Analisando imagens...")
+                        self.log_updated.emit("Monitor AOI: LAYOUT DETECTADO! 📡 Analisando imagens...")
                     else:
-                        self.log_updated.emit("Monitor IoT: Aguardando interface da máquina...")
+                        self.log_updated.emit("Monitor AOI: Aguardando interface da máquina...")
 
                 self.msleep(int(1000 / settings.SCREEN_CAPTURE_FPS))
 

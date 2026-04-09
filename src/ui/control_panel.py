@@ -22,13 +22,13 @@ class ControlPanel(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        self.setWindowTitle("VisionX Neural - Console Industrial IoT")
+        self.setWindowTitle("VisionX Neural - Console Industrial AOI")
         self.resize(800, 550)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         
         main_layout = QVBoxLayout(self)
         
-        title = QLabel("VisionX Neural: Monitoramento IoT")
+        title = QLabel("VisionX Neural: Monitoramento AOI")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
         main_layout.addWidget(title)
@@ -60,7 +60,7 @@ class ControlPanel(QWidget):
         main_layout.addLayout(displays_layout, stretch=1)
 
         # Botão de Captura
-        self.btn_start = QPushButton("Capturar IoT Agora")
+        self.btn_start = QPushButton("Capturar AOI Agora")
         self.btn_start.setMinimumHeight(45)
         self.btn_start.clicked.connect(self.start_monitoring)
         main_layout.addWidget(self.btn_start)
@@ -96,7 +96,7 @@ class ControlPanel(QWidget):
 
     def _start_radar(self):
         self.monitor = ScreenMonitor()
-        self.monitor.layout_detected.connect(self.process_iot_images)
+        self.monitor.layout_detected.connect(self.process_aoi_images)
         self.monitor.start()
 
     def numpy_to_pixmap(self, img_bgr: np.ndarray) -> QPixmap:
@@ -105,7 +105,7 @@ class ControlPanel(QWidget):
         q_img = QImage(rgb_image.data, w, h, ch * w, QImage.Format.Format_RGB888)
         return QPixmap.fromImage(q_img)
 
-    def process_iot_images(self, sample_crop: np.ndarray, ng_crop: np.ndarray):
+    def process_aoi_images(self, sample_crop: np.ndarray, ng_crop: np.ndarray):
         if sample_crop.size == 0 or ng_crop.size == 0: return
         
         self.showNormal()
@@ -146,7 +146,7 @@ class ControlPanel(QWidget):
         self.lbl_ng.setPixmap(px_ng.scaled(self.lbl_ng.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         
         self.btn_start.setEnabled(True)
-        self.btn_start.setText("Nova Captura IoT")
+        self.btn_start.setText("Nova Captura AOI")
         self.btn_save_ok.setEnabled(True)
         self.btn_save_ng.setEnabled(True)
 

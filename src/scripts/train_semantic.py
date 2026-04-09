@@ -27,7 +27,7 @@ def train_model():
         transforms.RandomHorizontalFlip(), # Espelha horizontalmente
         transforms.RandomVerticalFlip(),   # Espelha verticalmente
         transforms.RandomRotation(15),     # Gira até 15 graus
-        transforms.ColorJitter(brightness=0.2, contrast=0.2), # Altera levemente a luz e sombra da IOT
+        transforms.ColorJitter(brightness=0.2, contrast=0.2), # Altera levemente a luz e sombra da AOI
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
