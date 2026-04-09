@@ -1,3 +1,4 @@
+# src\core\neural_judge.py
 """
 Módulo do Juiz Neural v3 (Análise Semântica + Consulta ao Banco de Dados).
 NÃO adivinha nem chuta — calcula a diferença estrutural real entre as imagens

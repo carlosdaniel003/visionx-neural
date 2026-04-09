@@ -1,3 +1,4 @@
+# src\core\inspection.py
 """
 Módulo de Inspeção de Defeitos v2.
 Melhorias: filtros de área mínima/máxima mais inteligentes, 

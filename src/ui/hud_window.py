@@ -1,3 +1,4 @@
+# src\ui\hud_window.py
 """
 Módulo responsável pela interface overlay (HUD) transparente.
 Desenha o alvo (Verde) e as anomalias detectadas (Vermelho).

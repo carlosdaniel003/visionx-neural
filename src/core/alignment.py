@@ -1,3 +1,4 @@
+# src\core\alignment.py
 """
 Módulo de Alinhamento Geométrico.
 Responsável por corrigir rotações, escalas e perspectivas entre duas imagens usando ORB e Homografia.

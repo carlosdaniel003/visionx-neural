@@ -1,3 +1,4 @@
+# src\scripts\train_semantic.py
 """
 Módulo de Treinamento Semântico (Fine-Tuning).
 Treina a rede MobileNetV2 usando as imagens coletadas pela fábrica.
