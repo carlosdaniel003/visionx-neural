@@ -1,0 +1,15 @@
+# Ambientes Virtuais
+venv/
+.venv/
+env/
+
+# Cache do Python
+__pycache__/
+*.pyc
+
+# Arquivos de pesos da IA (se forem grandes)
+*.pth
+*.onnx
+
+# Pastas de dados (opcional, se não quiser subir as fotos para o GitHub)
+public/dataset/

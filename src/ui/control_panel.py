@@ -1,156 +1,169 @@
 """
-Módulo do Painel de Controle inicial e Console de Dataset.
-Permite iniciar o monitoramento e rotular imagens ao vivo (Active Learning).
+Módulo do Painel de Controle e Console Duplo com Juiz Neural.
+Exibe o Confidence Score (Nível de Certeza) das análises.
 """
 import cv2
 import numpy as np
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QStackedWidget, QHBoxLayout, QMessageBox
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QHBoxLayout, QMessageBox
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap
-from src.ui.calibration_window import CalibrationWindow
-from src.ui.hud_window import HUDWindow
 from src.services.screen_monitor import ScreenMonitor
 from src.services.dataset_manager import DatasetManager
+from src.core.inspection import detect_anomalies
+from src.core.neural_judge import NeuralJudge
 
 class ControlPanel(QWidget):
     def __init__(self):
         super().__init__()
-        self.hud = None
         self.monitor = None
-        self.calib_window = None
-        self.current_crop = None # Armazena a matriz Numpy da imagem atual
-        
+        self.current_sample = None
+        self.current_ng = None
+        self.neural_judge = NeuralJudge() 
         self._setup_ui()
 
     def _setup_ui(self):
-        self.setWindowTitle("VisionX Neural - Console Central")
-        self.resize(350, 400)
-        # Mantém este painel sempre no topo para facilitar o clique
+        self.setWindowTitle("VisionX Neural - Console Industrial IoT")
+        self.resize(800, 550)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         
-        self.layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
         
-        # QStackedWidget permite alternar entre telas sem fechar a janela
-        self.stack = QStackedWidget()
-        self.layout.addWidget(self.stack)
-
-        # --- Página 0: Menu Principal ---
-        self.page_menu = QWidget()
-        menu_layout = QVBoxLayout(self.page_menu)
-        
-        title = QLabel("VisionX Neural Core")
+        title = QLabel("VisionX Neural: Monitoramento IoT")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 20px;")
-        
-        btn_calib = QPushButton("⚙️ Calibrar Alvo (ROI)")
-        btn_calib.setMinimumHeight(40)
-        btn_calib.clicked.connect(self.open_calibration)
-        
-        btn_start = QPushButton("🚀 Iniciar Modo Dataset")
-        btn_start.setMinimumHeight(40)
-        btn_start.clicked.connect(self.start_monitoring)
-        
-        menu_layout.addWidget(title)
-        menu_layout.addWidget(btn_calib)
-        menu_layout.addWidget(btn_start)
-        menu_layout.addStretch()
-        self.stack.addWidget(self.page_menu)
+        title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
+        main_layout.addWidget(title)
 
-        # --- Página 1: Console de Dataset (Active Learning) ---
-        self.page_dataset = QWidget()
-        ds_layout = QVBoxLayout(self.page_dataset)
+        displays_layout = QHBoxLayout()
         
-        ds_title = QLabel("Curadoria de Dataset (Ao Vivo)")
-        ds_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ds_title.setStyleSheet("font-weight: bold;")
+        sample_layout = QVBoxLayout()
+        lbl_sample_title = QLabel("Padrão (Sample Image)")
+        lbl_sample_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_sample = QLabel("Aguardando Layout...")
+        self.lbl_sample.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_sample.setStyleSheet("background-color: #000; border: 2px solid #2196F3; color: #fff;")
+        self.lbl_sample.setMinimumSize(350, 300)
+        sample_layout.addWidget(lbl_sample_title)
+        sample_layout.addWidget(self.lbl_sample, stretch=1)
         
-        # Onde a imagem ao vivo vai aparecer
-        self.lbl_preview = QLabel("Aguardando detecção do alvo...")
-        self.lbl_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_preview.setStyleSheet("background-color: #000; color: #0f0; border: 2px solid #555;")
-        self.lbl_preview.setMinimumSize(300, 200)
+        ng_layout = QVBoxLayout()
+        lbl_ng_title = QLabel("Anomalia (NG Image) + VisãoX")
+        lbl_ng_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_ng = QLabel("Aguardando Layout...")
+        self.lbl_ng.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_ng.setStyleSheet("background-color: #000; border: 2px solid #F44336; color: #fff;")
+        self.lbl_ng.setMinimumSize(350, 300)
+        ng_layout.addWidget(lbl_ng_title)
+        ng_layout.addWidget(self.lbl_ng, stretch=1)
         
-        # Botões de Classificação
-        btn_box = QHBoxLayout()
-        self.btn_ok = QPushButton("✅ SALVAR OK")
-        self.btn_ok.setMinimumHeight(50)
-        self.btn_ok.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold;")
-        self.btn_ok.clicked.connect(lambda: self.save_label("OK"))
-        
-        self.btn_ng = QPushButton("❌ SALVAR DEFEITO")
-        self.btn_ng.setMinimumHeight(50)
-        self.btn_ng.setStyleSheet("background-color: #c62828; color: white; font-weight: bold;")
-        self.btn_ng.clicked.connect(lambda: self.save_label("NG"))
-        
-        btn_box.addWidget(self.btn_ok)
-        btn_box.addWidget(self.btn_ng)
-        
-        ds_layout.addWidget(ds_title)
-        ds_layout.addWidget(self.lbl_preview, stretch=1)
-        ds_layout.addLayout(btn_box)
-        self.stack.addWidget(self.page_dataset)
+        displays_layout.addLayout(sample_layout)
+        displays_layout.addLayout(ng_layout)
+        main_layout.addLayout(displays_layout, stretch=1)
 
-    def open_calibration(self):
-        self.calib_window = CalibrationWindow()
-        self.calib_window.show()
+        # Botão de Captura
+        self.btn_start = QPushButton("Capturar IoT Agora")
+        self.btn_start.setMinimumHeight(45)
+        self.btn_start.clicked.connect(self.start_monitoring)
+        main_layout.addWidget(self.btn_start)
+
+        # Botões de Curadoria (Active Learning)
+        curation_layout = QHBoxLayout()
+        
+        self.btn_save_ok = QPushButton("Salvar como Falha Falsa (OK)")
+        self.btn_save_ok.setMinimumHeight(45)
+        self.btn_save_ok.setEnabled(False)
+        self.btn_save_ok.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;")
+        self.btn_save_ok.clicked.connect(lambda: self.save_label("OK"))
+
+        self.btn_save_ng = QPushButton("Confirmar Defeito Real (NG)")
+        self.btn_save_ng.setMinimumHeight(45)
+        self.btn_save_ng.setEnabled(False)
+        self.btn_save_ng.setStyleSheet("background-color: #F44336; color: white; font-weight: bold;")
+        self.btn_save_ng.clicked.connect(lambda: self.save_label("NG"))
+
+        curation_layout.addWidget(self.btn_save_ok)
+        curation_layout.addWidget(self.btn_save_ng)
+        main_layout.addLayout(curation_layout)
 
     def start_monitoring(self):
-        # Alterna para a interface do Dataset
-        self.stack.setCurrentIndex(1)
-        
-        # Inicia a HUD transparente
-        self.hud = HUDWindow()
-        self.hud.show()
-        
-        # Inicia o motor
+        self.btn_start.setEnabled(False)
+        self.btn_start.setText("Buscando na tela... (Minimizado)")
+        self.lbl_sample.setText("Procurando barra Azul e Quadrado Verde...")
+        self.lbl_ng.setText("Procurando barra Vermelha e Quadrado Verde...")
+        self.btn_save_ok.setEnabled(False)
+        self.btn_save_ng.setEnabled(False)
+        self.showMinimized()
+        QTimer.singleShot(500, self._start_radar)
+
+    def _start_radar(self):
         self.monitor = ScreenMonitor()
-        self.monitor.pattern_found.connect(self.hud.update_target)
-        self.monitor.pattern_lost.connect(self.hud.clear_target)
-        self.monitor.log_updated.connect(self.hud.update_log)
-        
-        # NOVO: Conecta a câmera ao vivo ao painel
-        self.monitor.crop_updated.connect(self.update_live_preview)
-        
+        self.monitor.layout_detected.connect(self.process_iot_images)
         self.monitor.start()
 
-    def update_live_preview(self, crop: np.ndarray):
-        """Recebe a imagem do radar em tempo real e atualiza a telinha."""
-        self.current_crop = crop
-        
-        # Converte a matriz Numpy (BGR) para uma Imagem PyQt (RGB)
-        rgb_image = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+    def numpy_to_pixmap(self, img_bgr: np.ndarray) -> QPixmap:
+        rgb_image = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_image.shape
         q_img = QImage(rgb_image.data, w, h, ch * w, QImage.Format.Format_RGB888)
-        pixmap = QPixmap.fromImage(q_img)
-        
-        # Mostra na tela mantendo a proporção
-        self.lbl_preview.setPixmap(pixmap.scaled(self.lbl_preview.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        return QPixmap.fromImage(q_img)
 
-    def update_live_preview(self, crop: np.ndarray):
-        """Recebe a imagem do radar em tempo real e atualiza a telinha."""
+    def process_iot_images(self, sample_crop: np.ndarray, ng_crop: np.ndarray):
+        if sample_crop.size == 0 or ng_crop.size == 0: return
         
-        # --- TRAVA DE SEGURANÇA: Se a imagem vier vazia, apenas ignora ---
-        if crop is None or crop.size == 0:
-            return
+        self.showNormal()
+        self.activateWindow()
+        
+        self.current_sample = sample_crop
+        self.current_ng = ng_crop
+        
+        px_sample = self.numpy_to_pixmap(sample_crop)
+        self.lbl_sample.setPixmap(px_sample.scaled(self.lbl_sample.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
+        raw_anomalies = detect_anomalies(sample_crop, ng_crop)
+
+        img_ng_drawn = ng_crop.copy()
+        
+        for (x, y, w, h) in raw_anomalies:
+            suspect_gab = sample_crop[y:y+h, x:x+w]
+            suspect_test = ng_crop[y:y+h, x:x+w]
             
-        self.current_crop = crop
-        
-        # Converte a matriz Numpy (BGR) para uma Imagem PyQt (RGB)
-        rgb_image = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb_image.shape
-        q_img = QImage(rgb_image.data, w, h, ch * w, QImage.Format.Format_RGB888)
-        pixmap = QPixmap.fromImage(q_img)
-        
-        # Mostra na tela mantendo a proporção
-        self.lbl_preview.setPixmap(pixmap.scaled(self.lbl_preview.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        """Chama o DatasetManager para salvar a imagem atual."""
-        if self.current_crop is None:
-            QMessageBox.warning(self, "Aviso", "Não há nenhuma imagem sendo detectada agora para salvar.")
-            return
+            # Pede o veredito e a confiança ao Juiz Neural
+            analysis = self.neural_judge.verify_anomaly(suspect_gab, suspect_test)
+            is_real = analysis["is_defect"]
+            score_txt = analysis["score_text"]
             
-        filepath = DatasetManager.save_sample(self.current_crop, label)
+            if is_real:
+                # Defeito Real: Quadrado Vermelho
+                color = (0, 0, 255)
+                label = f"DEFEITO: {score_txt}"
+            else:
+                # Falha Falsa (Matemática errou, IA corrigiu): Quadrado Laranja
+                color = (0, 165, 255) 
+                label = f"FALSO: {score_txt}"
+
+            cv2.rectangle(img_ng_drawn, (x, y), (x+w, y+h), color, 2)
+            cv2.putText(img_ng_drawn, label, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+        px_ng = self.numpy_to_pixmap(img_ng_drawn)
+        self.lbl_ng.setPixmap(px_ng.scaled(self.lbl_ng.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        
+        self.btn_start.setEnabled(True)
+        self.btn_start.setText("Nova Captura IoT")
+        self.btn_save_ok.setEnabled(True)
+        self.btn_save_ng.setEnabled(True)
+
+    def save_label(self, label: str):
+        if self.current_ng is None: return
+        h1, w1 = self.current_sample.shape[:2]
+        h2, w2 = self.current_ng.shape[:2]
+        
+        h_min = min(h1, h2)
+        s_resized = cv2.resize(self.current_sample, (int(w1 * h_min / h1), h_min))
+        n_resized = cv2.resize(self.current_ng, (int(w2 * h_min / h2), h_min))
+        
+        pair_img = np.hstack((s_resized, n_resized))
+        
+        filepath = DatasetManager.save_sample(pair_img, label)
         if filepath:
-            print(f"Salvo [{label}]: {filepath}")
-            # Um pequeno feedback visual de que salvou
-            self.lbl_preview.setText(f"SALVO COMO {label}!")
-            self.lbl_preview.setPixmap(QPixmap()) # Limpa a tela por um milissegundo para piscar
+            print(f"Dataset salvo como {label}: {filepath}")
+            self.lbl_ng.setText(f"SALVO NO DATASET: {label}")
+            self.btn_save_ok.setEnabled(False)
+            self.btn_save_ng.setEnabled(False)

@@ -1,41 +1,38 @@
-# C:\Users\cdaniel\visionx-neural\src\config\settings.py
 """
 Módulo de configurações centralizadas do VisionX Neural.
-Define caminhos, constantes da interface e hiperparâmetros da IA.
 """
 from pathlib import Path
 
-# Diretório raiz do projeto
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 class Config:
-    # --- Paths Locais ---
     PUBLIC_DIR = BASE_DIR / "public"
     DATASET_DIR = PUBLIC_DIR / "dataset"
     ANOMALY_DIR = DATASET_DIR / "anomalia"
     NORMAL_DIR = DATASET_DIR / "nao_anomalia"
-    MODEL_PATH = BASE_DIR / "models" / "visionx_siamese.pth"
-
-    # --- Configurações do Template Matching (Gatilho) ---
     TEMPLATE_IMAGE_PATH = BASE_DIR / "public" / "template_padrao.png"
-    MATCHING_THRESHOLD = 0.60 # Limiar para encontrar a interface
 
-    # --- Configurações do Extrator Visual (Pilar 1) ---
-    SCREEN_CAPTURE_FPS = 30
+    SCREEN_CAPTURE_FPS = 15 # Reduzimos para 15 FPS pois a busca por cor é imediata
     
-    # --- Configurações da IA (Pilar 2) ---
-    AI_CONFIDENCE_THRESHOLD = 0.70 # Confiança mínima para marcar como defeito real
-    IMAGE_SIZE = (224, 224) # Tamanho padrão para entrada na rede neural
-    
-    # --- Configurações do HUD (Pilar 3) ---
-    HUD_BORDER_COLOR_OK = (0, 255, 0) # Verde
-    HUD_BORDER_COLOR_NG = (0, 0, 255) # Vermelho
+    HUD_BORDER_COLOR_OK = (0, 255, 0)
+    HUD_BORDER_COLOR_NG = (0, 0, 255)
     HUD_BORDER_THICKNESS = 4
 
-# Instância global para uso em todo o projeto
-settings = Config()
+    # --- NOVO: Assinaturas de Cor do Layout da IOT (Formato HSV do OpenCV) ---
+    # Azul (Barra Sample)
+    COLOR_BLUE_LOWER = (100, 150, 50)
+    COLOR_BLUE_UPPER = (130, 255, 255)
+    
+    # Vermelho (Barra NG) - Vermelho no HSV tem duas faixas (início e fim do espectro)
+    COLOR_RED1_LOWER = (0, 150, 50)
+    COLOR_RED1_UPPER = (10, 255, 255)
+    COLOR_RED2_LOWER = (170, 150, 50)
+    COLOR_RED2_UPPER = (180, 255, 255)
+    
+    # Verde (Quadrados de ROI)
+    COLOR_GREEN_LOWER = (40, 100, 50)
+    COLOR_GREEN_UPPER = (80, 255, 255)
 
-# Garante que as pastas de dados existam ao iniciar
+settings = Config()
 settings.ANOMALY_DIR.mkdir(parents=True, exist_ok=True)
 settings.NORMAL_DIR.mkdir(parents=True, exist_ok=True)
-(BASE_DIR / "models").mkdir(parents=True, exist_ok=True)

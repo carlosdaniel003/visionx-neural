@@ -1,123 +1,81 @@
 """
-Módulo responsável pela captura de tela e detecção avançada (ORB + Homografia).
-Imune a variações de escala (zoom) e rotação, com correção de DPI para a Interface.
+Módulo responsável pela captura de tela e detecção do Layout da IoT.
+Modo One-Shot: Tira um único print ao encontrar o layout e encerra a thread para poupar CPU.
 """
 import cv2
 import numpy as np
 import mss
 from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QGuiApplication # NOVO: Importação crucial para corrigir o DPI
 from src.config.settings import settings
 
 class ScreenMonitor(QThread):
-    pattern_found = pyqtSignal(int, int, int, int)
-    pattern_lost = pyqtSignal()
     log_updated = pyqtSignal(str) 
-    crop_updated = pyqtSignal(np.ndarray) 
+    layout_detected = pyqtSignal(np.ndarray, np.ndarray) 
 
     def __init__(self):
         super().__init__()
         self.running = True
-        self.orb = cv2.ORB_create(nfeatures=2000)
-        self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-        self.template = None
-        self.kp_template = None
-        self.des_template = None
-        self.template_w = 0
-        self.template_h = 0
-        self._load_template()
-
-    def _load_template(self):
-        path = str(settings.TEMPLATE_IMAGE_PATH)
-        try:
-            file_bytes = np.fromfile(path, dtype=np.uint8)
-            self.template = cv2.imdecode(file_bytes, cv2.IMREAD_GRAYSCALE)
-            if self.template is not None:
-                self.template_h, self.template_w = self.template.shape
-                self.kp_template, self.des_template = self.orb.detectAndCompute(self.template, None)
-            else:
-                print(f"AVISO: Falha ao decodificar template_padrao.png")
-        except Exception as e:
-            print(f"AVISO: Imagem padrão não encontrada ou erro de leitura: {e}")
 
     def run(self):
-        if self.des_template is None:
-            self.log_updated.emit("ERRO: Template sem features ORB detectadas!")
-            return
-
-        MIN_MATCH_COUNT = 15 
-
         with mss.mss() as sct:
             monitor = sct.monitors[1] 
             frame_count = 0 
 
             while self.running:
                 screenshot = sct.grab(monitor)
-                frame = np.array(screenshot)
-                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR) # Usado para o recorte
-                frame_gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY) # Usado para a matemática
-
-                kp_frame, des_frame = self.orb.detectAndCompute(frame_gray, None)
+                frame_bgra = np.array(screenshot)
+                frame_bgr = cv2.cvtColor(frame_bgra, cv2.COLOR_BGRA2BGR)
                 
-                max_matches = 0
-                found_rect = None
+                hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
 
-                if des_frame is not None and len(des_frame) > 0:
-                    matches = self.matcher.match(self.des_template, des_frame)
-                    good_matches = [m for m in matches if m.distance < 50]
-                    max_matches = len(good_matches)
+                # 1. Cria as máscaras de cor
+                mask_blue = cv2.inRange(hsv, settings.COLOR_BLUE_LOWER, settings.COLOR_BLUE_UPPER)
+                mask_red1 = cv2.inRange(hsv, settings.COLOR_RED1_LOWER, settings.COLOR_RED1_UPPER)
+                mask_red2 = cv2.inRange(hsv, settings.COLOR_RED2_LOWER, settings.COLOR_RED2_UPPER)
+                mask_red = cv2.bitwise_or(mask_red1, mask_red2)
+                mask_green = cv2.inRange(hsv, settings.COLOR_GREEN_LOWER, settings.COLOR_GREEN_UPPER)
 
-                    if max_matches >= MIN_MATCH_COUNT:
-                        src_pts = np.float32([self.kp_template[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-                        dst_pts = np.float32([kp_frame[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-                        matrix, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+                # 2. Verifica se a Assinatura (Barra Azul e Vermelha) existe
+                blue_cnts, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                red_cnts, _ = cv2.findContours(mask_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                
+                has_blue_header = any(cv2.contourArea(c) > 2000 for c in blue_cnts)
+                has_red_header = any(cv2.contourArea(c) > 2000 for c in red_cnts)
 
-                        if matrix is not None:
-                            pts = np.float32([[0, 0], [0, self.template_h - 1], [self.template_w - 1, self.template_h - 1], [self.template_w - 1, 0]]).reshape(-1, 1, 2)
-                            dst = cv2.perspectiveTransform(pts, matrix)
-                            x, y, w, h = cv2.boundingRect(np.int32(dst))
+                if has_blue_header and has_red_header:
+                    # 3. Busca os quadrados verdes
+                    green_cnts, _ = cv2.findContours(mask_green, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    valid_green_boxes = [c for c in green_cnts if cv2.contourArea(c) > 1000]
+
+                    if len(valid_green_boxes) >= 2:
+                        valid_green_boxes = sorted(valid_green_boxes, key=cv2.contourArea, reverse=True)[:2]
+                        
+                        boxes = [cv2.boundingRect(c) for c in valid_green_boxes]
+                        boxes.sort(key=lambda b: b[0]) 
+
+                        sample_box = boxes[0] 
+                        ng_box = boxes[1]     
+
+                        m = 4 # Margem para remover a linha verde da foto
+                        sx, sy, sw, sh = sample_box
+                        nx, ny, nw, nh = ng_box
+
+                        if sw > m*2 and sh > m*2 and nw > m*2 and nh > m*2:
+                            crop_sample = frame_bgr[sy+m : sy+sh-m, sx+m : sx+sw-m].copy()
+                            crop_ng = frame_bgr[ny+m : ny+nh-m, nx+m : nx+nw-m].copy()
                             
-                            if 20 < w < monitor["width"] and 20 < h < monitor["height"]:
-                                found_rect = (x, y, w, h)
+                            # Emite o sinal e DESLIGA A VARREDURA (One-Shot)
+                            self.layout_detected.emit(crop_sample, crop_ng)
+                            self.log_updated.emit("Monitor IoT: SNAPSHOT CAPTURADO! Parando varredura.")
+                            self.running = False
+                            break # Sai do loop infinito instantaneamente
 
-                # --- PROCESSAMENTO DO ALVO ENCONTRADO ---
-                if found_rect:
-                    x, y, w, h = found_rect
-
-                    # 1. Trava de Segurança para o Recorte (Clamping)
-                    # Usa os pixels reais (físicos) para garantir que o OpenCV nunca crashe
-                    x1 = max(0, x)
-                    y1 = max(0, y)
-                    x2 = min(frame_bgr.shape[1], x + w)
-                    y2 = min(frame_bgr.shape[0], y + h)
-
-                    if x2 > x1 and y2 > y1:
-                        crop = frame_bgr[y1:y2, x1:x2].copy()
-                        self.crop_updated.emit(crop)
-
-                    # 2. Correção de Escala do Windows (DPI)
-                    # Lê em tempo real a escala que seu Windows está usando
-                    screen = QGuiApplication.primaryScreen()
-                    dpi_scale = screen.devicePixelRatio() if screen else 1.0
-
-                    # Desfaz a matemática do Windows para a HUD desenhar no local perfeito
-                    ui_x = int(x / dpi_scale)
-                    ui_y = int(y / dpi_scale)
-                    ui_w = int(w / dpi_scale)
-                    ui_h = int(h / dpi_scale)
-
-                    self.pattern_found.emit(ui_x, ui_y, ui_w, ui_h)
-                else:
-                    self.pattern_lost.emit()
-
-                # --- ATUALIZAÇÃO DO LOG NA TELA ---
                 frame_count += 1
                 if frame_count % 15 == 0:
-                    if found_rect:
-                        msg = f"Radar ORB: ALVO DETECTADO! 🎯 ({max_matches} conexoes)"
+                    if has_blue_header and has_red_header:
+                        self.log_updated.emit("Monitor IoT: LAYOUT DETECTADO! 📡 Analisando imagens...")
                     else:
-                        msg = f"Radar ORB: Buscando... (Max: {max_matches}/{MIN_MATCH_COUNT} pts)"
-                    self.log_updated.emit(msg)
+                        self.log_updated.emit("Monitor IoT: Aguardando interface da máquina...")
 
                 self.msleep(int(1000 / settings.SCREEN_CAPTURE_FPS))
 
