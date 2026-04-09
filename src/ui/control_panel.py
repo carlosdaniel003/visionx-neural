@@ -1,3 +1,4 @@
+# src\ui\control_panel.py
 """
 Módulo do Painel de Controle e Console Duplo com Juiz Neural v3.
 Tela inteira sem cobrir a barra de tarefas (Maximized).

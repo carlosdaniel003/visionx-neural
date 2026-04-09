@@ -1,3 +1,4 @@
+# src\services\dataset_manager.py
 """
 Módulo responsável por gerenciar a persistência de imagens para o Dataset.
 Salva recortes categorizados + metadados JSON para futuro treinamento.

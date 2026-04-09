@@ -3,8 +3,9 @@
 Módulo responsável pela captura de tela e detecção do Layout da AOI.
 Modo One-Shot: Tira um único print ao encontrar o layout e encerra a thread.
 
-Captura a imagem COMPLETA entregue pela AOI, REMOVE o fundo cinza da interface,
-e extrai as informações de texto (Board, Parts, Value) via OCR.
+Estratégia Cross-Scan (Cruzeta): Varre a partir do centro das barras coloridas
+em formato de cruz (+) até encontrar a parede cinza (#d4d0c7) do software,
+garantindo o recorte cirúrgico e simétrico da foto da placa.
 """
 import cv2
 import numpy as np
@@ -29,7 +30,7 @@ try:
         if p.exists():
             pytesseract.pytesseract.tesseract_cmd = str(p)
             HAS_TESSERACT = True
-            print(f"✅ Tesseract encontrado: {p}")
+            print(f"Tesseract encontrado: {p}")
             break
 
     if not HAS_TESSERACT:
@@ -38,12 +39,12 @@ try:
         if auto_path:
             pytesseract.pytesseract.tesseract_cmd = auto_path
             HAS_TESSERACT = True
-            print(f"✅ Tesseract encontrado no PATH: {auto_path}")
+            print(f"Tesseract encontrado no PATH: {auto_path}")
         else:
-            print("⚠️ Tesseract NÃO encontrado. Ajuste TESSERACT_CMD em settings.py")
+            print("Tesseract NAO encontrado. Ajuste TESSERACT_CMD em settings.py")
 
 except ImportError:
-    print("⚠️ pytesseract não instalado. OCR desativado.")
+    print("pytesseract nao instalado. OCR desativado.")
 
 
 class ScreenMonitor(QThread):
@@ -63,75 +64,86 @@ class ScreenMonitor(QThread):
         largest = max(valid, key=cv2.contourArea)
         return cv2.boundingRect(largest)
 
-    def _remove_gray_background(self, image: np.ndarray) -> np.ndarray:
-        """Remove o fundo cinza da interface da AOI."""
-        if image is None or image.size == 0:
-            return image
-
-        h, w = image.shape[:2]
-        if h < 20 or w < 20:
-            return image
-
-        b, g, r = cv2.split(image)
-        b_f = b.astype(np.float32)
-        g_f = g.astype(np.float32)
-        r_f = r.astype(np.float32)
-
-        max_channel = np.maximum(np.maximum(b_f, g_f), r_f)
-        min_channel = np.minimum(np.minimum(b_f, g_f), r_f)
-        channel_diff = max_channel - min_channel
-        brightness = (b_f + g_f + r_f) / 3.0
-
-        gray_mask = (
-            (channel_diff < settings.AOI_GRAY_THRESHOLD) &
-            (brightness >= settings.AOI_GRAY_MIN) &
-            (brightness <= settings.AOI_GRAY_MAX)
-        ).astype(np.uint8) * 255
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        gray_mask = cv2.dilate(gray_mask, kernel, iterations=2)
-        not_gray = cv2.bitwise_not(gray_mask)
-
-        contours, _ = cv2.findContours(not_gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return image
-
-        largest = max(contours, key=cv2.contourArea)
-        rx, ry, rw, rh = cv2.boundingRect(largest)
-
-        if rw * rh < (w * h * 0.2):
-            return image
-
-        margin = 2
-        rx = min(rx + margin, w - 1)
-        ry = min(ry + margin, h - 1)
-        rw = max(rw - margin * 2, 10)
-        rh = max(rh - margin * 2, 10)
-
-        return image[ry:ry+rh, rx:rx+rw].copy()
-
-    def _extract_aoi_region(self, frame_bgr, bar_rect, green_boxes):
-        """Extrai a foto real da AOI (sem cinza)."""
+    def _cross_scan_crop(self, frame_bgr, bar_rect):
+        """
+        Executa a lógica humana: desce a partir da barra até bater no cinza,
+        depois vai para a esquerda e direita até bater no cinza.
+        Retorna as coordenadas exatas: (y_topo, y_fundo, x_esq, x_dir)
+        """
         bx, by, bw, bh = bar_rect
         frame_h, frame_w = frame_bgr.shape[:2]
+        
+        # Ponto central da barra
+        cx = bx + (bw // 2)
+        start_y = by + bh
 
-        region_x1 = max(0, bx)
-        region_x2 = min(frame_w, bx + bw)
-        region_y_top = by + bh
+        # Cor do fundo da AOI: #d4d0c7 (BGR: 199, 208, 212)
+        bg_color = np.array([199, 208, 212], dtype=np.float32)
+        tolerance = 30 # Distância máxima de cor para ser considerado "Fundo Cinza"
 
-        if green_boxes:
-            green_bottoms = [gy + gh for (gx, gy, gw, gh) in green_boxes]
-            region_y_bottom = max(green_bottoms) + 5
-        else:
-            region_y_bottom = min(frame_h, region_y_top + int((frame_h - region_y_top) * 0.7))
+        # ==========================================
+        # PASSO 1: DESCER ATÉ ACHAR O FUNDO (Eixo Y)
+        # ==========================================
+        # Pegamos uma fatia vertical de 10 pixels de largura no centro da barra para evitar ruídos
+        slice_w = 5
+        x1_slice = max(0, cx - slice_w)
+        x2_slice = min(frame_w, cx + slice_w)
+        
+        col_slice = frame_bgr[start_y:, x1_slice:x2_slice]
+        if col_slice.size == 0:
+            return None
+            
+        # Calcula a diferença da fatia para o cinza do fundo
+        diff_y = np.linalg.norm(col_slice.astype(np.float32) - bg_color, axis=2)
+        # Se algum pixel na linha for DIFERENTE do cinza, é porque é foto/texto (True)
+        is_content_y = np.any(diff_y > tolerance, axis=1)
+        
+        # Encontra blocos contínuos de "Conteúdo" (True)
+        runs_y = np.flatnonzero(np.diff(np.r_[np.int8(0), is_content_y.view(np.int8), np.int8(0)])).reshape(-1, 2)
+        if len(runs_y) == 0:
+            return None
+            
+        # O maior bloco contínuo de conteúdo abaixo da barra É a foto da placa
+        longest_run_y = max(runs_y, key=lambda r: r[1] - r[0])
+        
+        # Se o bloco for muito pequeno, falhou
+        if longest_run_y[1] - longest_run_y[0] < 50:
+            return None
+            
+        top_y = start_y + longest_run_y[0]
+        bottom_y = start_y + longest_run_y[1]
 
-        region_y_top = max(0, region_y_top)
-        region_y_bottom = min(frame_h, region_y_bottom)
+        # ==========================================
+        # PASSO 2: ESQUERDA E DIREITA (Eixo X)
+        # ==========================================
+        # Vamos exatamente para o meio vertical da foto que achamos
+        cy = (top_y + bottom_y) // 2
+        
+        # Pegamos uma fatia horizontal de 10 pixels de altura
+        y1_slice = max(0, cy - slice_w)
+        y2_slice = min(frame_h, cy + slice_w)
+        
+        row_slice = frame_bgr[y1_slice:y2_slice, :]
+        
+        diff_x = np.linalg.norm(row_slice.astype(np.float32) - bg_color, axis=2)
+        is_content_x = np.any(diff_x > tolerance, axis=0)
+        
+        runs_x = np.flatnonzero(np.diff(np.r_[np.int8(0), is_content_x.view(np.int8), np.int8(0)])).reshape(-1, 2)
+        if len(runs_x) == 0:
+            return None
+            
+        # A largura correta é o bloco de conteúdo que PASSA pelo centro da nossa barra
+        valid_runs_x = [r for r in runs_x if r[0] <= cx <= r[1]]
+        
+        if not valid_runs_x:
+            valid_runs_x = [max(runs_x, key=lambda r: r[1] - r[0])]
+            
+        left_x = valid_runs_x[0][0]
+        right_x = valid_runs_x[0][1]
 
-        raw_crop = frame_bgr[region_y_top:region_y_bottom, region_x1:region_x2].copy()
-        clean_crop = self._remove_gray_background(raw_crop)
-
-        return clean_crop
+        # Margem de segurança (2px para dentro) para não pegar nenhuma bordinha preta/cinza
+        m = 2
+        return (top_y + m, bottom_y - m, left_x + m, right_x - m)
 
     def _ocr_fast(self, image: np.ndarray) -> str:
         """
@@ -145,12 +157,10 @@ class ScreenMonitor(QThread):
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             h, w = gray.shape
 
-            # Escala para fontes XP pequenas
             scale = max(3, min(5, 200 // max(h, 1)))
             gray_big = cv2.resize(gray, None, fx=scale, fy=scale,
                                    interpolation=cv2.INTER_CUBIC)
 
-            # Otsu (melhor para texto XP em fundo cinza)
             _, binary = cv2.threshold(gray_big, 0, 255,
                                        cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
@@ -163,17 +173,13 @@ class ScreenMonitor(QThread):
     def _extract_text_info(self, frame_bgr, blue_bar, red_bar) -> dict:
         """
         Extrai Board, Parts e Value do texto ACIMA das barras coloridas.
-        Estratégia rápida: pega a zona acima da barra azul (que normalmente
-        tem a mesma informação) e faz OCR uma única vez.
         """
         info = {"board": "", "parts": "", "value": "", "raw_text": ""}
 
         if not HAS_TESSERACT:
-            info["raw_text"] = "[OCR não disponível]"
+            info["raw_text"] = "[OCR nao disponivel]"
             return info
 
-        # Zona de texto: 400px acima da barra até o topo da barra
-        # Usa a barra azul como referência principal
         bx, by, bw, bh = blue_bar
         frame_h, frame_w = frame_bgr.shape[:2]
 
@@ -184,7 +190,6 @@ class ScreenMonitor(QThread):
             info["raw_text"] = "[Zona de texto muito pequena]"
             return info
 
-        # Recorta a zona de texto (mesma largura da barra, expandida 50px)
         expand_x = 50
         x1 = max(0, bx - expand_x)
         x2 = min(frame_w, bx + bw + expand_x)
@@ -193,7 +198,6 @@ class ScreenMonitor(QThread):
         raw = self._ocr_fast(text_zone)
 
         if not raw:
-            # Fallback: tenta a barra vermelha
             bx2, by2, bw2, bh2 = red_bar
             above_y1_r = max(0, by2 - 400)
             above_y2_r = by2
@@ -209,21 +213,11 @@ class ScreenMonitor(QThread):
 
         info["raw_text"] = raw
 
-        # ========================================================
-        # Parse dos campos com regex.
-        # O texto OCR vem em linhas tipo:
-        #   "Board : ABC123"
-        #   "Parts : R101  Block : 2"
-        #   "Value : 10K"
-        #
-        # Parts precisa parar ANTES de "Block" ou fim da linha.
-        # ========================================================
         for line in raw.split('\n'):
             line_clean = line.strip()
             if not line_clean:
                 continue
 
-            # Board — pega até o fim da linha
             if not info["board"]:
                 m = re.search(
                     r'[BbRr8Hh][Oo0][Aa][Rr][Dd]\s*[:\-\.\s]\s*(\S.*)',
@@ -232,8 +226,6 @@ class ScreenMonitor(QThread):
                 if m:
                     info["board"] = m.group(1).strip()
 
-            # Parts — pega até "Block", "Value", ou fim da linha
-            # Isso evita pegar "Block" como parte do Parts
             if not info["parts"]:
                 m = re.search(
                     r'[PpFf][Aa][Rr][Tt][Ss]?\s*[:\-\.\s]\s*(.+?)(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Vv][Aa][Ll]|\s*$)',
@@ -241,12 +233,10 @@ class ScreenMonitor(QThread):
                 )
                 if m:
                     val = m.group(1).strip()
-                    # Limpa caracteres residuais de OCR no final
                     val = re.sub(r'\s+$', '', val)
                     if val:
                         info["parts"] = val
 
-            # Value — pega até "Block", "Parts", ou fim da linha
             if not info["value"]:
                 m = re.search(
                     r'[Vv][Aa][Ll1iI][Uu][Ee]\s*[:\-\.\s]\s*(.+?)(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Pp][Aa][Rr]|\s*$)',
@@ -258,8 +248,7 @@ class ScreenMonitor(QThread):
                     if val:
                         info["value"] = val
 
-        print(f"📋 OCR — Board: '{info['board']}' | "
-              f"Parts: '{info['parts']}' | Value: '{info['value']}'")
+        print(f"OCR - Board: '{info['board']}' | Parts: '{info['parts']}' | Value: '{info['value']}'")
 
         return info
 
@@ -288,51 +277,52 @@ class ScreenMonitor(QThread):
                 has_red = red_bar is not None
 
                 if has_blue and has_red:
+                    # Continua exigindo a presença de caixas verdes na tela para ativar o gatilho de captura
                     green_cnts, _ = cv2.findContours(
                         mask_green, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    green_boxes = [cv2.boundingRect(c) for c in green_cnts
-                                   if cv2.contourArea(c) > 500]
+                    green_boxes = [cv2.boundingRect(c) for c in green_cnts if cv2.contourArea(c) > 500]
 
-                    if len(green_boxes) >= 2:
-                        blue_cx = blue_bar[0] + blue_bar[2] // 2
-                        red_cx = red_bar[0] + red_bar[2] // 2
-
-                        sample_greens = []
-                        ng_greens = []
-
-                        for gb in green_boxes:
-                            gx_center = gb[0] + gb[2] // 2
-                            if abs(gx_center - blue_cx) < abs(gx_center - red_cx):
-                                sample_greens.append(gb)
-                            else:
-                                ng_greens.append(gb)
-
-                        if sample_greens and ng_greens:
-                            crop_sample = self._extract_aoi_region(
-                                frame_bgr, blue_bar, sample_greens)
-                            crop_ng = self._extract_aoi_region(
-                                frame_bgr, red_bar, ng_greens)
+                    if len(green_boxes) >= 1:
+                        
+                        # 1. Faz o Cross-Scan na Barra Azul (Sample) para descobrir a geometria exata da foto
+                        coords_sample = self._cross_scan_crop(frame_bgr, blue_bar)
+                        
+                        if coords_sample:
+                            sy1, sy2, sx1, sx2 = coords_sample
+                            crop_sample = frame_bgr[sy1:sy2, sx1:sx2].copy()
+                            
+                            # 2. SIMETRIA ABSOLUTA: Aplica as dimensões perfeitas descobertas na Sample para a NG
+                            # Isso resolve todos os problemas de recortes pequenos no lado NG.
+                            rx, ry, rw, rh = red_bar
+                            red_center_x = rx + (rw // 2)
+                            
+                            photo_width = sx2 - sx1
+                            half_width = photo_width // 2
+                            
+                            nx1 = red_center_x - half_width
+                            nx2 = nx1 + photo_width
+                            
+                            # Garante que não vai tentar recortar fora da tela
+                            nx1 = max(0, nx1)
+                            nx2 = min(frame_bgr.shape[1], nx2)
+                            
+                            crop_ng = frame_bgr[sy1:sy2, nx1:nx2].copy()
 
                             if crop_sample.size > 0 and crop_ng.size > 0:
-                                # OCR rápido
-                                aoi_info = self._extract_text_info(
-                                    frame_bgr, blue_bar, red_bar)
+                                # OCR
+                                aoi_info = self._extract_text_info(frame_bgr, blue_bar, red_bar)
 
-                                self.layout_detected.emit(
-                                    crop_sample, crop_ng, aoi_info)
-                                self.log_updated.emit(
-                                    "Monitor AOI: SNAPSHOT CAPTURADO!")
+                                self.layout_detected.emit(crop_sample, crop_ng, aoi_info)
+                                self.log_updated.emit("Monitor AOI: SNAPSHOT CAPTURADO COM SUCESSO!")
                                 self.running = False
                                 break
 
                 frame_count += 1
                 if frame_count % 15 == 0:
                     if has_blue and has_red:
-                        self.log_updated.emit(
-                            "Monitor AOI: LAYOUT DETECTADO! 📡 Analisando...")
+                        self.log_updated.emit("Monitor AOI: LAYOUT DETECTADO! Analisando...")
                     else:
-                        self.log_updated.emit(
-                            "Monitor AOI: Aguardando interface da máquina...")
+                        self.log_updated.emit("Monitor AOI: Aguardando interface da maquina...")
 
                 self.msleep(int(1000 / settings.SCREEN_CAPTURE_FPS))
 
