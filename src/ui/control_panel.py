@@ -1,12 +1,14 @@
 """
 Módulo do Painel de Controle e Console Duplo com Juiz Neural v3.
 Exibe painel de confiabilidade detalhado com métricas reais em padrão visual escuro (Dark Theme).
+Tela inteira sem cobrir a barra de tarefas.
+3ª imagem: referência mais parecida encontrada no banco de dados.
 """
 import cv2
 import numpy as np
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QLabel,
                              QHBoxLayout, QMessageBox, QFrame, QGridLayout,
-                             QScrollArea)
+                             QApplication)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QFont
 from src.services.screen_monitor import ScreenMonitor
@@ -26,58 +28,88 @@ class ControlPanel(QWidget):
 
     def _setup_ui(self):
         self.setWindowTitle("VisionX Neural - Console Industrial AOI")
-        self.resize(900, 700)
-        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.setStyleSheet("background-color: #121212; color: #ffffff;")
 
+        # --- Tela inteira sem cobrir a barra de tarefas ---
+        screen = QApplication.primaryScreen()
+        available = screen.availableGeometry()  # Área disponível (exclui taskbar)
+        self.setGeometry(available)
+
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(10, 8, 10, 8)
+        main_layout.setSpacing(6)
 
         title = QLabel("VisionX Neural: Monitoramento AOI")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 5px; color: #ffffff;")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 2px; color: #ffffff;")
         main_layout.addWidget(title)
 
-        # === Displays de imagem ===
+        # ============================================================
+        # === 3 DISPLAYS DE IMAGEM (Sample | NG+VisãoX | Referência)
+        # ============================================================
         displays_layout = QHBoxLayout()
+        displays_layout.setSpacing(8)
 
+        # --- Imagem 1: Padrão (Sample) ---
         sample_layout = QVBoxLayout()
-        lbl_sample_title = QLabel("Padrão (Sample Image)")
+        lbl_sample_title = QLabel("Padrão (Sample)")
         lbl_sample_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_sample_title.setStyleSheet("color: #aaaaaa;")
+        lbl_sample_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
         self.lbl_sample = QLabel("Aguardando Layout...")
         self.lbl_sample.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_sample.setStyleSheet("background-color: #1a1a1a; border: 1px solid #444444; color: #888888;")
-        self.lbl_sample.setMinimumSize(350, 250)
+        self.lbl_sample.setStyleSheet("background-color: #1a1a1a; border: 1px solid #2196F3; color: #888888;")
+        self.lbl_sample.setMinimumSize(200, 180)
         sample_layout.addWidget(lbl_sample_title)
         sample_layout.addWidget(self.lbl_sample, stretch=1)
 
+        # --- Imagem 2: NG + Análise do VisionX ---
         ng_layout = QVBoxLayout()
-        lbl_ng_title = QLabel("Anomalia (NG Image) + VisãoX")
+        lbl_ng_title = QLabel("Análise VisãoX (NG)")
         lbl_ng_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_ng_title.setStyleSheet("color: #aaaaaa;")
+        lbl_ng_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
         self.lbl_ng = QLabel("Aguardando Layout...")
         self.lbl_ng.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_ng.setStyleSheet("background-color: #1a1a1a; border: 1px solid #444444; color: #888888;")
-        self.lbl_ng.setMinimumSize(350, 250)
+        self.lbl_ng.setStyleSheet("background-color: #1a1a1a; border: 1px solid #F44336; color: #888888;")
+        self.lbl_ng.setMinimumSize(200, 180)
         ng_layout.addWidget(lbl_ng_title)
         ng_layout.addWidget(self.lbl_ng, stretch=1)
 
-        displays_layout.addLayout(sample_layout)
-        displays_layout.addLayout(ng_layout)
+        # --- Imagem 3: Referência do Banco de Dados ---
+        ref_layout = QVBoxLayout()
+        self.lbl_ref_title = QLabel("Referência (Dataset)")
+        self.lbl_ref_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_ref_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
+        self.lbl_ref = QLabel("Sem dados no banco")
+        self.lbl_ref.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_ref.setStyleSheet("background-color: #1a1a1a; border: 1px solid #FF9800; color: #888888;")
+        self.lbl_ref.setMinimumSize(200, 180)
+        self.lbl_ref_info = QLabel("")
+        self.lbl_ref_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_ref_info.setStyleSheet("color: #888888; font-size: 10px;")
+        self.lbl_ref_info.setWordWrap(True)
+        ref_layout.addWidget(self.lbl_ref_title)
+        ref_layout.addWidget(self.lbl_ref, stretch=1)
+        ref_layout.addWidget(self.lbl_ref_info)
+
+        displays_layout.addLayout(sample_layout, stretch=1)
+        displays_layout.addLayout(ng_layout, stretch=1)
+        displays_layout.addLayout(ref_layout, stretch=1)
         main_layout.addLayout(displays_layout, stretch=1)
 
-        # === Painel de Confiabilidade ===
+        # ============================================================
+        # === PAINEL DE CONFIABILIDADE
+        # ============================================================
         self.confidence_frame = QFrame()
         self.confidence_frame.setStyleSheet("""
             QFrame {
                 background-color: #1e1e1e;
                 border: 1px solid #333333;
                 border-radius: 8px;
-                padding: 8px;
+                padding: 6px;
             }
         """)
         conf_layout = QVBoxLayout(self.confidence_frame)
-        conf_layout.setSpacing(4)
+        conf_layout.setSpacing(3)
 
         conf_title = QLabel("Painel de Confiabilidade - Análise do Juiz Neural")
         conf_title.setStyleSheet("color: #dddddd; font-weight: bold; font-size: 13px; border: none;")
@@ -87,10 +119,11 @@ class ControlPanel(QWidget):
         # Veredito principal
         self.lbl_verdict = QLabel("Aguardando análise...")
         self.lbl_verdict.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_verdict.setStyleSheet("color: #888888; font-size: 16px; font-weight: bold; padding: 4px; border: none;")
+        self.lbl_verdict.setStyleSheet(
+            "color: #888888; font-size: 16px; font-weight: bold; padding: 4px; border: none;")
         conf_layout.addWidget(self.lbl_verdict)
 
-        # Grid de métricas detalhadas
+        # Grid de métricas
         metrics_grid = QGridLayout()
         metrics_grid.setSpacing(3)
 
@@ -111,9 +144,11 @@ class ControlPanel(QWidget):
             col = (i % 4) * 2
 
             lbl_name = QLabel(label_text + ":")
-            lbl_name.setStyleSheet("color: #8899aa; font-size: 11px; border: none; background: transparent;")
+            lbl_name.setStyleSheet(
+                "color: #8899aa; font-size: 11px; border: none; background: transparent;")
             lbl_value = QLabel("—")
-            lbl_value.setStyleSheet("color: #ffffff; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+            lbl_value.setStyleSheet(
+                "color: #ffffff; font-size: 11px; font-weight: bold; border: none; background: transparent;")
 
             metrics_grid.addWidget(lbl_name, row, col)
             metrics_grid.addWidget(lbl_value, row, col + 1)
@@ -121,14 +156,15 @@ class ControlPanel(QWidget):
 
         conf_layout.addLayout(metrics_grid)
 
-        # Linha de justificativa
+        # Justificativa
         self.lbl_reason = QLabel("")
-        self.lbl_reason.setStyleSheet("color: #aabbcc; font-size: 10px; padding-top: 4px; border: none;")
+        self.lbl_reason.setStyleSheet(
+            "color: #aabbcc; font-size: 10px; padding-top: 2px; border: none;")
         self.lbl_reason.setWordWrap(True)
         self.lbl_reason.setAlignment(Qt.AlignmentFlag.AlignCenter)
         conf_layout.addWidget(self.lbl_reason)
 
-        # Informação do dataset
+        # Info do dataset
         self.lbl_db_info = QLabel("")
         self.lbl_db_info.setStyleSheet("color: #667788; font-size: 10px; border: none;")
         self.lbl_db_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -136,7 +172,9 @@ class ControlPanel(QWidget):
 
         main_layout.addWidget(self.confidence_frame)
 
-        # === Botões Customizados Padrão Escuro ===
+        # ============================================================
+        # === BOTÕES
+        # ============================================================
         button_style = """
             QPushButton {
                 background-color: #2d2d2d;
@@ -155,24 +193,22 @@ class ControlPanel(QWidget):
             }
         """
 
-        # === Botão de Captura ===
         self.btn_start = QPushButton("Capturar AOI Agora")
-        self.btn_start.setMinimumHeight(45)
+        self.btn_start.setMinimumHeight(40)
         self.btn_start.setStyleSheet(button_style)
         self.btn_start.clicked.connect(self.start_monitoring)
         main_layout.addWidget(self.btn_start)
 
-        # === Botões de Curadoria ===
         curation_layout = QHBoxLayout()
 
         self.btn_save_ok = QPushButton("Salvar como Falha Falsa (OK)")
-        self.btn_save_ok.setMinimumHeight(45)
+        self.btn_save_ok.setMinimumHeight(40)
         self.btn_save_ok.setEnabled(False)
         self.btn_save_ok.setStyleSheet(button_style)
         self.btn_save_ok.clicked.connect(lambda: self.save_label("OK"))
 
         self.btn_save_ng = QPushButton("Confirmar Defeito Real (NG)")
-        self.btn_save_ng.setMinimumHeight(45)
+        self.btn_save_ng.setMinimumHeight(40)
         self.btn_save_ng.setEnabled(False)
         self.btn_save_ng.setStyleSheet(button_style)
         self.btn_save_ng.clicked.connect(lambda: self.save_label("NG"))
@@ -189,6 +225,7 @@ class ControlPanel(QWidget):
         self.btn_save_ok.setEnabled(False)
         self.btn_save_ng.setEnabled(False)
         self._reset_confidence_panel()
+        self._reset_reference_panel()
         self.showMinimized()
         QTimer.singleShot(500, self._start_radar)
 
@@ -205,12 +242,83 @@ class ControlPanel(QWidget):
 
     def _reset_confidence_panel(self):
         self.lbl_verdict.setText("Aguardando análise...")
-        self.lbl_verdict.setStyleSheet("color: #888888; font-size: 16px; font-weight: bold; padding: 4px; border: none; background: transparent;")
+        self.lbl_verdict.setStyleSheet(
+            "color: #888888; font-size: 16px; font-weight: bold; padding: 4px; border: none; background: transparent;")
         for key, lbl in self.metric_labels.items():
             lbl.setText("—")
-            lbl.setStyleSheet("color: #ffffff; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+            lbl.setStyleSheet(
+                "color: #ffffff; font-size: 11px; font-weight: bold; border: none; background: transparent;")
         self.lbl_reason.setText("")
         self.lbl_db_info.setText("")
+
+    def _reset_reference_panel(self):
+        """Limpa a 3ª imagem de referência."""
+        self.lbl_ref.clear()
+        self.lbl_ref.setText("Sem dados no banco")
+        self.lbl_ref.setStyleSheet(
+            "background-color: #1a1a1a; border: 1px solid #FF9800; color: #888888;")
+        self.lbl_ref_title.setText("Referência (Dataset)")
+        self.lbl_ref_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
+        self.lbl_ref_info.setText("")
+
+    def _update_reference_panel(self, analysis: dict):
+        """
+        Atualiza a 3ª imagem com a referência mais parecida do banco de dados.
+        Mostra a imagem-par do dataset e indica se era OK ou NG.
+        """
+        detail = analysis.get("detail", {})
+        best_path = detail.get("db_best_path", "")
+        best_label = detail.get("db_best_label", "")
+        best_sim = detail.get("db_best_sim", 0)
+        has_memory = detail.get("db_has_memory", False)
+
+        if not has_memory or not best_path:
+            self._reset_reference_panel()
+            self.lbl_ref_info.setText(
+                "Salve amostras com os botões abaixo\npara ativar a consulta ao banco de dados.")
+            return
+
+        # Carrega a imagem do banco de dados
+        ref_img = cv2.imread(best_path)
+        if ref_img is None:
+            self._reset_reference_panel()
+            self.lbl_ref_info.setText("Erro ao carregar imagem de referência.")
+            return
+
+        # Exibe a imagem
+        px_ref = self.numpy_to_pixmap(ref_img)
+        self.lbl_ref.setPixmap(px_ref.scaled(
+            self.lbl_ref.size(), Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation))
+
+        # Atualiza o título e borda conforme a label do vizinho
+        if best_label == "NG":
+            self.lbl_ref_title.setText("Referência Encontrada: DEFEITO (NG)")
+            self.lbl_ref_title.setStyleSheet("color: #ff5555; font-size: 12px; font-weight: bold;")
+            self.lbl_ref.setStyleSheet(
+                "background-color: #1a1a1a; border: 2px solid #ff5555; color: #888888;")
+        else:
+            self.lbl_ref_title.setText("Referência Encontrada: OK (Falha Falsa)")
+            self.lbl_ref_title.setStyleSheet("color: #55ff55; font-size: 12px; font-weight: bold;")
+            self.lbl_ref.setStyleSheet(
+                "background-color: #1a1a1a; border: 2px solid #55ff55; color: #888888;")
+
+        # Texto explicativo
+        sim_pct = f"{best_sim:.0%}"
+        if best_label == "NG":
+            explanation = (
+                f"Encontrei esta imagem no banco com {sim_pct} de similaridade.\n"
+                f"Ela foi classificada como DEFEITO REAL pelo operador.\n"
+                f"Isso AUMENTA a confiança de que a imagem analisada é defeito."
+            )
+        else:
+            explanation = (
+                f"Encontrei esta imagem no banco com {sim_pct} de similaridade.\n"
+                f"Ela foi classificada como FALHA FALSA pelo operador.\n"
+                f"Isso AUMENTA a confiança de que a imagem analisada é falha falsa."
+            )
+
+        self.lbl_ref_info.setText(explanation)
 
     def _update_confidence_panel(self, analysis: dict):
         verdict = analysis.get("verdict", "?")
@@ -219,57 +327,63 @@ class ControlPanel(QWidget):
 
         if is_defect:
             self.lbl_verdict.setText(f"{verdict} - Confiança: {conf_text}")
-            self.lbl_verdict.setStyleSheet("color: #ff5555; font-size: 16px; font-weight: bold; padding: 4px; border: none; background: transparent;")
+            self.lbl_verdict.setStyleSheet(
+                "color: #ff5555; font-size: 16px; font-weight: bold; padding: 4px; border: none; background: transparent;")
         else:
             self.lbl_verdict.setText(f"{verdict} - Confiança: {conf_text}")
-            self.lbl_verdict.setStyleSheet("color: #55ff55; font-size: 16px; font-weight: bold; padding: 4px; border: none; background: transparent;")
+            self.lbl_verdict.setStyleSheet(
+                "color: #55ff55; font-size: 16px; font-weight: bold; padding: 4px; border: none; background: transparent;")
 
         detail = analysis.get("detail", {})
 
         def get_metric_color(val, invert=False):
             v = float(val) if val is not None else 0
             if invert:
-                v_color = 1.0 - v
+                v = 1.0 - v
+            if v > 0.7:
+                return "#ff5555"
+            elif v > 0.4:
+                return "#ffaa33"
             else:
-                v_color = v
-            if v_color > 0.7: return "#ff5555"
-            elif v_color > 0.4: return "#ffaa33"
-            else: return "#55ff55"
+                return "#55ff55"
 
-        # SSIM
         ssim_val = detail.get("ssim", 0)
         self.metric_labels["ssim"].setText(f"{ssim_val:.3f}")
-        self.metric_labels["ssim"].setStyleSheet(f"color: {get_metric_color(ssim_val, invert=True)}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        self.metric_labels["ssim"].setStyleSheet(
+            f"color: {get_metric_color(ssim_val, invert=True)}; "
+            f"font-size: 11px; font-weight: bold; border: none; background: transparent;")
 
-        # Pixels alterados
         pct = detail.get("pct_changed", 0)
         self.metric_labels["pct_changed"].setText(f"{pct:.1%}")
-        self.metric_labels["pct_changed"].setStyleSheet(f"color: {get_metric_color(pct / 0.15)}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        self.metric_labels["pct_changed"].setStyleSheet(
+            f"color: {get_metric_color(pct / 0.15)}; "
+            f"font-size: 11px; font-weight: bold; border: none; background: transparent;")
 
-        # Mudança de bordas
         edge = detail.get("edge_change", 0)
         self.metric_labels["edge_change"].setText(f"{edge:.1%}")
-        self.metric_labels["edge_change"].setStyleSheet(f"color: {get_metric_color(edge / 0.08)}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        self.metric_labels["edge_change"].setStyleSheet(
+            f"color: {get_metric_color(edge / 0.08)}; "
+            f"font-size: 11px; font-weight: bold; border: none; background: transparent;")
 
-        # Histograma
         hc = detail.get("hist_corr", 0)
         self.metric_labels["hist_corr"].setText(f"{hc:.3f}")
-        self.metric_labels["hist_corr"].setStyleSheet(f"color: {get_metric_color(hc, invert=True)}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        self.metric_labels["hist_corr"].setStyleSheet(
+            f"color: {get_metric_color(hc, invert=True)}; "
+            f"font-size: 11px; font-weight: bold; border: none; background: transparent;")
 
-        # Scores compostos
         for key in ["local_score", "ctx_score", "db_score", "final_score"]:
             val = detail.get(key, 0)
             self.metric_labels[key].setText(f"{val:.2f}")
             color = get_metric_color(val / 0.6 if key != "final_score" else val / 0.45)
             font_size = "12px" if key == "final_score" else "11px"
-            self.metric_labels[key].setStyleSheet(f"color: {color}; font-size: {font_size}; font-weight: bold; border: none; background: transparent;")
+            self.metric_labels[key].setStyleSheet(
+                f"color: {color}; font-size: {font_size}; font-weight: bold; "
+                f"border: none; background: transparent;")
 
-        # Justificativa
         reason = analysis.get("reason", "")
         if reason:
             self.lbl_reason.setText(f"Justificativa: {reason}")
 
-        # Info do dataset
         db_mem = detail.get("db_has_memory", False)
         if db_mem:
             n = detail.get("db_neighbors", 0)
@@ -277,10 +391,10 @@ class ControlPanel(QWidget):
             sim = detail.get("db_best_sim", 0)
             self.lbl_db_info.setText(
                 f"Base consultada: {n} vizinhos | Voto NG: {vote:.0%} | "
-                f"Similaridade melhor match: {sim:.0%}"
-            )
+                f"Similaridade melhor match: {sim:.0%}")
         else:
-            self.lbl_db_info.setText("Sem dados no dataset. Salve amostras para melhorar a precisão!")
+            self.lbl_db_info.setText(
+                "Sem dados no dataset. Salve amostras para melhorar a precisão!")
 
     def process_aoi_images(self, sample_crop: np.ndarray, ng_crop: np.ndarray):
         if sample_crop.size == 0 or ng_crop.size == 0:
@@ -288,6 +402,11 @@ class ControlPanel(QWidget):
 
         self.showNormal()
         self.activateWindow()
+
+        # Reposiciona na área disponível (sem cobrir taskbar)
+        screen = QApplication.primaryScreen()
+        available = screen.availableGeometry()
+        self.setGeometry(available)
 
         self.current_sample = sample_crop
         self.current_ng = ng_crop
@@ -302,9 +421,13 @@ class ControlPanel(QWidget):
 
         if not raw_anomalies:
             self._reset_confidence_panel()
+            self._reset_reference_panel()
             self.lbl_verdict.setText("Nenhuma anomalia detectada")
-            self.lbl_verdict.setStyleSheet("color: #55ff55; font-size: 16px; font-weight: bold; padding: 4px; border: none; background: transparent;")
-            self.lbl_reason.setText("A análise matemática não encontrou diferenças significativas entre as imagens.")
+            self.lbl_verdict.setStyleSheet(
+                "color: #55ff55; font-size: 16px; font-weight: bold; padding: 4px; "
+                "border: none; background: transparent;")
+            self.lbl_reason.setText(
+                "A análise matemática não encontrou diferenças significativas entre as imagens.")
         else:
             biggest = max(raw_anomalies, key=lambda b: b[2] * b[3])
             last_analysis = None
@@ -335,7 +458,8 @@ class ControlPanel(QWidget):
 
                 font_scale = 0.5
                 thickness = 1
-                (tw, th), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                (tw, th), _ = cv2.getTextSize(
+                    label_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
                 cv2.rectangle(img_ng_drawn, (x, y - th - 6), (x + tw + 4, y), color, -1)
                 cv2.putText(img_ng_drawn, label_text, (x + 2, y - 4),
                             cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
@@ -345,6 +469,7 @@ class ControlPanel(QWidget):
 
             if last_analysis:
                 self._update_confidence_panel(last_analysis)
+                self._update_reference_panel(last_analysis)
 
         px_ng = self.numpy_to_pixmap(img_ng_drawn)
         self.lbl_ng.setPixmap(px_ng.scaled(
@@ -375,9 +500,9 @@ class ControlPanel(QWidget):
             self.btn_save_ok.setEnabled(False)
             self.btn_save_ng.setEnabled(False)
 
+            # Recarrega a memória para incluir a nova amostra
             self.neural_judge.reload_memory()
             self.lbl_db_info.setText(
                 f"Memória atualizada! "
                 f"({len(self.neural_judge.memory.signatures_ok)} OK + "
-                f"{len(self.neural_judge.memory.signatures_ng)} NG)"
-            )
+                f"{len(self.neural_judge.memory.signatures_ng)} NG)")
