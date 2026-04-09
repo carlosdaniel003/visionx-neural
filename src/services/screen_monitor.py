@@ -1,11 +1,10 @@
+# src\services\screen_monitor.py
 """
 Módulo responsável pela captura de tela e detecção do Layout da AOI.
 Modo One-Shot: Tira um único print ao encontrar o layout e encerra a thread.
 
 Captura a imagem COMPLETA entregue pela AOI, REMOVE o fundo cinza da interface,
 e extrai as informações de texto (Board, Parts, Value) via OCR.
-
-Debug: salva as regiões de texto recortadas em public/debug_ocr/ para diagnóstico.
 """
 import cv2
 import numpy as np
@@ -14,10 +13,6 @@ import re
 from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 from src.config.settings import settings
-
-# Pasta de debug para salvar imagens do OCR
-DEBUG_DIR = settings.PUBLIC_DIR / "debug_ocr"
-DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Configura e importa pytesseract (opcional)
 HAS_TESSERACT = False
@@ -138,162 +133,38 @@ class ScreenMonitor(QThread):
 
         return clean_crop
 
-    def _find_text_zones(self, frame_bgr, blue_bar, red_bar):
+    def _ocr_fast(self, image: np.ndarray) -> str:
         """
-        Encontra as zonas de texto da AOI.
-        
-        O texto Board/Parts/Value fica NO TOPO do painel da AOI,
-        ACIMA das barras coloridas. Pode estar a centenas de pixels acima.
-        
-        Estratégia: para cada barra (azul e vermelha), pega TODA a coluna
-        acima dela (desde o topo da tela ou desde onde começar o painel da AOI).
-        """
-        frame_h, frame_w = frame_bgr.shape[:2]
-        text_zones = []
-
-        # Usa ambas as barras para referência de largura X
-        # A barra mais alta (menor Y) indica onde começa o painel da AOI
-        bars = [("sample", blue_bar), ("ng", red_bar)]
-        
-        # Y mais alto entre as duas barras = topo do painel
-        top_bar_y = min(blue_bar[1], red_bar[1])
-
-        for bar_name, bar_rect in bars:
-            bx, by, bw, bh = bar_rect
-
-            # ===================================================
-            # ZONA PRINCIPAL: TUDO acima da barra, mesma coluna X
-            # Desde o topo da tela (ou pelo menos 400px acima)
-            # até o início da barra colorida
-            # ===================================================
-            above_y1 = max(0, by - 400)
-            above_y2 = by
-            
-            if above_y2 > above_y1 + 5:
-                zone = frame_bgr[above_y1:above_y2, bx:bx+bw].copy()
-                if zone.size > 0:
-                    text_zones.append((f"{bar_name}_above_full", zone))
-                    
-                    # Também tenta só a metade inferior (mais perto da barra)
-                    mid_y = (above_y1 + above_y2) // 2
-                    zone_lower = frame_bgr[mid_y:above_y2, bx:bx+bw].copy()
-                    if zone_lower.size > 0:
-                        text_zones.append((f"{bar_name}_above_lower", zone_lower))
-                    
-                    # E só a metade superior (mais longe da barra)
-                    zone_upper = frame_bgr[above_y1:mid_y, bx:bx+bw].copy()
-                    if zone_upper.size > 0:
-                        text_zones.append((f"{bar_name}_above_upper", zone_upper))
-
-            # ===================================================
-            # ZONA EXTRA: Acima da barra mas com a coluna X expandida
-            # (o texto pode ser mais largo que a barra)
-            # ===================================================
-            expand_x = 50
-            ex1 = max(0, bx - expand_x)
-            ex2 = min(frame_w, bx + bw + expand_x)
-            
-            if above_y2 > above_y1 + 5:
-                zone_wide = frame_bgr[above_y1:above_y2, ex1:ex2].copy()
-                if zone_wide.size > 0:
-                    text_zones.append((f"{bar_name}_above_wide", zone_wide))
-
-        return text_zones
-
-    def _ocr_region(self, image: np.ndarray, zone_name: str = "") -> str:
-        """
-        Executa OCR com múltiplas estratégias de pré-processamento.
-        Otimizado para fontes pequenas do Windows XP.
+        OCR rápido: usa apenas a melhor estratégia (Otsu + PSM 6).
+        Otimizado para fontes Windows XP.
         """
         if not HAS_TESSERACT or image is None or image.size == 0:
             return ""
 
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        h, w = gray.shape
+        try:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            h, w = gray.shape
 
-        # Escala agressiva para fontes pequenas do Windows XP
-        # Objetivo: texto final com ~30-40px de altura
-        scale = max(3, min(6, 300 // max(h, 1)))
-        gray_big = cv2.resize(gray, None, fx=scale, fy=scale,
-                               interpolation=cv2.INTER_CUBIC)
+            # Escala para fontes XP pequenas
+            scale = max(3, min(5, 200 // max(h, 1)))
+            gray_big = cv2.resize(gray, None, fx=scale, fy=scale,
+                                   interpolation=cv2.INTER_CUBIC)
 
-        # Sharpening para melhorar bordas de fontes bitmap do XP
-        kernel_sharp = np.array([[-1, -1, -1],
-                                  [-1,  9, -1],
-                                  [-1, -1, -1]])
-        gray_sharp = cv2.filter2D(gray_big, -1, kernel_sharp)
+            # Otsu (melhor para texto XP em fundo cinza)
+            _, binary = cv2.threshold(gray_big, 0, 255,
+                                       cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        # Múltiplas estratégias de binarização
-        attempts = []
+            raw = pytesseract.image_to_string(binary, config='--psm 6 --oem 3')
+            return raw.strip()
 
-        # 1. Otsu
-        _, otsu = cv2.threshold(gray_big, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        attempts.append(("otsu", otsu))
-
-        # 2. Otsu invertido
-        _, otsu_inv = cv2.threshold(gray_big, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        attempts.append(("otsu_inv", otsu_inv))
-
-        # 3. Adaptativo
-        adaptive = cv2.adaptiveThreshold(
-            gray_big, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY, 15, 4
-        )
-        attempts.append(("adaptive", adaptive))
-
-        # 4. Threshold fixo (128 — meio do range, bom pra XP)
-        _, fixed = cv2.threshold(gray_big, 128, 255, cv2.THRESH_BINARY)
-        attempts.append(("fixed128", fixed))
-
-        # 5. Cinza direto com sharpening
-        attempts.append(("sharp", gray_sharp))
-
-        # 6. Cinza direto sem processar (às vezes funciona melhor)
-        attempts.append(("gray", gray_big))
-
-        keywords = ['board', 'part', 'value']
-        best_text = ""
-        best_score = 0
-
-        for strat_name, processed in attempts:
-            try:
-                for psm in [6, 4, 3, 11]:
-                    config = f'--psm {psm} --oem 3'
-                    raw = pytesseract.image_to_string(processed, config=config)
-                    text = raw.strip()
-
-                    if not text:
-                        continue
-
-                    text_lower = text.lower()
-                    score = sum(1 for kw in keywords if kw in text_lower)
-
-                    if score > best_score:
-                        best_score = score
-                        best_text = text
-                        # Salva debug da melhor tentativa
-                        debug_path = DEBUG_DIR / f"ocr_{zone_name}_{strat_name}_psm{psm}.png"
-                        cv2.imwrite(str(debug_path), processed)
-
-                    if score >= 2:
-                        return text
-
-            except Exception:
-                continue
-
-        # Salva debug original sempre
-        if zone_name:
-            cv2.imwrite(str(DEBUG_DIR / f"ocr_{zone_name}_original.png"), image)
-            cv2.imwrite(str(DEBUG_DIR / f"ocr_{zone_name}_scaled.png"), gray_big)
-            if best_text:
-                (DEBUG_DIR / f"ocr_{zone_name}_result.txt").write_text(
-                    best_text, encoding='utf-8')
-
-        return best_text
+        except Exception:
+            return ""
 
     def _extract_text_info(self, frame_bgr, blue_bar, red_bar) -> dict:
         """
-        Extrai Board, Parts e Value buscando texto ACIMA das barras coloridas.
+        Extrai Board, Parts e Value do texto ACIMA das barras coloridas.
+        Estratégia rápida: pega a zona acima da barra azul (que normalmente
+        tem a mesma informação) e faz OCR uma única vez.
         """
         info = {"board": "", "parts": "", "value": "", "raw_text": ""}
 
@@ -301,58 +172,93 @@ class ScreenMonitor(QThread):
             info["raw_text"] = "[OCR não disponível]"
             return info
 
-        text_zones = self._find_text_zones(frame_bgr, blue_bar, red_bar)
-        print(f"🔍 OCR: Analisando {len(text_zones)} zonas de texto acima das barras...")
+        # Zona de texto: 400px acima da barra até o topo da barra
+        # Usa a barra azul como referência principal
+        bx, by, bw, bh = blue_bar
+        frame_h, frame_w = frame_bgr.shape[:2]
 
-        all_raw = []
+        above_y1 = max(0, by - 400)
+        above_y2 = by
 
-        for zone_name, zone_img in text_zones:
-            raw = self._ocr_region(zone_img, zone_name)
+        if above_y2 <= above_y1 + 5:
+            info["raw_text"] = "[Zona de texto muito pequena]"
+            return info
 
-            if not raw:
+        # Recorta a zona de texto (mesma largura da barra, expandida 50px)
+        expand_x = 50
+        x1 = max(0, bx - expand_x)
+        x2 = min(frame_w, bx + bw + expand_x)
+        text_zone = frame_bgr[above_y1:above_y2, x1:x2].copy()
+
+        raw = self._ocr_fast(text_zone)
+
+        if not raw:
+            # Fallback: tenta a barra vermelha
+            bx2, by2, bw2, bh2 = red_bar
+            above_y1_r = max(0, by2 - 400)
+            above_y2_r = by2
+            x1r = max(0, bx2 - expand_x)
+            x2r = min(frame_w, bx2 + bw2 + expand_x)
+            if above_y2_r > above_y1_r + 5:
+                text_zone_r = frame_bgr[above_y1_r:above_y2_r, x1r:x2r].copy()
+                raw = self._ocr_fast(text_zone_r)
+
+        if not raw:
+            info["raw_text"] = "[Nenhum texto encontrado]"
+            return info
+
+        info["raw_text"] = raw
+
+        # ========================================================
+        # Parse dos campos com regex.
+        # O texto OCR vem em linhas tipo:
+        #   "Board : ABC123"
+        #   "Parts : R101  Block : 2"
+        #   "Value : 10K"
+        #
+        # Parts precisa parar ANTES de "Block" ou fim da linha.
+        # ========================================================
+        for line in raw.split('\n'):
+            line_clean = line.strip()
+            if not line_clean:
                 continue
 
-            all_raw.append(f"[{zone_name}]: {raw}")
-            print(f"📋 OCR [{zone_name}]: {raw[:200]}")
+            # Board — pega até o fim da linha
+            if not info["board"]:
+                m = re.search(
+                    r'[BbRr8Hh][Oo0][Aa][Rr][Dd]\s*[:\-\.\s]\s*(\S.*)',
+                    line_clean
+                )
+                if m:
+                    info["board"] = m.group(1).strip()
 
-            for line in raw.split('\n'):
-                line_clean = line.strip()
-                if not line_clean:
-                    continue
+            # Parts — pega até "Block", "Value", ou fim da linha
+            # Isso evita pegar "Block" como parte do Parts
+            if not info["parts"]:
+                m = re.search(
+                    r'[PpFf][Aa][Rr][Tt][Ss]?\s*[:\-\.\s]\s*(.+?)(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Vv][Aa][Ll]|\s*$)',
+                    line_clean
+                )
+                if m:
+                    val = m.group(1).strip()
+                    # Limpa caracteres residuais de OCR no final
+                    val = re.sub(r'\s+$', '', val)
+                    if val:
+                        info["parts"] = val
 
-                # Board (flexível: Board, Roard, 8oard, Hoard)
-                if not info["board"]:
-                    m = re.search(
-                        r'[BbRr8Hh][Oo0][Aa][Rr][Dd]\s*[:\-\.\s]?\s*(.*)',
-                        line_clean
-                    )
-                    if m and m.group(1).strip():
-                        info["board"] = m.group(1).strip()
+            # Value — pega até "Block", "Parts", ou fim da linha
+            if not info["value"]:
+                m = re.search(
+                    r'[Vv][Aa][Ll1iI][Uu][Ee]\s*[:\-\.\s]\s*(.+?)(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Pp][Aa][Rr]|\s*$)',
+                    line_clean
+                )
+                if m:
+                    val = m.group(1).strip()
+                    val = re.sub(r'\s+$', '', val)
+                    if val:
+                        info["value"] = val
 
-                # Parts (flexível: Parts, Part, Farts, Fart)
-                if not info["parts"]:
-                    m = re.search(
-                        r'[PpFf][Aa][Rr][Tt][Ss]?\s*[:\-\.\s]?\s*(.*)',
-                        line_clean
-                    )
-                    if m and m.group(1).strip():
-                        info["parts"] = m.group(1).strip()
-
-                # Value (flexível: Value, Vaiue, Va1ue, Vatue)
-                if not info["value"]:
-                    m = re.search(
-                        r'[Vv][Aa][Ll1iI][Uu][Ee]\s*[:\-\.\s]?\s*(.*)',
-                        line_clean
-                    )
-                    if m and m.group(1).strip():
-                        info["value"] = m.group(1).strip()
-
-            if info["board"] and info["parts"] and info["value"]:
-                break
-
-        info["raw_text"] = "\n".join(all_raw) if all_raw else "[Nenhum texto encontrado]"
-
-        print(f"📋 OCR Final — Board: '{info['board']}' | "
+        print(f"📋 OCR — Board: '{info['board']}' | "
               f"Parts: '{info['parts']}' | Value: '{info['value']}'")
 
         return info
@@ -408,51 +314,7 @@ class ScreenMonitor(QThread):
                                 frame_bgr, red_bar, ng_greens)
 
                             if crop_sample.size > 0 and crop_ng.size > 0:
-                                # Debug: salva frame anotado
-                                debug_annotated = frame_bgr.copy()
-                                # Marca barra azul
-                                cv2.rectangle(debug_annotated,
-                                              (blue_bar[0], blue_bar[1]),
-                                              (blue_bar[0]+blue_bar[2], blue_bar[1]+blue_bar[3]),
-                                              (255, 0, 0), 3)
-                                cv2.putText(debug_annotated, "AZUL",
-                                            (blue_bar[0], blue_bar[1]-5),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                                # Marca barra vermelha
-                                cv2.rectangle(debug_annotated,
-                                              (red_bar[0], red_bar[1]),
-                                              (red_bar[0]+red_bar[2], red_bar[1]+red_bar[3]),
-                                              (0, 0, 255), 3)
-                                cv2.putText(debug_annotated, "VERM",
-                                            (red_bar[0], red_bar[1]-5),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                # Marca quadrados verdes
-                                for gb in green_boxes:
-                                    cv2.rectangle(debug_annotated,
-                                                  (gb[0], gb[1]),
-                                                  (gb[0]+gb[2], gb[1]+gb[3]),
-                                                  (0, 255, 0), 2)
-                                # Marca zona de busca de texto (400px acima da barra)
-                                top_y = min(blue_bar[1], red_bar[1])
-                                search_y1 = max(0, top_y - 400)
-                                cv2.rectangle(debug_annotated,
-                                              (blue_bar[0], search_y1),
-                                              (blue_bar[0]+blue_bar[2], top_y),
-                                              (255, 255, 0), 2)
-                                cv2.putText(debug_annotated, "ZONA TEXTO",
-                                            (blue_bar[0], search_y1-5),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-
-                                cv2.imwrite(str(DEBUG_DIR / "frame_anotado.png"), debug_annotated)
-                                cv2.imwrite(str(DEBUG_DIR / "frame_completo.png"), frame_bgr)
-
-                                print(f"📐 Barra Azul: x={blue_bar[0]} y={blue_bar[1]} "
-                                      f"w={blue_bar[2]} h={blue_bar[3]}")
-                                print(f"📐 Barra Verm: x={red_bar[0]} y={red_bar[1]} "
-                                      f"w={red_bar[2]} h={red_bar[3]}")
-                                print(f"📐 Zona texto: y={search_y1} até y={top_y}")
-
-                                # OCR
+                                # OCR rápido
                                 aoi_info = self._extract_text_info(
                                     frame_bgr, blue_bar, red_bar)
 
@@ -460,7 +322,6 @@ class ScreenMonitor(QThread):
                                     crop_sample, crop_ng, aoi_info)
                                 self.log_updated.emit(
                                     "Monitor AOI: SNAPSHOT CAPTURADO!")
-                                print(f"🔍 Debug OCR salvo em: {DEBUG_DIR}")
                                 self.running = False
                                 break
 
