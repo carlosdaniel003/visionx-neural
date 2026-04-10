@@ -1,12 +1,45 @@
-# src\services\screen_monitor.py
 """
 Módulo responsável pela captura de tela e detecção do Layout da AOI.
+Modo One-Shot.
 
-ESTRATÉGIA "RADAR DE DENSIDADE COM ÂNCORA GEOMÉTRICA":
-1. O Topo da foto é SEMPRE a base exata da barra colorida.
-2. Escaneia para baixo e para os lados até bater no cinza da interface.
-3. REGRA DE OURO DA ALTURA: As duas fotos devem ter a mesma altura. 
-   Se uma vazar, a que cortou menor impõe seu limite e apara a outra.
+ESTRATÉGIA "ENCONTRAR O RETÂNGULO #c0c0c0":
+══════════════════════════════════════════════
+O layout da AOI no Windows XP para CADA foto é:
+
+  ████████████████████████████  ← Barra colorida (azul/vermelha)
+  ┌──────────────────────────┐
+  │ #d4d0c7 (interface)      │  ← pode não existir se foto colar na barra
+  │  ┌────────────────────┐  │
+  │  │ #c0c0c0 (zona foto)│  │  ← retângulo sólido, sempre existe
+  │  │  ┌──────────┐      │  │
+  │  │  │  FOTO    │      │  │  ← foto dentro do #c0c0c0
+  │  │  │  REAL    │      │  │
+  │  │  └──────────┘      │  │
+  │  │ #c0c0c0            │  │
+  │  └────────────────────┘  │
+  │ #d4d0c7                  │
+  └──────────────────────────┘
+
+O retângulo #c0c0c0 pode:
+- Começar logo abaixo da barra (sem #d4d0c7 acima)
+- Ou ter uma faixa de #d4d0c7 acima
+
+A foto pode:
+- Preencher todo o #c0c0c0 (sem margem)
+- Preencher só largura (margem em cima/baixo)
+- Preencher só altura (margem nos lados)
+- Ser menor que o #c0c0c0 em ambas as direções
+
+COMO ENCONTRAR:
+1. Recorta strip (largura da barra, barra→baixo)
+2. Classifica CADA pixel: é #c0c0c0? é #d4d0c7? é outro (foto)?
+3. O retângulo #c0c0c0 é encontrado por scan das bordas:
+   - De CIMA pra baixo: primeira linha com #c0c0c0 dominante
+   - De BAIXO pra cima: primeira linha com #c0c0c0 dominante
+   - Da ESQUERDA pra direita: primeira coluna com #c0c0c0 dominante
+   - Da DIREITA pra esquerda: primeira coluna com #c0c0c0 dominante
+4. Tudo dentro desse retângulo = foto (pegamos INTEIRO, incluindo o #c0c0c0)
+5. Depois, DENTRO do retângulo, removemos o #c0c0c0 das bordas
 """
 import cv2
 import numpy as np
@@ -19,20 +52,17 @@ from src.config.settings import settings
 HAS_TESSERACT = False
 try:
     import pytesseract
-
     possible_paths = [
         Path(settings.TESSERACT_CMD),
         Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
         Path(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"),
     ]
-
     for p in possible_paths:
         if p.exists():
             pytesseract.pytesseract.tesseract_cmd = str(p)
             HAS_TESSERACT = True
             print(f"✅ Tesseract encontrado: {p}")
             break
-
     if not HAS_TESSERACT:
         import shutil
         auto_path = shutil.which("tesseract")
@@ -42,7 +72,6 @@ try:
             print(f"✅ Tesseract encontrado no PATH: {auto_path}")
         else:
             print("⚠️ Tesseract NÃO encontrado. Ajuste TESSERACT_CMD em settings.py")
-
 except ImportError:
     print("⚠️ pytesseract não instalado. OCR desativado.")
 
@@ -56,129 +85,248 @@ class ScreenMonitor(QThread):
         self.running = True
 
     def _find_color_bar(self, mask, min_area=2000):
-        """Encontra a maior barra colorida e retorna seu bounding rect."""
         cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         valid = [c for c in cnts if cv2.contourArea(c) > min_area]
         if not valid:
             return None
-        largest = max(valid, key=cv2.contourArea)
-        return cv2.boundingRect(largest)
+        return cv2.boundingRect(max(valid, key=cv2.contourArea))
 
-    def _extract_aoi_region(self, frame_bgr, bar_rect, all_greens):
+    # =================================================================
+    # CLASSIFICAÇÃO DE PIXELS POR COR
+    # =================================================================
+
+    def _classify_pixels(self, region_bgr):
         """
-        Faz o recorte cirúrgico a partir da barra até a parede cinza da interface.
+        Classifica cada pixel do recorte em 3 categorias:
+          0 = FOTO (nem #c0c0c0 nem #d4d0c7)
+          1 = ZONA_FOTO (#c0c0c0 — fundo do retângulo onde a foto fica)
+          2 = INTERFACE (#d4d0c7 — borda da interface XP)
+
+        Ambas as cores são cinza (R≈G≈B), a diferença é o brilho:
+          #c0c0c0 = 192,192,192 (mais escuro)
+          #d4d0c7 = 212,208,199 (mais claro, levemente amarelado)
+
+        Como é um print de tela, usamos tolerância generosa.
+        """
+        b, g, r = cv2.split(region_bgr)
+        b_i = b.astype(np.int16)
+        g_i = g.astype(np.int16)
+        r_i = r.astype(np.int16)
+
+        # Diferença máxima entre canais (cinza = baixa diferença)
+        max_c = np.maximum(np.maximum(b_i, g_i), r_i)
+        min_c = np.minimum(np.minimum(b_i, g_i), r_i)
+        spread = max_c - min_c
+        brightness = ((b_i + g_i + r_i) / 3).astype(np.int16)
+
+        # É cinza? (baixa variação entre canais)
+        is_gray = spread <= 25
+
+        # #c0c0c0 = brilho ~192 (range: 175-205)
+        is_c0 = is_gray & (brightness >= 175) & (brightness <= 205)
+
+        # #d4d0c7 = brilho ~206 (range: 195-225), levemente mais claro
+        # Também tem leve tom amarelo (R>B), mas com print pode não ser visível
+        is_d4 = is_gray & (brightness >= 195) & (brightness <= 225)
+
+        # Se um pixel se encaixa em ambos (zona de sobreposição 195-205),
+        # usa a saturação como desempate: #d4d0c7 é levemente amarelado
+        overlap = is_c0 & is_d4
+        if np.any(overlap):
+            # #d4d0c7 tem R > B tipicamente
+            r_minus_b = r_i - b_i
+            # Se R-B > 5 na zona de sobreposição → é interface
+            is_d4[overlap] = r_minus_b[overlap] > 5
+            is_c0[overlap] = ~is_d4[overlap]
+
+        # Mapa: 0=foto, 1=zona_foto, 2=interface
+        result = np.zeros(region_bgr.shape[:2], dtype=np.uint8)
+        result[is_c0] = 1  # zona de foto
+        result[is_d4] = 2  # interface
+
+        return result
+
+    # =================================================================
+    # ENCONTRAR O RETÂNGULO DA ZONA DE FOTO (#c0c0c0)
+    # =================================================================
+
+    def _find_photo_zone_rect(self, pixel_map):
+        """
+        Encontra o retângulo #c0c0c0 no mapa de pixels.
+        
+        Varre de fora pra dentro em cada direção.
+        O retângulo #c0c0c0 é a região onde NÃO é interface (#d4d0c7).
+        
+        Dentro do retângulo pode ter:
+        - Pixels tipo 1 (#c0c0c0 = margem ao redor da foto)
+        - Pixels tipo 0 (foto real)
+        
+        Retorna (x1, y1, x2, y2) ou None
+        """
+        h, w = pixel_map.shape
+
+        # Máscara: 1 onde é zona_foto(1) ou foto(0), 0 onde é interface(2)
+        not_interface = (pixel_map != 2).astype(np.uint8)
+
+        # Densidade por linha: fração de pixels que NÃO são interface
+        row_not_iface = np.sum(not_interface, axis=1).astype(np.float32) / w
+        col_not_iface = np.sum(not_interface, axis=0).astype(np.float32) / h
+
+        # A zona de foto começa onde > 50% da linha não é interface
+        # (conservador — a zona de foto ocupa a maioria da largura)
+        threshold = 0.3
+
+        active_rows = np.where(row_not_iface >= threshold)[0]
+        active_cols = np.where(col_not_iface >= threshold)[0]
+
+        if len(active_rows) < 5 or len(active_cols) < 5:
+            return None
+
+        y1 = int(active_rows[0])
+        y2 = int(active_rows[-1]) + 1
+        x1 = int(active_cols[0])
+        x2 = int(active_cols[-1]) + 1
+
+        if (y2 - y1) < 15 or (x2 - x1) < 15:
+            return None
+
+        return x1, y1, x2, y2
+
+    # =================================================================
+    # DENTRO DO RETÂNGULO: REMOVER MARGENS #c0c0c0
+    # =================================================================
+
+    def _trim_c0_margins(self, zone_bgr, pixel_map_zone):
+        """
+        Dentro do retângulo #c0c0c0, remove as margens cinza ao redor da foto.
+        
+        Se a foto não preenche todo o retângulo, sobra #c0c0c0 nas bordas.
+        Varre de fora pra dentro em cada eixo para encontrar onde a foto começa.
+        
+        Se a foto preenche tudo → retorna tudo (nada a remover).
+        """
+        h, w = pixel_map_zone.shape
+
+        # Máscara: 1 onde é foto (tipo 0), 0 onde é #c0c0c0 (tipo 1)
+        is_photo = (pixel_map_zone == 0).astype(np.uint8)
+
+        # Conta pixels de foto por linha e coluna
+        row_photo = np.sum(is_photo, axis=1).astype(np.float32) / w
+        col_photo = np.sum(is_photo, axis=0).astype(np.float32) / h
+
+        # A foto pode ter MUITO pouca variação de cor em algumas áreas
+        # (áreas escuras uniformes). Então usamos um limiar muito baixo.
+        threshold = 0.02
+
+        active_rows = np.where(row_photo >= threshold)[0]
+        active_cols = np.where(col_photo >= threshold)[0]
+
+        # Se quase nenhum pixel é "foto" → a foto pode ser toda cinza
+        # (ex: placa com muita solda/cobre que parece cinza)
+        # Nesse caso, retorna a zona inteira
+        if len(active_rows) < 3 or len(active_cols) < 3:
+            return zone_bgr
+
+        y1 = int(active_rows[0])
+        y2 = int(active_rows[-1]) + 1
+        x1 = int(active_cols[0])
+        x2 = int(active_cols[-1]) + 1
+
+        # Se o trim removeu mais de 80% → provavelmente errou, retorna tudo
+        trimmed_area = (y2 - y1) * (x2 - x1)
+        total_area = h * w
+        if trimmed_area < total_area * 0.2:
+            return zone_bgr
+
+        return zone_bgr[y1:y2, x1:x2].copy()
+
+    # =================================================================
+    # PIPELINE COMPLETO: barra → foto
+    # =================================================================
+
+    def _extract_photo(self, frame_bgr, bar_rect, label=""):
+        """
+        Extrai a foto abaixo de UMA barra colorida.
+
+        1. Strip: largura da barra, da barra pra baixo 650px
+        2. Classifica pixels (foto / #c0c0c0 / #d4d0c7)
+        3. Encontra retângulo #c0c0c0 (zona de foto)
+        4. Dentro do retângulo, remove margens #c0c0c0
+        5. Resultado = foto real
         """
         bx, by, bw, bh = bar_rect
         frame_h, frame_w = frame_bgr.shape[:2]
 
-        # 1. Isola a coluna exatamente na mesma largura e posição da barra
-        col_x1 = max(0, bx)
-        col_x2 = min(frame_w, bx + bw)
-        actual_bw = col_x2 - col_x1
-        
-        # Puxa uma altura limite segura para baixo
-        col_y1 = by + bh
-        col_y2 = min(frame_h, col_y1 + 650)
-        actual_bh = col_y2 - col_y1
+        # Strip generoso abaixo da barra
+        x1 = max(0, bx)
+        x2 = min(frame_w, bx + bw)
+        y1 = by + bh
+        y2 = min(frame_h, y1 + 650)
 
-        if actual_bw == 0 or actual_bh == 0:
+        if y2 - y1 < 20 or x2 - x1 < 20:
             return np.array([])
 
-        col_img = frame_bgr[col_y1:col_y2, col_x1:col_x2].copy()
+        strip = frame_bgr[y1:y2, x1:x2].copy()
+        strip_h, strip_w = strip.shape[:2]
 
-        # 2. Criar a máscara do fundo Cinza (#c0c0c0 e #d4d0c7)
-        b, g, r = cv2.split(col_img)
-        b_f, g_f, r_f = b.astype(int), g.astype(int), r.astype(int)
+        # Classifica pixels
+        pmap = self._classify_pixels(strip)
 
-        max_c = np.maximum(np.maximum(b_f, g_f), r_f)
-        min_c = np.minimum(np.minimum(b_f, g_f), r_f)
-        diff = max_c - min_c
+        # Encontra o retângulo da zona de foto
+        zone_rect = self._find_photo_zone_rect(pmap)
 
-        # Regra implacável do Cinza
-        bg_mask = ((diff < 25) & (max_c > 150) & (max_c < 240)).astype(np.uint8) * 255
-        fg_mask = cv2.bitwise_not(bg_mask)
+        if zone_rect is None:
+            print(f"⚠️ [{label}] Zona #c0c0c0 não encontrada → "
+                  f"fallback strip inteiro {strip_w}x{strip_h}")
+            return strip
 
-        # 3. Encontrar os limites das Caixas Verdes DESTA coluna
-        g_bottom = 0
-        g_center_x = actual_bw // 2
-        valid_greens = 0
+        zx1, zy1, zx2, zy2 = zone_rect
+        zone_bgr = strip[zy1:zy2, zx1:zx2].copy()
+        zone_pmap = pmap[zy1:zy2, zx1:zx2]
 
-        for gx, gy, gw, gh in all_greens:
-            cx_global = gx + gw // 2 
-            
-            if col_x1 <= cx_global <= col_x2:
-                rel_y1 = gy - col_y1
-                rel_y2 = rel_y1 + gh
-                
-                if rel_y2 > 0 and rel_y1 < actual_bh:
-                    g_bottom = max(g_bottom, min(actual_bh, rel_y2))
-                    valid_greens += 1
-                    g_center_x = cx_global - col_x1
+        print(f"📐 [{label}] Strip {strip_w}x{strip_h} → "
+              f"Zona #c0c0c0 {zx2-zx1}x{zy2-zy1} em ({zx1},{zy1})")
 
-        if valid_greens == 0:
-            g_bottom = actual_bh // 2
+        # Conta quanto da zona é foto vs #c0c0c0
+        total_zone = zone_pmap.size
+        foto_count = np.sum(zone_pmap == 0)
+        c0_count = np.sum(zone_pmap == 1)
+        foto_pct = foto_count / total_zone if total_zone > 0 else 0
 
-        # ==========================================
-        # RADAR VERTICAL
-        # ==========================================
-        # O topo da foto SEMPRE começa encostado na barra colorida.
-        top_y = 0 
+        # Se >90% é foto → foto preenche toda a zona, retorna direto
+        if foto_pct > 0.90:
+            print(f"   → Foto preenche {foto_pct:.0%} da zona, retornando inteira")
+            return zone_bgr
 
-        row_density = np.sum(fg_mask > 0, axis=1) / actual_bw
+        # Se >70% é foto → foto quase preenche, trim sutil
+        if foto_pct > 0.70:
+            photo = self._trim_c0_margins(zone_bgr, zone_pmap)
+            print(f"   → Foto {foto_pct:.0%}, trim → {photo.shape[1]}x{photo.shape[0]}")
+            return photo
 
-        bottom_y = g_bottom
-        while bottom_y < actual_bh - 1:
-            if row_density[bottom_y] < 0.05:
-                break
-            bottom_y += 1
+        # Se <70% é foto → tem bastante margem #c0c0c0, trim agressivo
+        photo = self._trim_c0_margins(zone_bgr, zone_pmap)
+        print(f"   → Foto {foto_pct:.0%}, margens c0 removidas → "
+              f"{photo.shape[1]}x{photo.shape[0]}")
+        return photo
 
-        foto_h = bottom_y - top_y
-        if foto_h <= 0:
-            return col_img 
-
-        # ==========================================
-        # RADAR HORIZONTAL
-        # ==========================================
-        col_density = np.sum(fg_mask[top_y:bottom_y, :] > 0, axis=0) / foto_h
-
-        left_x = g_center_x
-        while left_x > 0:
-            if col_density[left_x] < 0.05:
-                break
-            left_x -= 1
-
-        right_x = g_center_x
-        while right_x < actual_bw - 1:
-            if col_density[right_x] < 0.05:
-                break
-            right_x += 1
-
-        # 6. Recorte Definitivo
-        crop_y1 = top_y
-        crop_y2 = min(actual_bh, bottom_y)
-        crop_x1 = max(0, left_x + 1)
-        crop_x2 = min(actual_bw, right_x - 1)
-
-        return col_img[crop_y1:crop_y2, crop_x1:crop_x2].copy()
+    # =================================================================
+    # OCR
+    # =================================================================
 
     def _ocr_fast(self, image: np.ndarray) -> str:
         if not HAS_TESSERACT or image is None or image.size == 0:
             return ""
-
         try:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             h, w = gray.shape
-
             scale = max(3, min(5, 200 // max(h, 1)))
             gray_big = cv2.resize(gray, None, fx=scale, fy=scale,
                                    interpolation=cv2.INTER_CUBIC)
-
             _, binary = cv2.threshold(gray_big, 0, 255,
                                        cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-            raw = pytesseract.image_to_string(binary, config='--psm 6 --oem 3')
-            return raw.strip()
-
+            return pytesseract.image_to_string(
+                binary, config='--psm 6 --oem 3').strip()
         except Exception:
             return ""
 
@@ -190,10 +338,8 @@ class ScreenMonitor(QThread):
 
         bx, by, bw, bh = blue_bar
         frame_h, frame_w = frame_bgr.shape[:2]
-
         above_y1 = max(0, by - 400)
         above_y2 = by
-
         if above_y2 <= above_y1 + 5:
             return info
 
@@ -201,7 +347,6 @@ class ScreenMonitor(QThread):
         x1 = max(0, bx - expand_x)
         x2 = min(frame_w, bx + bw + expand_x)
         text_zone = frame_bgr[above_y1:above_y2, x1:x2].copy()
-
         raw = self._ocr_fast(text_zone)
 
         if not raw:
@@ -214,26 +359,40 @@ class ScreenMonitor(QThread):
                 text_zone_r = frame_bgr[above_y1_r:above_y2_r, x1r:x2r].copy()
                 raw = self._ocr_fast(text_zone_r)
 
+        if not raw:
+            info["raw_text"] = "[Nenhum texto encontrado]"
+            return info
+
         info["raw_text"] = raw
-
         for line in raw.split('\n'):
-            line_clean = line.strip()
-            if not line_clean:
+            lc = line.strip()
+            if not lc:
                 continue
-
             if not info["board"]:
-                m = re.search(r'[BbRr8Hh][Oo0][Aa][Rr][Dd]\s*[:\-\.\s]\s*(\S.*)', line_clean)
-                if m: info["board"] = m.group(1).strip()
-
+                m = re.search(
+                    r'[BbRr8Hh][Oo0][Aa][Rr][Dd]\s*[:\-\.\s]\s*(\S.*)', lc)
+                if m:
+                    info["board"] = m.group(1).strip()
             if not info["parts"]:
-                m = re.search(r'[PpFf][Aa][Rr][Tt][Ss]?\s*[:\-\.\s]\s*(.+?)(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Vv][Aa][Ll]|\s*$)', line_clean)
-                if m: info["parts"] = re.sub(r'\s+$', '', m.group(1).strip())
-
+                m = re.search(
+                    r'[PpFf][Aa][Rr][Tt][Ss]?\s*[:\-\.\s]\s*(.+?)'
+                    r'(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Vv][Aa][Ll]|\s*$)', lc)
+                if m and m.group(1).strip():
+                    info["parts"] = m.group(1).strip()
             if not info["value"]:
-                m = re.search(r'[Vv][Aa][Ll1iI][Uu][Ee]\s*[:\-\.\s]\s*(.+?)(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Pp][Aa][Rr]|\s*$)', line_clean)
-                if m: info["value"] = re.sub(r'\s+$', '', m.group(1).strip())
+                m = re.search(
+                    r'[Vv][Aa][Ll1iI][Uu][Ee]\s*[:\-\.\s]\s*(.+?)'
+                    r'(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Pp][Aa][Rr]|\s*$)', lc)
+                if m and m.group(1).strip():
+                    info["value"] = m.group(1).strip()
 
+        print(f"📋 OCR — Board: '{info['board']}' | "
+              f"Parts: '{info['parts']}' | Value: '{info['value']}'")
         return info
+
+    # =================================================================
+    # LOOP PRINCIPAL
+    # =================================================================
 
     def run(self):
         with mss.mss() as sct:
@@ -247,59 +406,45 @@ class ScreenMonitor(QThread):
 
                 hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
 
-                mask_blue = cv2.inRange(hsv, settings.COLOR_BLUE_LOWER, settings.COLOR_BLUE_UPPER)
-                mask_red1 = cv2.inRange(hsv, settings.COLOR_RED1_LOWER, settings.COLOR_RED1_UPPER)
-                mask_red2 = cv2.inRange(hsv, settings.COLOR_RED2_LOWER, settings.COLOR_RED2_UPPER)
+                mask_blue = cv2.inRange(
+                    hsv, settings.COLOR_BLUE_LOWER, settings.COLOR_BLUE_UPPER)
+                mask_red1 = cv2.inRange(
+                    hsv, settings.COLOR_RED1_LOWER, settings.COLOR_RED1_UPPER)
+                mask_red2 = cv2.inRange(
+                    hsv, settings.COLOR_RED2_LOWER, settings.COLOR_RED2_UPPER)
                 mask_red = cv2.bitwise_or(mask_red1, mask_red2)
-                mask_green = cv2.inRange(hsv, settings.COLOR_GREEN_LOWER, settings.COLOR_GREEN_UPPER)
 
                 blue_bar = self._find_color_bar(mask_blue)
                 red_bar = self._find_color_bar(mask_red)
 
-                has_blue = blue_bar is not None
-                has_red = red_bar is not None
+                if blue_bar is not None and red_bar is not None:
+                    # Cada barra é 100% independente
+                    crop_sample = self._extract_photo(
+                        frame_bgr, blue_bar, "AZUL")
+                    crop_ng = self._extract_photo(
+                        frame_bgr, red_bar, "VERM")
 
-                if has_blue and has_red:
-                    green_cnts, _ = cv2.findContours(
-                        mask_green, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    all_greens = [cv2.boundingRect(c) for c in green_cnts if cv2.contourArea(c) > 500]
+                    if crop_sample.size > 0 and crop_ng.size > 0:
+                        aoi_info = self._extract_text_info(
+                            frame_bgr, blue_bar, red_bar)
 
-                    if len(all_greens) >= 1:
-                        
-                        crop_sample = self._extract_aoi_region(frame_bgr, blue_bar, all_greens)
-                        crop_ng = self._extract_aoi_region(frame_bgr, red_bar, all_greens)
-
-                        if crop_sample.size > 0 and crop_ng.size > 0:
-                            
-                            # =========================================================
-                            # SINCRONIZAÇÃO DE ALTURA (A REGRA DE OURO)
-                            # Pega a menor altura entre as duas imagens e apara o fundo da maior
-                            # =========================================================
-                            h_sample = crop_sample.shape[0]
-                            h_ng = crop_ng.shape[0]
-                            min_h = min(h_sample, h_ng)
-
-                            crop_sample = crop_sample[0:min_h, :]
-                            crop_ng = crop_ng[0:min_h, :]
-
-                            # Sincronização de Largura (Mantendo as matrizes simétricas)
-                            sh, sw = crop_sample.shape[:2]
-                            if crop_ng.shape[:2] != (sh, sw):
-                                crop_ng = cv2.resize(crop_ng, (sw, sh))
-
-                            aoi_info = self._extract_text_info(frame_bgr, blue_bar, red_bar)
-
-                            self.layout_detected.emit(crop_sample, crop_ng, aoi_info)
-                            self.log_updated.emit("Monitor AOI: SNAPSHOT CAPTURADO! 📸")
-                            self.running = False
-                            break
+                        self.layout_detected.emit(
+                            crop_sample, crop_ng, aoi_info)
+                        self.log_updated.emit(
+                            f"Monitor AOI: CAPTURADO! "
+                            f"Azul {crop_sample.shape[1]}x{crop_sample.shape[0]} | "
+                            f"Verm {crop_ng.shape[1]}x{crop_ng.shape[0]}")
+                        self.running = False
+                        break
 
                 frame_count += 1
                 if frame_count % 15 == 0:
-                    if has_blue and has_red:
-                        self.log_updated.emit("Monitor AOI: LAYOUT DETECTADO! 📡 Analisando...")
+                    if blue_bar is not None and red_bar is not None:
+                        self.log_updated.emit(
+                            "Monitor AOI: LAYOUT DETECTADO! 📡 Analisando...")
                     else:
-                        self.log_updated.emit("Monitor AOI: Aguardando interface da máquina...")
+                        self.log_updated.emit(
+                            "Monitor AOI: Aguardando interface da máquina...")
 
                 self.msleep(int(1000 / settings.SCREEN_CAPTURE_FPS))
 
