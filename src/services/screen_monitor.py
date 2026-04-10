@@ -179,10 +179,9 @@ class ScreenMonitor(QThread):
         # RIGHT: última coluna NÃO cinza
         right = strip_w
         for col in range(strip_w - 1, left, -1):
-            if not is_gray_col[col]:
-                right = col + 1
-                break
-
+             if not is_gray_col[col]:
+                 right = col + 1  # ← +1 porque é exclusivo
+                 break
         if (right - left) < 10:
             left = 0
             right = strip_w
