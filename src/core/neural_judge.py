@@ -1,181 +1,173 @@
 # src\core\neural_judge.py
 """
-Módulo do Juiz Neural v3 (Análise Semântica + Consulta ao Banco de Dados).
-NÃO adivinha nem chuta — calcula a diferença estrutural real entre as imagens
-e consulta o histórico de curadoria humana para embasar a decisão.
-
-Três camadas de análise:
-  1. Análise Local: compara o recorte suspeito (quadrado menor) pixel a pixel.
-  2. Análise de Contexto: olha a região expandida ao redor (quadro maior).
-  3. Consulta ao Dataset: busca os pares mais similares já curados pelo humano
-     e usa o conhecimento histórico como "voto de desempate".
+Módulo do Juiz Neural v4.4 (Tipagem Segura para JSON + Tolerância a Recortes Finos).
+Utiliza a rede convolucional MobileNetV2 nativa via cv2.dnn para extrair
+a "assinatura semântica" das imagens e compara usando Distância de Cosseno.
 """
 import cv2
 import numpy as np
+import os
+import urllib.request
+import re
 from pathlib import Path
+from numpy.linalg import norm
 from skimage.metrics import structural_similarity as ssim
 
 from src.config.settings import settings
 
 
 class DatasetMemory:
-    """
-    Memória do sistema: carrega todas as imagens curadas do dataset
-    e extrai uma 'assinatura visual' de cada uma para busca por similaridade.
-    """
     def __init__(self):
-        self.signatures_ok = []   # Lista de (assinatura, filepath)
+        print("🧠 Inicializando Memória Profunda (cv2.dnn)...")
+        self.net = self._load_mobilenet_model()
+        self.signatures_ok = [] 
         self.signatures_ng = []
         self._load_all()
 
+    def _load_mobilenet_model(self):
+        model_dir = Path("models")
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_path = model_dir / "mobilenetv2-7.onnx"
+
+        if not model_path.exists():
+            print(f"⚙️ Modelo não encontrado em {model_path}. Baixando MobileNetV2 (13MB)...")
+            url = "https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-7.onnx"
+            try:
+                urllib.request.urlretrieve(url, str(model_path))
+                print("✅ Download concluído!")
+            except Exception as e:
+                print(f"⚠️ Erro ao baixar o modelo. A rede corporativa pode estar bloqueando.")
+                print(f"Baixe manualmente deste link:\n{url}\nE salve como: {model_path}")
+                raise e
+
+        return cv2.dnn.readNetFromONNX(str(model_path))
+
+    def _clean_string(self, text: str) -> str:
+        if not text:
+            return ""
+        return re.sub(r'[^A-Z0-9]', '', text.upper())
+
+    def _get_part_from_filename(self, filename: str) -> str:
+        base = os.path.basename(filename)
+        raw_part = base.split('_')[0] if '_' in base else base.split('.')[0]
+        return self._clean_string(raw_part)
+
     def _load_all(self):
-        """Carrega e indexa todas as imagens do dataset ao iniciar."""
+        print("🔍 Iniciando varredura das pastas de dataset...")
+        
         for folder, sig_list, label in [
             (settings.NORMAL_DIR, self.signatures_ok, "OK"),
             (settings.ANOMALY_DIR, self.signatures_ng, "NG")
         ]:
             if not folder.exists():
+                print(f"⚠️ Aviso: A pasta '{folder}' não foi encontrada.")
                 continue
-            files = list(folder.glob("*.png")) + list(folder.glob("*.jpg"))
+            
+            files = [f for f in folder.rglob("*") if f.is_file() and f.suffix.lower() in ['.png', '.jpg', '.jpeg']]
+            print(f"📂 Pasta [{label}] ({folder}): {len(files)} arquivos de imagem encontrados.")
+            
             for f in files:
-                img = cv2.imread(str(f))
+                try:
+                    img_array = np.fromfile(str(f), dtype=np.uint8)
+                    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                except Exception as e:
+                    print(f"❌ Erro crítico ao ler arquivo {f}: {e}")
+                    continue
+
                 if img is None:
                     continue
-                sig = self._compute_signature(img)
+                
+                h, w = img.shape[:2]
+                if w > h * 1.5: 
+                    img_target = img[:, w//2:] 
+                else:
+                    img_target = img
+                
+                sig = self._compute_embedding(img_target)
+                part_name = self._get_part_from_filename(str(f))
+                
                 if sig is not None:
-                    sig_list.append((sig, str(f)))
+                    sig_list.append({"part": part_name, "sig": sig, "path": str(f)})
 
         total = len(self.signatures_ok) + len(self.signatures_ng)
-        print(f"📚 Memória do Dataset: {total} amostras indexadas "
+        print(f"📚 RESUMO DA MEMÓRIA: {total} Embeddings indexados com sucesso "
               f"({len(self.signatures_ok)} OK, {len(self.signatures_ng)} NG)")
 
-    def _compute_signature(self, pair_img: np.ndarray) -> np.ndarray:
-        """
-        Calcula uma assinatura compacta de uma imagem-par (sample|ng lado a lado).
-        Usa histograma multi-canal + estatísticas de diferença.
-        """
-        h, w = pair_img.shape[:2]
-        if w < 20 or h < 10:
+    def _compute_embedding(self, img: np.ndarray) -> np.ndarray:
+        # DIMINUÍDO DE 10 PARA 5 PIXELS (Para não descartar as fotos finas detectadas nos logs)
+        if img is None or img.size == 0 or img.shape[0] < 5 or img.shape[1] < 5:
             return None
 
-        mid = w // 2
-        left = pair_img[:, :mid]   # Sample
-        right = pair_img[:, mid:]  # NG/Teste
+        blob = cv2.dnn.blobFromImage(img, scalefactor=1.0/255.0, size=(224, 224),
+                                     mean=(0.485*255, 0.456*255, 0.406*255), 
+                                     swapRB=True, crop=False)
+        self.net.setInput(blob)
+        preds = self.net.forward()
+        return preds.flatten()
 
-        size = (48, 48)
-        left_r = cv2.resize(left, size)
-        right_r = cv2.resize(right, size)
+    def query_similar(self, crop_test: np.ndarray, part_name: str = "", top_k: int = 5) -> dict:
+        target_part = self._clean_string(part_name)
+        
+        valid_ok = [item for item in self.signatures_ok if not target_part or target_part in item["part"]]
+        valid_ng = [item for item in self.signatures_ng if not target_part or target_part in item["part"]]
+        
+        total_valid = len(valid_ok) + len(valid_ng)
+        
+        if total_valid == 0 and (len(self.signatures_ok) > 0 or len(self.signatures_ng) > 0):
+            print(f"⚠️ Peça '{target_part}' não tem histórico (ou arquivo foi salvo sem o prefixo). Avaliando contra todo o banco...")
+            valid_ok = self.signatures_ok
+            valid_ng = self.signatures_ng
+            total_valid = len(valid_ok) + len(valid_ng)
 
-        # Diferença absoluta
-        diff = cv2.absdiff(left_r, right_r)
-        gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
-
-        sig = []
-        # Histograma da diferença (16 bins)
-        hist = cv2.calcHist([cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)],
-                            [0], None, [16], [0, 256])
-        cv2.normalize(hist, hist)
-        sig.extend(hist.flatten().tolist())
-
-        # Estatísticas
-        sig.append(float(np.mean(gray_diff)))
-        sig.append(float(np.std(gray_diff)))
-        sig.append(float(np.percentile(gray_diff, 95)))
-        sig.append(float(np.mean(gray_diff > 0.1)))
-
-        return np.array(sig, dtype=np.float32)
-
-    def query_similar(self, crop_gab: np.ndarray, crop_test: np.ndarray, top_k: int = 5) -> dict:
-        """
-        Consulta o banco de dados: encontra as amostras curadas mais similares
-        ao par atual e retorna o 'voto' do histórico humano + info do melhor vizinho.
-        """
-        total = len(self.signatures_ok) + len(self.signatures_ng)
-        if total == 0:
+        if total_valid == 0:
             return {
                 "has_memory": False, "vote_defect": 0.5,
                 "best_similarity": 0.0, "n_neighbors": 0,
                 "best_match_path": "", "best_match_label": ""
             }
 
-        # Monta a assinatura do par atual
-        size = (48, 48)
-        gab_r = cv2.resize(crop_gab, size)
-        test_r = cv2.resize(crop_test, size)
-        diff = cv2.absdiff(gab_r, test_r)
-        gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+        query_sig = self._compute_embedding(crop_test)
+        if query_sig is None:
+             return {"has_memory": False, "vote_defect": 0.5, "best_similarity": 0.0, "n_neighbors": 0, "best_match_path": "", "best_match_label": ""}
 
-        query_sig = []
-        hist = cv2.calcHist([cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)],
-                            [0], None, [16], [0, 256])
-        cv2.normalize(hist, hist)
-        query_sig.extend(hist.flatten().tolist())
-        query_sig.append(float(np.mean(gray_diff)))
-        query_sig.append(float(np.std(gray_diff)))
-        query_sig.append(float(np.percentile(gray_diff, 95)))
-        query_sig.append(float(np.mean(gray_diff > 0.1)))
-        query_sig = np.array(query_sig, dtype=np.float32)
-
-        # Calcula distância para todos os vizinhos
         distances = []
-        for sig, path in self.signatures_ok:
-            dist = np.linalg.norm(query_sig - sig)
-            distances.append((dist, "OK", path))
-        for sig, path in self.signatures_ng:
-            dist = np.linalg.norm(query_sig - sig)
-            distances.append((dist, "NG", path))
+        for item in valid_ok:
+            cos_sim = np.dot(query_sig, item["sig"]) / (norm(query_sig) * norm(item["sig"]))
+            distances.append((float(1.0 - cos_sim), "OK", item["path"]))
+            
+        for item in valid_ng:
+            cos_sim = np.dot(query_sig, item["sig"]) / (norm(query_sig) * norm(item["sig"]))
+            distances.append((float(1.0 - cos_sim), "NG", item["path"]))
 
         distances.sort(key=lambda x: x[0])
         neighbors = distances[:top_k]
 
-        if not neighbors:
-            return {
-                "has_memory": False, "vote_defect": 0.5,
-                "best_similarity": 0.0, "n_neighbors": 0,
-                "best_match_path": "", "best_match_label": ""
-            }
-
-        # Voto ponderado por distância inversa
-        votes_ng = 0.0
-        votes_total = 0.0
-        for dist, label, _ in neighbors:
-            weight = 1.0 / max(dist, 0.001)
-            if label == "NG":
-                votes_ng += weight
-            votes_total += weight
+        votes_ng = sum(1.0 / max(d, 0.0001) for d, l, _ in neighbors if l == "NG")
+        votes_total = sum(1.0 / max(d, 0.0001) for d, _, _ in neighbors)
 
         vote_defect = votes_ng / votes_total if votes_total > 0 else 0.5
-
-        # Info do melhor vizinho (mais próximo)
         best_dist, best_label, best_path = neighbors[0]
-        best_similarity = max(0.0, 1.0 - (best_dist / 5.0))
 
         return {
             "has_memory": True,
-            "vote_defect": vote_defect,
-            "best_similarity": best_similarity,
-            "n_neighbors": len(neighbors),
-            "best_match_path": best_path,
-            "best_match_label": best_label
+            "vote_defect": float(vote_defect),
+            "best_similarity": float(max(0.0, 1.0 - best_dist)),
+            "n_neighbors": int(len(neighbors)),
+            "best_match_path": str(best_path),
+            "best_match_label": str(best_label)
         }
 
 
 class NeuralJudge:
     def __init__(self):
-        print("🧠 Iniciando Juiz Neural v3 (Análise Semântica + Memória de Dataset)...")
+        print("⚖️ Iniciando Juiz Neural v4.4 (MobileNetV2 + Json Safe)...")
         self.memory = DatasetMemory()
 
     def reload_memory(self):
-        """Recarrega o banco de dados (chamar após salvar novas amostras)."""
         print("🔄 Recarregando memória do dataset...")
         self.memory = DatasetMemory()
 
     def _analyze_local(self, crop_gab: np.ndarray, crop_test: np.ndarray) -> dict:
-        """
-        CAMADA 1 — Análise Local (quadrado menor):
-        Comparação pixel-a-pixel do recorte suspeito com o equivalente do padrão.
-        Usa SSIM (qualidade estrutural) + diferença absoluta + análise de bordas.
-        """
         size = (64, 64)
         gab = cv2.resize(crop_gab, size)
         test = cv2.resize(crop_test, size)
@@ -183,182 +175,100 @@ class NeuralJudge:
         gray_gab = cv2.cvtColor(gab, cv2.COLOR_BGR2GRAY)
         gray_test = cv2.cvtColor(test, cv2.COLOR_BGR2GRAY)
 
-        ssim_score, ssim_map = ssim(gray_gab, gray_test, full=True)
-
+        ssim_score, _ = ssim(gray_gab, gray_test, full=True)
         diff = cv2.absdiff(gray_gab, gray_test).astype(np.float32) / 255.0
-        mean_diff = float(np.mean(diff))
-        max_diff = float(np.max(diff))
-        pct_changed = float(np.mean(diff > 0.12))
-
-        edges_gab = cv2.Canny(gray_gab, 50, 150)
-        edges_test = cv2.Canny(gray_test, 50, 150)
-        edge_diff = cv2.absdiff(edges_gab, edges_test)
-        edge_change = float(np.mean(edge_diff > 0))
-
-        hist_gab = cv2.calcHist([gray_gab], [0], None, [64], [0, 256])
-        hist_test = cv2.calcHist([gray_test], [0], None, [64], [0, 256])
-        cv2.normalize(hist_gab, hist_gab)
-        cv2.normalize(hist_test, hist_test)
-        hist_corr = float(cv2.compareHist(hist_gab, hist_test, cv2.HISTCMP_CORREL))
-
+        
         return {
-            "ssim": ssim_score,
-            "mean_diff": mean_diff,
-            "max_diff": max_diff,
-            "pct_changed": pct_changed,
-            "edge_change": edge_change,
-            "hist_corr": hist_corr
+            "ssim": float(ssim_score),
+            "mean_diff": float(np.mean(diff)),
+            "pct_changed": float(np.mean(diff > 0.12)),
+            "edge_change": float(np.mean(cv2.absdiff(cv2.Canny(gray_gab, 50, 150), cv2.Canny(gray_test, 50, 150)) > 0)),
+            "hist_corr": float(cv2.compareHist(
+                cv2.calcHist([gray_gab], [0], None, [64], [0, 256]), 
+                cv2.calcHist([gray_test], [0], None, [64], [0, 256]), 
+                cv2.HISTCMP_CORREL))
         }
 
     def _analyze_context(self, full_gab: np.ndarray, full_test: np.ndarray,
-                          box_x: int, box_y: int, box_w: int, box_h: int) -> dict:
-        """
-        CAMADA 2 — Análise de Contexto (quadro maior):
-        Olha uma região expandida ao redor do defeito suspeito para entender
-        se a diferença é localizada (provável defeito) ou espalhada (provável ruído).
-        """
+                         box_x: int, box_y: int, box_w: int, box_h: int) -> dict:
         h_full, w_full = full_gab.shape[:2]
-
         expand = max(box_w, box_h)
-        cx1 = max(0, box_x - expand)
-        cy1 = max(0, box_y - expand)
-        cx2 = min(w_full, box_x + box_w + expand)
-        cy2 = min(h_full, box_y + box_h + expand)
+        cx1, cy1 = max(0, box_x - expand), max(0, box_y - expand)
+        cx2, cy2 = min(w_full, box_x + box_w + expand), min(h_full, box_y + box_h + expand)
 
-        ctx_gab = full_gab[cy1:cy2, cx1:cx2]
-        ctx_test = full_test[cy1:cy2, cx1:cx2]
+        ctx_gab, ctx_test = full_gab[cy1:cy2, cx1:cx2], full_test[cy1:cy2, cx1:cx2]
 
         if ctx_gab.size == 0 or ctx_test.size == 0:
             return {"ctx_ssim": 1.0, "is_localized": True, "n_clusters": 0}
 
-        size = (96, 96)
-        ctx_gab_r = cv2.resize(ctx_gab, size)
-        ctx_test_r = cv2.resize(ctx_test, size)
+        gray_gab = cv2.cvtColor(cv2.resize(ctx_gab, (96, 96)), cv2.COLOR_BGR2GRAY)
+        gray_test = cv2.cvtColor(cv2.resize(ctx_test, (96, 96)), cv2.COLOR_BGR2GRAY)
 
-        gray_gab = cv2.cvtColor(ctx_gab_r, cv2.COLOR_BGR2GRAY)
-        gray_test = cv2.cvtColor(ctx_test_r, cv2.COLOR_BGR2GRAY)
-
-        ctx_ssim, ctx_ssim_map = ssim(gray_gab, gray_test, full=True)
-
-        diff_map = (1.0 - ctx_ssim_map)
-        diff_map_norm = (diff_map * 255).astype(np.uint8)
-        _, diff_thresh = cv2.threshold(diff_map_norm, 80, 255, cv2.THRESH_BINARY)
-
+        _, ctx_ssim_map = ssim(gray_gab, gray_test, full=True)
+        _, diff_thresh = cv2.threshold(((1.0 - ctx_ssim_map) * 255).astype(np.uint8), 80, 255, cv2.THRESH_BINARY)
         contours, _ = cv2.findContours(diff_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        n_clusters = len(contours)
 
-        is_localized = n_clusters <= 3
-
-        return {
-            "ctx_ssim": ctx_ssim,
-            "n_clusters": n_clusters,
-            "is_localized": is_localized
-        }
+        return {"ctx_ssim": float(np.mean(ctx_ssim_map)), "n_clusters": int(len(contours)), "is_localized": bool(len(contours) <= 3)}
 
     def verify_anomaly(self, crop_gab: np.ndarray, crop_test: np.ndarray,
-                        full_gab: np.ndarray = None, full_test: np.ndarray = None,
-                        box_x: int = 0, box_y: int = 0,
-                        box_w: int = 0, box_h: int = 0) -> dict:
-        """
-        Veredito final: combina as 3 camadas de análise.
-        NÃO adivinha — cada decisão é calculada e justificada.
-        """
-        if (crop_gab is None or crop_test is None or
-                crop_gab.size == 0 or crop_test.size == 0 or
-                crop_gab.shape[0] < 5 or crop_gab.shape[1] < 5):
-            return {
-                "is_defect": False, "confidence": 0.99, "score_text": "99%",
-                "verdict": "IGNORADO", "reason": "Recorte muito pequeno para análise",
-                "detail": {
-                    "local_score": 0, "ctx_score": 0.5, "db_score": 0.5,
-                    "final_score": 0, "ssim": 1.0, "mean_diff": 0,
-                    "pct_changed": 0, "edge_change": 0, "hist_corr": 1.0,
-                    "db_has_memory": False, "db_vote": 0.5, "db_neighbors": 0,
-                    "db_best_sim": 0, "db_best_path": "", "db_best_label": ""
-                }
-            }
+                       part_metadata: str = "",
+                       full_gab: np.ndarray = None, full_test: np.ndarray = None,
+                       box_x: int = 0, box_y: int = 0,
+                       box_w: int = 0, box_h: int = 0) -> dict:
+        
+        if crop_gab is None or crop_test is None or crop_test.size == 0:
+            return {"is_defect": False, "verdict": "IGNORADO", "confidence": 0.0, "reason": "Imagem nula"}
 
-        # === CAMADA 1: Análise Local ===
         local = self._analyze_local(crop_gab, crop_test)
 
-        # === CAMADA 2: Análise de Contexto ===
         context = None
         if full_gab is not None and full_test is not None and box_w > 0:
             context = self._analyze_context(full_gab, full_test, box_x, box_y, box_w, box_h)
 
-        # === CAMADA 3: Consulta ao Banco de Dados ===
-        db_result = self.memory.query_similar(crop_gab, crop_test)
+        db_result = self.memory.query_similar(crop_test, part_name=part_metadata)
 
-        # === FUSÃO INTELIGENTE ===
-        local_score = 0.0
-        local_score += max(0, (0.92 - local["ssim"]) / 0.92) * 0.35
-        local_score += min(1.0, local["mean_diff"] / 0.15) * 0.20
-        local_score += min(1.0, local["pct_changed"] / 0.25) * 0.20
-        local_score += min(1.0, local["edge_change"] / 0.15) * 0.15
-        local_score += max(0, (0.95 - local["hist_corr"]) / 0.95) * 0.10
+        local_score = sum([
+            max(0, (0.92 - local["ssim"]) / 0.92) * 0.35,
+            min(1.0, local["mean_diff"] / 0.15) * 0.20,
+            min(1.0, local["pct_changed"] / 0.25) * 0.20,
+            min(1.0, local["edge_change"] / 0.15) * 0.15,
+            max(0, (0.95 - local["hist_corr"]) / 0.95) * 0.10
+        ])
         local_score = max(0.0, min(1.0, local_score))
 
-        ctx_score = 0.5
-        ctx_reason = ""
-        if context is not None:
-            if context["is_localized"]:
-                ctx_score = 0.7
-                ctx_reason = f"diferença concentrada ({context['n_clusters']} região(ões))"
-            else:
-                ctx_score = 0.25
-                ctx_reason = f"diferença espalhada ({context['n_clusters']} regiões)"
+        ctx_score, ctx_reason = 0.5, ""
+        if context:
+            ctx_score = 0.7 if context["is_localized"] else 0.25
+            ctx_reason = f"Diferença {'concentrada' if context['is_localized'] else 'espalhada'}"
 
-        db_score = 0.5
-        db_reason = ""
+        db_score, db_reason = 0.5, ""
         if db_result["has_memory"]:
             db_score = db_result["vote_defect"]
-            n = db_result["n_neighbors"]
-            db_reason = f"dataset votou {db_score:.0%} defeito ({n} vizinhos)"
+            db_reason = f"Dataset: {db_score:.0%} de ser defeito (Sim. máx: {db_result['best_similarity']:.0%})"
 
         if db_result["has_memory"]:
             final_score = local_score * 0.50 + ctx_score * 0.20 + db_score * 0.30
         else:
             final_score = local_score * 0.65 + ctx_score * 0.35
 
-        threshold = 0.45
-        is_defect = final_score > threshold
+        # FORÇANDO CONVERSÃO PURA DO PYTHON PARA O JSON NÃO QUEBRAR
+        is_defect = bool(final_score > 0.45)
+        confidence = float(min(0.99, 0.50 + abs(final_score - 0.45) * 2.5))
+        conf_percent = int(confidence * 100)
 
-        distance_from_threshold = abs(final_score - threshold)
-        confidence = min(0.99, 0.50 + distance_from_threshold * 2.5)
-        conf_percent = max(50, min(99, int(confidence * 100)))
-
-        verdict = "DEFEITO REAL" if is_defect else "FALHA FALSA"
-
-        reasons = []
-        reasons.append(f"SSIM={local['ssim']:.2f}")
-        reasons.append(f"Δpixels={local['pct_changed']:.0%}")
-        reasons.append(f"Δbordas={local['edge_change']:.0%}")
-        if ctx_reason:
-            reasons.append(ctx_reason)
-        if db_reason:
-            reasons.append(db_reason)
+        reasons = [f"SSIM={local['ssim']:.2f}", f"Δpix={local['pct_changed']:.0%}"]
+        if ctx_reason: reasons.append(ctx_reason)
+        if db_reason: reasons.append(db_reason)
 
         return {
             "is_defect": is_defect,
             "confidence": confidence,
             "score_text": f"{conf_percent}%",
-            "verdict": verdict,
+            "verdict": "DEFEITO REAL" if is_defect else "FALHA FALSA",
             "reason": " | ".join(reasons),
             "detail": {
-                "local_score": local_score,
-                "ctx_score": ctx_score,
-                "db_score": db_score,
-                "final_score": final_score,
-                "ssim": local["ssim"],
-                "mean_diff": local["mean_diff"],
-                "pct_changed": local["pct_changed"],
-                "edge_change": local["edge_change"],
-                "hist_corr": local["hist_corr"],
-                "db_has_memory": db_result["has_memory"],
-                "db_vote": db_result["vote_defect"],
-                "db_neighbors": db_result["n_neighbors"],
-                "db_best_sim": db_result["best_similarity"],
-                "db_best_path": db_result["best_match_path"],
-                "db_best_label": db_result["best_match_label"]
+                "local_score": float(local_score), "ctx_score": float(ctx_score), "db_score": float(db_score), "final_score": float(final_score),
+                "db_best_sim": float(db_result["best_similarity"]),
+                "db_best_path": str(db_result["best_match_path"])
             }
         }
