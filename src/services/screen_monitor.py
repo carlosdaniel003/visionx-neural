@@ -2,22 +2,12 @@
 Módulo responsável pela captura de tela e detecção do Layout da AOI.
 Modo One-Shot.
 
-ESTRATÉGIA v11 "PRIMEIRO BLOCO DE FOTO":
-═══════════════════════════════════════════
-O strip abaixo da barra tem esta estrutura:
-  [FOTO] → [CINZA #c0c0c0] → [BOTÕES/INTERFACE]
-
-v10 falhava porque varria de BAIXO PRA CIMA e pegava os botões.
-v11 varre de CIMA PRA BAIXO e para no primeiro bloco grande de cinza.
-
-MÉTODO:
-1. Cria máscara de cinza (spread ≤ 20, brilho 175-225)
-2. % de cinza por linha
-3. TOP: primeira linha com < 80% cinza (de cima pra baixo)
-4. BOTTOM: a partir do TOP, varre pra baixo.
-   Quando encontra ≥ 12 linhas CONSECUTIVAS com ≥ 80% cinza → PARA.
-   BOTTOM = última linha de foto antes desse bloco de cinza.
-5. LEFT/RIGHT: mesma lógica nas colunas (só na faixa TOP:BOTTOM)
+ESTRATÉGIA v11.1:
+Igual a v11 mas com duas melhorias:
+1. gray_gap reduzido de 12 → 6 (gap entre foto e botões é fino)
+2. Detecta botões coloridos (verde "0.OK", vermelho "1.NG") no strip
+   e usa como limite HARD — nunca vai além deles
+3. Também detecta a interface XP (#ece9d8 / #d4d0c8) como cinza
 """
 import cv2
 import numpy as np
@@ -104,12 +94,22 @@ class ScreenMonitor(QThread):
         return candidates[0][1]
 
     # =================================================================
-    # MÁSCARA DE CINZA
+    # MÁSCARA DE "NÃO-FOTO" (cinza + interface)
     # =================================================================
 
-    def _build_gray_mask(self, strip_bgr):
+    def _build_not_photo_mask(self, strip_bgr):
         """
-        Máscara booleana (h, w): True = pixel é cinza de interface.
+        Máscara booleana (h, w): True = pixel NÃO é foto.
+
+        Detecta:
+        - Cinza puro #c0c0c0 (192,192,192): fundo onde a foto fica
+        - Cinza interface XP #d4d0c8 (212,208,200): bordas da janela
+        - Cinza/bege #ece9d8 (236,233,216): fundo de botões XP
+        - Branco/quase-branco (#f0f0f0+): fundo de campos de input
+
+        Critério: spread ≤ 25 (R≈G≈B) E brilho ≥ 170
+        Isso pega TODOS os tons de cinza/bege da interface
+        mas NÃO pega fotos de PCB (que têm cores/contraste).
         """
         b = strip_bgr[:, :, 0].astype(np.int16)
         g = strip_bgr[:, :, 1].astype(np.int16)
@@ -120,52 +120,103 @@ class ScreenMonitor(QThread):
         spread = max_c - min_c
         brightness = (b + g + r) // 3
 
-        return (spread <= 20) & (brightness >= 175) & (brightness <= 225)
+        return (spread <= 25) & (brightness >= 170) & (brightness <= 250)
 
     # =================================================================
-    # ENCONTRAR BORDAS — DIREÇÃO ÚNICA (CIMA PRA BAIXO)
+    # LIMITE HARD: DETECTA ONDE COMEÇA A INTERFACE ABAIXO DA FOTO
     # =================================================================
 
-    def _find_photo_span(self, is_gray_arr, gray_gap=12):
+    def _find_interface_limit(self, strip_bgr, gray_mask):
         """
-        Encontra o span da foto num array booleano is_gray[].
+        Varre o strip de BAIXO PRA CIMA procurando onde a INTERFACE
+        começa (botões, texto, campos).
+
+        A interface abaixo da foto tem:
+        - Botões coloridos (verde "0. OK", vermelho "1. NG")
+        - Texto preto sobre fundo cinza ("Answer", "Quit Inspection")
+        - Campos de input brancos
+
+        Retorna a linha Y onde a interface começa (limite hard).
+        Se não encontrar, retorna strip_h (sem limite).
+        """
+        strip_h, strip_w = strip_bgr.shape[:2]
+
+        # Converte pra HSV para detectar botões verde/vermelho
+        hsv = cv2.cvtColor(strip_bgr, cv2.COLOR_BGR2HSV)
+
+        # Máscara de verde (botão "0. OK")
+        green_mask = cv2.inRange(hsv, (35, 80, 80), (85, 255, 255))
+        # Máscara de vermelho (botão "1. NG")
+        red_mask1 = cv2.inRange(hsv, (0, 80, 80), (10, 255, 255))
+        red_mask2 = cv2.inRange(hsv, (170, 80, 80), (180, 255, 255))
+        red_mask = cv2.bitwise_or(red_mask1, red_mask2)
+
+        # Combina: qualquer botão colorido
+        button_mask = cv2.bitwise_or(green_mask, red_mask)
+
+        # Conta pixels de botão por linha
+        button_per_row = np.sum(button_mask > 0, axis=1)
+
+        # Se uma linha tem >= 20 pixels de botão, é interface
+        min_button_pixels = 20
+
+        # Varre de BAIXO PRA CIMA procurando a primeira linha de botão
+        interface_start = strip_h
+        for row in range(strip_h - 1, -1, -1):
+            if button_per_row[row] >= min_button_pixels:
+                interface_start = row
+            elif row < interface_start - 5:
+                # Já passou do bloco de botões pra cima
+                break
+
+        # Agora varre de interface_start PRA CIMA procurando onde
+        # começa a zona de cinza/interface ACIMA dos botões
+        # (pode ter texto "Answer", margem, etc)
+        not_photo_pct = np.mean(gray_mask, axis=1)
+        for row in range(interface_start - 1, -1, -1):
+            if not_photo_pct[row] < 0.70:
+                # Esta linha tem foto/conteúdo, para aqui
+                interface_start = row + 1
+                break
+
+        return interface_start
+
+    # =================================================================
+    # ENCONTRAR BORDAS — DIREÇÃO ÚNICA
+    # =================================================================
+
+    def _find_photo_span(self, is_not_photo_arr, gap_limit=6):
+        """
+        Encontra o span da foto.
+
+        is_not_photo_arr: True = NÃO é foto (cinza/interface)
 
         Varre de CIMA PRA BAIXO:
-        1. Encontra o primeiro elemento NÃO-cinza → TOP
-        2. A partir de TOP, varre pra baixo. Conta cinzas consecutivos.
-           Quando encontra >= gray_gap cinzas seguidos → a foto acabou.
-           BOTTOM = último não-cinza antes desse bloco.
-
-        Isso NUNCA pega conteúdo depois do bloco de cinza (botões, etc).
-
-        Retorna (start, end) ou (None, None).
+        1. Primeiro False (= foto) → TOP
+        2. A partir de TOP, conta consecutivos True (não-foto).
+           Quando >= gap_limit → foto acabou.
         """
-        n = len(is_gray_arr)
+        n = len(is_not_photo_arr)
 
-        # TOP: primeiro não-cinza
         top = None
         for i in range(n):
-            if not is_gray_arr[i]:
+            if not is_not_photo_arr[i]:
                 top = i
                 break
 
         if top is None:
             return None, None
 
-        # BOTTOM: varre de top pra baixo
         bottom = top + 1
-        consecutive_gray = 0
+        consecutive_not_photo = 0
 
         for i in range(top + 1, n):
-            if not is_gray_arr[i]:
-                # É foto — atualiza bottom e reseta contador
+            if not is_not_photo_arr[i]:
                 bottom = i + 1
-                consecutive_gray = 0
+                consecutive_not_photo = 0
             else:
-                # É cinza — incrementa contador
-                consecutive_gray += 1
-                if consecutive_gray >= gray_gap:
-                    # Bloco grande de cinza → foto acabou
+                consecutive_not_photo += 1
+                if consecutive_not_photo >= gap_limit:
                     break
 
         if (bottom - top) < 5:
@@ -174,7 +225,7 @@ class ScreenMonitor(QThread):
         return top, bottom
 
     # =================================================================
-    # MOTOR DE RECORTE v11
+    # MOTOR DE RECORTE v11.1
     # =================================================================
 
     def _extract_photo(self, frame_bgr, bar_rect, max_height, label=""):
@@ -194,18 +245,24 @@ class ScreenMonitor(QThread):
 
         cv2.imwrite(str(DEBUG_DIR / f"{label}_01_strip.png"), strip)
 
-        # Máscara de cinza
-        gray_mask = self._build_gray_mask(strip)
+        # Máscara de "não-foto"
+        not_photo_mask = self._build_not_photo_mask(strip)
+
+        # Limite hard: onde a interface começa
+        interface_y = self._find_interface_limit(strip, not_photo_mask)
+        if interface_y < strip_h:
+            print(f"   [{label}] Interface detectada em Y={interface_y} "
+                  f"(corta {strip_h - interface_y}px de botões)")
+            # Marca tudo abaixo do limite como "não-foto"
+            not_photo_mask[interface_y:, :] = True
 
         # =============================================
-        # LINHAS: % de cinza por linha
+        # LINHAS
         # =============================================
-        row_gray_pct = np.mean(gray_mask, axis=1)
-        is_gray_row = row_gray_pct >= 0.80
+        row_not_photo_pct = np.mean(not_photo_mask, axis=1)
+        is_not_photo_row = row_not_photo_pct >= 0.75
 
-        # Encontra TOP e BOTTOM da foto (para no primeiro bloco de cinza)
-        result = self._find_photo_span(is_gray_row, gray_gap=12)
-        top, bottom = result
+        top, bottom = self._find_photo_span(is_not_photo_row, gap_limit=6)
 
         if top is None:
             print(f"⚠️ [{label}] Sem foto detectada")
@@ -217,15 +274,13 @@ class ScreenMonitor(QThread):
         print(f"   [{label}] Linhas: top={top} bottom={bottom} (h={bottom-top})")
 
         # =============================================
-        # COLUNAS: % de cinza por coluna (SÓ na faixa TOP:BOTTOM)
+        # COLUNAS (só na faixa TOP:BOTTOM)
         # =============================================
-        band_mask = gray_mask[top:bottom, :]
-        col_gray_pct = np.mean(band_mask, axis=0)
-        is_gray_col = col_gray_pct >= 0.80
+        band_mask = not_photo_mask[top:bottom, :]
+        col_not_photo_pct = np.mean(band_mask, axis=0)
+        is_not_photo_col = col_not_photo_pct >= 0.75
 
-        # Encontra LEFT e RIGHT (para no primeiro bloco de cinza lateral)
-        result_col = self._find_photo_span(is_gray_col, gray_gap=12)
-        left, right = result_col
+        left, right = self._find_photo_span(is_not_photo_col, gap_limit=6)
 
         if left is None:
             left = 0
@@ -244,34 +299,40 @@ class ScreenMonitor(QThread):
         # === Debug ===
         debug_vis = strip.copy()
         cv2.rectangle(debug_vis, (left, top), (right, bottom), (0, 255, 0), 2)
+        if interface_y < strip_h:
+            cv2.line(debug_vis, (0, interface_y), (strip_w, interface_y),
+                      (0, 0, 255), 2)
         cv2.imwrite(str(DEBUG_DIR / f"{label}_03_detected.png"), debug_vis)
         cv2.imwrite(str(DEBUG_DIR / f"{label}_04_photo.png"), photo)
 
         # Graymap linhas
         gm_rows = np.zeros((strip_h, 40, 3), dtype=np.uint8)
         for row in range(strip_h):
-            bar_w = int(row_gray_pct[row] * 35)
-            color = (0, 0, 200) if is_gray_row[row] else (0, 255, 0)
+            bar_w = int(row_not_photo_pct[row] * 35)
+            color = (0, 0, 200) if is_not_photo_row[row] else (0, 255, 0)
             cv2.line(gm_rows, (0, row), (max(1, bar_w), row), color, 1)
         cv2.line(gm_rows, (0, top), (40, top), (255, 0, 255), 2)
         cv2.line(gm_rows, (0, min(bottom, strip_h - 1)),
                   (40, min(bottom, strip_h - 1)), (255, 0, 255), 2)
-        thresh_x = int(0.80 * 35)
+        if interface_y < strip_h:
+            cv2.line(gm_rows, (0, interface_y), (40, interface_y),
+                      (0, 0, 255), 2)
+        thresh_x = int(0.75 * 35)
         cv2.line(gm_rows, (thresh_x, 0), (thresh_x, strip_h), (0, 255, 255), 1)
         cv2.imwrite(str(DEBUG_DIR / f"{label}_graymap_rows.png"), gm_rows)
 
         # Graymap colunas
         gm_cols = np.zeros((40, strip_w, 3), dtype=np.uint8)
         for col in range(strip_w):
-            bar_h = int(col_gray_pct[col] * 35)
-            color = (0, 0, 200) if is_gray_col[col] else (0, 255, 0)
+            bar_h = int(col_not_photo_pct[col] * 35)
+            color = (0, 0, 200) if is_not_photo_col[col] else (0, 255, 0)
             cv2.line(gm_cols, (col, 40), (col, 40 - max(1, bar_h)), color, 1)
         if left > 0:
             cv2.line(gm_cols, (left, 0), (left, 40), (255, 0, 255), 2)
         if right < strip_w:
             cv2.line(gm_cols, (min(right, strip_w - 1), 0),
                       (min(right, strip_w - 1), 40), (255, 0, 255), 2)
-        thresh_y = 40 - int(0.80 * 35)
+        thresh_y = 40 - int(0.75 * 35)
         cv2.line(gm_cols, (0, thresh_y), (strip_w, thresh_y), (0, 255, 255), 1)
         cv2.imwrite(str(DEBUG_DIR / f"{label}_graymap_cols.png"), gm_cols)
 
