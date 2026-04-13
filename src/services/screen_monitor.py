@@ -1,3 +1,4 @@
+# src\services\screen_monitor.py
 """
 Módulo responsável pela captura de tela e detecção do Layout da AOI.
 Modo One-Shot.

@@ -609,19 +609,12 @@ class ControlPanel(QWidget):
     def save_label(self, label: str):
         if self.current_ng is None:
             return
-        h1, w1 = self.current_sample.shape[:2]
-        h2, w2 = self.current_ng.shape[:2]
 
-        h_min = min(h1, h2)
-        s_resized = cv2.resize(
-            self.current_sample, (int(w1 * h_min / h1), h_min))
-        n_resized = cv2.resize(
-            self.current_ng, (int(w2 * h_min / h2), h_min))
-
-        pair_img = np.hstack((s_resized, n_resized))
-
+        # v5.0: Salva a imagem NG inteira (não mais pareada)
         filepath = DatasetManager.save_sample(
-            pair_img, label,
+            ng_image=self.current_ng,
+            label=label,
+            sample_image=self.current_sample,  # salva sample separada como referência
             aoi_info=self.current_aoi_info,
             analysis=self.current_analysis
         )

@@ -1,7 +1,7 @@
-# src\services\dataset_manager.py
+# src/services/dataset_manager.py
 """
 Módulo responsável por gerenciar a persistência de imagens para o Dataset.
-Salva recortes categorizados + metadados JSON para futuro treinamento.
+v2: Salva NG inteira separada (não pareada) + embedding cache em JSON.
 """
 import cv2
 import json
@@ -13,39 +13,44 @@ from src.config.settings import settings
 
 class DatasetManager:
     @staticmethod
-    def save_sample(image_bgr: np.ndarray, label: str,
+    def save_sample(ng_image: np.ndarray, label: str,
+                    sample_image: np.ndarray = None,
                     aoi_info: dict = None, analysis: dict = None) -> str:
         """
-        Salva um recorte de imagem na pasta correta com timestamp único.
-        Também salva um arquivo .json com os metadados (Board, Parts, Value,
-        métricas de análise, veredito, etc).
+        Salva a imagem NG (ou OK) inteira na pasta correta.
+        NÃO faz mais hstack — salva a imagem individual.
 
-        :param image_bgr: Recorte da tela em formato OpenCV (BGR).
-        :param label: "OK" para não anomalias, "NG" para anomalias.
-        :param aoi_info: Dict com Board, Parts, Value extraídos via OCR.
-        :param analysis: Dict com métricas da análise do Juiz Neural.
-        :return: Caminho do arquivo salvo ou string vazia em caso de erro.
+        :param ng_image: Imagem NG (ou OK) completa em BGR.
+        :param label: "OK" ou "NG".
+        :param sample_image: Imagem Sample (padrão) — salva separada para referência.
+        :param aoi_info: Dict com Board, Parts, Value.
+        :param analysis: Dict com métricas da análise.
+        :return: Caminho do arquivo salvo.
         """
-        if image_bgr is None or image_bgr.size == 0:
+        if ng_image is None or ng_image.size == 0:
             return ""
 
-        # Pasta destino
         folder = settings.ANOMALY_DIR if label == "NG" else settings.NORMAL_DIR
 
-        # Nome único com timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
         filename = f"sample_{label}_{timestamp}"
         filepath_img = folder / f"{filename}.png"
         filepath_json = folder / f"{filename}.json"
 
-        # Salva a imagem
-        cv2.imwrite(str(filepath_img), image_bgr)
+        # Salva a imagem NG/OK inteira (NÃO pareada)
+        cv2.imwrite(str(filepath_img), ng_image)
 
-        # Monta os metadados
+        # Se tiver sample, salva também como referência (para visualização)
+        if sample_image is not None and sample_image.size > 0:
+            filepath_sample = folder / f"{filename}_sample.png"
+            cv2.imwrite(str(filepath_sample), sample_image)
+
+        # Metadados
         metadata = {
             "label": label,
             "timestamp": datetime.now().isoformat(),
             "image_file": f"{filename}.png",
+            "image_type": "single_ng",  # marca que é imagem individual
             "aoi_info": {
                 "board": "",
                 "parts": "",
@@ -54,13 +59,11 @@ class DatasetManager:
             "analysis": {}
         }
 
-        # Preenche info da AOI se disponível
         if aoi_info:
             metadata["aoi_info"]["board"] = aoi_info.get("board", "")
             metadata["aoi_info"]["parts"] = aoi_info.get("parts", "")
             metadata["aoi_info"]["value"] = aoi_info.get("value", "")
 
-        # Preenche métricas da análise se disponível
         if analysis:
             detail = analysis.get("detail", {})
             metadata["analysis"] = {
@@ -78,7 +81,6 @@ class DatasetManager:
                 "final_score": detail.get("final_score", 0),
             }
 
-        # Salva o JSON
         try:
             with open(filepath_json, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, indent=2, ensure_ascii=False)
