@@ -13,3 +13,5 @@ __pycache__/
 
 # Pastas de dados (opcional, se não quiser subir as fotos para o GitHub)
 public/dataset/
+public/debug_crop
+public/debug_ocr

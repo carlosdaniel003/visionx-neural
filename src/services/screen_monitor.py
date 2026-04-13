@@ -2,9 +2,22 @@
 Módulo responsável pela captura de tela e detecção do Layout da AOI.
 Modo One-Shot.
 
-v10.2 — Fix do bug de RIGHT:
-O loop de colunas da direita estava devolvendo o valor errado.
-Agora classifica TODAS as colunas primeiro, depois encontra o bloco de foto.
+ESTRATÉGIA v11 "PRIMEIRO BLOCO DE FOTO":
+═══════════════════════════════════════════
+O strip abaixo da barra tem esta estrutura:
+  [FOTO] → [CINZA #c0c0c0] → [BOTÕES/INTERFACE]
+
+v10 falhava porque varria de BAIXO PRA CIMA e pegava os botões.
+v11 varre de CIMA PRA BAIXO e para no primeiro bloco grande de cinza.
+
+MÉTODO:
+1. Cria máscara de cinza (spread ≤ 20, brilho 175-225)
+2. % de cinza por linha
+3. TOP: primeira linha com < 80% cinza (de cima pra baixo)
+4. BOTTOM: a partir do TOP, varre pra baixo.
+   Quando encontra ≥ 12 linhas CONSECUTIVAS com ≥ 80% cinza → PARA.
+   BOTTOM = última linha de foto antes desse bloco de cinza.
+5. LEFT/RIGHT: mesma lógica nas colunas (só na faixa TOP:BOTTOM)
 """
 import cv2
 import numpy as np
@@ -97,7 +110,6 @@ class ScreenMonitor(QThread):
     def _build_gray_mask(self, strip_bgr):
         """
         Máscara booleana (h, w): True = pixel é cinza de interface.
-        #c0c0c0 (192,192,192) ou #d4d0c7 (212,208,199)
         """
         b = strip_bgr[:, :, 0].astype(np.int16)
         g = strip_bgr[:, :, 1].astype(np.int16)
@@ -111,7 +123,58 @@ class ScreenMonitor(QThread):
         return (spread <= 20) & (brightness >= 175) & (brightness <= 225)
 
     # =================================================================
-    # MOTOR DE RECORTE v10.2
+    # ENCONTRAR BORDAS — DIREÇÃO ÚNICA (CIMA PRA BAIXO)
+    # =================================================================
+
+    def _find_photo_span(self, is_gray_arr, gray_gap=12):
+        """
+        Encontra o span da foto num array booleano is_gray[].
+
+        Varre de CIMA PRA BAIXO:
+        1. Encontra o primeiro elemento NÃO-cinza → TOP
+        2. A partir de TOP, varre pra baixo. Conta cinzas consecutivos.
+           Quando encontra >= gray_gap cinzas seguidos → a foto acabou.
+           BOTTOM = último não-cinza antes desse bloco.
+
+        Isso NUNCA pega conteúdo depois do bloco de cinza (botões, etc).
+
+        Retorna (start, end) ou (None, None).
+        """
+        n = len(is_gray_arr)
+
+        # TOP: primeiro não-cinza
+        top = None
+        for i in range(n):
+            if not is_gray_arr[i]:
+                top = i
+                break
+
+        if top is None:
+            return None, None
+
+        # BOTTOM: varre de top pra baixo
+        bottom = top + 1
+        consecutive_gray = 0
+
+        for i in range(top + 1, n):
+            if not is_gray_arr[i]:
+                # É foto — atualiza bottom e reseta contador
+                bottom = i + 1
+                consecutive_gray = 0
+            else:
+                # É cinza — incrementa contador
+                consecutive_gray += 1
+                if consecutive_gray >= gray_gap:
+                    # Bloco grande de cinza → foto acabou
+                    break
+
+        if (bottom - top) < 5:
+            return None, None
+
+        return top, bottom
+
+    # =================================================================
+    # MOTOR DE RECORTE v11
     # =================================================================
 
     def _extract_photo(self, frame_bgr, bar_rect, max_height, label=""):
@@ -135,58 +198,42 @@ class ScreenMonitor(QThread):
         gray_mask = self._build_gray_mask(strip)
 
         # =============================================
-        # LINHAS: % de cinza por linha → classificação
+        # LINHAS: % de cinza por linha
         # =============================================
-        row_gray_pct = np.mean(gray_mask, axis=1)  # (strip_h,)
-        # Linha é cinza se >= 80% dos pixels são cinza
+        row_gray_pct = np.mean(gray_mask, axis=1)
         is_gray_row = row_gray_pct >= 0.80
 
-        # TOP: primeira linha NÃO cinza (de cima pra baixo)
-        top = 0
-        for row in range(strip_h):
-            if not is_gray_row[row]:
-                top = row
-                break
+        # Encontra TOP e BOTTOM da foto (para no primeiro bloco de cinza)
+        result = self._find_photo_span(is_gray_row, gray_gap=12)
+        top, bottom = result
 
-        # BOTTOM: última linha NÃO cinza (de baixo pra cima)
-        bottom = strip_h
-        for row in range(strip_h - 1, top, -1):
-            if not is_gray_row[row]:
-                bottom = row + 1
-                break
-
-        if (bottom - top) < 10:
-            print(f"⚠️ [{label}] Sem foto (top={top} bottom={bottom})")
+        if top is None:
+            print(f"⚠️ [{label}] Sem foto detectada")
+            cv2.imwrite(str(DEBUG_DIR / f"{label}_FALLBACK.png"), strip)
             return strip
 
+        top = max(0, top)
+        bottom = min(strip_h, bottom)
         print(f"   [{label}] Linhas: top={top} bottom={bottom} (h={bottom-top})")
 
         # =============================================
-        # COLUNAS: % de cinza por coluna (SÓ na faixa top:bottom)
+        # COLUNAS: % de cinza por coluna (SÓ na faixa TOP:BOTTOM)
         # =============================================
         band_mask = gray_mask[top:bottom, :]
-        col_gray_pct = np.mean(band_mask, axis=0)  # (strip_w,)
-        # Coluna é cinza se >= 80% dos pixels (na faixa da foto) são cinza
+        col_gray_pct = np.mean(band_mask, axis=0)
         is_gray_col = col_gray_pct >= 0.80
 
-        # LEFT: primeira coluna NÃO cinza
-        left = 0
-        for col in range(strip_w):
-            if not is_gray_col[col]:
-                left = col
-                break
+        # Encontra LEFT e RIGHT (para no primeiro bloco de cinza lateral)
+        result_col = self._find_photo_span(is_gray_col, gray_gap=12)
+        left, right = result_col
 
-        # RIGHT: última coluna NÃO cinza
-        right = strip_w
-        for col in range(strip_w - 1, left, -1):
-             if not is_gray_col[col]:
-                 right = col + 1  # ← +1 porque é exclusivo
-                 break
-        if (right - left) < 10:
+        if left is None:
             left = 0
             right = strip_w
             print(f"   [{label}] Colunas: sem bordas → largura total")
         else:
+            left = max(0, left)
+            right = min(strip_w, right)
             print(f"   [{label}] Colunas: left={left} right={right} (w={right-left})")
 
         photo = strip[top:bottom, left:right].copy()
@@ -201,19 +248,16 @@ class ScreenMonitor(QThread):
         cv2.imwrite(str(DEBUG_DIR / f"{label}_04_photo.png"), photo)
 
         # Graymap linhas
-        gm_h = strip_h
-        gm_rows = np.zeros((gm_h, 40, 3), dtype=np.uint8)
-        for row in range(gm_h):
-            # Barra proporcional à % de cinza
+        gm_rows = np.zeros((strip_h, 40, 3), dtype=np.uint8)
+        for row in range(strip_h):
             bar_w = int(row_gray_pct[row] * 35)
             color = (0, 0, 200) if is_gray_row[row] else (0, 255, 0)
             cv2.line(gm_rows, (0, row), (max(1, bar_w), row), color, 1)
         cv2.line(gm_rows, (0, top), (40, top), (255, 0, 255), 2)
-        cv2.line(gm_rows, (0, min(bottom, gm_h - 1)),
-                  (40, min(bottom, gm_h - 1)), (255, 0, 255), 2)
-        # Linha de threshold 80%
+        cv2.line(gm_rows, (0, min(bottom, strip_h - 1)),
+                  (40, min(bottom, strip_h - 1)), (255, 0, 255), 2)
         thresh_x = int(0.80 * 35)
-        cv2.line(gm_rows, (thresh_x, 0), (thresh_x, gm_h), (0, 255, 255), 1)
+        cv2.line(gm_rows, (thresh_x, 0), (thresh_x, strip_h), (0, 255, 255), 1)
         cv2.imwrite(str(DEBUG_DIR / f"{label}_graymap_rows.png"), gm_rows)
 
         # Graymap colunas
@@ -222,9 +266,11 @@ class ScreenMonitor(QThread):
             bar_h = int(col_gray_pct[col] * 35)
             color = (0, 0, 200) if is_gray_col[col] else (0, 255, 0)
             cv2.line(gm_cols, (col, 40), (col, 40 - max(1, bar_h)), color, 1)
-        cv2.line(gm_cols, (left, 0), (left, 40), (255, 0, 255), 2)
-        cv2.line(gm_cols, (min(right, strip_w - 1), 0),
-                  (min(right, strip_w - 1), 40), (255, 0, 255), 2)
+        if left > 0:
+            cv2.line(gm_cols, (left, 0), (left, 40), (255, 0, 255), 2)
+        if right < strip_w:
+            cv2.line(gm_cols, (min(right, strip_w - 1), 0),
+                      (min(right, strip_w - 1), 40), (255, 0, 255), 2)
         thresh_y = 40 - int(0.80 * 35)
         cv2.line(gm_cols, (0, thresh_y), (strip_w, thresh_y), (0, 255, 255), 1)
         cv2.imwrite(str(DEBUG_DIR / f"{label}_graymap_cols.png"), gm_cols)
