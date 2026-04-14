@@ -1,4 +1,4 @@
-# src\ui\control_panel.py
+# src/ui/control_panel.py
 """
 Módulo do Painel de Controle e Console Duplo com Juiz Neural v3.
 Tela inteira sem cobrir a barra de tarefas (Maximized).
@@ -7,6 +7,7 @@ Exibe informações de Board, Parts e Value extraídas da AOI em Dark Theme.
 Salva metadados JSON ao curar amostras.
 Inclui Ticker Time para medir latência da operação.
 Exibe % de Defeito Real e % de Falha Falsa simultaneamente.
+Ponte de Epicentros ativa.
 """
 import cv2
 import numpy as np
@@ -525,7 +526,8 @@ class ControlPanel(QWidget):
             self.lbl_sample.size(), Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation))
 
-        raw_anomalies = detect_anomalies(sample_crop, ng_crop)
+        # CORREÇÃO: Capturamos também os epicentros do detect_anomalies
+        raw_anomalies, aoi_epicenters = detect_anomalies(sample_crop, ng_crop)
         img_ng_drawn = ng_crop.copy()
 
         if not raw_anomalies:
@@ -545,12 +547,15 @@ class ControlPanel(QWidget):
                 suspect_gab = sample_crop[y:y+h, x:x+w]
                 suspect_test = ng_crop[y:y+h, x:x+w]
 
+                # CORREÇÃO CRÍTICA: Passando os metadados (parts) e os epicentros pro Juiz!
                 analysis = self.neural_judge.verify_anomaly(
                     crop_gab=suspect_gab,
                     crop_test=suspect_test,
+                    part_metadata=aoi_info.get("parts", ""),
                     full_gab=sample_crop,
                     full_test=ng_crop,
-                    box_x=x, box_y=y, box_w=w, box_h=h
+                    box_x=x, box_y=y, box_w=w, box_h=h,
+                    aoi_epicenters=aoi_epicenters
                 )
 
                 is_real = analysis["is_defect"]

@@ -1,23 +1,23 @@
 # src/core/neural_judge.py
 """
-Módulo do Juiz Neural v5.1 — Correspondência Visual Correta + Pesos Dinâmicos.
+Módulo do Juiz Neural v5.2 — Correspondência Visual + Epicentros + Pesos Dinâmicos.
 
-MUDANÇAS FUNDAMENTAIS vs v4.4:
+MUDANÇAS FUNDAMENTAIS:
 ═══════════════════════════════
 1. query_similar recebe a IMAGEM NG COMPLETA (não crop de anomalia)
    → Compara "maçã com maçã" → mesma imagem retorna ~100%
 
 2. Embedding cache em JSON (memory_cache.json)
    → Inicialização instantânea quando o cache existe
-   → Não precisa de admin/permissões especiais
 
 3. Não faz mais split de imagem pareada (w > h * 1.5)
-   → Imagens agora são salvas individualmente pelo DatasetManager v2
+   → Imagens agora são salvas individualmente
 
-4. Mantém as fotos em disco para exibição visual da 3ª imagem
+4. EPICENTER BOOST (v5.2): A IA agora recebe a "Atenção da AOI".
+   Se o defeito matemático encostar no quadrado verde da AOI, ganha bônus.
 
-5. PODER DE VETO (v5.1)
-   → Se a similaridade do banco for >95%, o banco dita 90% do Score Final.
+5. PODER DE VETO (v5.1): Se a similaridade do banco for >95%, 
+   o banco dita 90% do Score Final.
 """
 import cv2
 import numpy as np
@@ -145,8 +145,6 @@ class DatasetMemory:
                     if img is None:
                         continue
 
-                    # NÃO faz mais split de imagem pareada
-                    # Imagens agora são salvas individualmente
                     sig = self._compute_embedding(img)
                     part_name = self._get_part_from_filename(str(f))
                     cache_misses += 1
@@ -192,13 +190,6 @@ class DatasetMemory:
 
     def query_similar(self, query_image: np.ndarray, part_name: str = "",
                       top_k: int = 5) -> dict:
-        """
-        Busca a imagem mais similar no banco.
-
-        IMPORTANTE: query_image deve ser a IMAGEM NG COMPLETA,
-        não um crop de anomalia. Isso garante que a mesma imagem
-        retorne ~100% de similaridade.
-        """
         target_part = self._clean_string(part_name)
 
         valid_ok = [item for item in self.signatures_ok
@@ -265,7 +256,7 @@ class DatasetMemory:
 
 class NeuralJudge:
     def __init__(self):
-        print("⚖️ Iniciando Juiz Neural v5.1 (Correspondência Visual + Pesos Dinâmicos)...")
+        print("⚖️ Iniciando Juiz Neural v5.2 (Foco de Epicentro + Pesos Dinâmicos)...")
         self.memory = DatasetMemory()
 
     def reload_memory(self):
@@ -328,7 +319,8 @@ class NeuralJudge:
                        part_metadata: str = "",
                        full_gab: np.ndarray = None, full_test: np.ndarray = None,
                        box_x: int = 0, box_y: int = 0,
-                       box_w: int = 0, box_h: int = 0) -> dict:
+                       box_w: int = 0, box_h: int = 0,
+                       aoi_epicenters: list = None) -> dict:
 
         if crop_gab is None or crop_test is None or crop_test.size == 0:
             return {
@@ -343,8 +335,22 @@ class NeuralJudge:
             context = self._analyze_context(
                 full_gab, full_test, box_x, box_y, box_w, box_h)
 
-        # MUDANÇA v5.0: Passa a imagem NG COMPLETA (não o crop)
-        # para que a comparação seja "maçã com maçã"
+        # =========================================================
+        # MUDANÇA v5.2: VERIFICAÇÃO DE EPICENTRO (ATENÇÃO DA AOI)
+        # =========================================================
+        is_epicenter = False
+        if aoi_epicenters:
+            for (ex, ey, ew, eh) in aoi_epicenters:
+                # Verifica se o defeito bate no quadrado verde menor da AOI
+                x_left = max(box_x, ex)
+                y_top = max(box_y, ey)
+                x_right = min(box_x + box_w, ex + ew)
+                y_bottom = min(box_y + box_h, ey + eh)
+                
+                if x_right > x_left and y_bottom > y_top:
+                    is_epicenter = True
+                    break
+
         query_img = full_test if full_test is not None else crop_test
         db_result = self.memory.query_similar(query_img, part_name=part_metadata)
 
@@ -357,11 +363,19 @@ class NeuralJudge:
         ])
         local_score = max(0.0, min(1.0, local_score))
 
+        # BÔNUS DE EPICENTRO! Se a IA concordar com a máquina física, aumenta o alarme local.
+        if is_epicenter:
+            local_score = min(1.0, local_score * 1.30)
+
         ctx_score, ctx_reason = 0.5, ""
         if context:
             ctx_score = 0.7 if context["is_localized"] else 0.25
-            ctx_reason = (f"Diferença "
-                         f"{'concentrada' if context['is_localized'] else 'espalhada'}")
+            base_reason = f"{'concentrada' if context['is_localized'] else 'espalhada'}"
+            if is_epicenter:
+                ctx_score = min(1.0, ctx_score + 0.20)
+                ctx_reason = f"Foco Validado (Epicentro AOI) | Diferença {base_reason}"
+            else:
+                ctx_reason = f"Diferença {base_reason}"
 
         db_score, db_reason = 0.5, ""
         if db_result["has_memory"]:
