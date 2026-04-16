@@ -1,7 +1,7 @@
 # src/services/dataset_manager.py
 """
 Módulo responsável por gerenciar a persistência de imagens para o Dataset.
-v2: Salva NG inteira separada (não pareada) + embedding cache em JSON.
+v3: Active Learning - Salva embeddings no JSON e permite pular o salvamento do PNG.
 """
 import cv2
 import json
@@ -15,7 +15,8 @@ class DatasetManager:
     @staticmethod
     def save_sample(ng_image: np.ndarray, label: str,
                     sample_image: np.ndarray = None,
-                    aoi_info: dict = None, analysis: dict = None) -> str:
+                    aoi_info: dict = None, analysis: dict = None,
+                    save_images: bool = True) -> str:
         """
         Salva a imagem NG (ou OK) inteira na pasta correta.
         NÃO faz mais hstack — salva a imagem individual.
@@ -25,6 +26,7 @@ class DatasetManager:
         :param sample_image: Imagem Sample (padrão) — salva separada para referência.
         :param aoi_info: Dict com Board, Parts, Value.
         :param analysis: Dict com métricas da análise.
+        :param save_images: Se False, salva APENAS a semântica no .json (Economia de HD).
         :return: Caminho do arquivo salvo.
         """
         if ng_image is None or ng_image.size == 0:
@@ -37,19 +39,22 @@ class DatasetManager:
         filepath_img = folder / f"{filename}.png"
         filepath_json = folder / f"{filename}.json"
 
-        # Salva a imagem NG/OK inteira (NÃO pareada)
-        cv2.imwrite(str(filepath_img), ng_image)
+        # Apenas salva os pixels no HD se a curadoria (Active Learning) autorizar
+        if save_images:
+            # Salva a imagem NG/OK inteira (NÃO pareada)
+            cv2.imwrite(str(filepath_img), ng_image)
 
-        # Se tiver sample, salva também como referência (para visualização)
-        if sample_image is not None and sample_image.size > 0:
-            filepath_sample = folder / f"{filename}_sample.png"
-            cv2.imwrite(str(filepath_sample), sample_image)
+            # Se tiver sample, salva também como referência (para visualização)
+            if sample_image is not None and sample_image.size > 0:
+                filepath_sample = folder / f"{filename}_sample.png"
+                cv2.imwrite(str(filepath_sample), sample_image)
 
         # Metadados
         metadata = {
             "label": label,
             "timestamp": datetime.now().isoformat(),
-            "image_file": f"{filename}.png",
+            # Se a imagem não foi salva, avisamos o sistema deixando em branco
+            "image_file": f"{filename}.png" if save_images else "",
             "image_type": "single_ng",  # marca que é imagem individual
             "aoi_info": {
                 "board": "",
@@ -79,6 +84,9 @@ class DatasetManager:
                 "ctx_score": detail.get("ctx_score", 0),
                 "db_score": detail.get("db_score", 0),
                 "final_score": detail.get("final_score", 0),
+                
+                # NOVO: O "código de barras matemático" da placa (Vetores Semânticos)
+                "embedding": detail.get("embedding", [])
             }
 
         try:
@@ -87,4 +95,5 @@ class DatasetManager:
         except Exception as e:
             print(f"⚠️ Erro ao salvar metadados JSON: {e}")
 
-        return str(filepath_img)
+        # Retorna o caminho do PNG (se salvou a foto) ou do JSON (se salvou só o texto)
+        return str(filepath_img) if save_images else str(filepath_json)

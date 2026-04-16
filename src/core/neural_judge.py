@@ -1,23 +1,11 @@
 # src/core/neural_judge.py
 """
-Módulo do Juiz Neural v5.2 — Correspondência Visual + Epicentros + Pesos Dinâmicos.
-
-MUDANÇAS FUNDAMENTAIS:
+Módulo do Juiz Neural v6.0 — Correspondência Visual + Epicentros + Pesos Dinâmicos.
+MUDANÇAS v6.0 (ACTIVE LEARNING):
 ═══════════════════════════════
-1. query_similar recebe a IMAGEM NG COMPLETA (não crop de anomalia)
-   → Compara "maçã com maçã" → mesma imagem retorna ~100%
-
-2. Embedding cache em JSON (memory_cache.json)
-   → Inicialização instantânea quando o cache existe
-
-3. Não faz mais split de imagem pareada (w > h * 1.5)
-   → Imagens agora são salvas individualmente
-
-4. EPICENTER BOOST (v5.2): A IA agora recebe a "Atenção da AOI".
-   Se o defeito matemático encostar no quadrado verde da AOI, ganha bônus.
-
-5. PODER DE VETO (v5.1): Se a similaridade do banco for >95%, 
-   o banco dita 90% do Score Final.
+1. A memória agora lê nativamente dos arquivos JSON.
+2. Não exige mais as imagens PNG para carregar o banco de dados.
+3. Expele o "embedding" calculado no detail para salvamento externo.
 """
 import cv2
 import numpy as np
@@ -30,9 +18,6 @@ from numpy.linalg import norm
 from skimage.metrics import structural_similarity as ssim
 
 from src.config.settings import settings
-
-CACHE_PATH = settings.DATASET_DIR / "memory_cache.json"
-
 
 class DatasetMemory:
     def __init__(self):
@@ -65,50 +50,14 @@ class DatasetMemory:
             return ""
         return re.sub(r'[^A-Z0-9]', '', text.upper())
 
-    def _get_part_from_filename(self, filename: str) -> str:
-        base = os.path.basename(filename)
-        raw_part = base.split('_')[0] if '_' in base else base.split('.')[0]
-        return self._clean_string(raw_part)
-
     # =================================================================
-    # CACHE DE EMBEDDINGS EM JSON
-    # =================================================================
-
-    def _load_cache(self) -> dict:
-        """Carrega o cache de embeddings do disco."""
-        if CACHE_PATH.exists():
-            try:
-                with open(CACHE_PATH, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                print(f"📦 Cache de embeddings carregado: {len(data)} entradas")
-                return data
-            except Exception as e:
-                print(f"⚠️ Erro ao ler cache: {e}")
-        return {}
-
-    def _save_cache(self, cache: dict):
-        """Salva o cache de embeddings no disco."""
-        try:
-            CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with open(CACHE_PATH, 'w', encoding='utf-8') as f:
-                json.dump(cache, f, ensure_ascii=False)
-            print(f"💾 Cache de embeddings salvo: {len(cache)} entradas")
-        except Exception as e:
-            print(f"⚠️ Erro ao salvar cache: {e}")
-
-    # =================================================================
-    # CARREGAMENTO
+    # CARREGAMENTO (AGORA LÊ DIRETAMENTE DOS JSONs)
     # =================================================================
 
     def _load_all(self):
-        print("🔍 Iniciando varredura das pastas de dataset...")
+        print("🔍 Iniciando varredura semântica das pastas de dataset...")
 
-        cache = self._load_cache()
-        new_cache = {}
-        cache_hits = 0
-        cache_misses = 0
-
-        for folder, sig_list, label in [
+        for folder, sig_list, label_target in [
             (settings.NORMAL_DIR, self.signatures_ok, "OK"),
             (settings.ANOMALY_DIR, self.signatures_ng, "NG")
         ]:
@@ -116,61 +65,44 @@ class DatasetMemory:
                 print(f"⚠️ Aviso: A pasta '{folder}' não foi encontrada.")
                 continue
 
-            files = [f for f in folder.rglob("*")
-                     if f.is_file()
-                     and f.suffix.lower() in ['.png', '.jpg', '.jpeg']
-                     and '_sample' not in f.stem]  # Ignora as fotos _sample de referência
+            # Agora procuramos por JSONs em vez de PNGs
+            files = [f for f in folder.rglob("*.json") if f.is_file()]
 
-            print(f"📂 Pasta [{label}] ({folder}): {len(files)} arquivos de imagem encontrados.")
+            print(f"📂 Pasta [{label_target}] ({folder}): {len(files)} arquivos JSON encontrados.")
 
             for f in files:
-                file_key = str(f)
-                file_mtime = str(f.stat().st_mtime)
+                try:
+                    with open(f, 'r', encoding='utf-8') as json_file:
+                        data = json.load(json_file)
+                    
+                    # Extrai os dados do JSON
+                    analysis = data.get("analysis", {})
+                    embedding_list = analysis.get("embedding", [])
+                    aoi_info = data.get("aoi_info", {})
+                    part_name = self._clean_string(aoi_info.get("parts", ""))
+                    
+                    # Precisamos do caminho de uma imagem para o painel mostrar depois
+                    # Se salvou o PNG, o JSON diz qual é. Se não, usamos uma genérica ou o próprio JSON.
+                    img_file = data.get("image_file", "")
+                    if img_file:
+                        path_to_save = str(f.parent / img_file)
+                    else:
+                        # Se não há foto (apenas semântica), guardamos o path do JSON para referência
+                        path_to_save = str(f)
 
-                # Verifica se tem no cache e se não foi modificado
-                if file_key in cache and cache[file_key].get("mtime") == file_mtime:
-                    # Cache hit — carrega embedding do JSON
-                    sig = np.array(cache[file_key]["embedding"], dtype=np.float32)
-                    part_name = cache[file_key].get("part", "")
-                    cache_hits += 1
-                else:
-                    # Cache miss — precisa computar
-                    try:
-                        img_array = np.fromfile(str(f), dtype=np.uint8)
-                        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-                    except Exception as e:
-                        print(f"❌ Erro ao ler arquivo {f}: {e}")
-                        continue
-
-                    if img is None:
-                        continue
-
-                    sig = self._compute_embedding(img)
-                    part_name = self._get_part_from_filename(str(f))
-                    cache_misses += 1
-
-                if sig is not None:
-                    sig_list.append({
-                        "part": part_name,
-                        "sig": sig,
-                        "path": str(f)
-                    })
-                    # Atualiza cache
-                    new_cache[file_key] = {
-                        "mtime": file_mtime,
-                        "part": part_name,
-                        "embedding": sig.tolist(),
-                        "label": label
-                    }
-
-        # Salva cache atualizado
-        if new_cache:
-            self._save_cache(new_cache)
+                    if embedding_list:
+                        sig = np.array(embedding_list, dtype=np.float32)
+                        sig_list.append({
+                            "part": part_name,
+                            "sig": sig,
+                            "path": path_to_save
+                        })
+                except Exception as e:
+                    print(f"❌ Erro ao ler arquivo JSON {f}: {e}")
 
         total = len(self.signatures_ok) + len(self.signatures_ng)
         print(f"📚 RESUMO DA MEMÓRIA: {total} Embeddings indexados "
               f"({len(self.signatures_ok)} OK, {len(self.signatures_ng)} NG)")
-        print(f"   Cache: {cache_hits} hits, {cache_misses} recalculados")
 
     def _compute_embedding(self, img: np.ndarray) -> np.ndarray:
         if img is None or img.size == 0 or img.shape[0] < 5 or img.shape[1] < 5:
@@ -205,19 +137,14 @@ class DatasetMemory:
             valid_ng = self.signatures_ng
             total_valid = len(valid_ok) + len(valid_ng)
 
-        if total_valid == 0:
-            return {
-                "has_memory": False, "vote_defect": 0.5,
-                "best_similarity": 0.0, "n_neighbors": 0,
-                "best_match_path": "", "best_match_label": ""
-            }
-
         query_sig = self._compute_embedding(query_image)
-        if query_sig is None:
+
+        if total_valid == 0 or query_sig is None:
             return {
                 "has_memory": False, "vote_defect": 0.5,
                 "best_similarity": 0.0, "n_neighbors": 0,
-                "best_match_path": "", "best_match_label": ""
+                "best_match_path": "", "best_match_label": "",
+                "query_embedding": query_sig.tolist() if query_sig is not None else [] # Exporta o embedding calculado
             }
 
         distances = []
@@ -250,13 +177,14 @@ class DatasetMemory:
             "best_similarity": best_sim,
             "n_neighbors": int(len(neighbors)),
             "best_match_path": str(best_path),
-            "best_match_label": str(best_label)
+            "best_match_label": str(best_label),
+            "query_embedding": query_sig.tolist() # Exporta o embedding calculado
         }
 
 
 class NeuralJudge:
     def __init__(self):
-        print("⚖️ Iniciando Juiz Neural v5.2 (Foco de Epicentro + Pesos Dinâmicos)...")
+        print("⚖️ Iniciando Juiz Neural v6.0 (Active Learning Ready)...")
         self.memory = DatasetMemory()
 
     def reload_memory(self):
@@ -341,7 +269,6 @@ class NeuralJudge:
         is_epicenter = False
         if aoi_epicenters:
             for (ex, ey, ew, eh) in aoi_epicenters:
-                # Verifica se o defeito bate no quadrado verde menor da AOI
                 x_left = max(box_x, ex)
                 y_top = max(box_y, ey)
                 x_right = min(box_x + box_w, ex + ew)
@@ -363,7 +290,6 @@ class NeuralJudge:
         ])
         local_score = max(0.0, min(1.0, local_score))
 
-        # BÔNUS DE EPICENTRO! Se a IA concordar com a máquina física, aumenta o alarme local.
         if is_epicenter:
             local_score = min(1.0, local_score * 1.30)
 
@@ -390,23 +316,13 @@ class NeuralJudge:
             best_sim = db_result["best_similarity"]
             db_score = db_result["vote_defect"]
 
-            # NÍVEL 1: Correspondência Exata (Poder de Veto)
-            # Se a foto for >= 95% idêntica ao histórico, a memória domina a decisão.
             if best_sim >= 0.95:
                 final_score = local_score * 0.05 + ctx_score * 0.05 + db_score * 0.90
-            
-            # NÍVEL 2: Correspondência Forte
-            # Se for muito parecida (> 85%), o banco tem peso majoritário (60%)
             elif best_sim >= 0.85:
                 final_score = local_score * 0.25 + ctx_score * 0.15 + db_score * 0.60
-            
-            # NÍVEL 3: Correspondência Fraca (Pesos Padrões)
-            # Se achou algo no banco, mas não é tão igual, divide a atenção.
             else:
                 final_score = local_score * 0.50 + ctx_score * 0.20 + db_score * 0.30
-                
         else:
-            # Sem histórico: A IA se vira apenas com a visão computacional
             final_score = local_score * 0.65 + ctx_score * 0.35
 
         is_defect = bool(final_score > 0.45)
@@ -440,5 +356,6 @@ class NeuralJudge:
                 "db_has_memory": bool(db_result["has_memory"]),
                 "db_neighbors": int(db_result["n_neighbors"]),
                 "db_vote": float(db_result["vote_defect"]),
+                "embedding": db_result["query_embedding"] # Exportando a matemática!
             }
         }

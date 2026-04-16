@@ -1,31 +1,24 @@
 # src/ui/control_panel.py
 """
-Módulo do Painel de Controle e Console Duplo com Juiz Neural v3.
-Tela inteira sem cobrir a barra de tarefas (Maximized).
-3ª imagem: referência mais parecida encontrada no banco de dados.
-Exibe informações de Board, Parts e Value extraídas da AOI em Dark Theme.
-Salva metadados JSON ao curar amostras.
-Inclui Ticker Time para medir latência da operação.
-Exibe % de Defeito Real e % de Falha Falsa simultaneamente.
-Ponte de Epicentros ativa.
-Suporte a Recepção por Rede (XP) com Trava de Decisão do Operador.
-FULL DUPLEX: Sincronia de cliques entre Painel e Teclado Físico do XP.
-SKIP INTERNO: Função de descartar imagem atual da UI sem interferir no XP.
+Módulo do Painel de Controle (Controller) e Console Duplo com Juiz Neural.
+As responsabilidades visuais foram extraídas para control_panel_ui.py (SRP).
 """
 import cv2
 import numpy as np
 import time
 import socket
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QLabel,
-                             QHBoxLayout, QMessageBox, QFrame, QGridLayout,
-                             QApplication)
+from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QImage, QPixmap, QFont
+from PyQt6.QtGui import QImage, QPixmap
+
 from src.services.screen_monitor import ScreenMonitor
 from src.services.dataset_manager import DatasetManager
 from src.core.inspection import detect_anomalies
 from src.core.neural_judge import NeuralJudge
 from src.services.network_receiver import NetworkReceiver
+
+# Importando a View separada
+from src.ui.control_panel_ui import ControlPanelUI
 
 class ControlPanel(QWidget):
     def __init__(self):
@@ -39,7 +32,7 @@ class ControlPanel(QWidget):
         self.neural_judge = NeuralJudge()
         
         self.is_locked = False 
-        self.last_xp_ip = None # Salva o IP do XP para sabermos pra onde mandar a resposta
+        self.last_xp_ip = None 
         
         self.processor_monitor = ScreenMonitor()
         self.processor_monitor.layout_detected.connect(self.process_aoi_images)
@@ -54,271 +47,9 @@ class ControlPanel(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        self.setWindowTitle("VisionX Neural - Console Industrial AOI")
-        self.setStyleSheet("background-color: #121212; color: #ffffff;")
-
-        screen = QApplication.primaryScreen()
-        available = screen.availableGeometry()
-        self.setGeometry(available)
-
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 6, 10, 6)
-        main_layout.setSpacing(4)
-
-        # ============================================================
-        # === CABEÇALHO (Título + Ticker Time)
-        # ============================================================
-        top_layout = QHBoxLayout()
-        
-        title = QLabel("VisionX Neural: Monitoramento AOI")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(
-            "font-size: 18px; font-weight: bold; margin-bottom: 2px; color: #ffffff;")
-        
-        self.lbl_timer = QLabel("Latencia: 0.00s")
-        self.lbl_timer.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_timer.setStyleSheet(
-            "font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #aaaaaa;")
-
-        spacer = QLabel("")
-        spacer.setMinimumWidth(120) 
-        top_layout.addWidget(spacer)
-        top_layout.addWidget(title, stretch=1)
-        top_layout.addWidget(self.lbl_timer)
-        
-        main_layout.addLayout(top_layout)
-
-        # ============================================================
-        # === BARRA DE INFORMAÇÕES DA AOI (Board / Parts / Value)
-        # ============================================================
-        self.aoi_info_frame = QFrame()
-        self.aoi_info_frame.setStyleSheet("""
-            QFrame {
-                background-color: #1a1a1a;
-                border: 1px solid #333333;
-                border-radius: 6px;
-                padding: 4px;
-            }
-        """)
-        aoi_info_layout = QHBoxLayout(self.aoi_info_frame)
-        aoi_info_layout.setContentsMargins(12, 4, 12, 4)
-        aoi_info_layout.setSpacing(20)
-
-        info_label_style = "color: #888888; font-size: 11px; border: none;"
-        info_value_style = ("color: #ffffff; font-size: 12px; font-weight: bold; border: none;")
-
-        lbl_board_name = QLabel("Board:")
-        lbl_board_name.setStyleSheet(info_label_style)
-        self.lbl_board_value = QLabel("-")
-        self.lbl_board_value.setStyleSheet(info_value_style)
-
-        lbl_parts_name = QLabel("Parts:")
-        lbl_parts_name.setStyleSheet(info_label_style)
-        self.lbl_parts_value = QLabel("-")
-        self.lbl_parts_value.setStyleSheet(info_value_style)
-
-        lbl_value_name = QLabel("Value:")
-        lbl_value_name.setStyleSheet(info_label_style)
-        self.lbl_value_value = QLabel("-")
-        self.lbl_value_value.setStyleSheet(info_value_style)
-
-        aoi_info_layout.addWidget(lbl_board_name)
-        aoi_info_layout.addWidget(self.lbl_board_value)
-        aoi_info_layout.addStretch()
-        aoi_info_layout.addWidget(lbl_parts_name)
-        aoi_info_layout.addWidget(self.lbl_parts_value)
-        aoi_info_layout.addStretch()
-        aoi_info_layout.addWidget(lbl_value_name)
-        aoi_info_layout.addWidget(self.lbl_value_value)
-
-        main_layout.addWidget(self.aoi_info_frame)
-
-        # ============================================================
-        # === 3 DISPLAYS DE IMAGEM
-        # ============================================================
-        displays_layout = QHBoxLayout()
-        displays_layout.setSpacing(8)
-
-        sample_layout = QVBoxLayout()
-        lbl_sample_title = QLabel("Padrao (Sample)")
-        lbl_sample_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_sample_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
-        self.lbl_sample = QLabel("Aguardando capturas da Rede...")
-        self.lbl_sample.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_sample.setStyleSheet(
-            "background-color: #1a1a1a; border: 1px solid #333333; color: #888888;")
-        self.lbl_sample.setMinimumSize(200, 180)
-        sample_layout.addWidget(lbl_sample_title)
-        sample_layout.addWidget(self.lbl_sample, stretch=1)
-
-        ng_layout = QVBoxLayout()
-        lbl_ng_title = QLabel("Analise VisaoX (NG)")
-        lbl_ng_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_ng_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
-        self.lbl_ng = QLabel("Aguardando capturas da Rede...")
-        self.lbl_ng.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_ng.setStyleSheet(
-            "background-color: #1a1a1a; border: 1px solid #333333; color: #888888;")
-        self.lbl_ng.setMinimumSize(200, 180)
-        ng_layout.addWidget(lbl_ng_title)
-        ng_layout.addWidget(self.lbl_ng, stretch=1)
-
-        ref_layout = QVBoxLayout()
-        self.lbl_ref_title = QLabel("Referencia (Dataset)")
-        self.lbl_ref_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_ref_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
-        self.lbl_ref = QLabel("Sem dados no banco")
-        self.lbl_ref.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_ref.setStyleSheet(
-            "background-color: #1a1a1a; border: 1px solid #333333; color: #888888;")
-        self.lbl_ref.setMinimumSize(200, 180)
-        self.lbl_ref_info = QLabel("")
-        self.lbl_ref_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_ref_info.setStyleSheet("color: #888888; font-size: 10px;")
-        self.lbl_ref_info.setWordWrap(True)
-        ref_layout.addWidget(self.lbl_ref_title)
-        ref_layout.addWidget(self.lbl_ref, stretch=1)
-        ref_layout.addWidget(self.lbl_ref_info)
-
-        displays_layout.addLayout(sample_layout, stretch=1)
-        displays_layout.addLayout(ng_layout, stretch=1)
-        displays_layout.addLayout(ref_layout, stretch=1)
-        main_layout.addLayout(displays_layout, stretch=1)
-
-        # ============================================================
-        # === PAINEL DE CONFIABILIDADE
-        # ============================================================
-        self.confidence_frame = QFrame()
-        self.confidence_frame.setStyleSheet("""
-            QFrame {
-                background-color: #1e1e1e;
-                border: 1px solid #333333;
-                border-radius: 8px;
-                padding: 6px;
-            }
-        """)
-        conf_layout = QVBoxLayout(self.confidence_frame)
-        conf_layout.setSpacing(3)
-
-        conf_title = QLabel("Painel de Confiabilidade - Analise do Juiz Neural")
-        conf_title.setStyleSheet(
-            "color: #dddddd; font-weight: bold; font-size: 13px; border: none;")
-        conf_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        conf_layout.addWidget(conf_title)
-
-        self.lbl_verdict = QLabel("Aguardando analise...")
-        self.lbl_verdict.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_verdict.setStyleSheet(
-            "color: #888888; font-size: 16px; font-weight: bold; padding: 4px; border: none;")
-        conf_layout.addWidget(self.lbl_verdict)
-
-        metrics_grid = QGridLayout()
-        metrics_grid.setSpacing(3)
-
-        self.metric_labels = {}
-        metrics_def = [
-            ("ssim", "SSIM (Similaridade)"),
-            ("pct_changed", "Pixels Alterados"),
-            ("edge_change", "Mudanca de Bordas"),
-            ("hist_corr", "Correlacao Histograma"),
-            ("local_score", "Score Local"),
-            ("ctx_score", "Score Contexto"),
-            ("db_score", "Score Dataset"),
-            ("final_score", "Score Final"),
-        ]
-
-        for i, (key, label_text) in enumerate(metrics_def):
-            row = i // 4
-            col = (i % 4) * 2
-            lbl_name = QLabel(label_text + ":")
-            lbl_name.setStyleSheet(
-                "color: #888888; font-size: 11px; border: none; background: transparent;")
-            lbl_value = QLabel("-")
-            lbl_value.setStyleSheet(
-                "color: #ffffff; font-size: 11px; font-weight: bold; "
-                "border: none; background: transparent;")
-            metrics_grid.addWidget(lbl_name, row, col)
-            metrics_grid.addWidget(lbl_value, row, col + 1)
-            self.metric_labels[key] = lbl_value
-
-        conf_layout.addLayout(metrics_grid)
-
-        self.lbl_reason = QLabel("")
-        self.lbl_reason.setStyleSheet(
-            "color: #aaaaaa; font-size: 10px; padding-top: 2px; border: none;")
-        self.lbl_reason.setWordWrap(True)
-        self.lbl_reason.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        conf_layout.addWidget(self.lbl_reason)
-
-        self.lbl_db_info = QLabel("")
-        self.lbl_db_info.setStyleSheet(
-            "color: #777777; font-size: 10px; border: none;")
-        self.lbl_db_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        conf_layout.addWidget(self.lbl_db_info)
-
-        main_layout.addWidget(self.confidence_frame)
-
-        # ============================================================
-        # === BOTÕES
-        # ============================================================
-        button_style = """
-            QPushButton {
-                background-color: #2d2d2d; color: #ffffff; font-weight: bold;
-                border: 1px solid #444444; border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #3d3d3d; }
-            QPushButton:disabled {
-                background-color: #1a1a1a; color: #555555;
-                border: 1px solid #333333;
-            }
-        """
-        
-        # Botão de Skip com estilo ligeiramente diferente para se destacar
-        skip_button_style = """
-            QPushButton {
-                background-color: #4a2c2c; color: #ffaaaa; font-weight: bold;
-                border: 1px solid #663333; border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #5a3c3c; }
-            QPushButton:disabled {
-                background-color: #1a1a1a; color: #555555;
-                border: 1px solid #333333;
-            }
-        """
-
-        self.btn_start = QPushButton("Capturar Local Manualmente (MSS)")
-        self.btn_start.setMinimumHeight(40)
-        self.btn_start.setStyleSheet(button_style)
-        self.btn_start.clicked.connect(self.start_monitoring)
-        main_layout.addWidget(self.btn_start)
-
-        curation_layout = QHBoxLayout()
-        
-        # NOVO: Botão de Descartar / Pular (Apenas Teste Interno)
-        self.btn_skip = QPushButton("X - Descartar")
-        self.btn_skip.setMinimumHeight(40)
-        self.btn_skip.setEnabled(False)
-        self.btn_skip.setStyleSheet(skip_button_style)
-        self.btn_skip.clicked.connect(self.skip_image)
-
-        self.btn_save_ok = QPushButton("Salvar como Falha Falsa (OK)")
-        self.btn_save_ok.setMinimumHeight(40)
-        self.btn_save_ok.setEnabled(False)
-        self.btn_save_ok.setStyleSheet(button_style)
-        self.btn_save_ok.clicked.connect(lambda: self.save_label("OK", source="button"))
-
-        self.btn_save_ng = QPushButton("Confirmar Defeito Real (NG)")
-        self.btn_save_ng.setMinimumHeight(40)
-        self.btn_save_ng.setEnabled(False)
-        self.btn_save_ng.setStyleSheet(button_style)
-        self.btn_save_ng.clicked.connect(lambda: self.save_label("NG", source="button"))
-
-        curation_layout.addWidget(self.btn_skip)
-        curation_layout.addWidget(self.btn_save_ok)
-        curation_layout.addWidget(self.btn_save_ng)
-        main_layout.addLayout(curation_layout)
-        
-        self.showMaximized()
+        """ Delega a montagem da interface para a classe de View """
+        self.ui_builder = ControlPanelUI()
+        self.ui_builder.setup_ui(self)
 
     # ============================================================
     # NOVOS MÉTODOS (REDE, TRAVA E FULL DUPLEX)
@@ -328,7 +59,6 @@ class ControlPanel(QWidget):
         print(msg)
 
     def handle_network_image(self, img_bgr: np.ndarray, ip: str):
-        """Recebe a imagem da rede, salva o IP do XP para resposta, trava a UI e processa."""
         if self.is_locked:
             print(f"⚠️ Imagem da AOI ({ip}) ignorada: Aguardando decisão do operador atual.")
             return
@@ -342,7 +72,7 @@ class ControlPanel(QWidget):
         self.btn_start.setEnabled(False)
         self.btn_save_ok.setEnabled(False)
         self.btn_save_ng.setEnabled(False)
-        self.btn_skip.setEnabled(False) # Garante que está desativado durante a análise
+        self.btn_skip.setEnabled(False) 
 
         self._reset_confidence_panel()
         self._reset_reference_panel()
@@ -354,7 +84,6 @@ class ControlPanel(QWidget):
         self.processor_monitor.process_external_image(img_bgr)
 
     def handle_physical_keyboard(self, comando_xp: str):
-        """ Recebe a notificação de que o operador apertou 0 ou 1 no teclado do XP """
         print(f"🔄 Replicando comando do teclado do XP: {comando_xp}")
         if comando_xp == "OK":
             self.save_label("OK", source="xp_keyboard")
@@ -362,7 +91,6 @@ class ControlPanel(QWidget):
             self.save_label("NG", source="xp_keyboard")
 
     def send_command_to_xp(self, tecla: str):
-        """ Envia o comando (0 ou 1) para o servidor fantasma no XP """
         if not self.last_xp_ip:
             print("⚠️ Impossível enviar comando: IP do XP desconhecido.")
             return
@@ -422,7 +150,7 @@ class ControlPanel(QWidget):
         return QPixmap.fromImage(q_img)
 
     # ============================================================
-    # RESETS E UPDATES (MANTIDOS INTACTOS)
+    # RESETS E UPDATES
     # ============================================================
 
     def _reset_aoi_info(self):
@@ -695,7 +423,7 @@ class ControlPanel(QWidget):
         self.btn_start.setText("Capturar Local Manualmente (MSS)")
         self.btn_save_ok.setEnabled(True)
         self.btn_save_ng.setEnabled(True)
-        self.btn_skip.setEnabled(True) # Habilita o botão de Pular quando a foto está pronta!
+        self.btn_skip.setEnabled(True) 
         
         elapsed_time = time.time() - self.capture_start_time
         self.lbl_timer.setText(f"Latencia: {elapsed_time:.2f}s")
@@ -703,14 +431,10 @@ class ControlPanel(QWidget):
             "font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #55ff55;")
 
     # ============================================================
-    # SALVAMENTO E SINCRONIA FULL-DUPLEX
+    # SALVAMENTO E SINCRONIA FULL-DUPLEX (COM ACTIVE LEARNING)
     # ============================================================
     
     def skip_image(self):
-        """
-        NOVO: Descarta a imagem atual internamente sem salvar e sem enviar comando ao XP.
-        Apenas solta a trava e limpa a tela para a próxima foto.
-        """
         print("⏭️ Imagem descartada internamente. Aguardando próxima...")
         
         self.btn_save_ok.setEnabled(False)
@@ -725,36 +449,54 @@ class ControlPanel(QWidget):
         self.lbl_sample.setText("Aguardando capturas da Rede...")
         self.lbl_ng.setText("Aguardando capturas da Rede...")
 
-    def save_label(self, label: str, source="button"):
-        """
-        Salva no dataset e destrava o sistema.
-        Se 'source' for 'button', manda o XP apertar fisicamente.
-        Se 'source' for 'xp_keyboard', significa que o XP já apertou, só salva no banco.
-        """
+    def save_label(self, user_decision: str, source="button"):
         if self.current_ng is None:
             return
 
-        # 1. Se quem clicou foi o painel (mouse), mande o XP "imitar" a ação fisicamente!
         if source == "button":
-            # OK (Falha Falsa) aperta a tecla '0' na máquina física
-            if label == "OK":
+            if user_decision == "OK":
                 self.send_command_to_xp("0")
-            # NG (Defeito Real) aperta a tecla '1' na máquina física
-            elif label == "NG":
+            elif user_decision == "NG":
                 self.send_command_to_xp("1")
 
-        # 2. Continua o fluxo normal de aprendizado
+        # --- AVALIAÇÃO DE ACTIVE LEARNING ---
+        save_heavy_image = False
+        
+        if self.current_analysis:
+            ia_decision = "NG" if self.current_analysis.get("is_defect") else "OK"
+            ia_confidence = self.current_analysis.get("confidence", 0.0)
+            
+            # Se o humano discordou da IA...
+            if user_decision != ia_decision:
+                print(f"🧠 Active Learning: IA errou (Disse {ia_decision}, Humano disse {user_decision}). Salvando PNG para retreino.")
+                save_heavy_image = True
+            
+            # Ou se a IA acertou, mas estava insegura (< 60% de confiança)
+            elif ia_confidence < 0.60:
+                print(f"🧠 Active Learning: IA insegura (Confiança {ia_confidence:.0%}). Salvando PNG para reforço.")
+                save_heavy_image = True
+            else:
+                print(f"🧠 Active Learning: IA correta e segura (Confiança {ia_confidence:.0%}). Salvando apenas o JSON.")
+        else:
+            # Fallback de segurança: salva PNG se por algum motivo não houver análise
+            save_heavy_image = True
+
+        # ====================================
+
         filepath = DatasetManager.save_sample(
             ng_image=self.current_ng,
-            label=label,
+            label=user_decision,
             sample_image=self.current_sample,  
             aoi_info=self.current_aoi_info,
-            analysis=self.current_analysis
+            analysis=self.current_analysis,
+            save_images=save_heavy_image 
         )
 
         if filepath:
-            print(f"Dataset salvo como {label} (Origem: {source}): {filepath}")
-            self.lbl_ng.setText(f"SALVO NO DATASET: {label}")
+            tipo_salvo = "PNG + JSON" if save_heavy_image else "Apenas JSON"
+            print(f"Dataset salvo como {user_decision} ({tipo_salvo}) (Origem: {source}): {filepath}")
+            
+            self.lbl_ng.setText(f"SALVO: {user_decision} ({tipo_salvo})")
             self.btn_save_ok.setEnabled(False)
             self.btn_save_ng.setEnabled(False)
             self.btn_skip.setEnabled(False)
@@ -765,7 +507,6 @@ class ControlPanel(QWidget):
                 f"({len(self.neural_judge.memory.signatures_ok)} OK + "
                 f"{len(self.neural_judge.memory.signatures_ng)} NG)")
 
-        # 3. Libera a trava para a próxima placa
         self.is_locked = False
         self.lbl_sample.setText("Aguardando capturas da Rede...")
         self.lbl_ng.setText("Aguardando capturas da Rede...")
