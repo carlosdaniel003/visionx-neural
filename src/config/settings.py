@@ -36,6 +36,9 @@ class Config:
     AOI_GRAY_MIN = 100       # Brilho mínimo (pega as sombras dos painéis)
     AOI_GRAY_MAX = 245       # Brilho máximo (pega o brilho quase branco do efeito 3D)
 
+    # --- Configurações de Rede (Ponte VisionX - Windows XP) ---
+    PORTA_RECEPTORA = 5001
+
     # --- Tesseract OCR ---
     TESSERACT_CMD = r"C:\Users\cdaniel\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
 

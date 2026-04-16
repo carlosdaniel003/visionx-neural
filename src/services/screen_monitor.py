@@ -1,7 +1,7 @@
 # src\services\screen_monitor.py
 """
 Módulo responsável pela captura de tela e detecção do Layout da AOI.
-Modo One-Shot.
+Modo Híbrido: Suporta captura local via MSS ou processamento de imagem externa via Rede.
 
 ESTRATÉGIA v14 "CINZA SUSTENTADO PURO":
 ═══════════════════════════════════════
@@ -428,7 +428,67 @@ class ScreenMonitor(QThread):
         return info
 
     # =================================================================
-    # LOOP PRINCIPAL
+    # PROCESSAMENTO DE IMAGEM EXTERNA (REDE)
+    # =================================================================
+
+    def process_external_image(self, frame_bgr: np.ndarray):
+        """
+        Analisa uma imagem enviada externamente (ex: pelo Windows XP via rede)
+        utilizando exatamente a mesma lógica de barras e OCR do MSS.
+        """
+        if frame_bgr is None or frame_bgr.size == 0:
+            self.log_updated.emit("Monitor AOI: Imagem de rede inválida ou vazia.")
+            return
+
+        frame_h, frame_w = frame_bgr.shape[:2]
+        hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+
+        # Máscaras de cores
+        mask_blue = cv2.inRange(hsv, settings.COLOR_BLUE_LOWER, settings.COLOR_BLUE_UPPER)
+        mask_red1 = cv2.inRange(hsv, settings.COLOR_RED1_LOWER, settings.COLOR_RED1_UPPER)
+        mask_red2 = cv2.inRange(hsv, settings.COLOR_RED2_LOWER, settings.COLOR_RED2_UPPER)
+        mask_red = cv2.bitwise_or(mask_red1, mask_red2)
+
+        # Localiza barras
+        blue_bar = self._find_color_bar(mask_blue)
+        if blue_bar is None:
+            self.log_updated.emit("Monitor AOI (Rede): Barra azul não detectada.")
+            return
+
+        red_bar = self._find_sibling_bar(mask_red, blue_bar)
+        if red_bar is None:
+            red_bar = self._find_color_bar(mask_red)
+
+        if red_bar is None:
+            self.log_updated.emit("Monitor AOI (Rede): Barra vermelha não detectada.")
+            return
+
+        bar_bottom = max(blue_bar[1] + blue_bar[3], red_bar[1] + red_bar[3])
+        max_photo_height = min(600, frame_h - bar_bottom - 50)
+
+        print(f"🔍 [REDE] Barras: Azul({blue_bar[0]},{blue_bar[1]} "
+              f"w={blue_bar[2]} h={blue_bar[3]}) | "
+              f"Verm({red_bar[0]},{red_bar[1]} "
+              f"w={red_bar[2]} h={red_bar[3]})")
+
+        # Recorta
+        crop_sample = self._extract_photo(frame_bgr, blue_bar, max_photo_height, "AZUL_REDE")
+        crop_ng = self._extract_photo(frame_bgr, red_bar, max_photo_height, "VERM_REDE")
+
+        # Extrai info e Emite
+        if crop_sample.size > 0 and crop_ng.size > 0:
+            aoi_info = self._extract_text_info(frame_bgr, blue_bar, red_bar)
+            self.layout_detected.emit(crop_sample, crop_ng, aoi_info)
+            self.log_updated.emit(
+                f"Monitor AOI (Rede): SUCESSO! "
+                f"Azul {crop_sample.shape[1]}x{crop_sample.shape[0]} | "
+                f"Verm {crop_ng.shape[1]}x{crop_ng.shape[0]}"
+            )
+        else:
+            self.log_updated.emit("Monitor AOI (Rede): Falha ao recortar fotos da imagem recebida.")
+
+    # =================================================================
+    # LOOP PRINCIPAL (CAPTURA LOCAL)
     # =================================================================
 
     def run(self):

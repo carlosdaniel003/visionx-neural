@@ -8,10 +8,14 @@ Salva metadados JSON ao curar amostras.
 Inclui Ticker Time para medir latência da operação.
 Exibe % de Defeito Real e % de Falha Falsa simultaneamente.
 Ponte de Epicentros ativa.
+Suporte a Recepção por Rede (XP) com Trava de Decisão do Operador.
+FULL DUPLEX: Sincronia de cliques entre Painel e Teclado Físico do XP.
+SKIP INTERNO: Função de descartar imagem atual da UI sem interferir no XP.
 """
 import cv2
 import numpy as np
 import time
+import socket
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QLabel,
                              QHBoxLayout, QMessageBox, QFrame, QGridLayout,
                              QApplication)
@@ -21,7 +25,7 @@ from src.services.screen_monitor import ScreenMonitor
 from src.services.dataset_manager import DatasetManager
 from src.core.inspection import detect_anomalies
 from src.core.neural_judge import NeuralJudge
-
+from src.services.network_receiver import NetworkReceiver
 
 class ControlPanel(QWidget):
     def __init__(self):
@@ -33,6 +37,20 @@ class ControlPanel(QWidget):
         self.current_analysis = None
         self.capture_start_time = 0.0
         self.neural_judge = NeuralJudge()
+        
+        self.is_locked = False 
+        self.last_xp_ip = None # Salva o IP do XP para sabermos pra onde mandar a resposta
+        
+        self.processor_monitor = ScreenMonitor()
+        self.processor_monitor.layout_detected.connect(self.process_aoi_images)
+        self.processor_monitor.log_updated.connect(self.update_status_log)
+
+        self.network_receiver = NetworkReceiver(port=5001)
+        self.network_receiver.log_updated.connect(self.update_status_log)
+        self.network_receiver.image_received.connect(self.handle_network_image)
+        self.network_receiver.command_received.connect(self.handle_physical_keyboard)
+        self.network_receiver.start()
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -62,8 +80,6 @@ class ControlPanel(QWidget):
         self.lbl_timer.setStyleSheet(
             "font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #aaaaaa;")
 
-        # Adiciona um espaço flexível antes do título para mantê-lo centralizado,
-        # e o timer fica ancorado à direita.
         spacer = QLabel("")
         spacer.setMinimumWidth(120) 
         top_layout.addWidget(spacer)
@@ -127,7 +143,7 @@ class ControlPanel(QWidget):
         lbl_sample_title = QLabel("Padrao (Sample)")
         lbl_sample_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_sample_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
-        self.lbl_sample = QLabel("Aguardando Layout...")
+        self.lbl_sample = QLabel("Aguardando capturas da Rede...")
         self.lbl_sample.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_sample.setStyleSheet(
             "background-color: #1a1a1a; border: 1px solid #333333; color: #888888;")
@@ -139,7 +155,7 @@ class ControlPanel(QWidget):
         lbl_ng_title = QLabel("Analise VisaoX (NG)")
         lbl_ng_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_ng_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
-        self.lbl_ng = QLabel("Aguardando Layout...")
+        self.lbl_ng = QLabel("Aguardando capturas da Rede...")
         self.lbl_ng.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_ng.setStyleSheet(
             "background-color: #1a1a1a; border: 1px solid #333333; color: #888888;")
@@ -256,40 +272,127 @@ class ControlPanel(QWidget):
                 border: 1px solid #333333;
             }
         """
+        
+        # Botão de Skip com estilo ligeiramente diferente para se destacar
+        skip_button_style = """
+            QPushButton {
+                background-color: #4a2c2c; color: #ffaaaa; font-weight: bold;
+                border: 1px solid #663333; border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #5a3c3c; }
+            QPushButton:disabled {
+                background-color: #1a1a1a; color: #555555;
+                border: 1px solid #333333;
+            }
+        """
 
-        self.btn_start = QPushButton("Capturar AOI Agora")
+        self.btn_start = QPushButton("Capturar Local Manualmente (MSS)")
         self.btn_start.setMinimumHeight(40)
         self.btn_start.setStyleSheet(button_style)
         self.btn_start.clicked.connect(self.start_monitoring)
         main_layout.addWidget(self.btn_start)
 
         curation_layout = QHBoxLayout()
+        
+        # NOVO: Botão de Descartar / Pular (Apenas Teste Interno)
+        self.btn_skip = QPushButton("X - Descartar")
+        self.btn_skip.setMinimumHeight(40)
+        self.btn_skip.setEnabled(False)
+        self.btn_skip.setStyleSheet(skip_button_style)
+        self.btn_skip.clicked.connect(self.skip_image)
 
         self.btn_save_ok = QPushButton("Salvar como Falha Falsa (OK)")
         self.btn_save_ok.setMinimumHeight(40)
         self.btn_save_ok.setEnabled(False)
         self.btn_save_ok.setStyleSheet(button_style)
-        self.btn_save_ok.clicked.connect(lambda: self.save_label("OK"))
+        self.btn_save_ok.clicked.connect(lambda: self.save_label("OK", source="button"))
 
         self.btn_save_ng = QPushButton("Confirmar Defeito Real (NG)")
         self.btn_save_ng.setMinimumHeight(40)
         self.btn_save_ng.setEnabled(False)
         self.btn_save_ng.setStyleSheet(button_style)
-        self.btn_save_ng.clicked.connect(lambda: self.save_label("NG"))
+        self.btn_save_ng.clicked.connect(lambda: self.save_label("NG", source="button"))
 
+        curation_layout.addWidget(self.btn_skip)
         curation_layout.addWidget(self.btn_save_ok)
         curation_layout.addWidget(self.btn_save_ng)
         main_layout.addLayout(curation_layout)
         
-        # Garante que inicie maximizado
         self.showMaximized()
 
     # ============================================================
-    # MÉTODOS DE CONTROLE
+    # NOVOS MÉTODOS (REDE, TRAVA E FULL DUPLEX)
+    # ============================================================
+
+    def update_status_log(self, msg: str):
+        print(msg)
+
+    def handle_network_image(self, img_bgr: np.ndarray, ip: str):
+        """Recebe a imagem da rede, salva o IP do XP para resposta, trava a UI e processa."""
+        if self.is_locked:
+            print(f"⚠️ Imagem da AOI ({ip}) ignorada: Aguardando decisão do operador atual.")
+            return
+
+        self.is_locked = True
+        self.last_xp_ip = ip 
+        self.capture_start_time = time.time()
+        
+        self.lbl_timer.setText("Latencia: Analisando Rede...")
+        self.lbl_timer.setStyleSheet("font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #ffaa33;")
+        self.btn_start.setEnabled(False)
+        self.btn_save_ok.setEnabled(False)
+        self.btn_save_ng.setEnabled(False)
+        self.btn_skip.setEnabled(False) # Garante que está desativado durante a análise
+
+        self._reset_confidence_panel()
+        self._reset_reference_panel()
+        self._reset_aoi_info()
+        
+        self.lbl_sample.setText("Processando imagem da rede (Azul)...")
+        self.lbl_ng.setText("Processando imagem da rede (Vermelha)...")
+
+        self.processor_monitor.process_external_image(img_bgr)
+
+    def handle_physical_keyboard(self, comando_xp: str):
+        """ Recebe a notificação de que o operador apertou 0 ou 1 no teclado do XP """
+        print(f"🔄 Replicando comando do teclado do XP: {comando_xp}")
+        if comando_xp == "OK":
+            self.save_label("OK", source="xp_keyboard")
+        elif comando_xp == "NG":
+            self.save_label("NG", source="xp_keyboard")
+
+    def send_command_to_xp(self, tecla: str):
+        """ Envia o comando (0 ou 1) para o servidor fantasma no XP """
+        if not self.last_xp_ip:
+            print("⚠️ Impossível enviar comando: IP do XP desconhecido.")
+            return
+            
+        try:
+            print(f"👉 Mandando XP apertar '{tecla}'...")
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1.0)
+            s.connect((self.last_xp_ip, 5000)) 
+            
+            mensagem = f"PRESS_{tecla}"
+            s.send(mensagem.encode('utf-8'))
+            s.close()
+        except Exception as e:
+            print(f"❌ Erro ao enviar comando para o XP ({self.last_xp_ip}): {e}")
+
+    def closeEvent(self, event):
+        self.network_receiver.stop()
+        event.accept()
+
+    # ============================================================
+    # MÉTODOS DE CONTROLE (MSS MANUAL MANTIDO)
     # ============================================================
 
     def start_monitoring(self):
-        # Inicia a contagem de tempo
+        if self.is_locked:
+            return
+            
+        self.is_locked = True
+        self.last_xp_ip = None 
         self.capture_start_time = time.time()
         self.lbl_timer.setText("Latencia: Calculando...")
         self.lbl_timer.setStyleSheet("font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #ffaa33;")
@@ -300,6 +403,7 @@ class ControlPanel(QWidget):
         self.lbl_ng.setText("Procurando barra Vermelha e Quadrado Verde...")
         self.btn_save_ok.setEnabled(False)
         self.btn_save_ng.setEnabled(False)
+        self.btn_skip.setEnabled(False)
         self._reset_confidence_panel()
         self._reset_reference_panel()
         self._reset_aoi_info()
@@ -318,7 +422,7 @@ class ControlPanel(QWidget):
         return QPixmap.fromImage(q_img)
 
     # ============================================================
-    # RESETS
+    # RESETS E UPDATES (MANTIDOS INTACTOS)
     # ============================================================
 
     def _reset_aoi_info(self):
@@ -350,10 +454,6 @@ class ControlPanel(QWidget):
         self.lbl_ref_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
         self.lbl_ref_info.setText("")
 
-    # ============================================================
-    # UPDATES
-    # ============================================================
-
     def _update_aoi_info(self, aoi_info: dict):
         board = aoi_info.get("board", "")
         parts = aoi_info.get("parts", "")
@@ -362,9 +462,6 @@ class ControlPanel(QWidget):
         self.lbl_board_value.setText(board if board else "-")
         self.lbl_parts_value.setText(parts if parts else "-")
         self.lbl_value_value.setText(value if value else "-")
-
-        if board or parts or value:
-            print(f"AOI Info - Board: {board} | Parts: {parts} | Value: {value}")
 
     def _update_reference_panel(self, analysis: dict):
         detail = analysis.get("detail", {})
@@ -421,7 +518,6 @@ class ControlPanel(QWidget):
         is_defect = analysis.get("is_defect", False)
         conf_float = analysis.get("confidence", 0.5)
 
-        # Calcula a balança percentual
         conf_main = int(conf_float * 100)
         conf_opp = 100 - conf_main
 
@@ -434,7 +530,6 @@ class ControlPanel(QWidget):
             def_pct = conf_opp
             color_str = "#55ff55"
 
-        # Exibe ambas as porcentagens no painel principal
         self.lbl_verdict.setText(f"{verdict} - Defeito: {def_pct}% | Falha Falsa: {ok_pct}%")
         self.lbl_verdict.setStyleSheet(
             f"color: {color_str}; font-size: 16px; font-weight: bold; "
@@ -510,7 +605,6 @@ class ControlPanel(QWidget):
         if sample_crop.size == 0 or ng_crop.size == 0:
             return
 
-        # Restaura a janela de forma maximizada e a coloca em foco
         self.showMaximized()
         self.activateWindow()
 
@@ -526,7 +620,6 @@ class ControlPanel(QWidget):
             self.lbl_sample.size(), Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation))
 
-        # CORREÇÃO: Capturamos também os epicentros do detect_anomalies
         raw_anomalies, aoi_epicenters = detect_anomalies(sample_crop, ng_crop)
         img_ng_drawn = ng_crop.copy()
 
@@ -547,7 +640,6 @@ class ControlPanel(QWidget):
                 suspect_gab = sample_crop[y:y+h, x:x+w]
                 suspect_test = ng_crop[y:y+h, x:x+w]
 
-                # CORREÇÃO CRÍTICA: Passando os metadados (parts) e os epicentros pro Juiz!
                 analysis = self.neural_judge.verify_anomaly(
                     crop_gab=suspect_gab,
                     crop_test=suspect_test,
@@ -563,15 +655,14 @@ class ControlPanel(QWidget):
                 conf_main = int(conf_float * 100)
                 conf_opp = 100 - conf_main
 
-                # Adiciona ambas as porcentagens também na marcação visual da imagem
                 if is_real:
                     def_pct = conf_main
                     ok_pct = conf_opp
-                    color = (0, 0, 255) # Vermelho em BGR
+                    color = (0, 0, 255) 
                 else:
                     ok_pct = conf_main
                     def_pct = conf_opp
-                    color = (0, 165, 255) # Laranja em BGR
+                    color = (0, 165, 255) 
 
                 label_text = f"DEF:{def_pct}% | FALSO:{ok_pct}%"
 
@@ -601,37 +692,80 @@ class ControlPanel(QWidget):
             Qt.TransformationMode.SmoothTransformation))
 
         self.btn_start.setEnabled(True)
-        self.btn_start.setText("Nova Captura AOI")
+        self.btn_start.setText("Capturar Local Manualmente (MSS)")
         self.btn_save_ok.setEnabled(True)
         self.btn_save_ng.setEnabled(True)
+        self.btn_skip.setEnabled(True) # Habilita o botão de Pular quando a foto está pronta!
         
-        # Para a contagem e exibe o tempo total gasto na operação
         elapsed_time = time.time() - self.capture_start_time
         self.lbl_timer.setText(f"Latencia: {elapsed_time:.2f}s")
         self.lbl_timer.setStyleSheet(
             "font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #55ff55;")
 
-    def save_label(self, label: str):
+    # ============================================================
+    # SALVAMENTO E SINCRONIA FULL-DUPLEX
+    # ============================================================
+    
+    def skip_image(self):
+        """
+        NOVO: Descarta a imagem atual internamente sem salvar e sem enviar comando ao XP.
+        Apenas solta a trava e limpa a tela para a próxima foto.
+        """
+        print("⏭️ Imagem descartada internamente. Aguardando próxima...")
+        
+        self.btn_save_ok.setEnabled(False)
+        self.btn_save_ng.setEnabled(False)
+        self.btn_skip.setEnabled(False)
+        
+        self._reset_confidence_panel()
+        self._reset_reference_panel()
+        self._reset_aoi_info()
+        
+        self.is_locked = False
+        self.lbl_sample.setText("Aguardando capturas da Rede...")
+        self.lbl_ng.setText("Aguardando capturas da Rede...")
+
+    def save_label(self, label: str, source="button"):
+        """
+        Salva no dataset e destrava o sistema.
+        Se 'source' for 'button', manda o XP apertar fisicamente.
+        Se 'source' for 'xp_keyboard', significa que o XP já apertou, só salva no banco.
+        """
         if self.current_ng is None:
             return
 
-        # v5.0: Salva a imagem NG inteira (não mais pareada)
+        # 1. Se quem clicou foi o painel (mouse), mande o XP "imitar" a ação fisicamente!
+        if source == "button":
+            # OK (Falha Falsa) aperta a tecla '0' na máquina física
+            if label == "OK":
+                self.send_command_to_xp("0")
+            # NG (Defeito Real) aperta a tecla '1' na máquina física
+            elif label == "NG":
+                self.send_command_to_xp("1")
+
+        # 2. Continua o fluxo normal de aprendizado
         filepath = DatasetManager.save_sample(
             ng_image=self.current_ng,
             label=label,
-            sample_image=self.current_sample,  # salva sample separada como referência
+            sample_image=self.current_sample,  
             aoi_info=self.current_aoi_info,
             analysis=self.current_analysis
         )
 
         if filepath:
-            print(f"Dataset salvo como {label}: {filepath}")
+            print(f"Dataset salvo como {label} (Origem: {source}): {filepath}")
             self.lbl_ng.setText(f"SALVO NO DATASET: {label}")
             self.btn_save_ok.setEnabled(False)
             self.btn_save_ng.setEnabled(False)
+            self.btn_skip.setEnabled(False)
 
             self.neural_judge.reload_memory()
             self.lbl_db_info.setText(
                 f"Memoria atualizada! "
                 f"({len(self.neural_judge.memory.signatures_ok)} OK + "
                 f"{len(self.neural_judge.memory.signatures_ng)} NG)")
+
+        # 3. Libera a trava para a próxima placa
+        self.is_locked = False
+        self.lbl_sample.setText("Aguardando capturas da Rede...")
+        self.lbl_ng.setText("Aguardando capturas da Rede...")
