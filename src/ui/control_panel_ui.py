@@ -2,11 +2,18 @@
 """
 Módulo responsável exclusivamente pela construção da Interface Gráfica (View).
 Aplica o Princípio da Responsabilidade Única (SRP) separando o visual da lógica.
+Layout em Z: Imagens à esquerda, Telemetria à direita, Numéricos no rodapé.
+Ajuste: Inserção do campo 'Category' na barra superior para exibir o texto normalizado do OCR.
 """
 from PyQt6.QtWidgets import (QVBoxLayout, QPushButton, QLabel,
                              QHBoxLayout, QFrame, QGridLayout,
-                             QApplication)
+                             QApplication, QSizePolicy)
 from PyQt6.QtCore import Qt
+
+# Nossos componentes Lego (Widgets de Telemetria da IA)
+from src.ui.widgets.semantic_dna import SemanticDNAWidget
+from src.ui.widgets.radar_chart import RadarChartWidget
+from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
 
 class ControlPanelUI:
     def setup_ui(self, window):
@@ -21,7 +28,8 @@ class ControlPanelUI:
         window.setGeometry(available)
 
         main_layout = QVBoxLayout(window)
-        main_layout.setContentsMargins(10, 6, 10, 6)
+        # AJUSTE: Margem inferior aumentada de 6 para 25 para proteger contra a barra de tarefas
+        main_layout.setContentsMargins(10, 6, 10, 25) 
         main_layout.setSpacing(4)
 
         # ============================================================
@@ -58,6 +66,7 @@ class ControlPanelUI:
 
         info_label_style = "color: #888888; font-size: 11px; border: none;"
         info_value_style = "color: #ffffff; font-size: 12px; font-weight: bold; border: none;"
+        category_value_style = "color: #55ff55; font-size: 12px; font-weight: bold; border: none;" # Categoria ganha destaque
 
         lbl_board_name = QLabel("Board:")
         lbl_board_name.setStyleSheet(info_label_style)
@@ -69,6 +78,12 @@ class ControlPanelUI:
         window.lbl_parts_value = QLabel("-")
         window.lbl_parts_value.setStyleSheet(info_value_style)
 
+        # --- NOVO: Campo de Categoria Normalizada ---
+        lbl_category_name = QLabel("Category:")
+        lbl_category_name.setStyleSheet(info_label_style)
+        window.lbl_category_value = QLabel("-")
+        window.lbl_category_value.setStyleSheet(category_value_style)
+
         lbl_value_name = QLabel("Value:")
         lbl_value_name.setStyleSheet(info_label_style)
         window.lbl_value_value = QLabel("-")
@@ -77,20 +92,29 @@ class ControlPanelUI:
         aoi_info_layout.addWidget(lbl_board_name)
         aoi_info_layout.addWidget(window.lbl_board_value)
         aoi_info_layout.addStretch()
+        
         aoi_info_layout.addWidget(lbl_parts_name)
         aoi_info_layout.addWidget(window.lbl_parts_value)
         aoi_info_layout.addStretch()
+
+        aoi_info_layout.addWidget(lbl_category_name)
+        aoi_info_layout.addWidget(window.lbl_category_value)
+        aoi_info_layout.addStretch()
+
         aoi_info_layout.addWidget(lbl_value_name)
         aoi_info_layout.addWidget(window.lbl_value_value)
 
         main_layout.addWidget(window.aoi_info_frame)
 
         # ============================================================
-        # === DISPLAYS DE IMAGEM
+        # === PALCO PRINCIPAL: IMAGENS (ESQUERDA) E TELEMETRIA (DIREITA)
         # ============================================================
-        displays_layout = QHBoxLayout()
-        displays_layout.setSpacing(8)
+        stage_layout = QHBoxLayout()
+        stage_layout.setSpacing(8)
 
+        # --- LADO ESQUERDO: AS IMAGENS DA CÂMERA ---
+        images_layout = QHBoxLayout()
+        
         # Sample
         sample_layout = QVBoxLayout()
         lbl_sample_title = QLabel("Padrao (Sample)")
@@ -99,7 +123,7 @@ class ControlPanelUI:
         window.lbl_sample = QLabel("Aguardando capturas da Rede...")
         window.lbl_sample.setAlignment(Qt.AlignmentFlag.AlignCenter)
         window.lbl_sample.setStyleSheet("background-color: #1a1a1a; border: 1px solid #333333; color: #888888;")
-        window.lbl_sample.setMinimumSize(200, 180)
+        window.lbl_sample.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sample_layout.addWidget(lbl_sample_title)
         sample_layout.addWidget(window.lbl_sample, stretch=1)
 
@@ -111,54 +135,61 @@ class ControlPanelUI:
         window.lbl_ng = QLabel("Aguardando capturas da Rede...")
         window.lbl_ng.setAlignment(Qt.AlignmentFlag.AlignCenter)
         window.lbl_ng.setStyleSheet("background-color: #1a1a1a; border: 1px solid #333333; color: #888888;")
-        window.lbl_ng.setMinimumSize(200, 180)
+        window.lbl_ng.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         ng_layout.addWidget(lbl_ng_title)
         ng_layout.addWidget(window.lbl_ng, stretch=1)
 
-        # Ref
-        ref_layout = QVBoxLayout()
-        window.lbl_ref_title = QLabel("Referencia (Dataset)")
-        window.lbl_ref_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        window.lbl_ref_title.setStyleSheet("color: #aaaaaa; font-size: 12px;")
-        window.lbl_ref = QLabel("Sem dados no banco")
-        window.lbl_ref.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        window.lbl_ref.setStyleSheet("background-color: #1a1a1a; border: 1px solid #333333; color: #888888;")
-        window.lbl_ref.setMinimumSize(200, 180)
-        window.lbl_ref_info = QLabel("")
-        window.lbl_ref_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        window.lbl_ref_info.setStyleSheet("color: #888888; font-size: 10px;")
-        window.lbl_ref_info.setWordWrap(True)
-        ref_layout.addWidget(window.lbl_ref_title)
-        ref_layout.addWidget(window.lbl_ref, stretch=1)
-        ref_layout.addWidget(window.lbl_ref_info)
+        images_layout.addLayout(sample_layout, stretch=1)
+        images_layout.addLayout(ng_layout, stretch=1)
+        
+        # Adiciona as imagens no palco (Pesando 60%)
+        stage_layout.addLayout(images_layout, stretch=6)
 
-        displays_layout.addLayout(sample_layout, stretch=1)
-        displays_layout.addLayout(ng_layout, stretch=1)
-        displays_layout.addLayout(ref_layout, stretch=1)
-        main_layout.addLayout(displays_layout, stretch=1)
+        # --- LADO DIREITO: DASHBOARD SEMÂNTICO (WIDGETS) ---
+        telemetry_layout = QVBoxLayout()
+        
+        title_telemetry = QLabel("DASHBOARD SEMANTICO DA IA")
+        title_telemetry.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_telemetry.setStyleSheet("color: #aaaaaa; font-size: 12px; font-weight: bold;")
+        telemetry_layout.addWidget(title_telemetry)
+
+        # Container 1: Código de Barras (DNA)
+        window.frame_dna = SemanticDNAWidget()
+        telemetry_layout.addWidget(window.frame_dna, stretch=1)
+
+        # Container 2: Gráfico de Radar
+        window.frame_radar = RadarChartWidget()
+        telemetry_layout.addWidget(window.frame_radar, stretch=2)
+
+        # Container 3: Espectro KNN
+        window.frame_knn = KNNSpectrumWidget()
+        telemetry_layout.addWidget(window.frame_knn, stretch=1)
+
+        # Adiciona a telemetria no palco (Pesando 40%)
+        stage_layout.addLayout(telemetry_layout, stretch=4)
+        
+        # AJUSTE: Adiciona o stage ao layout principal com peso alto (stretch=10)
+        # Isso garante que ele encolha se precisar de espaco para os botoes.
+        main_layout.addLayout(stage_layout, stretch=10)
 
         # ============================================================
-        # === PAINEL DE CONFIABILIDADE
+        # === RODAPÉ ANALÍTICO (VEREDITO E TEXTOS)
         # ============================================================
         window.confidence_frame = QFrame()
+        # AJUSTE: Reduzi o padding de 6px para 2px para economizar altura vertical
         window.confidence_frame.setStyleSheet("""
-            QFrame { background-color: #1e1e1e; border: 1px solid #333333; border-radius: 8px; padding: 6px; }
+            QFrame { background-color: #1e1e1e; border: 1px solid #333333; border-radius: 8px; padding: 2px; }
         """)
         conf_layout = QVBoxLayout(window.confidence_frame)
-        conf_layout.setSpacing(3)
-
-        conf_title = QLabel("Painel de Confiabilidade - Analise do Juiz Neural")
-        conf_title.setStyleSheet("color: #dddddd; font-weight: bold; font-size: 13px; border: none;")
-        conf_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        conf_layout.addWidget(conf_title)
+        conf_layout.setSpacing(1)
 
         window.lbl_verdict = QLabel("Aguardando analise...")
         window.lbl_verdict.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        window.lbl_verdict.setStyleSheet("color: #888888; font-size: 16px; font-weight: bold; padding: 4px; border: none;")
+        window.lbl_verdict.setStyleSheet("color: #888888; font-size: 16px; font-weight: bold; border: none;")
         conf_layout.addWidget(window.lbl_verdict)
 
         metrics_grid = QGridLayout()
-        metrics_grid.setSpacing(3)
+        metrics_grid.setSpacing(2)
 
         window.metric_labels = {}
         metrics_def = [
@@ -168,34 +199,42 @@ class ControlPanelUI:
             ("db_score", "Score Dataset"), ("final_score", "Score Final"),
         ]
 
+        # Dividimos em 8 colunas (uma linha só) para caber deitada de ponta a ponta
         for i, (key, label_text) in enumerate(metrics_def):
-            row = i // 4
-            col = (i % 4) * 2
             lbl_name = QLabel(label_text + ":")
+            lbl_name.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             lbl_name.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
+            
             lbl_value = QLabel("-")
             lbl_value.setStyleSheet("color: #ffffff; font-size: 11px; font-weight: bold; border: none; background: transparent;")
-            metrics_grid.addWidget(lbl_name, row, col)
-            metrics_grid.addWidget(lbl_value, row, col + 1)
+            
+            metrics_grid.addWidget(lbl_name, 0, i * 2)
+            metrics_grid.addWidget(lbl_value, 0, (i * 2) + 1)
+            
             window.metric_labels[key] = lbl_value
 
         conf_layout.addLayout(metrics_grid)
 
+        # O texto do Banco de Dados e Justificativas ficam aqui embaixo
+        info_db_layout = QHBoxLayout()
         window.lbl_reason = QLabel("")
-        window.lbl_reason.setStyleSheet("color: #aaaaaa; font-size: 10px; padding-top: 2px; border: none;")
+        window.lbl_reason.setStyleSheet("color: #aaaaaa; font-size: 10px; border: none;")
         window.lbl_reason.setWordWrap(True)
         window.lbl_reason.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        conf_layout.addWidget(window.lbl_reason)
-
+        
         window.lbl_db_info = QLabel("")
         window.lbl_db_info.setStyleSheet("color: #777777; font-size: 10px; border: none;")
         window.lbl_db_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        conf_layout.addWidget(window.lbl_db_info)
+        
+        info_db_layout.addWidget(window.lbl_reason, stretch=1)
+        info_db_layout.addWidget(window.lbl_db_info, stretch=1)
+        conf_layout.addLayout(info_db_layout)
 
-        main_layout.addWidget(window.confidence_frame)
+        # AJUSTE: Adiciona sem stretch para que os botoes e o texto tenham tamanho fixo
+        main_layout.addWidget(window.confidence_frame, stretch=0)
 
         # ============================================================
-        # === BOTÕES
+        # === BOTÕES (COMANDOS DE DECISÃO)
         # ============================================================
         button_style = """
             QPushButton { background-color: #2d2d2d; color: #ffffff; font-weight: bold; border: 1px solid #444444; border-radius: 4px; }
@@ -213,7 +252,7 @@ class ControlPanelUI:
         window.btn_start.setMinimumHeight(40)
         window.btn_start.setStyleSheet(button_style)
         window.btn_start.clicked.connect(window.start_monitoring)
-        main_layout.addWidget(window.btn_start)
+        main_layout.addWidget(window.btn_start, stretch=0)
 
         curation_layout = QHBoxLayout()
         
@@ -238,6 +277,9 @@ class ControlPanelUI:
         curation_layout.addWidget(window.btn_skip)
         curation_layout.addWidget(window.btn_save_ok)
         curation_layout.addWidget(window.btn_save_ng)
-        main_layout.addLayout(curation_layout)
         
-        window.showMaximized()
+        # AJUSTE: Adiciona os botoes sem stretch
+        main_layout.addLayout(curation_layout, stretch=0)
+        
+        # AJUSTE: Força o estado nativo da janela como maximizada para ancorar no OS
+        window.setWindowState(Qt.WindowState.WindowMaximized)

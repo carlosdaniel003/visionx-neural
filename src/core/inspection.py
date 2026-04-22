@@ -1,9 +1,12 @@
-# src\core\inspection.py
+# src/core/inspection.py
 """
-Módulo de Inspeção de Defeitos v3.
+Módulo de Inspeção de Defeitos v3.4.
 Melhorias: Extração de Múltiplos Quadrados (Mecanismo de Atenção de Epicentros),
 filtros de área mínima/máxima mais inteligentes, 
 eliminação de ruído de borda, e agrupamento refinado.
+Ajuste: Lógica corrigida para capturar o Epicentro da AOI e a Caixa Global.
+Ajuste v3.3: Blur reduzido e filtros geométricos relaxados para detectar terminais finos deslocados.
+Ajuste v3.4: Exportando as imagens originais recortadas para permitir o cálculo de Shift Global (Gatekeeper).
 """
 import cv2
 import numpy as np
@@ -13,7 +16,11 @@ from src.config.settings import settings
 
 def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
     """
-    Retorna uma tupla: (lista_de_anomalias, lista_de_epicentros_aoi)
+    Retorna uma tupla: (anomalies, inner_boxes, global_box_info, gab_focus, test_focus)
+    - anomalies: Coordenadas dos defeitos texturais encontrados.
+    - inner_boxes: Epicentros da AOI (quadradinhos menores).
+    - global_box_info: Dimensoes do componente para tolerancias de deslocamento.
+    - gab_focus / test_focus: Imagens completas do componente para calculo de Shift Global.
     """
     if img_gabarito.shape != img_teste.shape:
         h, w = img_gabarito.shape[:2]
@@ -32,6 +39,9 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
 
     fx1, fy1, fx2, fy2 = 0, 0, w_full, h_full
     inner_boxes = []
+    
+    # Default para caixa global (caso não ache as linhas verdes, assume a tela toda)
+    global_box_info = {"w": w_full, "h": h_full}
 
     if contours_green:
         # Pega as caixas pelas dimensões (bounding rect) e não pela massa de pixels
@@ -55,6 +65,10 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
         if unique_greens:
             # A MAIOR caixa verde define a Zona de Foco global
             gx, gy, gw, gh = unique_greens[0]
+            
+            # Salva o tamanho original do componente para exportar
+            global_box_info = {"w": gw, "h": gh}
+            
             padding = 40
             fx1 = max(0, gx - padding)
             fy1 = max(0, gy - padding)
@@ -63,11 +77,13 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
 
             # As OUTRAS caixas menores são os "Epicentros" apontados pela AOI
             for (ix, iy, iw, ih) in unique_greens[1:]:
-                # Só aceita se for fisicamente menor (evita falsos positivos de caixas quase do mesmo tamanho)
                 if (iw * ih) < (gw * gh) * 0.85:
-                    inner_boxes.append((ix, iy, iw, ih))
+                    if (ix >= gx - 20) and (iy >= gy - 20) and ((ix + iw) <= (gx + gw + 20)) and ((iy + ih) <= (gy + gh + 20)):
+                        # Guarda as coordenadas ABSOLUTAS do epicentro
+                        inner_boxes.append((ix, iy, iw, ih))
+                        print(f"🎯 Epicentro AOI detectado em: X:{ix}, Y:{iy}, W:{iw}, H:{ih}")
 
-    # Recorta a Zona de Foco
+    # Recorta a Zona de Foco (Exportaremos isso no final!)
     gab_focus = img_gabarito[fy1:fy2, fx1:fx2]
     test_focus = img_teste[fy1:fy2, fx1:fx2]
 
@@ -115,8 +131,8 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
     # ==========================================
     # PASSO D: Análise Cirúrgica
     # ==========================================
-    gab_blur = cv2.GaussianBlur(gab_focus, (7, 7), 0)
-    test_blur = cv2.GaussianBlur(test_focus, (7, 7), 0)
+    gab_blur = cv2.GaussianBlur(gab_focus, (3, 3), 0)
+    test_blur = cv2.GaussianBlur(test_focus, (3, 3), 0)
 
     gray_gab = cv2.cvtColor(gab_blur, cv2.COLOR_BGR2GRAY)
     gray_test = cv2.cvtColor(test_blur, cv2.COLOR_BGR2GRAY)
@@ -126,7 +142,7 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
 
     diff_color = cv2.absdiff(gab_blur, test_blur)
     gray_color = cv2.cvtColor(diff_color, cv2.COLOR_BGR2GRAY)
-    _, mask_color = cv2.threshold(gray_color, 55, 255, cv2.THRESH_BINARY)
+    _, mask_color = cv2.threshold(gray_color, 80, 255, cv2.THRESH_BINARY)
 
     fusion_mask = cv2.bitwise_and(mask_ssim, mask_color)
     fusion_mask = cv2.bitwise_and(fusion_mask, fusion_mask, mask=mask_ignore)
@@ -146,18 +162,20 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
         area = cv2.contourArea(cnt)
         x, y, w_box, h_box = cv2.boundingRect(cnt)
 
-        if area < 150:
+        if area < 40: 
             continue
         if area > focus_area * 0.4:
             continue
         aspect = max(w_box, h_box) / max(min(w_box, h_box), 1)
-        if aspect > 12: 
+        if aspect > 25: 
             continue
         box_area = w_box * h_box
         solidity = area / max(box_area, 1)
-        if solidity < 0.15: 
+        if solidity < 0.05: 
             continue
 
+        # Guarda as anomalias com as coordenadas absolutas também
         anomalies.append((x + fx1, y + fy1, w_box, h_box))
 
-    return anomalies, inner_boxes
+    # Agora devolvemos as imagens de foco para uso externo
+    return anomalies, inner_boxes, global_box_info, gab_focus, test_focus

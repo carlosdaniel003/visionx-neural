@@ -1,11 +1,10 @@
 # src/core/neural_judge.py
 """
-Módulo do Juiz Neural v6.0 — Correspondência Visual + Epicentros + Pesos Dinâmicos.
-MUDANÇAS v6.0 (ACTIVE LEARNING):
+Módulo do Juiz Neural v8.0 — K-NN Isolado por Categoria (Mixture of Experts).
+MUDANÇAS v8.0:
 ═══════════════════════════════
-1. A memória agora lê nativamente dos arquivos JSON.
-2. Não exige mais as imagens PNG para carregar o banco de dados.
-3. Expele o "embedding" calculado no detail para salvamento externo.
+1. A Memória Semântica agora salva e filtra os embeddings com base na Categoria do OCR.
+2. Consultas K-NN só comparam imagens do mesmo tipo de defeito (ex: Shifted com Shifted).
 """
 import cv2
 import numpy as np
@@ -13,6 +12,7 @@ import os
 import json
 import urllib.request
 import re
+import math
 from pathlib import Path
 from numpy.linalg import norm
 from skimage.metrics import structural_similarity as ssim
@@ -51,7 +51,7 @@ class DatasetMemory:
         return re.sub(r'[^A-Z0-9]', '', text.upper())
 
     # =================================================================
-    # CARREGAMENTO (AGORA LÊ DIRETAMENTE DOS JSONs)
+    # CARREGAMENTO (AGORA COM CATEGORY)
     # =================================================================
 
     def _load_all(self):
@@ -65,7 +65,7 @@ class DatasetMemory:
                 print(f"⚠️ Aviso: A pasta '{folder}' não foi encontrada.")
                 continue
 
-            # Agora procuramos por JSONs em vez de PNGs
+            # O rglob vai entrar nas subpastas criadas pelo Active Learning automaticamente
             files = [f for f in folder.rglob("*.json") if f.is_file()]
 
             print(f"📂 Pasta [{label_target}] ({folder}): {len(files)} arquivos JSON encontrados.")
@@ -75,25 +75,25 @@ class DatasetMemory:
                     with open(f, 'r', encoding='utf-8') as json_file:
                         data = json.load(json_file)
                     
-                    # Extrai os dados do JSON
                     analysis = data.get("analysis", {})
                     embedding_list = analysis.get("embedding", [])
                     aoi_info = data.get("aoi_info", {})
-                    part_name = self._clean_string(aoi_info.get("parts", ""))
                     
-                    # Precisamos do caminho de uma imagem para o painel mostrar depois
-                    # Se salvou o PNG, o JSON diz qual é. Se não, usamos uma genérica ou o próprio JSON.
+                    part_name = self._clean_string(aoi_info.get("parts", ""))
+                    # Extrai a categoria do JSON (se for um JSON antigo sem isso, fica Unknown)
+                    category_name = self._clean_string(aoi_info.get("category", "Unknown"))
+                    
                     img_file = data.get("image_file", "")
                     if img_file:
                         path_to_save = str(f.parent / img_file)
                     else:
-                        # Se não há foto (apenas semântica), guardamos o path do JSON para referência
                         path_to_save = str(f)
 
                     if embedding_list:
                         sig = np.array(embedding_list, dtype=np.float32)
                         sig_list.append({
                             "part": part_name,
+                            "category": category_name, # NOVO: Guarda a categoria na RAM
                             "sig": sig,
                             "path": path_to_save
                         })
@@ -117,25 +117,38 @@ class DatasetMemory:
         return preds.flatten()
 
     # =================================================================
-    # CONSULTA
+    # CONSULTA ISOLADA POR CATEGORIA (MoE)
     # =================================================================
 
-    def query_similar(self, query_image: np.ndarray, part_name: str = "",
+    def query_similar(self, query_image: np.ndarray, part_name: str = "", category_name: str = "",
                       top_k: int = 5) -> dict:
         target_part = self._clean_string(part_name)
+        target_category = self._clean_string(category_name)
 
+        # 1. Tenta achar vizinhos que sejam da mesma Peça E da mesma Categoria
         valid_ok = [item for item in self.signatures_ok
-                    if not target_part or target_part in item["part"]]
+                    if (not target_part or target_part in item["part"]) and 
+                       (not target_category or target_category == item.get("category", ""))]
+                       
         valid_ng = [item for item in self.signatures_ng
-                    if not target_part or target_part in item["part"]]
+                    if (not target_part or target_part in item["part"]) and 
+                       (not target_category or target_category == item.get("category", ""))]
 
         total_valid = len(valid_ok) + len(valid_ng)
 
+        # 2. Se a categoria for muito nova e não tiver fotos, faz o "Fallback" só pra Peça
         if total_valid == 0 and (len(self.signatures_ok) > 0 or len(self.signatures_ng) > 0):
-            print(f"⚠️ Peça '{target_part}' sem histórico. Avaliando contra todo o banco...")
-            valid_ok = self.signatures_ok
-            valid_ng = self.signatures_ng
+            print(f"⚠️ Peça '{target_part}' / Cat '{category_name}' sem histórico específico. "
+                  f"Abrindo busca para qualquer categoria desta peça...")
+            valid_ok = [item for item in self.signatures_ok if not target_part or target_part in item["part"]]
+            valid_ng = [item for item in self.signatures_ng if not target_part or target_part in item["part"]]
             total_valid = len(valid_ok) + len(valid_ng)
+            
+            # 3. Se ainda assim não tiver nada, busca no banco todo (Fallback master)
+            if total_valid == 0:
+                 valid_ok = self.signatures_ok
+                 valid_ng = self.signatures_ng
+                 total_valid = len(valid_ok) + len(valid_ng)
 
         query_sig = self._compute_embedding(query_image)
 
@@ -144,7 +157,7 @@ class DatasetMemory:
                 "has_memory": False, "vote_defect": 0.5,
                 "best_similarity": 0.0, "n_neighbors": 0,
                 "best_match_path": "", "best_match_label": "",
-                "query_embedding": query_sig.tolist() if query_sig is not None else [] # Exporta o embedding calculado
+                "query_embedding": query_sig.tolist() if query_sig is not None else []
             }
 
         distances = []
@@ -165,6 +178,13 @@ class DatasetMemory:
         votes_total = sum(1.0 / max(d, 0.0001) for d, _, _ in neighbors)
 
         vote_defect = votes_ng / votes_total if votes_total > 0 else 0.5
+        
+        # Penalidade de Desbalanceamento
+        if len(valid_ok) == 0:
+            vote_defect = min(0.60, vote_defect)
+        elif len(valid_ng) == 0:
+            vote_defect = max(0.40, vote_defect)
+
         best_dist, best_label, best_path = neighbors[0]
 
         best_sim = float(max(0.0, 1.0 - best_dist))
@@ -178,13 +198,13 @@ class DatasetMemory:
             "n_neighbors": int(len(neighbors)),
             "best_match_path": str(best_path),
             "best_match_label": str(best_label),
-            "query_embedding": query_sig.tolist() # Exporta o embedding calculado
+            "query_embedding": query_sig.tolist()
         }
 
 
 class NeuralJudge:
     def __init__(self):
-        print("⚖️ Iniciando Juiz Neural v6.0 (Active Learning Ready)...")
+        print("⚖️ Iniciando Juiz Neural v8.0 (K-NN com MoE)...")
         self.memory = DatasetMemory()
 
     def reload_memory(self):
@@ -196,6 +216,9 @@ class NeuralJudge:
         gab = cv2.resize(crop_gab, size)
         test = cv2.resize(crop_test, size)
 
+        gab = cv2.GaussianBlur(gab, (3, 3), 0)
+        test = cv2.GaussianBlur(test, (3, 3), 0)
+
         gray_gab = cv2.cvtColor(gab, cv2.COLOR_BGR2GRAY)
         gray_test = cv2.cvtColor(test, cv2.COLOR_BGR2GRAY)
 
@@ -205,11 +228,11 @@ class NeuralJudge:
         return {
             "ssim": float(ssim_score),
             "mean_diff": float(np.mean(diff)),
-            "pct_changed": float(np.mean(diff > 0.12)),
+            "pct_changed": float(np.mean(diff > 0.15)), # Tolerancia de sombra aumentada para 15%
             "edge_change": float(np.mean(
                 cv2.absdiff(
-                    cv2.Canny(gray_gab, 50, 150),
-                    cv2.Canny(gray_test, 50, 150)) > 0)),
+                    cv2.Canny(gray_gab, 70, 180), # Bordas mais exigentes (ignora ruido)
+                    cv2.Canny(gray_test, 70, 180)) > 0)),
             "hist_corr": float(cv2.compareHist(
                 cv2.calcHist([gray_gab], [0], None, [64], [0, 256]),
                 cv2.calcHist([gray_test], [0], None, [64], [0, 256]),
@@ -234,7 +257,7 @@ class NeuralJudge:
 
         _, ctx_ssim_map = ssim(gray_gab, gray_test, full=True)
         _, diff_thresh = cv2.threshold(
-            ((1.0 - ctx_ssim_map) * 255).astype(np.uint8), 80, 255, cv2.THRESH_BINARY)
+            ((1.0 - ctx_ssim_map) * 255).astype(np.uint8), 100, 255, cv2.THRESH_BINARY) # Mais rigoroso
         contours, _ = cv2.findContours(diff_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         return {
@@ -244,12 +267,12 @@ class NeuralJudge:
         }
 
     def verify_anomaly(self, crop_gab: np.ndarray, crop_test: np.ndarray,
-                       part_metadata: str = "",
+                       part_metadata: str = "", category_metadata: str = "",
                        full_gab: np.ndarray = None, full_test: np.ndarray = None,
                        box_x: int = 0, box_y: int = 0,
                        box_w: int = 0, box_h: int = 0,
                        aoi_epicenters: list = None) -> dict:
-
+        
         if crop_gab is None or crop_test is None or crop_test.size == 0:
             return {
                 "is_defect": False, "verdict": "IGNORADO",
@@ -263,9 +286,6 @@ class NeuralJudge:
             context = self._analyze_context(
                 full_gab, full_test, box_x, box_y, box_w, box_h)
 
-        # =========================================================
-        # MUDANÇA v5.2: VERIFICAÇÃO DE EPICENTRO (ATENÇÃO DA AOI)
-        # =========================================================
         is_epicenter = False
         if aoi_epicenters:
             for (ex, ey, ew, eh) in aoi_epicenters:
@@ -279,23 +299,24 @@ class NeuralJudge:
                     break
 
         query_img = full_test if full_test is not None else crop_test
-        db_result = self.memory.query_similar(query_img, part_name=part_metadata)
+        # --- AQUI: A Busca Semântica envia o nome da categoria! ---
+        db_result = self.memory.query_similar(query_img, part_name=part_metadata, category_name=category_metadata)
 
         local_score = sum([
-            max(0, (0.92 - local["ssim"]) / 0.92) * 0.35,
-            min(1.0, local["mean_diff"] / 0.15) * 0.20,
-            min(1.0, local["pct_changed"] / 0.25) * 0.20,
-            min(1.0, local["edge_change"] / 0.15) * 0.15,
-            max(0, (0.95 - local["hist_corr"]) / 0.95) * 0.10
+            max(0, (0.85 - local["ssim"]) / 0.85) * 0.35,       # SSIM tem que cair de 85% pra pontuar
+            min(1.0, local["mean_diff"] / 0.25) * 0.20,         # Diferença média de cor afrouxada
+            min(1.0, local["pct_changed"] / 0.40) * 0.20,       # Pode mudar ate 40% dos pixels antes de dar 1.0
+            min(1.0, local["edge_change"] / 0.25) * 0.15,       # Pode mudar 25% das bordas
+            max(0, (0.80 - local["hist_corr"]) / 0.80) * 0.10   # Histograma tem que cair de 80%
         ])
         local_score = max(0.0, min(1.0, local_score))
 
         if is_epicenter:
             local_score = min(1.0, local_score * 1.30)
 
-        ctx_score, ctx_reason = 0.5, ""
+        ctx_score, ctx_reason = 0.3, ""
         if context:
-            ctx_score = 0.7 if context["is_localized"] else 0.25
+            ctx_score = 0.6 if context["is_localized"] else 0.20
             base_reason = f"{'concentrada' if context['is_localized'] else 'espalhada'}"
             if is_epicenter:
                 ctx_score = min(1.0, ctx_score + 0.20)
@@ -309,24 +330,37 @@ class NeuralJudge:
             db_reason = (f"Dataset: {db_score:.0%} de ser defeito "
                         f"(Sim. máx: {db_result['best_similarity']:.0%})")
 
-        # =========================================================
-        # MUDANÇA v5.1: PESOS DINÂMICOS (PODER DE VETO DA MEMÓRIA)
-        # =========================================================
         if db_result["has_memory"]:
             best_sim = db_result["best_similarity"]
             db_score = db_result["vote_defect"]
 
-            if best_sim >= 0.95:
-                final_score = local_score * 0.05 + ctx_score * 0.05 + db_score * 0.90
-            elif best_sim >= 0.85:
-                final_score = local_score * 0.25 + ctx_score * 0.15 + db_score * 0.60
+            if best_sim >= 0.90: # Mais complacente
+                final_score = local_score * 0.10 + ctx_score * 0.10 + db_score * 0.80
+            elif best_sim >= 0.75: # Mais complacente
+                final_score = local_score * 0.30 + ctx_score * 0.20 + db_score * 0.50
             else:
                 final_score = local_score * 0.50 + ctx_score * 0.20 + db_score * 0.30
         else:
             final_score = local_score * 0.65 + ctx_score * 0.35
 
-        is_defect = bool(final_score > 0.45)
-        confidence = float(min(0.99, 0.50 + abs(final_score - 0.45) * 2.5))
+        # =========================================================
+        # CURVA DE CONFIANÇA SUAVE
+        # =========================================================
+        cutoff = 0.45
+        is_defect = bool(final_score > cutoff)
+        
+        if is_defect:
+            dist_max = 1.0 - cutoff
+            dist_atual = final_score - cutoff
+            percentual_da_jornada = dist_atual / dist_max
+            confidence = 0.50 + (0.49 * percentual_da_jornada)
+        else:
+            dist_max = cutoff - 0.0
+            dist_atual = cutoff - final_score
+            percentual_da_jornada = dist_atual / dist_max
+            confidence = 0.50 + (0.49 * percentual_da_jornada)
+
+        confidence = float(max(0.50, min(0.99, confidence)))
         conf_percent = int(confidence * 100)
 
         reasons = [f"SSIM={local['ssim']:.2f}", f"Δpix={local['pct_changed']:.0%}"]
@@ -356,6 +390,6 @@ class NeuralJudge:
                 "db_has_memory": bool(db_result["has_memory"]),
                 "db_neighbors": int(db_result["n_neighbors"]),
                 "db_vote": float(db_result["vote_defect"]),
-                "embedding": db_result["query_embedding"] # Exportando a matemática!
+                "embedding": db_result["query_embedding"]
             }
         }

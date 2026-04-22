@@ -1,7 +1,7 @@
 # src/services/dataset_manager.py
 """
 Módulo responsável por gerenciar a persistência de imagens para o Dataset.
-v3: Active Learning - Salva embeddings no JSON e permite pular o salvamento do PNG.
+v4: Salvamento estruturado em subpastas por Categoria do OCR (Mixture of Experts Prep).
 """
 import cv2
 import json
@@ -18,26 +18,33 @@ class DatasetManager:
                     aoi_info: dict = None, analysis: dict = None,
                     save_images: bool = True) -> str:
         """
-        Salva a imagem NG (ou OK) inteira na pasta correta.
-        NÃO faz mais hstack — salva a imagem individual.
-
-        :param ng_image: Imagem NG (ou OK) completa em BGR.
-        :param label: "OK" ou "NG".
-        :param sample_image: Imagem Sample (padrão) — salva separada para referência.
-        :param aoi_info: Dict com Board, Parts, Value.
-        :param analysis: Dict com métricas da análise.
-        :param save_images: Se False, salva APENAS a semântica no .json (Economia de HD).
-        :return: Caminho do arquivo salvo.
+        Salva a imagem NG (ou OK) inteira na pasta correta, estruturada por Categoria.
         """
         if ng_image is None or ng_image.size == 0:
             return ""
 
-        folder = settings.ANOMALY_DIR if label == "NG" else settings.NORMAL_DIR
+        # 1. Define a Raiz (Anomalia ou Falha Falsa)
+        base_folder = settings.ANOMALY_DIR if label == "NG" else settings.NORMAL_DIR
+
+        # 2. Define a Subpasta baseada na Categoria do OCR
+        category = "Unknown"
+        if aoi_info and "category" in aoi_info:
+            category = aoi_info["category"]
+            # Limpa caracteres bizarros que o SO não gosta em nomes de pasta, só por precaução
+            category = "".join(c for c in category if c.isalnum() or c in (' ', '_', '-')).strip()
+            if not category:
+                category = "Unknown"
+                
+        # Junta a raiz com a subcategoria
+        target_folder = base_folder / category
+        
+        # Garante que a subpasta exista no HD (cria se não existir)
+        target_folder.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
         filename = f"sample_{label}_{timestamp}"
-        filepath_img = folder / f"{filename}.png"
-        filepath_json = folder / f"{filename}.json"
+        filepath_img = target_folder / f"{filename}.png"
+        filepath_json = target_folder / f"{filename}.json"
 
         # Apenas salva os pixels no HD se a curadoria (Active Learning) autorizar
         if save_images:
@@ -46,7 +53,7 @@ class DatasetManager:
 
             # Se tiver sample, salva também como referência (para visualização)
             if sample_image is not None and sample_image.size > 0:
-                filepath_sample = folder / f"{filename}_sample.png"
+                filepath_sample = target_folder / f"{filename}_sample.png"
                 cv2.imwrite(str(filepath_sample), sample_image)
 
         # Metadados
@@ -59,6 +66,7 @@ class DatasetManager:
             "aoi_info": {
                 "board": "",
                 "parts": "",
+                "category": category, # NOVO: Salva a categoria para uso futuro da IA
                 "value": "",
             },
             "analysis": {}
@@ -85,7 +93,7 @@ class DatasetManager:
                 "db_score": detail.get("db_score", 0),
                 "final_score": detail.get("final_score", 0),
                 
-                # NOVO: O "código de barras matemático" da placa (Vetores Semânticos)
+                # O "código de barras matemático" da placa (Vetores Semânticos)
                 "embedding": detail.get("embedding", [])
             }
 
