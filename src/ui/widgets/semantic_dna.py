@@ -14,8 +14,8 @@ class SemanticDNAWidget(QWidget):
 
     def update_dna(self, query_emb, ref_emb=None):
         """ Recebe as listas de números (embeddings) da IA e atualiza o visual """
-        self.query_emb = np.array(query_emb) if query_emb else None
-        self.ref_emb = np.array(ref_emb) if ref_emb else None
+        self.query_emb = np.array(query_emb) if query_emb is not None and len(query_emb) > 0 else None
+        self.ref_emb = np.array(ref_emb) if ref_emb is not None and len(ref_emb) > 0 else None
         self.update() # Força o PyQt a redesenhar o componente na tela
 
     def _get_color_heat(self, val):
@@ -42,9 +42,13 @@ class SemanticDNAWidget(QWidget):
         # Fundo escuro
         painter.fillRect(0, 0, w, h, QColor("#1a1a1a"))
 
-        if self.query_emb is None or len(self.query_emb) == 0:
+        # MoE: Se o array estiver vazio, significa que o KNN não rodou
+        if self.query_emb is None:
             painter.setPen(QColor("#555555"))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Aguardando Matriz Semântica...")
+            font = QFont("Consolas", 10, QFont.Weight.Bold)
+            painter.setFont(font)
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Motor Semântico Inativo (MoE)")
+            painter.end()
             return
 
         # Prepara a matemática para normalizar os valores

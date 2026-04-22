@@ -9,6 +9,7 @@ class KNNSpectrumWidget(QWidget):
         self.setMinimumHeight(80)
         
         # Dados iniciais vazios
+        self.is_active = False # Flag MoE: O K-NN rodou?
         self.has_memory = False
         self.vote = 0.5
         self.best_sim = 0.0
@@ -16,14 +17,19 @@ class KNNSpectrumWidget(QWidget):
 
     def update_data(self, detail: dict):
         """ Recebe o dicionario de analise e extrai os dados do banco (KNN) """
-        if not detail:
+        # MoE: Verifica os novos nomes das chaves do Expert ou os antigos por segurança
+        if not detail or ("vote_defect" not in detail and "db_vote" not in detail):
+            self.is_active = False
+            self.update()
             return
-
-        self.has_memory = detail.get("db_has_memory", False)
-        # O voto varia de 0.0 (100% OK) a 1.0 (100% NG)
-        self.vote = detail.get("db_vote", 0.5) 
-        self.best_sim = detail.get("db_best_sim", 0.0)
-        self.n_neighbors = detail.get("db_neighbors", 0)
+            
+        self.is_active = True
+        
+        # Busca pelas chaves novas do Orquestrador, ou as antigas (Backward compatibility)
+        self.has_memory = detail.get("has_memory", detail.get("db_has_memory", False))
+        self.vote = detail.get("vote_defect", detail.get("db_vote", 0.5)) 
+        self.best_sim = detail.get("best_similarity", detail.get("db_best_sim", 0.0))
+        self.n_neighbors = detail.get("n_neighbors", detail.get("db_neighbors", 0))
 
         self.update() # Forca o redesenho na tela
 
@@ -39,6 +45,15 @@ class KNNSpectrumWidget(QWidget):
 
         font_title = QFont("Consolas", 8, QFont.Weight.Bold)
         font_text = QFont("Consolas", 8)
+
+        # MoE: Se o K-NN não foi ativado, acinza o painel
+        if not self.is_active:
+            painter.setPen(QColor("#555555"))
+            font = QFont("Consolas", 10, QFont.Weight.Bold)
+            painter.setFont(font)
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Motor K-NN Inativo (MoE)")
+            painter.end()
+            return
 
         # Se nao houver ninguem no banco de dados ainda
         if not self.has_memory:

@@ -4,16 +4,20 @@ Módulo responsável exclusivamente pela construção da Interface Gráfica (Vie
 Aplica o Princípio da Responsabilidade Única (SRP) separando o visual da lógica.
 Layout em Z: Imagens à esquerda, Telemetria à direita, Numéricos no rodapé.
 Ajuste: Inserção do campo 'Category' na barra superior para exibir o texto normalizado do OCR.
+Novo: Adicionado label 'lbl_active_engines' para exibir os algoritmos da Mistura de Especialistas (MoE).
+Novo: Implementação do StackedWidget para alternar entre Radar (Textura) e Mira (Shift).
 """
 from PyQt6.QtWidgets import (QVBoxLayout, QPushButton, QLabel,
                              QHBoxLayout, QFrame, QGridLayout,
-                             QApplication, QSizePolicy)
+                             QApplication, QSizePolicy, QStackedWidget) # NOVO: Importando QStackedWidget
 from PyQt6.QtCore import Qt
 
 # Nossos componentes Lego (Widgets de Telemetria da IA)
 from src.ui.widgets.semantic_dna import SemanticDNAWidget
 from src.ui.widgets.radar_chart import RadarChartWidget
 from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
+# NOVO: Importando o Debugger de Deslocamento
+from src.ui.widgets.shift_debugger import ShiftDebuggerWidget 
 
 class ControlPanelUI:
     def setup_ui(self, window):
@@ -157,9 +161,16 @@ class ControlPanelUI:
         window.frame_dna = SemanticDNAWidget()
         telemetry_layout.addWidget(window.frame_dna, stretch=1)
 
-        # Container 2: Gráfico de Radar
+        # --- NOVO: Container 2 (Pilha Dinâmica Radar x Shift) ---
+        window.stack_central = QStackedWidget()
+        
         window.frame_radar = RadarChartWidget()
-        telemetry_layout.addWidget(window.frame_radar, stretch=2)
+        window.frame_shift = ShiftDebuggerWidget() # Instancia o novo Debugger
+        
+        window.stack_central.addWidget(window.frame_radar) # Indice 0
+        window.stack_central.addWidget(window.frame_shift) # Indice 1
+        
+        telemetry_layout.addWidget(window.stack_central, stretch=2)
 
         # Container 3: Espectro KNN
         window.frame_knn = KNNSpectrumWidget()
@@ -187,6 +198,12 @@ class ControlPanelUI:
         window.lbl_verdict.setAlignment(Qt.AlignmentFlag.AlignCenter)
         window.lbl_verdict.setStyleSheet("color: #888888; font-size: 16px; font-weight: bold; border: none;")
         conf_layout.addWidget(window.lbl_verdict)
+        
+        # --- NOVO: Display de Engines Ativos (MoE) ---
+        window.lbl_active_engines = QLabel("")
+        window.lbl_active_engines.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        window.lbl_active_engines.setStyleSheet("color: #00ffaa; font-size: 10px; font-family: Consolas, monospace; border: none; margin-bottom: 2px;")
+        conf_layout.addWidget(window.lbl_active_engines)
 
         metrics_grid = QGridLayout()
         metrics_grid.setSpacing(2)

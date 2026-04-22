@@ -9,6 +9,7 @@ class RadarChartWidget(QWidget):
         super().__init__(parent)
         self.setMinimumHeight(150)
         self.setMinimumWidth(150)
+        self.is_active = False # Flag MoE: O motor SSIM rodou?
         
         # Inicializa o grafico vazio
         self.axes = [
@@ -25,9 +26,14 @@ class RadarChartWidget(QWidget):
         Recebe os detalhes da analise e converte para a escala de anomalia.
         0.0 = Perfeito (Centro) | 1.0 = Defeito Grave (Borda)
         """
-        if not detail:
+        # MoE: Verifica se o motor SSIM realmente operou nesta peça
+        if not detail or "ssim" not in detail:
+            self.is_active = False
+            self.update()
             return
             
+        self.is_active = True
+
         # 1. Estrutura (SSIM: 1.0 eh perfeito. Convertendo para anomalia: 1.0 - SSIM)
         ssim_val = detail.get("ssim", 1.0)
         anomalia_ssim = max(0.0, min(1.0, 1.0 - ssim_val))
@@ -71,6 +77,20 @@ class RadarChartWidget(QWidget):
         
         # Fundo Escuro
         painter.fillRect(0, 0, w, h, QColor("#1a1a1a"))
+        
+        # Titulo
+        painter.setPen(QColor("#dddddd"))
+        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+        painter.drawText(5, 15, "Morfologia do Defeito")
+
+        # MoE: Se o motor SSIM foi desligado pelo Orquestrador, não desenha o gráfico enganoso
+        if not self.is_active:
+            painter.setPen(QColor("#555555"))
+            font = QFont("Consolas", 10, QFont.Weight.Bold)
+            painter.setFont(font)
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Motor de Textura Inativo (MoE)")
+            painter.end()
+            return
         
         # Calculo de Geometria
         cx = w / 2.0
@@ -156,9 +176,4 @@ class RadarChartWidget(QWidget):
             py = cy + r * math.sin(angle)
             painter.drawEllipse(QPointF(px, py), 3, 3)
 
-        # Titulo
-        painter.setPen(QColor("#dddddd"))
-        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
-        painter.drawText(5, 15, "Morfologia do Defeito")
-        
         painter.end()
