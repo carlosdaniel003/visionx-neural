@@ -1,7 +1,8 @@
 # src/core/experts/silk_expert.py
 """
 Módulo Especialista em Silkscreen.
-Usa Canny, Alinhamento Magnético e Operação XOR para encontrar letras invertidas ou erradas.
+Usa Visão de Chassi (Corte Geométrico Absoluto do CI), Alinhamento sem bordas falsas 
+e Threshold Adaptativo para ler marcações a laser.
 """
 import cv2
 import numpy as np
@@ -19,20 +20,31 @@ class SilkExpert:
                 h_gab, w_gab = full_gab.shape[:2]
                 full_test = cv2.resize(full_test, (w_gab, h_gab))
 
-            gray_gab = cv2.cvtColor(full_gab, cv2.COLOR_BGR2GRAY)
-            gray_test = cv2.cvtColor(full_test, cv2.COLOR_BGR2GRAY)
-
-            h, w = gray_gab.shape
-            crop_y, crop_x = int(h * 0.15), int(w * 0.15)
+            # =================================================================
+            # 1. VISÃO DE CHASSI: Arranca a placa verde e os pinos de solda
+            # =================================================================
+            h_full, w_full = full_gab.shape[:2]
             
-            if crop_y >= h//2 or crop_x >= w//2:
-                return {"is_defect": False, "silk_error_pct": 0, "reason": ""}
-                
-            miolo_gab = gray_gab[crop_y:h-crop_y, crop_x:w-crop_x]
-            miolo_test = gray_test[crop_y:h-crop_y, crop_x:w-crop_x]
+            # Corta 22% das laterais e 18% de cima/baixo. 
+            # Isso garante que só sobra o miolo de resina preta do CI.
+            crop_x = int(w_full * 0.22)
+            crop_y = int(h_full * 0.18)
+            
+            if crop_y >= h_full//2 or crop_x >= w_full//2:
+                 return {"is_defect": False, "silk_error_pct": 0, "reason": ""}
+                 
+            roi_gab = full_gab[crop_y:h_full-crop_y, crop_x:w_full-crop_x]
+            roi_test = full_test[crop_y:h_full-crop_y, crop_x:w_full-crop_x]
+            offset_x, offset_y = crop_x, crop_y
 
-            edges_gab = cv2.Canny(miolo_gab, 50, 150)
-            edges_test = cv2.Canny(miolo_test, 50, 150)
+            gray_gab = cv2.cvtColor(roi_gab, cv2.COLOR_BGR2GRAY)
+            gray_test = cv2.cvtColor(roi_test, cv2.COLOR_BGR2GRAY)
+
+            # =================================================================
+            # 2. ALINHAMENTO MAGNÉTICO (Com proteção de borda BORDER_REPLICATE)
+            # =================================================================
+            edges_gab = cv2.Canny(gray_gab, 50, 150)
+            edges_test = cv2.Canny(gray_test, 50, 150)
             
             h_m, w_m = edges_gab.shape
             hann = cv2.createHanningWindow((w_m, h_m), cv2.CV_32F)
@@ -42,87 +54,96 @@ class SilkExpert:
             
             if abs(dx) < (w_m * 0.25) and abs(dy) < (h_m * 0.25):
                 M = np.float32([[1, 0, dx], [0, 1, dy]])
-                miolo_test = cv2.warpAffine(miolo_test, M, (w_m, h_m), borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+                # BORDER_REPLICATE evita a criação de faixas pretas falsas na borda
+                gray_test = cv2.warpAffine(gray_test, M, (w_m, h_m), borderMode=cv2.BORDER_REPLICATE)
 
-            _, mask_gab = cv2.threshold(miolo_gab, 90, 255, cv2.THRESH_BINARY)
-            _, mask_test = cv2.threshold(miolo_test, 90, 255, cv2.THRESH_BINARY)
+            # =================================================================
+            # 3. EXTRAÇÃO ADAPTATIVA DE TINTA (Texto a Laser / Serigrafia)
+            # =================================================================
+            blur_gab = cv2.GaussianBlur(gray_gab, (3, 3), 0)
+            blur_test = cv2.GaussianBlur(gray_test, (3, 3), 0)
 
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-            mask_gab_expanded = cv2.dilate(mask_gab, kernel, iterations=1)
+            # Bloco de 15x15 para pegar traços mais grossos de laser
+            mask_gab = cv2.adaptiveThreshold(blur_gab, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 3)
+            mask_test = cv2.adaptiveThreshold(blur_test, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 3)
 
+            # Limpeza de micro-ruídos
+            kernel_clean = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+            mask_gab = cv2.morphologyEx(mask_gab, cv2.MORPH_OPEN, kernel_clean)
+            mask_test = cv2.morphologyEx(mask_test, cv2.MORPH_OPEN, kernel_clean)
+
+            # Expansão para engolir pequenas diferenças de iluminação
+            kernel_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4))
+            mask_gab_expanded = cv2.dilate(mask_gab, kernel_dilate, iterations=1)
+
+            # Duelo de Serigrafia (XOR)
             diff_mask = cv2.bitwise_xor(mask_test, mask_gab_expanded)
-            diff_mask = cv2.morphologyEx(diff_mask, cv2.MORPH_OPEN, kernel)
+            
+            # Corta a borda extrema (5 pixels) de dentro da máscara para evitar restos de alinhamento
+            border_ignore = 5
+            cv2.rectangle(diff_mask, (0,0), (w_m, border_ignore), 0, -1) # Top
+            cv2.rectangle(diff_mask, (0,h_m-border_ignore), (w_m, h_m), 0, -1) # Bottom
+            cv2.rectangle(diff_mask, (0,0), (border_ignore, h_m), 0, -1) # Left
+            cv2.rectangle(diff_mask, (w_m-border_ignore,0), (w_m, h_m), 0, -1) # Right
 
-            total_pixels = miolo_gab.size
+            # Efeito Ímã: Agrupa as letras separadas num "Blocão" de erro horizontal
+            kernel_group = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 8))
+            diff_mask = cv2.morphologyEx(diff_mask, cv2.MORPH_CLOSE, kernel_group)
+
+            total_pixels = gray_gab.size
             wrong_pixels = cv2.countNonZero(diff_mask)
             error_pct = wrong_pixels / total_pixels
 
-            tolerance = 0.03  # Tolerância normal (3%)
-            is_ocr_reverse = False
-
+            # Tolerância
+            tolerance = 0.03  
             if aoi_info:
                 val_text = str(aoi_info.get("value", "")).upper()
                 if "SHIFT" in val_text or "SIFT" in val_text:
                     tolerance = 0.08  
-                if "REVERS" in val_text or "WRONG" in val_text:
-                    is_ocr_reverse = True
 
             is_critical = error_pct > tolerance
             
             result = {
                 "is_defect": False,
                 "silk_error_pct": error_pct,
+                "pct_changed": error_pct, 
+                "dx": round(dx, 2),
+                "dy": round(dy, 2),
                 "reason": "",
-                "bounding_box": None
+                "bounding_box": None,
+                "mask_gab": mask_gab_expanded,
+                "mask_test": mask_test,
+                "diff_mask": diff_mask
             }
             
             if is_critical:
                 contours, _ = cv2.findContours(diff_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 
                 if contours:
-                    min_x, min_y = float('inf'), float('inf')
-                    max_x, max_y = 0, 0
-                    valid_contours_found = False
-
-                    for cnt in contours:
-                        if cv2.contourArea(cnt) > 5:
-                            cx, cy, cw, ch = cv2.boundingRect(cnt)
-                            min_x = min(min_x, cx)
-                            min_y = min(min_y, cy)
-                            max_x = max(max_x, cx + cw)
-                            max_y = max(max_y, cy + ch)
-                            valid_contours_found = True
+                    # Pega apenas a MAIOR anomalia agrupada (o bloco de texto)
+                    largest_contour = max(contours, key=cv2.contourArea)
                     
-                    if valid_contours_found:
-                        global_w = max_x - min_x
-                        global_h = max_y - min_y
-                        real_x = min_x + crop_x
-                        real_y = min_y + crop_y
-                        margin = 5
+                    if cv2.contourArea(largest_contour) > 20: 
+                        cx, cy, cw, ch = cv2.boundingRect(largest_contour)
+                        
+                        real_x = cx + offset_x
+                        real_y = cy + offset_y
+                        margin = 8
                         
                         silk_box_coords = (
                             max(0, real_x - margin),
                             max(0, real_y - margin),
-                            min(w, global_w + margin*2),
-                            min(h, global_h + margin*2)
+                            min(w_full, real_x + cw + margin*2),
+                            min(h_full, real_y + ch + margin*2)
                         )
                         
-                        valido_para_barrar = True 
+                        result["is_defect"] = True
+                        result["bounding_box"] = silk_box_coords
                         
-                        if is_ocr_reverse and aoi_epicenters and len(aoi_epicenters) > 0:
-                            ax, ay, aw, ah = aoi_epicenters[0]
-                            ax2, ay2 = ax + aw, ay + ah
-                            sx, sy, sw, sh = silk_box_coords
-                            sx2, sy2 = sx + sw, sy + sh
-                            
-                            intersecta = not (sx2 < ax or sx > ax2 or sy2 < ay or sy > ay2)
-                            if not intersecta:
-                                valido_para_barrar = False
-                                
-                        if valido_para_barrar:
-                            result["is_defect"] = True
-                            result["bounding_box"] = silk_box_coords
-                            result["reason"] = f"COMPONENTE INVERTIDO/ERRADO ({error_pct:.1%})"
+                        if error_pct > 0.15:
+                            result["reason"] = f"SERIGRAFIA MASSIVAMENTE ALTERADA ({error_pct:.1%})"
+                        else:
+                            result["reason"] = f"TEXTO DIFERENTE / CHIP INVERTIDO ({error_pct:.1%})"
 
             return result
             

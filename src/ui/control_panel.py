@@ -3,13 +3,16 @@
 Módulo do Painel de Controle (Controller) e Console Duplo.
 Ajuste MoE Final: O Maestro agora delega toda a inteligência para o MoEOrchestrator.
 O código monolítico foi removido, tornando o painel apenas um visualizador.
-Integração UI: Alterna dinamicamente entre Radar Chart e Shift Debugger.
+Integração UI: Alterna dinamicamente entre Radar Chart, Shift Debugger e Silk Debugger.
+Ajuste SRP Seguro: A pintura do Overlay Visual (Caixas coloridas) foi isolada no ImageRenderer.
+Ajuste Layout: Adicionado resizeEvent para impedir corte de imagens quando a janela redimensiona.
+Ajuste Biocular: Orquestração dinâmica via QSplitter permite visualizar SSIM e SILK simultaneamente.
 """
 import cv2
 import numpy as np
 import time
 import socket
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QWidget, QSplitter
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap
 
@@ -23,6 +26,48 @@ from src.utils.text_normalizer import normalize_aoi_text
 # --- IMPORTA O NOVO CÉREBRO ---
 from src.core.moe_orchestrator import MoEOrchestrator
 
+# =========================================================================
+# CLASSE AUXILIAR: RENDERIZADOR VISUAL (SRP)
+# Responsável apenas por desenhar as caixas do MoE na imagem final.
+# =========================================================================
+class ImageRenderer:
+    @staticmethod
+    def draw_multilayer_boxes(img_bgr: np.ndarray, analysis: dict) -> np.ndarray:
+        img_drawn = img_bgr.copy()
+        all_boxes = analysis.get("all_boxes", {})
+        
+        # Dicionário de Estilos Visuais para cada Motor
+        color_map = {
+            "shift":       {"color": (204, 50, 153), "label": "SHIFT"},
+            "silk":        {"color": (0, 0, 255), "label": "SILK"},
+            "ssim_local":  {"color": (255, 170, 0), "label": "SSIM-MICRO"},
+            "ssim_global": {"color": (0, 255, 255), "label": "SSIM-MACRO"},
+            "semantic":    {"color": (147, 20, 255), "label": "SEMANTICA"} # NOVA COR AQUI
+        }
+
+        # Desenha as caixas dos motores individualmente
+        for engine_name, box in all_boxes.items():
+            if box and engine_name in color_map:
+                x, y, w, h = box
+                color = color_map[engine_name]["color"]
+                lbl_text = f"[{color_map[engine_name]['label']}]"
+                
+                # Se não for defeito real no final, pinta tudo de laranja (Falha Falsa)
+                if not analysis.get("is_defect", False):
+                    color = (0, 165, 255) # Laranja
+                    lbl_text += " FALSO"
+                
+                # Desenha o Retângulo e a Etiqueta
+                cv2.rectangle(img_drawn, (x, y), (x+w, y+h), color, 2)
+                (tw, th), _ = cv2.getTextSize(lbl_text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                cv2.rectangle(img_drawn, (x, y - th - 6), (x + tw + 4, y), color, -1)
+                cv2.putText(img_drawn, lbl_text, (x + 2, y - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+
+        return img_drawn
+
+# =========================================================================
+# CLASSE PRINCIPAL: CONTROLADOR
+# =========================================================================
 class ControlPanel(QWidget):
     def __init__(self):
         super().__init__()
@@ -55,6 +100,21 @@ class ControlPanel(QWidget):
         self.ui_builder = ControlPanelUI()
         self.ui_builder.setup_ui(self)
 
+    def resizeEvent(self, event):
+        """ NOVO: Gatilho dinâmico para redesenhar as imagens se a tela mudar de tamanho ou maximizar """
+        super().resizeEvent(event)
+        
+        if hasattr(self, 'current_sample') and self.current_sample is not None and self.current_sample.size > 0:
+            px_sample = self.numpy_to_pixmap(self.current_sample)
+            if self.lbl_sample.width() > 0 and self.lbl_sample.height() > 0:
+                self.lbl_sample.setPixmap(px_sample.scaled(self.lbl_sample.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
+        if hasattr(self, 'current_ng') and self.current_ng is not None and self.current_ng.size > 0 and hasattr(self, 'current_analysis') and self.current_analysis:
+            img_drawn = ImageRenderer.draw_multilayer_boxes(self.current_ng, self.current_analysis)
+            px_ng = self.numpy_to_pixmap(img_drawn)
+            if self.lbl_ng.width() > 0 and self.lbl_ng.height() > 0:
+                self.lbl_ng.setPixmap(px_ng.scaled(self.lbl_ng.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
     def update_status_log(self, msg: str):
         print(msg)
 
@@ -66,6 +126,12 @@ class ControlPanel(QWidget):
         self.is_locked = True
         self.last_xp_ip = ip 
         self.capture_start_time = time.time()
+        
+        if self.isMinimized():
+            self.showNormal() 
+        self.showMaximized() 
+        self.raise_()         
+        self.activateWindow()
         
         self.lbl_timer.setText("Latencia: Analisando Rede...")
         self.lbl_timer.setStyleSheet("font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #ffaa33;")
@@ -161,17 +227,29 @@ class ControlPanel(QWidget):
         self.lbl_db_info.setText("")
 
     def _reset_reference_panel(self):
-        self.frame_dna.update_dna([], [])
-        self.frame_radar.update_data({})
-        self.frame_knn.update_data({})
+        if hasattr(self, 'frame_dna'):
+            self.frame_dna.setVisible(True)
+            self.frame_dna.update_dna([], [])
+            
+        if hasattr(self, 'frame_radar'):
+            self.frame_radar.update_data({})
+            
+        if hasattr(self, 'frame_knn'):
+            self.frame_knn.update_data({})
+            
         if hasattr(self, 'frame_shift'):
             self.frame_shift.update_data({})
+            
+        if hasattr(self, 'frame_silk'):
+            self.frame_silk.update_data({})
+
+        if hasattr(self, 'frame_ssim_debug'):
+            self.frame_ssim_debug.update_data({})
 
     def _update_aoi_info(self, aoi_info: dict):
         self.lbl_board_value.setText(aoi_info.get("board", "-"))
         self.lbl_parts_value.setText(aoi_info.get("parts", "-"))
         
-        # --- Lógica Visual Inteligente para Categoria ---
         if hasattr(self, 'lbl_category_value'):
             self.lbl_category_value.setText(aoi_info.get("category", "Unknown"))
             self.lbl_value_value.setText(aoi_info.get("value", "-"))
@@ -182,26 +260,66 @@ class ControlPanel(QWidget):
 
     def _update_reference_panel(self, analysis: dict):
         detail = analysis.get("detail", {})
+        category = self.current_aoi_info.get("category", "Unknown")
         
-        self.frame_dna.update_dna(detail.get("embedding", []))
-        self.frame_knn.update_data(detail)
+        if category == "Dust" and hasattr(self, 'frame_dna'):
+            self.frame_dna.setVisible(False)
+        elif hasattr(self, 'frame_dna'):
+            self.frame_dna.setVisible(True)
+            self.frame_dna.update_dna(detail.get("embedding", []))
+            
+        if hasattr(self, 'frame_knn'):
+            self.frame_knn.update_data(detail)
+
+        # Atualiza os painéis isolados antes de mostrar
+        if hasattr(self, 'frame_ssim_debug'):
+            self.frame_ssim_debug.update_data(detail)
+        if hasattr(self, 'frame_silk'):
+            self.frame_silk.update_data(detail)
+        if hasattr(self, 'frame_shift'):
+            self.frame_shift.update_data(detail)
         
-        # --- NOVO: Alternância Dinâmica de Interface MoE ---
-        # Apenas tenta manipular o QStackedWidget se ele existir no objeto UI
-        if hasattr(self, 'stack_central') and hasattr(self, 'frame_shift') and hasattr(self, 'frame_radar'):
+        if hasattr(self, 'stack_central'):
             active_engines = analysis.get("active_engines", [])
             
-            # Se o Shift foi acionado, mostra a mira e envia os dados
-            if "shift_expert.py" in active_engines:
-                self.frame_shift.update_data(detail)
+            # --- FOCO DO ROTEAMENTO COMBINADO (Missing) ---
+            has_ssim = "ssim_expert.py" in active_engines
+            has_silk = "silk_expert.py" in active_engines
+            
+            # 1. Rota de Shift (Se tem Shift, mostra a Mira)
+            if "shift_expert.py" in active_engines and hasattr(self, 'frame_shift'):
                 self.stack_central.setCurrentWidget(self.frame_shift)
+                
+            # 2. ROTA COMBINADA (SSIM + SILK) - O famoso "Missing"
+            elif has_ssim and has_silk:
+                if not hasattr(self, 'combo_ssim_silk'):
+                    # Cria o divisor invisível
+                    self.combo_ssim_silk = QSplitter(Qt.Orientation.Vertical)
+                    self.combo_ssim_silk.addWidget(self.frame_ssim_debug)
+                    self.combo_ssim_silk.addWidget(self.frame_silk)
+                    self.stack_central.addWidget(self.combo_ssim_silk)
+                
+                # Exibe a tela dividida
+                self.stack_central.setCurrentWidget(self.combo_ssim_silk)
+                self.frame_ssim_debug.setVisible(True)
+                self.frame_silk.setVisible(True)
+                
+            # 3. Rota Isolada do SSIM
+            elif has_ssim and hasattr(self, 'frame_ssim_debug'):
+                self.stack_central.setCurrentWidget(self.frame_ssim_debug)
+                
+            # 4. Rota Isolada do Silk (Poeira ou Wrong Part)
+            elif has_silk and hasattr(self, 'frame_silk'):
+                self.stack_central.setCurrentWidget(self.frame_silk)
+                
+            # 5. Fallback padrão: Radar
             else:
-                # Se não tem shift, volta para o radar (mesmo que o radar não seja usado, ele sabe se desenhar vazio)
-                self.frame_radar.update_data(detail)
-                self.stack_central.setCurrentWidget(self.frame_radar)
+                if hasattr(self, 'frame_radar'):
+                    self.frame_radar.update_data(detail)
+                    self.stack_central.setCurrentWidget(self.frame_radar)
         else:
-            # Fallback antigo caso a UI não tenha o QStackedWidget implementado ainda
-            self.frame_radar.update_data(detail)
+            if hasattr(self, 'frame_radar'):
+                self.frame_radar.update_data(detail)
 
     def _update_confidence_panel(self, analysis: dict):
         verdict = analysis.get("verdict", "?")
@@ -218,7 +336,6 @@ class ControlPanel(QWidget):
 
         detail = analysis.get("detail", {})
         
-        # Atualiza a Label na Tela com os Módulos que Trabalharam
         if hasattr(self, 'lbl_active_engines') and analysis.get("active_engines"):
             engines_text = " | ".join(analysis["active_engines"])
             self.lbl_active_engines.setText(f"Engines Ativos: [{engines_text}]")
@@ -259,20 +376,16 @@ class ControlPanel(QWidget):
     def process_aoi_images(self, sample_crop: np.ndarray, ng_crop: np.ndarray, aoi_info: dict):
         if sample_crop.size == 0 or ng_crop.size == 0: return
 
-        # --- NORMALIZAÇÃO DE OCR VIA FUZZY MATCHING ---
         raw_val = aoi_info.get("value", "")
         cat_name, norm_val = normalize_aoi_text(raw_val)
         aoi_info["category"] = cat_name
         aoi_info["value"] = norm_val
-        # ----------------------------------------------
 
-        # --- CORREÇÃO DO ESCORREGAMENTO FANTASMA DA JANELA ---
         if self.isMinimized():
             self.showNormal() 
-            self.showMaximized() 
+        self.showMaximized() 
         self.raise_()         
         self.activateWindow() 
-        # -----------------------------------------------------
 
         self.current_sample = sample_crop
         self.current_ng = ng_crop
@@ -281,46 +394,33 @@ class ControlPanel(QWidget):
         self._update_aoi_info(aoi_info)
 
         px_sample = self.numpy_to_pixmap(sample_crop)
-        self.lbl_sample.setPixmap(px_sample.scaled(self.lbl_sample.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        if self.lbl_sample.width() > 0 and self.lbl_sample.height() > 0:
+            self.lbl_sample.setPixmap(px_sample.scaled(self.lbl_sample.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
         raw_anomalies, aoi_epicenters, global_box_info, gab_focus, test_focus = detect_anomalies(sample_crop, ng_crop)
         
-        # =====================================================================
-        # O MAESTRO DELEGA TUDO PARA O ORQUESTRADOR! (MISTURA DE ESPECIALISTAS)
-        # =====================================================================
         analysis = self.orchestrator.inspect(sample_crop, ng_crop, raw_anomalies, aoi_info, global_box_info, aoi_epicenters)
         self.current_analysis = analysis
 
-        # Pinta o Defeito na Tela
-        img_ng_drawn = ng_crop.copy()
-        if analysis.get("bounding_box"):
-            x, y, w, h = analysis["bounding_box"]
-            color = (0, 0, 255) if analysis["is_defect"] else (0, 165, 255) 
-            conf_main = int(analysis["confidence"] * 100)
-            label_text = f"DEF:{conf_main}% | FALSO:{100 - conf_main}%"
-            cv2.rectangle(img_ng_drawn, (x, y), (x+w, y+h), color, 2)
-            (tw, th), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-            cv2.rectangle(img_ng_drawn, (x, y - th - 6), (x + tw + 4, y), color, -1)
-            cv2.putText(img_ng_drawn, label_text, (x + 2, y - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        img_ng_drawn = ImageRenderer.draw_multilayer_boxes(ng_crop, analysis)
 
-        # Se não houver defeito e for uma falha falsa sem anomalias
-        if not analysis.get("bounding_box") and not analysis["is_defect"]:
-            self.lbl_verdict.setText("Nenhuma anomalia detectada")
-            self.lbl_verdict.setStyleSheet("color: #55ff55; font-size: 16px; font-weight: bold; padding: 4px; border: none; background: transparent;")
-            self.lbl_reason.setText("A analise nao encontrou diferencas significativas ou deslocamentos.")
-            
-            # Atualiza apenas os engines que rodaram
-            if hasattr(self, 'lbl_active_engines') and analysis.get("active_engines"):
-                engines_text = " | ".join(analysis["active_engines"])
-                self.lbl_active_engines.setText(f"Engines Ativos: [{engines_text}]")
-                
-            self._update_reference_panel(analysis)
+        if not analysis.get("all_boxes") and not analysis.get("is_defect"):
+             self.lbl_verdict.setText("Nenhuma anomalia detectada")
+             self.lbl_verdict.setStyleSheet("color: #55ff55; font-size: 16px; font-weight: bold; padding: 4px; border: none; background: transparent;")
+             self.lbl_reason.setText("A analise nao encontrou diferencas significativas ou deslocamentos.")
+             
+             if hasattr(self, 'lbl_active_engines') and analysis.get("active_engines"):
+                 engines_text = " | ".join(analysis["active_engines"])
+                 self.lbl_active_engines.setText(f"Engines Ativos: [{engines_text}]")
+                 
+             self._update_reference_panel(analysis)
         else:
-            self._update_confidence_panel(analysis)
-            self._update_reference_panel(analysis)
+             self._update_confidence_panel(analysis)
+             self._update_reference_panel(analysis)
 
         px_ng = self.numpy_to_pixmap(img_ng_drawn)
-        self.lbl_ng.setPixmap(px_ng.scaled(self.lbl_ng.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        if self.lbl_ng.width() > 0 and self.lbl_ng.height() > 0:
+            self.lbl_ng.setPixmap(px_ng.scaled(self.lbl_ng.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
         self.btn_start.setText("Capturar Local Manualmente (MSS)")
         self.btn_save_ok.setEnabled(True)
@@ -367,7 +467,6 @@ class ControlPanel(QWidget):
             self.btn_save_ng.setEnabled(False)
             self.btn_skip.setEnabled(False)
             
-            # Repassa a ordem de recarregar a memória para o Orquestrador
             self.orchestrator.reload_memory() 
             self.lbl_db_info.setText("Memória atualizada!")
 

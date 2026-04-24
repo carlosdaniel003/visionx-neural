@@ -3,21 +3,20 @@
 Módulo responsável exclusivamente pela construção da Interface Gráfica (View).
 Aplica o Princípio da Responsabilidade Única (SRP) separando o visual da lógica.
 Layout em Z: Imagens à esquerda, Telemetria à direita, Numéricos no rodapé.
-Ajuste: Inserção do campo 'Category' na barra superior para exibir o texto normalizado do OCR.
-Novo: Adicionado label 'lbl_active_engines' para exibir os algoritmos da Mistura de Especialistas (MoE).
-Novo: Implementação do StackedWidget para alternar entre Radar (Textura) e Mira (Shift).
+Ajuste Overlay: Substituição do DNA Semântico pelo SSIM Debugger Visual.
+NOVO AJUSTE: Construção rígida de layout para evitar botões caindo e cortes na UI.
 """
 from PyQt6.QtWidgets import (QVBoxLayout, QPushButton, QLabel,
                              QHBoxLayout, QFrame, QGridLayout,
-                             QApplication, QSizePolicy, QStackedWidget) # NOVO: Importando QStackedWidget
+                             QApplication, QSizePolicy, QStackedWidget)
 from PyQt6.QtCore import Qt
 
 # Nossos componentes Lego (Widgets de Telemetria da IA)
-from src.ui.widgets.semantic_dna import SemanticDNAWidget
 from src.ui.widgets.radar_chart import RadarChartWidget
 from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
-# NOVO: Importando o Debugger de Deslocamento
 from src.ui.widgets.shift_debugger import ShiftDebuggerWidget 
+from src.ui.widgets.silk_debugger import SilkDebuggerWidget 
+from src.ui.widgets.ssim_debugger import SSIMDebuggerWidget 
 
 class ControlPanelUI:
     def setup_ui(self, window):
@@ -32,7 +31,6 @@ class ControlPanelUI:
         window.setGeometry(available)
 
         main_layout = QVBoxLayout(window)
-        # AJUSTE: Margem inferior aumentada de 6 para 25 para proteger contra a barra de tarefas
         main_layout.setContentsMargins(10, 6, 10, 25) 
         main_layout.setSpacing(4)
 
@@ -61,6 +59,7 @@ class ControlPanelUI:
         # === BARRA DE INFORMAÇÕES DA AOI
         # ============================================================
         window.aoi_info_frame = QFrame()
+        window.aoi_info_frame.setFixedHeight(35) # TRAVADO
         window.aoi_info_frame.setStyleSheet("""
             QFrame { background-color: #1a1a1a; border: 1px solid #333333; border-radius: 6px; padding: 4px; }
         """)
@@ -70,7 +69,7 @@ class ControlPanelUI:
 
         info_label_style = "color: #888888; font-size: 11px; border: none;"
         info_value_style = "color: #ffffff; font-size: 12px; font-weight: bold; border: none;"
-        category_value_style = "color: #55ff55; font-size: 12px; font-weight: bold; border: none;" # Categoria ganha destaque
+        category_value_style = "color: #55ff55; font-size: 12px; font-weight: bold; border: none;"
 
         lbl_board_name = QLabel("Board:")
         lbl_board_name.setStyleSheet(info_label_style)
@@ -82,7 +81,6 @@ class ControlPanelUI:
         window.lbl_parts_value = QLabel("-")
         window.lbl_parts_value.setStyleSheet(info_value_style)
 
-        # --- NOVO: Campo de Categoria Normalizada ---
         lbl_category_name = QLabel("Category:")
         lbl_category_name.setStyleSheet(info_label_style)
         window.lbl_category_value = QLabel("-")
@@ -127,7 +125,11 @@ class ControlPanelUI:
         window.lbl_sample = QLabel("Aguardando capturas da Rede...")
         window.lbl_sample.setAlignment(Qt.AlignmentFlag.AlignCenter)
         window.lbl_sample.setStyleSheet("background-color: #1a1a1a; border: 1px solid #333333; color: #888888;")
-        window.lbl_sample.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        
+        # POLÍTICA IGNORADA: A imagem nunca mais quebra ou empurra o layout
+        window.lbl_sample.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        window.lbl_sample.setMinimumSize(10, 10)
+        
         sample_layout.addWidget(lbl_sample_title)
         sample_layout.addWidget(window.lbl_sample, stretch=1)
 
@@ -139,14 +141,17 @@ class ControlPanelUI:
         window.lbl_ng = QLabel("Aguardando capturas da Rede...")
         window.lbl_ng.setAlignment(Qt.AlignmentFlag.AlignCenter)
         window.lbl_ng.setStyleSheet("background-color: #1a1a1a; border: 1px solid #333333; color: #888888;")
-        window.lbl_ng.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        
+        # POLÍTICA IGNORADA: A imagem nunca mais quebra ou empurra o layout
+        window.lbl_ng.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        window.lbl_ng.setMinimumSize(10, 10)
+        
         ng_layout.addWidget(lbl_ng_title)
         ng_layout.addWidget(window.lbl_ng, stretch=1)
 
         images_layout.addLayout(sample_layout, stretch=1)
         images_layout.addLayout(ng_layout, stretch=1)
         
-        # Adiciona as imagens no palco (Pesando 60%)
         stage_layout.addLayout(images_layout, stretch=6)
 
         # --- LADO DIREITO: DASHBOARD SEMÂNTICO (WIDGETS) ---
@@ -157,18 +162,17 @@ class ControlPanelUI:
         title_telemetry.setStyleSheet("color: #aaaaaa; font-size: 12px; font-weight: bold;")
         telemetry_layout.addWidget(title_telemetry)
 
-        # Container 1: Código de Barras (DNA)
-        window.frame_dna = SemanticDNAWidget()
-        telemetry_layout.addWidget(window.frame_dna, stretch=1)
-
-        # --- NOVO: Container 2 (Pilha Dinâmica Radar x Shift) ---
+        # Container Dinâmico
         window.stack_central = QStackedWidget()
-        
+        window.frame_ssim_debug = SSIMDebuggerWidget()
         window.frame_radar = RadarChartWidget()
-        window.frame_shift = ShiftDebuggerWidget() # Instancia o novo Debugger
+        window.frame_shift = ShiftDebuggerWidget() 
+        window.frame_silk = SilkDebuggerWidget() 
         
-        window.stack_central.addWidget(window.frame_radar) # Indice 0
-        window.stack_central.addWidget(window.frame_shift) # Indice 1
+        window.stack_central.addWidget(window.frame_ssim_debug) 
+        window.stack_central.addWidget(window.frame_radar)      
+        window.stack_central.addWidget(window.frame_shift)      
+        window.stack_central.addWidget(window.frame_silk)       
         
         telemetry_layout.addWidget(window.stack_central, stretch=2)
 
@@ -176,18 +180,14 @@ class ControlPanelUI:
         window.frame_knn = KNNSpectrumWidget()
         telemetry_layout.addWidget(window.frame_knn, stretch=1)
 
-        # Adiciona a telemetria no palco (Pesando 40%)
         stage_layout.addLayout(telemetry_layout, stretch=4)
-        
-        # AJUSTE: Adiciona o stage ao layout principal com peso alto (stretch=10)
-        # Isso garante que ele encolha se precisar de espaco para os botoes.
-        main_layout.addLayout(stage_layout, stretch=10)
+        main_layout.addLayout(stage_layout, stretch=1)
 
         # ============================================================
         # === RODAPÉ ANALÍTICO (VEREDITO E TEXTOS)
         # ============================================================
         window.confidence_frame = QFrame()
-        # AJUSTE: Reduzi o padding de 6px para 2px para economizar altura vertical
+        window.confidence_frame.setFixedHeight(95) # TRAVADO
         window.confidence_frame.setStyleSheet("""
             QFrame { background-color: #1e1e1e; border: 1px solid #333333; border-radius: 8px; padding: 2px; }
         """)
@@ -199,7 +199,6 @@ class ControlPanelUI:
         window.lbl_verdict.setStyleSheet("color: #888888; font-size: 16px; font-weight: bold; border: none;")
         conf_layout.addWidget(window.lbl_verdict)
         
-        # --- NOVO: Display de Engines Ativos (MoE) ---
         window.lbl_active_engines = QLabel("")
         window.lbl_active_engines.setAlignment(Qt.AlignmentFlag.AlignCenter)
         window.lbl_active_engines.setStyleSheet("color: #00ffaa; font-size: 10px; font-family: Consolas, monospace; border: none; margin-bottom: 2px;")
@@ -216,7 +215,6 @@ class ControlPanelUI:
             ("db_score", "Score Dataset"), ("final_score", "Score Final"),
         ]
 
-        # Dividimos em 8 colunas (uma linha só) para caber deitada de ponta a ponta
         for i, (key, label_text) in enumerate(metrics_def):
             lbl_name = QLabel(label_text + ":")
             lbl_name.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -232,7 +230,6 @@ class ControlPanelUI:
 
         conf_layout.addLayout(metrics_grid)
 
-        # O texto do Banco de Dados e Justificativas ficam aqui embaixo
         info_db_layout = QHBoxLayout()
         window.lbl_reason = QLabel("")
         window.lbl_reason.setStyleSheet("color: #aaaaaa; font-size: 10px; border: none;")
@@ -247,7 +244,6 @@ class ControlPanelUI:
         info_db_layout.addWidget(window.lbl_db_info, stretch=1)
         conf_layout.addLayout(info_db_layout)
 
-        # AJUSTE: Adiciona sem stretch para que os botoes e o texto tenham tamanho fixo
         main_layout.addWidget(window.confidence_frame, stretch=0)
 
         # ============================================================
@@ -266,7 +262,7 @@ class ControlPanelUI:
         """
 
         window.btn_start = QPushButton("Capturar Local Manualmente (MSS)")
-        window.btn_start.setMinimumHeight(40)
+        window.btn_start.setFixedHeight(40) # TRAVADO
         window.btn_start.setStyleSheet(button_style)
         window.btn_start.clicked.connect(window.start_monitoring)
         main_layout.addWidget(window.btn_start, stretch=0)
@@ -274,19 +270,19 @@ class ControlPanelUI:
         curation_layout = QHBoxLayout()
         
         window.btn_skip = QPushButton("X - Descartar")
-        window.btn_skip.setMinimumHeight(40)
+        window.btn_skip.setFixedHeight(40) # TRAVADO
         window.btn_skip.setEnabled(False)
         window.btn_skip.setStyleSheet(skip_button_style)
         window.btn_skip.clicked.connect(window.skip_image)
 
         window.btn_save_ok = QPushButton("Salvar como Falha Falsa (OK)")
-        window.btn_save_ok.setMinimumHeight(40)
+        window.btn_save_ok.setFixedHeight(40) # TRAVADO
         window.btn_save_ok.setEnabled(False)
         window.btn_save_ok.setStyleSheet(button_style)
         window.btn_save_ok.clicked.connect(lambda: window.save_label("OK", source="button"))
 
         window.btn_save_ng = QPushButton("Confirmar Defeito Real (NG)")
-        window.btn_save_ng.setMinimumHeight(40)
+        window.btn_save_ng.setFixedHeight(40) # TRAVADO
         window.btn_save_ng.setEnabled(False)
         window.btn_save_ng.setStyleSheet(button_style)
         window.btn_save_ng.clicked.connect(lambda: window.save_label("NG", source="button"))
@@ -295,8 +291,5 @@ class ControlPanelUI:
         curation_layout.addWidget(window.btn_save_ok)
         curation_layout.addWidget(window.btn_save_ng)
         
-        # AJUSTE: Adiciona os botoes sem stretch
         main_layout.addLayout(curation_layout, stretch=0)
-        
-        # AJUSTE: Força o estado nativo da janela como maximizada para ancorar no OS
         window.setWindowState(Qt.WindowState.WindowMaximized)
