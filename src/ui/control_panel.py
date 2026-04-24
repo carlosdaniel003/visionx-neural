@@ -1,19 +1,16 @@
 # src/ui/control_panel.py
 """
 Módulo do Painel de Controle (Controller) e Console Duplo.
-Ajuste MoE Final: O Maestro agora delega toda a inteligência para o MoEOrchestrator.
-O código monolítico foi removido, tornando o painel apenas um visualizador.
-Ajuste SRP Seguro: A pintura do Overlay Visual (Caixas coloridas) foi isolada no ImageRenderer.
-Ajuste Radar Euclidiano: Busca de Epicentro do 'Centro para Fora' usando a cor exata RGB(6,203,5).
-Ajuste UX/UI Grid: Injeta dinamicamente os componentes da IA no QGridLayout para evitar esmagamento.
-Ajuste Rodapé: Mapeia perfeitamente as métricas consolidadas (scores) para o novo rodapé unificado.
+Ajuste SRP Seguro: A lógica de matemática visual e recortes do OpenCV foi 
+isolada no EpicenterExtractor para limpar o peso desta classe.
+Ajuste de Carrossel: Garante que os painéis Semantic e SSIM apareçam lado a lado
+em vez de se sobrescreverem.
 """
 import cv2
 import numpy as np
 import time
 import socket
 import os
-import math
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap
@@ -45,6 +42,9 @@ from src.services.network_receiver import NetworkReceiver
 from src.ui.control_panel_ui import ControlPanelUI
 from src.utils.text_normalizer import normalize_aoi_text
 from src.core.moe_orchestrator import MoEOrchestrator
+
+# Importa o nosso novo Módulo de Extração de Matemática Pesada
+from src.core.epicenter_extractor import EpicenterExtractor
 
 class ImageRenderer:
     @staticmethod
@@ -188,12 +188,12 @@ class ControlPanel(QWidget):
         self.lbl_verdict.setText("AGUARDANDO PEÇA")
         self.lbl_verdict.setStyleSheet("color: #8b949e; font-size: 16px; font-weight: bold; border: none;")
         self.lbl_reason.setText("---")
-        # Zera todos os textos matemáticos do rodapé unificado
         for key, lbl in self.metric_labels.items():
             lbl.setText("-")
         self.lbl_db_info.setText("Sem dados no momento.")
 
     def _reset_reference_panel(self):
+        # Desliga todos os cards do scroll (vai religar apenas os ativos)
         for frame in ['frame_ssim_debug', 'frame_silk', 'frame_dna', 'frame_shift', 'frame_radar']:
             if hasattr(self, frame):
                 getattr(self, frame).setVisible(False)
@@ -209,31 +209,39 @@ class ControlPanel(QWidget):
         detail = analysis.get("detail", {})
         active_engines = analysis.get("active_engines", [])
         
+        # O Layout é Horizontal (Carrossel). Nós apenas ativamos as janelas que o MoE usou.
+        # Assim eles vão se alinhar lado a lado!
+        
+        # 1. Rota de Textura (Obrigatória em Missing e Solder)
         if "ssim_expert.py" in active_engines and hasattr(self, 'frame_ssim_debug'):
             self.frame_ssim_debug.update_data(detail)
             self.frame_ssim_debug.setVisible(True)
             
+        # 2. Rota de Tinta
         if "silk_expert.py" in active_engines and hasattr(self, 'frame_silk'):
             self.frame_silk.update_data(detail)
             self.frame_silk.setVisible(True)
             
+        # 3. Rota Estrutural do ORB (Esta era a que não estava entrando no empilhamento horizontal)
         if "semantic_expert.py" in active_engines and hasattr(self, 'frame_dna'):
             self.frame_dna.update_data(detail)
             self.frame_dna.setVisible(True)
             
+        # 4. Rota Geométrica
         if "shift_expert.py" in active_engines and hasattr(self, 'frame_shift'):
             self.frame_shift.update_data(detail)
             self.frame_shift.setVisible(True)
             
+        # 5. Radar Legado
         if not active_engines and hasattr(self, 'frame_radar'):
             self.frame_radar.update_data(detail)
             self.frame_radar.setVisible(True)
             
+        # 6. Histórico (KNN) no rodapé
         if hasattr(self, 'frame_knn'):
             self.frame_knn.update_data(detail)
 
     def _update_confidence_panel(self, analysis: dict):
-        """ Atualiza o rodapé unificado com o veredito e as métricas exatas """
         verdict = analysis.get("verdict", "?")
         is_defect = analysis.get("is_defect", False)
         conf_float = analysis.get("confidence", 0.5)
@@ -243,17 +251,14 @@ class ControlPanel(QWidget):
         color_str = "#ff7b72" if is_defect else "#3fb950"
         def_pct, ok_pct = (conf_main, conf_opp) if is_defect else (conf_opp, conf_main)
 
-        # 1. VEREDITO E JUSTIFICATIVA
         self.lbl_verdict.setText(f"{verdict.upper()} • (Defeito: {def_pct}% | Falso: {ok_pct}%)")
         self.lbl_verdict.setStyleSheet(f"color: {color_str}; font-size: 16px; font-weight: bold; border: none;")
 
         if analysis.get("reason", ""): 
             self.lbl_reason.setText(f"Justificativa IA: {analysis.get('reason', '')}")
 
-        # 2. MÉTRICAS MATEMÁTICAS DA IA (O MEIO DO RODAPÉ)
         detail = analysis.get("detail", {})
         
-        # Mapeia as chaves do dicionário 'detail' gerado pelo Orquestrador para os textos da tela
         metrics_mapping = {
             "ssim": f"{detail.get('ssim', 0):.3f}",
             "pct_changed": f"{detail.get('pct_changed', 0):.1%}",
@@ -264,23 +269,18 @@ class ControlPanel(QWidget):
             "final_score": f"{detail.get('final_score', 0):.2f}"
         }
 
-        # Aplica a cor dependendo da gravidade (Vermelho = Ruim, Verde = Bom)
         for key, text_value in metrics_mapping.items():
             if key in self.metric_labels:
                 val_float = detail.get(key, 0.0)
-                
-                # Para SSIM e Hist Corr, mais alto é MELHOR. Para o resto, mais alto é PIOR.
                 if key in ["ssim", "hist_corr"]:
                     color = "#3fb950" if val_float > 0.6 else ("#ffd33d" if val_float > 0.4 else "#ff7b72")
                 else:
                     color = "#ff7b72" if val_float > 0.6 else ("#ffd33d" if val_float > 0.3 else "#3fb950")
                 
-                # O final_score ganha um destaque extra
                 font_sz = "14px" if key == "final_score" else "12px"
                 self.metric_labels[key].setStyleSheet(f"color: {color}; font-size: {font_sz}; font-weight: bold; border: none; background: transparent;")
                 self.metric_labels[key].setText(text_value)
 
-        # 3. DADOS DO DATASET (O LADO DIREITO DO RODAPÉ)
         if detail.get("has_memory", False) or detail.get("db_has_memory", False):
             vote = detail.get('vote_defect', detail.get('db_vote', 0.5))
             sim = detail.get('best_similarity', detail.get('db_best_sim', 0.0))
@@ -314,91 +314,26 @@ class ControlPanel(QWidget):
         raw_anomalies, old_epicenters, global_box_info, gab_focus, test_focus = detect_anomalies(sample_crop, ng_crop)
         
         # =====================================================================
-        # RADAR EUCLIDIANO: Busca Centro-Para-Fora (Center-Out Search)
+        # DELEGAÇÃO SRP: O Módulo Externo faz o trabalho pesado matemático!
         # =====================================================================
-        real_epicenters = []
-        img_h, img_w = sample_crop.shape[:2]
-        
-        try:
-            hsv = cv2.cvtColor(sample_crop, cv2.COLOR_BGR2HSV)
-            lower_green = np.array([50, 150, 100])
-            upper_green = np.array([75, 255, 255])
-            
-            mask = cv2.inRange(hsv, lower_green, upper_green)
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-            
-            cnts, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-            
-            center_x, center_y = img_w / 2, img_h / 2
-            valid_boxes = []
-            
-            for c in cnts:
-                x, y, w, h = cv2.boundingRect(c)
-                if w > 15 and h > 15 and w < (img_w * 0.85) and h < (img_h * 0.85):
-                    box_cx = x + (w / 2)
-                    box_cy = y + (h / 2)
-                    dist = math.sqrt((center_x - box_cx)**2 + (center_y - box_cy)**2)
-                    valid_boxes.append({"box": (x, y, w, h), "dist": dist})
-            
-            if valid_boxes:
-                valid_boxes.sort(key=lambda b: b["dist"]) 
-                real_epicenters.append(valid_boxes[0]["box"]) 
-                
-        except Exception as e:
-            print(f"⚠️ Erro no Radar Euclidiano: {e}")
+        real_epicenters, focus_gab, focus_ng = EpicenterExtractor.extract_focus(
+            sample_crop, ng_crop, old_epicenters, global_box_info
+        )
 
-        # Fallback de segurança 
-        if not real_epicenters:
-            if old_epicenters:
-                old_epicenters.sort(key=lambda b: b[2] * b[3], reverse=True)
-                for (x, y, w, h) in old_epicenters:
-                    if w < img_w * 0.90 and h < img_h * 0.90 and w > 20 and h > 20:
-                        real_epicenters.append((x, y, w, h))
-                        break
-            elif global_box_info:
-                 x = global_box_info.get("x", 0)
-                 y = global_box_info.get("y", 0)
-                 w = global_box_info.get("w", img_w)
-                 h = global_box_info.get("h", img_h)
-                 if 20 < w < img_w * 0.90 and 20 < h < img_h * 0.90:
-                     real_epicenters.append((x, y, w, h))
-
-        # =====================================================================
-        # RENDERIZA O RECORTE DO EPICENTRO
-        # =====================================================================
-        if real_epicenters:
-            ex, ey, ew, eh = real_epicenters[0] 
-            try:
-                pad = 0
-                y1 = max(0, ey + pad)
-                y2 = min(img_h, ey + eh - pad)
-                x1 = max(0, ex + pad)
-                x2 = min(img_w, ex + ew - pad)
-                
-                if y2 > y1 and x2 > x1:
-                    focus_gab = sample_crop[y1:y2, x1:x2].copy()
-                    focus_ng = ng_crop[y1:y2, x1:x2].copy()
-                    
-                    if focus_gab.shape != focus_ng.shape:
-                        focus_ng = cv2.resize(focus_ng, (focus_gab.shape[1], focus_gab.shape[0]))
-                    
-                    if focus_gab.size > 0 and hasattr(self, 'lbl_sample_focus') and self.lbl_sample_focus.width() > 0:
-                        px_focus_gab = self.numpy_to_pixmap(focus_gab)
-                        self.lbl_sample_focus.setPixmap(px_focus_gab.scaled(self.lbl_sample_focus.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-
-                    if focus_ng.size > 0 and hasattr(self, 'lbl_ng_focus') and self.lbl_ng_focus.width() > 0:
-                        px_focus_ng = self.numpy_to_pixmap(focus_ng)
-                        self.lbl_ng_focus.setPixmap(px_focus_ng.scaled(self.lbl_ng_focus.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-                else:
-                    if hasattr(self, 'lbl_sample_focus'): self.lbl_sample_focus.setText("Inválido")
-                    if hasattr(self, 'lbl_ng_focus'): self.lbl_ng_focus.setText("Inválido")
-            except:
-                pass
+        # Atualiza a UI Visual das Lupa Foco com o resultado retornado
+        if focus_gab.size > 0 and hasattr(self, 'lbl_sample_focus') and self.lbl_sample_focus.width() > 0:
+            px_focus_gab = self.numpy_to_pixmap(focus_gab)
+            self.lbl_sample_focus.setPixmap(px_focus_gab.scaled(self.lbl_sample_focus.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         else:
-            if hasattr(self, 'lbl_sample_focus'): self.lbl_sample_focus.setText("Sem Foco")
-            if hasattr(self, 'lbl_ng_focus'): self.lbl_ng_focus.setText("Sem Foco")
+            if hasattr(self, 'lbl_sample_focus'): self.lbl_sample_focus.setText("Inválido/Sem Foco")
 
+        if focus_ng.size > 0 and hasattr(self, 'lbl_ng_focus') and self.lbl_ng_focus.width() > 0:
+            px_focus_ng = self.numpy_to_pixmap(focus_ng)
+            self.lbl_ng_focus.setPixmap(px_focus_ng.scaled(self.lbl_ng_focus.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        else:
+            if hasattr(self, 'lbl_ng_focus'): self.lbl_ng_focus.setText("Inválido/Sem Foco")
+
+        # O ORQUESTRADOR recebe a caixa finalizada e limpa!
         analysis = self.orchestrator.inspect(sample_crop, ng_crop, raw_anomalies, aoi_info, global_box_info, real_epicenters)
         self.current_analysis = analysis
 

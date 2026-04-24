@@ -1,24 +1,24 @@
 # src/ui/widgets/semantic_dna.py
-import cv2
+"""
+O Visor de DNA Semântico (Embedding Debugger).
+Lê os vetores (128 dimensões) criados pelo SemanticExpert.
+Gera três barras visuais: Gabarito, Anomalia e Divergência.
+"""
 import numpy as np
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QImage
+from PyQt6.QtGui import QPainter, QColor, QFont
 from PyQt6.QtCore import Qt, QRectF
 
 class SemanticDNAWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(150) 
-        self.setMinimumWidth(150)
+        self.setMinimumHeight(280) # Altura padrão dos Cards Horizontais do Carrossel
+        self.setMinimumWidth(550)
         
         self.is_active = False
         self.sem_loss = 0.0
-        self.sem_img_gab = None
-        self.sem_img_test = None
-
-    def update_dna(self, query_emb, ref_emb=None):
-        """ Método legado mantido por compatibilidade """
-        pass 
+        self.query_emb = None
+        self.ref_emb = None
 
     def update_data(self, detail: dict):
         """ Recebe o dict completo do Orquestrador """
@@ -29,38 +29,28 @@ class SemanticDNAWidget(QWidget):
             
         self.is_active = True
         self.sem_loss = detail.get("semantic_loss", 0.0)
-        self.sem_img_gab = detail.get("sem_img_gab", None)
-        self.sem_img_test = detail.get("sem_img_test", None)
+        
+        # Puxa as listas de números
+        q_emb = detail.get("query_emb", [])
+        r_emb = detail.get("ref_emb", [])
+        
+        self.query_emb = np.array(q_emb) if q_emb else None
+        self.ref_emb = np.array(r_emb) if r_emb else None
+        
         self.update()
 
-    def _draw_image_box(self, painter, img_bgr: np.ndarray, rect: QRectF, title: str):
-        """ Função genérica para desenhar uma matriz colorida na tela do PyQt6 """
-        painter.setPen(QPen(QColor("#333333"), 1))
-        painter.setBrush(QColor("#0a0a0a"))
-        painter.drawRect(rect)
+    def _get_color_heat(self, val):
+        """ Converte um valor (0.0 a 1.0) em uma cor térmica (Azul escuro -> Verde -> Amarelo) """
+        val = max(0.0, min(1.0, val))
+        r = int(min(255, max(0, 255 * (val * 2 - 1))))
+        b = int(min(255, max(0, 255 * (2 - val * 2))))
+        g = int(min(255, max(0, 255 * (1 - abs(val * 2 - 1)))))
+        return QColor(r, g, b)
 
-        painter.setPen(QColor("#888888"))
-        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
-        painter.drawText(rect.adjusted(0, -12, 0, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom, title)
-
-        if img_bgr is None or img_bgr.size == 0:
-            painter.setPen(QColor("#444444"))
-            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "SEM FOTO")
-            return
-
-        h, w = img_bgr.shape[:2]
-        
-        if not img_bgr.flags['C_CONTIGUOUS']:
-            img_bgr = np.ascontiguousarray(img_bgr)
-            
-        rgb_img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-        qimg = QImage(rgb_img.data, w, h, w * 3, QImage.Format.Format_RGB888).copy()
-        
-        scaled_img = qimg.scaled(int(rect.width() - 4), int(rect.height() - 4), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        img_x = rect.x() + (rect.width() - scaled_img.width()) / 2
-        img_y = rect.y() + (rect.height() - scaled_img.height()) / 2
-        
-        painter.drawImage(int(img_x), int(img_y), scaled_img)
+    def _get_color_diff(self, val):
+        """ Converte a diferença em uma cor de alerta (Preto = Igual, Vermelho Vivo = Diferente) """
+        val = max(0.0, min(1.0, val))
+        return QColor(int(val * 255), 0, 0)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -69,49 +59,103 @@ class SemanticDNAWidget(QWidget):
         w = self.width()
         h = self.height()
 
-        painter.fillRect(0, 0, w, h, QColor("#1a1a1a"))
+        painter.fillRect(0, 0, w, h, QColor("#161b22"))
 
-        painter.setPen(QColor("#dddddd"))
-        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
-        painter.drawText(5, 15, "Scanner de Estrutura (Semantic ORB)")
+        painter.setPen(QColor("#c9d1d9"))
+        painter.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
+        painter.drawText(10, 20, "DNA SEMÂNTICO (EMBEDDING BARCODE)")
 
-        if not self.is_active:
-            painter.setPen(QColor("#555555"))
+        if not self.is_active or self.query_emb is None or self.ref_emb is None:
+            painter.setPen(QColor("#484f58"))
             painter.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Motor Semântico Inativo (MoE)")
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Motor Semântico Inativo (MoE ignorou rota)")
             painter.end()
             return
 
         # =========================================================
-        # LAYOUT DOS DOIS MONITORES (Visão Biocular ORB)
+        # MATEMÁTICA DE NORMALIZAÇÃO DAS BARRAS
         # =========================================================
-        padding = 10
-        spacing = 10
-        available_w = w - (padding * 2) - spacing
-        box_w = available_w / 2.0
+        emb_q = self.query_emb # Câmera
+        emb_r = self.ref_emb   # Gabarito
         
-        y_start = 35
-        y_end = h - 35 
-        box_h = y_end - y_start
+        # Acha o maior e o menor número no vetor para poder pintar corretamente
+        all_vals = np.concatenate([emb_q, emb_r])
+        v_min, v_max = np.min(all_vals), np.max(all_vals)
+        if v_max == v_min: v_max = v_min + 1e-5
 
-        rect_gab = QRectF(padding, y_start, box_w, box_h)
-        rect_test = QRectF(padding + box_w + spacing, y_start, box_w, box_h)
+        # Calcula a diferença absoluta entre o gabarito e a câmera em cada posição
+        diff = np.abs(emb_q - emb_r)
+        d_max = np.max(diff) if np.max(diff) > 0 else 1.0
 
-        # As telas mostrando os pontinhos estruturais
-        self._draw_image_box(painter, self.sem_img_gab, rect_gab, "PADRÃO (Quinas + Falhas Vermelhas)")
-        self._draw_image_box(painter, self.sem_img_test, rect_test, "CÂMERA (Quinas Encontradas)")
-
-        # =========================================================
-        # HUD DE TELEMETRIA
-        # =========================================================
-        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+        num_features = len(emb_q)
         
+        padding_x = 10
+        available_w = w - (padding_x * 2)
+        bar_w = available_w / num_features
+        
+        # Calcula as alturas usando o espaço real do Widget
+        title_h = 15
+        spacing_y = 10
+        total_used_y = 35 # O topo (título) + um espaço extra
+        available_h = h - total_used_y - 20 # 20 de sobra no pé
+        
+        bar_h = (available_h - (title_h * 3) - (spacing_y * 2)) / 3
+
+        font = QFont("Consolas", 8, QFont.Weight.Bold)
+        painter.setFont(font)
+
+        # =========================================================
+        # BARRA 1: GABARITO (REFERÊNCIA)
+        # =========================================================
+        y_offset = total_used_y
+        painter.setPen(QColor("#8b949e"))
+        painter.drawText(padding_x, int(y_offset + 10), "DNA: Gabarito (Padrão)")
+        y_offset += title_h
+        
+        painter.setPen(Qt.PenStyle.NoPen)
+        for i, val in enumerate(emb_r):
+            norm_val = (val - v_min) / (v_max - v_min)
+            painter.setBrush(self._get_color_heat(norm_val))
+            painter.drawRect(QRectF(padding_x + (i * bar_w), y_offset, bar_w + 1, bar_h))
+
+        # =========================================================
+        # BARRA 2: CÂMERA (PEÇA TESTADA)
+        # =========================================================
+        y_offset += bar_h + spacing_y
+        painter.setPen(QColor("#8b949e"))
+        painter.drawText(padding_x, int(y_offset + 10), "DNA: Câmera (Anomalia Reportada)")
+        y_offset += title_h
+        
+        painter.setPen(Qt.PenStyle.NoPen)
+        for i, val in enumerate(emb_q):
+            norm_val = (val - v_min) / (v_max - v_min)
+            painter.setBrush(self._get_color_heat(norm_val))
+            painter.drawRect(QRectF(padding_x + (i * bar_w), y_offset, bar_w + 1, bar_h))
+
+        # =========================================================
+        # BARRA 3: DIVERGÊNCIA (O ALARME DE DEFEITO)
+        # =========================================================
+        y_offset += bar_h + spacing_y
+        painter.setPen(QColor("#ff7b72"))
+        painter.drawText(padding_x, int(y_offset + 10), "Divergência (Foco de Alarme da IA)")
+        y_offset += title_h
+        
+        painter.setPen(Qt.PenStyle.NoPen)
+        for i, val in enumerate(diff):
+            norm_val = val / d_max # Aumenta o contraste das diferenças!
+            painter.setBrush(self._get_color_diff(norm_val))
+            painter.drawRect(QRectF(padding_x + (i * bar_w), y_offset, bar_w + 1, bar_h))
+
+        # =========================================================
+        # STATUS NUMÉRICO
+        # =========================================================
+        painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
         is_critical = self.sem_loss > 0.40
-        status_color = QColor("#ff5555") if is_critical else QColor("#55ff55")
+        status_color = QColor("#ff7b72") if is_critical else QColor("#3fb950")
         
-        status_text = f"Dano Estrutural: {self.sem_loss:.0%}"
+        status_text = f"DISTÂNCIA SEMÂNTICA: {self.sem_loss:.0%}"
         text_width = painter.fontMetrics().horizontalAdvance(status_text)
         painter.setPen(status_color)
-        painter.drawText(int(w - padding - text_width), h - 10, status_text)
+        painter.drawText(int(w - padding_x - text_width), int(total_used_y + 10), status_text)
 
         painter.end()
