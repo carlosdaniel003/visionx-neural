@@ -2,10 +2,8 @@
 """
 Módulo Especialista em Textura e Manchas.
 Visão Biocular: Analisa o micro-foco da AOI (Local) e caça anomalias gigantes na peça (Macro).
-Ajuste: Exporta os mapas de calor e também as imagens originais da câmera (crop_test e full_test)
-para permitir a mesclagem (overlay) visual no Debugger.
-NOVO AJUSTE: Foco Extremo. A IA agora recorta a imagem exatamente na caixinha verde menor da AOI
-para não ser enganada por reflexos estourados ao redor.
+Ajuste Foco Extremo: A IA agora recorta a imagem exatamente na caixinha verde menor da AOI
+para não ser enganada por reflexos estourados ao redor. Retorna os recortes exatos para o Debugger.
 """
 import cv2
 import numpy as np
@@ -36,15 +34,28 @@ class SSIMExpert:
                     
                     if x_right > x_left and y_bottom > y_top:
                         is_epicenter = True
-                        # EXTRAI EXATAMENTE O CONTEÚDO DA CAIXINHA VERDE!
-                        focus_gab = full_gab[ey:ey+eh, ex:ex+ew]
-                        focus_test = full_test[ey:ey+eh, ex:ex+ew]
+                        
+                        # Extração Segura do Epicentro (Garante que não passa da imagem)
+                        h_f, w_f = full_gab.shape[:2]
+                        y1, y2 = max(0, ey), min(h_f, ey + eh)
+                        x1, x2 = max(0, ex), min(w_f, ex + ew)
+                        
+                        if y2 > y1 and x2 > x1:
+                            focus_gab = full_gab[y1:y2, x1:x2].copy()
+                            focus_test = full_test[y1:y2, x1:x2].copy()
                         break
 
             # Se o recorte deu errado ou ficou muito pequeno, volta pro crop normal
             if focus_gab.size < 10 or focus_test.size < 10:
                 focus_gab = crop_gab
                 focus_test = crop_test
+
+            # =================================================================
+            # TRAVA ANTI-ERRO DO OPENCV (-209: Sizes of input arguments do not match)
+            # =================================================================
+            # Garante que as imagens tenham exatamente o mesmo tamanho na memória antes de continuar
+            if focus_gab.shape != focus_test.shape:
+                focus_test = cv2.resize(focus_test, (focus_gab.shape[1], focus_gab.shape[0]))
 
             # =================================================================
             # 1. VISÃO MICRO (Análise Local Focada)
@@ -73,6 +84,9 @@ class SSIMExpert:
                 ctx_t = full_test[max(0, box_y-expand):min(h_f, box_y+box_h+expand), max(0, box_x-expand):min(w_f, box_x+box_w+expand)]
                 
                 if ctx_g.size > 0 and ctx_t.size > 0:
+                    if ctx_g.shape != ctx_t.shape:
+                         ctx_t = cv2.resize(ctx_t, (ctx_g.shape[1], ctx_g.shape[0]))
+                    
                     _, smap = ssim(cv2.cvtColor(cv2.resize(ctx_g, (96, 96)), cv2.COLOR_BGR2GRAY), cv2.cvtColor(cv2.resize(ctx_t, (96, 96)), cv2.COLOR_BGR2GRAY), full=True)
                     _, dt = cv2.threshold(((1.0 - smap) * 255).astype(np.uint8), 100, 255, cv2.THRESH_BINARY)
                     cnts, _ = cv2.findContours(dt, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -92,37 +106,32 @@ class SSIMExpert:
             diff_edges = None 
             
             if full_gab is not None and full_test is not None:
-                fg_gray = cv2.cvtColor(full_gab, cv2.COLOR_BGR2GRAY)
-                ft_gray = cv2.cvtColor(full_test, cv2.COLOR_BGR2GRAY)
-                
-                # Borra pesado para ignorar textura do material e focar só nas quinas
-                fg_blur = cv2.GaussianBlur(fg_gray, (7, 7), 0)
-                ft_blur = cv2.GaussianBlur(ft_gray, (7, 7), 0)
-                
-                # Extrai apenas as BORDAS fortes da imagem inteira
-                edges_g = cv2.Canny(fg_blur, 50, 150)
-                edges_t = cv2.Canny(ft_blur, 50, 150)
-                
-                # Engorda as bordas do gabarito para tolerar pequenos desalinhamentos normais da placa
-                kernel_tol = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-                edges_g_dilated = cv2.dilate(edges_g, kernel_tol, iterations=1)
-                
-                # Operação XOR: Revela apenas as bordas que "sumiram" ou "nasceram" do nada
-                diff_edges = cv2.bitwise_xor(edges_t, edges_g_dilated)
-                
-                # Junta os cacos de bordas quebradas num bloco sólido para achar a área do problema
-                kernel_macro = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 20))
-                thresh_macro = cv2.morphologyEx(diff_edges, cv2.MORPH_CLOSE, kernel_macro)
-                
-                # Limpa micro-ruídos da operação
-                thresh_macro = cv2.morphologyEx(thresh_macro, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
-                
-                cnts_macro, _ = cv2.findContours(thresh_macro, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                
-                for c in cnts_macro:
-                    if cv2.contourArea(c) > 600: 
-                        gx, gy, gw, gh = cv2.boundingRect(c)
-                        global_boxes.append((gx, gy, gw, gh))
+                if full_gab.shape == full_test.shape:
+                    fg_gray = cv2.cvtColor(full_gab, cv2.COLOR_BGR2GRAY)
+                    ft_gray = cv2.cvtColor(full_test, cv2.COLOR_BGR2GRAY)
+                    
+                    fg_blur = cv2.GaussianBlur(fg_gray, (7, 7), 0)
+                    ft_blur = cv2.GaussianBlur(ft_gray, (7, 7), 0)
+                    
+                    edges_g = cv2.Canny(fg_blur, 50, 150)
+                    edges_t = cv2.Canny(ft_blur, 50, 150)
+                    
+                    kernel_tol = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+                    edges_g_dilated = cv2.dilate(edges_g, kernel_tol, iterations=1)
+                    
+                    diff_edges = cv2.bitwise_xor(edges_t, edges_g_dilated)
+                    
+                    kernel_macro = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 20))
+                    thresh_macro = cv2.morphologyEx(diff_edges, cv2.MORPH_CLOSE, kernel_macro)
+                    
+                    thresh_macro = cv2.morphologyEx(thresh_macro, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
+                    
+                    cnts_macro, _ = cv2.findContours(thresh_macro, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    
+                    for c in cnts_macro:
+                        if cv2.contourArea(c) > 600: 
+                            gx, gy, gw, gh = cv2.boundingRect(c)
+                            global_boxes.append((gx, gy, gw, gh))
 
             # 5. Cálculo Score Final Local
             local_score = sum([
@@ -145,10 +154,11 @@ class SSIMExpert:
                 "hist_corr": float(hist_corr), "ctx_reason": ctx_reason, "is_epicenter": is_epicenter,
                 "global_boxes": global_boxes,
                 
-                # === EXPORTAÇÃO PARA O DEBUGGER VISUAL ===
+                # === EXPORTAÇÃO PARA O DEBUGGER VISUAL DE 3 TELAS ===
                 "heat_map_raw": (diff * 255).astype(np.uint8), 
                 "macro_edges": diff_edges, 
-                "crop_test": focus_test, # <- Mudou: agora a interface pinta o foco exato da IA
+                "crop_gab": focus_gab,   # Exporta a foto real do foco do gabarito
+                "crop_test": focus_test, # Exporta a foto real do foco do teste
                 "full_test": full_test  
             }
         except Exception as e:

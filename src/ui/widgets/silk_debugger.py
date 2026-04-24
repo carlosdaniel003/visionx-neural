@@ -38,7 +38,7 @@ class SilkDebuggerWidget(QWidget):
         self.dx = detail.get("dx", 0.0)
         self.dy = detail.get("dy", 0.0)
         
-        # Puxa as imagens do Raio-X se elas existirem no dicionário
+        # Puxa as imagens do Raio-X do Epicentro se elas existirem no dicionário
         self.mask_gab = detail.get("mask_gab", None)
         self.mask_test = detail.get("mask_test", None)
         self.diff_mask = detail.get("diff_mask", None)
@@ -64,6 +64,10 @@ class SilkDebuggerWidget(QWidget):
 
         h, w = arr.shape
         
+        # Garante que a matriz esteja alinhada na memória (requisito crítico do Qt)
+        if not arr.flags['C_CONTIGUOUS']:
+            arr = np.ascontiguousarray(arr)
+            
         # Converte o P&B do OpenCV para uma QImage nativa
         if colorize_red:
             # Transforma os pixels brancos em Vermelho Sangue (Para a tela de Diferença)
@@ -71,7 +75,7 @@ class SilkDebuggerWidget(QWidget):
             color_arr[arr > 0] = [255, 85, 85, 255] # RGBA
             qimg = QImage(color_arr.data, w, h, w * 4, QImage.Format.Format_RGBA8888).copy()
         else:
-            # Mantém em tons de cinza
+            # Mantém em tons de cinza puros
             qimg = QImage(arr.data, w, h, w, QImage.Format.Format_Grayscale8).copy()
 
         # Dimensiona a imagem para caber na moldura preservando a proporção
@@ -94,7 +98,7 @@ class SilkDebuggerWidget(QWidget):
 
         painter.setPen(QColor("#dddddd"))
         painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
-        painter.drawText(5, 15, "Raio-X de Serigrafia (XOR Diff)")
+        painter.drawText(5, 15, "Raio-X de Epicentro (XOR Diff)")
 
         if not self.is_active:
             painter.setPen(QColor("#555555"))
@@ -106,26 +110,24 @@ class SilkDebuggerWidget(QWidget):
         base_color = QColor("#ff5555") if self.is_defect else QColor("#55ff55")
 
         # =========================================================
-        # 1. OS TRÊS MONITORES (Matrix View)
+        # 1. OS TRÊS MONITORES DO EPICENTRO (Matrix View)
         # =========================================================
-        # Calcula o espaço para as 3 telas caberem lado a lado
         padding = 10
         spacing = 5
         available_w = w - (padding * 2) - (spacing * 2)
         box_w = available_w / 3.0
         
         y_start = 35
-        y_end = h - 45 # Deixa espaço para a barra e textos
+        y_end = h - 45 
         box_h = y_end - y_start
 
         rect_gab = QRectF(padding, y_start, box_w, box_h)
         rect_test = QRectF(padding + box_w + spacing, y_start, box_w, box_h)
         rect_diff = QRectF(padding + (box_w * 2) + (spacing * 2), y_start, box_w, box_h)
 
-        # Desenha as matrizes!
-        self._draw_np_mask(painter, self.mask_gab, rect_gab, "PADRÃO")
-        self._draw_np_mask(painter, self.mask_test, rect_test, "CÂMERA")
-        self._draw_np_mask(painter, self.diff_mask, rect_diff, "ANOMALIA", colorize_red=True)
+        self._draw_np_mask(painter, self.mask_gab, rect_gab, "PADRÃO (Foco)")
+        self._draw_np_mask(painter, self.mask_test, rect_test, "CÂMERA (Foco)")
+        self._draw_np_mask(painter, self.diff_mask, rect_diff, "ANOMALIA (Foco)", colorize_red=True)
 
         # =========================================================
         # 2. BARRA DE CONTRASTE (XOR GAUGE)
@@ -139,13 +141,11 @@ class SilkDebuggerWidget(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRect(QRectF(bar_x, bar_y, bar_w, bar_h))
         
-        # A barra inteira agora representa 100% da área do chip (1.0)
         fill_max_pct = 1.0 
         fill_width = min(bar_w, (self.silk_error_pct / fill_max_pct) * bar_w)
         painter.setBrush(base_color)
         painter.drawRect(QRectF(bar_x, bar_y, fill_width, bar_h))
         
-        # Posiciona a linha branca de tolerância baseada na nova escala de 100%
         tol_x = bar_x + (self.tolerance / fill_max_pct) * bar_w
         painter.setPen(QPen(QColor("#ffffff"), 2))
         painter.drawLine(QPointF(tol_x, float(bar_y - 3)), QPointF(tol_x, float(bar_y + bar_h + 3)))
@@ -159,7 +159,7 @@ class SilkDebuggerWidget(QWidget):
         painter.drawText(int(tol_x - 10), int(bar_y - 5), f"Tol:{self.tolerance:.1%}")
         
         painter.setPen(base_color)
-        status_text = f"Erro Tinta: {self.silk_error_pct:.2%}" if not self.is_defect else "FALHA DE SERIGRAFIA"
+        status_text = f"Erro Tinta: {self.silk_error_pct:.2%}" if not self.is_defect else "FALHA DETECTADA NO FOCO"
         text_width = painter.fontMetrics().horizontalAdvance(status_text)
         painter.drawText(int(w - text_width - 5), h - 5, status_text)
         

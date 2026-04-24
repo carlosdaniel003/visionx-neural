@@ -1,114 +1,117 @@
 # src/ui/widgets/semantic_dna.py
+import cv2
 import numpy as np
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QPainter, QColor, QFont
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QImage
 from PyQt6.QtCore import Qt, QRectF
 
 class SemanticDNAWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.query_emb = None
-        self.ref_emb = None
-        # Altura mínima para caber as 3 barras confortavelmente
-        self.setMinimumHeight(100) 
+        self.setMinimumHeight(150) 
+        self.setMinimumWidth(150)
+        
+        self.is_active = False
+        self.sem_loss = 0.0
+        self.sem_img_gab = None
+        self.sem_img_test = None
 
     def update_dna(self, query_emb, ref_emb=None):
-        """ Recebe as listas de números (embeddings) da IA e atualiza o visual """
-        self.query_emb = np.array(query_emb) if query_emb is not None and len(query_emb) > 0 else None
-        self.ref_emb = np.array(ref_emb) if ref_emb is not None and len(ref_emb) > 0 else None
-        self.update() # Força o PyQt a redesenhar o componente na tela
+        """ Método legado mantido por compatibilidade """
+        pass 
 
-    def _get_color_heat(self, val):
-        """ Converte um valor (0.0 a 1.0) em uma cor térmica (Azul -> Verde -> Vermelho) """
-        val = max(0.0, min(1.0, val))
-        r = int(min(255, max(0, 255 * (val * 2 - 1))))
-        b = int(min(255, max(0, 255 * (2 - val * 2))))
-        g = int(min(255, max(0, 255 * (1 - abs(val * 2 - 1)))))
-        return QColor(r, g, b)
+    def update_data(self, detail: dict):
+        """ Recebe o dict completo do Orquestrador """
+        if not detail or "semantic_loss" not in detail:
+            self.is_active = False
+            self.update()
+            return
+            
+        self.is_active = True
+        self.sem_loss = detail.get("semantic_loss", 0.0)
+        self.sem_img_gab = detail.get("sem_img_gab", None)
+        self.sem_img_test = detail.get("sem_img_test", None)
+        self.update()
 
-    def _get_color_diff(self, val):
-        """ Converte a diferença em uma cor de alerta (Preto = Igual, Vermelho = Diferente) """
-        val = max(0.0, min(1.0, val))
-        return QColor(int(val * 255), 0, 0)
+    def _draw_image_box(self, painter, img_bgr: np.ndarray, rect: QRectF, title: str):
+        """ Função genérica para desenhar uma matriz colorida na tela do PyQt6 """
+        painter.setPen(QPen(QColor("#333333"), 1))
+        painter.setBrush(QColor("#0a0a0a"))
+        painter.drawRect(rect)
+
+        painter.setPen(QColor("#888888"))
+        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        painter.drawText(rect.adjusted(0, -12, 0, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom, title)
+
+        if img_bgr is None or img_bgr.size == 0:
+            painter.setPen(QColor("#444444"))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "SEM FOTO")
+            return
+
+        h, w = img_bgr.shape[:2]
+        
+        if not img_bgr.flags['C_CONTIGUOUS']:
+            img_bgr = np.ascontiguousarray(img_bgr)
+            
+        rgb_img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        qimg = QImage(rgb_img.data, w, h, w * 3, QImage.Format.Format_RGB888).copy()
+        
+        scaled_img = qimg.scaled(int(rect.width() - 4), int(rect.height() - 4), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        img_x = rect.x() + (rect.width() - scaled_img.width()) / 2
+        img_y = rect.y() + (rect.height() - scaled_img.height()) / 2
+        
+        painter.drawImage(int(img_x), int(img_y), scaled_img)
 
     def paintEvent(self, event):
-        """ Motor de desenho gráfico de alta performance do PyQt """
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         w = self.width()
         h = self.height()
 
-        # Fundo escuro
         painter.fillRect(0, 0, w, h, QColor("#1a1a1a"))
 
-        # MoE: Se o array estiver vazio, significa que o KNN não rodou
-        if self.query_emb is None:
+        painter.setPen(QColor("#dddddd"))
+        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+        painter.drawText(5, 15, "Scanner de Estrutura (Semantic ORB)")
+
+        if not self.is_active:
             painter.setPen(QColor("#555555"))
-            font = QFont("Consolas", 10, QFont.Weight.Bold)
-            painter.setFont(font)
+            painter.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Motor Semântico Inativo (MoE)")
             painter.end()
             return
 
-        # Prepara a matemática para normalizar os valores
-        emb_q = self.query_emb
-        emb_r = self.ref_emb if self.ref_emb is not None else np.zeros_like(emb_q)
+        # =========================================================
+        # LAYOUT DOS DOIS MONITORES (Visão Biocular ORB)
+        # =========================================================
+        padding = 10
+        spacing = 10
+        available_w = w - (padding * 2) - spacing
+        box_w = available_w / 2.0
         
-        # Junta tudo para achar o maior e o menor valor e nivelar as cores
-        all_vals = np.concatenate([emb_q, emb_r])
-        v_min, v_max = np.min(all_vals), np.max(all_vals)
-        if v_max == v_min: v_max = v_min + 1e-5 # Evita divisão por zero
+        y_start = 35
+        y_end = h - 35 
+        box_h = y_end - y_start
 
-        # Diferença absoluta entre a peça atual e o histórico
-        diff = np.abs(emb_q - emb_r)
-        d_max = np.max(diff) if np.max(diff) > 0 else 1.0
+        rect_gab = QRectF(padding, y_start, box_w, box_h)
+        rect_test = QRectF(padding + box_w + spacing, y_start, box_w, box_h)
 
-        num_features = len(emb_q)
-        bar_w = w / num_features
+        # As telas mostrando os pontinhos estruturais
+        self._draw_image_box(painter, self.sem_img_gab, rect_gab, "PADRÃO (Quinas + Falhas Vermelhas)")
+        self._draw_image_box(painter, self.sem_img_test, rect_test, "CÂMERA (Quinas Encontradas)")
+
+        # =========================================================
+        # HUD DE TELEMETRIA
+        # =========================================================
+        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
         
-        # Alturas das barras
-        title_h = 12
-        bar_h = (h - (title_h * 3) - 10) / 3
-
-        font = QFont("Consolas", 8, QFont.Weight.Bold)
-        painter.setFont(font)
-
-        # === DESENHA BARRA 1: PEÇA ATUAL ===
-        y_offset = 5
-        painter.setPen(QColor("#aaaaaa"))
-        painter.drawText(5, int(y_offset + 10), "DNA: Peça Atual")
-        y_offset += title_h
+        is_critical = self.sem_loss > 0.40
+        status_color = QColor("#ff5555") if is_critical else QColor("#55ff55")
         
-        # Pinta linha por linha do código de barras
-        painter.setPen(Qt.PenStyle.NoPen)
-        for i, val in enumerate(emb_q):
-            norm_val = (val - v_min) / (v_max - v_min)
-            painter.setBrush(self._get_color_heat(norm_val))
-            painter.drawRect(QRectF(i * bar_w, y_offset, bar_w + 1, bar_h))
-
-        # === DESENHA BARRA 2: REFERÊNCIA DO BANCO ===
-        y_offset += bar_h + 5
-        painter.setPen(QColor("#aaaaaa"))
-        painter.drawText(5, int(y_offset + 10), "DNA: Melhor Vizinho (Dataset)")
-        y_offset += title_h
-        
-        painter.setPen(Qt.PenStyle.NoPen)
-        for i, val in enumerate(emb_r):
-            norm_val = (val - v_min) / (v_max - v_min)
-            painter.setBrush(self._get_color_heat(norm_val))
-            painter.drawRect(QRectF(i * bar_w, y_offset, bar_w + 1, bar_h))
-
-        # === DESENHA BARRA 3: DIVERGÊNCIA (O ALARME DE DEFEITO) ===
-        y_offset += bar_h + 5
-        painter.setPen(QColor("#ff5555"))
-        painter.drawText(5, int(y_offset + 10), "Divergência (Foco da IA)")
-        y_offset += title_h
-        
-        painter.setPen(Qt.PenStyle.NoPen)
-        for i, val in enumerate(diff):
-            norm_val = val / d_max # Destaca bem onde estão as diferenças
-            painter.setBrush(self._get_color_diff(norm_val))
-            painter.drawRect(QRectF(i * bar_w, y_offset, bar_w + 1, bar_h))
+        status_text = f"Dano Estrutural: {self.sem_loss:.0%}"
+        text_width = painter.fontMetrics().horizontalAdvance(status_text)
+        painter.setPen(status_color)
+        painter.drawText(int(w - padding - text_width), h - 10, status_text)
 
         painter.end()
