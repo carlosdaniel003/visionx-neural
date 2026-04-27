@@ -1,8 +1,8 @@
 # src/core/experts/knn_expert.py
 """
 Módulo Especialista em K-Nearest Neighbors (Banco de Dados Semântico).
-Transforma as imagens em vetores usando MobileNetV2 e compara com a categoria específica salva no HD.
-Ajuste: Bloqueio de Fallback para defeitos críticos de posição (Shift/Silk), evitando a mistura de conceitos matemáticos.
+Ajuste de Aprendizado Ativo: Remoção da penalidade de desbalanceamento para Matches Altos.
+Se o sistema achar sua assinatura com >85% de certeza, ele confia no seu voto 100%.
 """
 import cv2
 import numpy as np
@@ -73,43 +73,34 @@ class KNNExpert:
             query_img = full_test if full_test is not None and full_test.size > 0 else crop_test
             part_name = aoi_info.get("parts", "") if aoi_info else ""
             
-            # Puxa o nome real para checar a trava de segurança
             raw_category = aoi_info.get("category", "") if aoi_info else ""
             
             target_part = self._clean_string(part_name)
             target_category = self._clean_string(raw_category)
 
-            # Categorias "Físicas/Geométricas" que não podem ser misturadas com manchas e soldas
             strict_categories = ["SHIFTED", "UPSIDEDOWN", "REVERSE"]
 
-            # 1. Tenta achar o Match Perfeito (Mesma Peça + Mesma Categoria)
             valid_ok = [i for i in self.signatures_ok if (not target_part or target_part in i["part"]) and (not target_category or target_category == i.get("category", ""))]
             valid_ng = [i for i in self.signatures_ng if (not target_part or target_part in i["part"]) and (not target_category or target_category == i.get("category", ""))]
             
             total_valid = len(valid_ok) + len(valid_ng)
             
-            # 2. Se não achou Match Perfeito, aciona a trava de segurança para o Plano B
             if total_valid == 0:
-                # Se for Shifted, Up Side Down ou Reverse, nós DESISTIMOS. 
-                # É melhor dizer "Não sei" do que comparar um resistor deslocado com um faltando solda.
                 if target_category in strict_categories:
                     print(f"⚠️ K-NN: Fallback bloqueado. Categoria {raw_category} exige similaridade estrita e não possui banco de dados.")
                     valid_ok = []
                     valid_ng = []
                 else:
-                    # Se for uma manchinha boba, pode comparar com outras manchas do mesmo componente
                     valid_ok = [i for i in self.signatures_ok if not target_part or target_part in i["part"]]
                     valid_ng = [i for i in self.signatures_ng if not target_part or target_part in i["part"]]
                     total_valid = len(valid_ok) + len(valid_ng)
                     
-                    # 3. Plano C: Banco Inteiro (Também só liberado para categorias não-estritas)
                     if total_valid == 0:
                         valid_ok, valid_ng = self.signatures_ok, self.signatures_ng
                         total_valid = len(valid_ok) + len(valid_ng)
 
             query_sig = self._compute_embedding(query_img)
             
-            # Se a trava segurou ou a imagem era ruim, retorna vazio
             if total_valid == 0 or query_sig is None:
                 return {
                     "has_memory": False, 
@@ -133,13 +124,15 @@ class KNNExpert:
             votes_ng = sum(1.0 / max(d, 0.0001) for d, l, _ in neighbors if l == "NG")
             votes_total = sum(1.0 / max(d, 0.0001) for d, _, _ in neighbors)
             vote_defect = votes_ng / votes_total if votes_total > 0 else 0.5
-            
-            # Penalidade se o banco estiver desbalanceado
-            if len(valid_ok) == 0: vote_defect = min(0.60, vote_defect)
-            elif len(valid_ng) == 0: vote_defect = max(0.40, vote_defect)
 
             best_dist, best_label, best_path = neighbors[0]
             best_sim = float(max(0.0, 1.0 - best_dist))
+            
+            # REMOÇÃO DO "NERF" PARA MATCHES ALTOS:
+            # Só aplicamos penalidade de desbalanceamento se a IA não tiver muita certeza
+            if best_sim < 0.85:
+                if len(valid_ok) == 0: vote_defect = max(0.60, vote_defect)
+                elif len(valid_ng) == 0: vote_defect = min(0.40, vote_defect)
 
             return {
                 "has_memory": True, "vote_defect": float(vote_defect), "best_similarity": best_sim,

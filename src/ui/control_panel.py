@@ -1,17 +1,15 @@
 # src/ui/control_panel.py
 """
 Módulo do Painel de Controle (Controller) e Console Duplo.
-Ajuste SRP Seguro: A lógica de matemática visual e recortes do OpenCV foi 
-isolada no EpicenterExtractor para limpar o peso desta classe.
-Ajuste de Carrossel: Garante que os painéis Semantic e SSIM apareçam lado a lado
-em vez de se sobrescreverem.
+Ajuste de UX/Observabilidade: Integração com a Barra de Status Global.
+Agora o sistema relata o estado da rede, o processamento da IA e o histórico de salvamento.
 """
 import cv2
 import numpy as np
 import time
 import socket
 import os
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QWidget, QApplication
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap
 
@@ -21,7 +19,7 @@ try:
         r"C:\Program Files\Tesseract-OCR\tesseract.exe",
         r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
         r"C:\Users\cdaniel\AppData\Local\Programs\Tesseract-OCR\tesseract.exe",
-        r"C:\Users\cdaniel\AppData\Local\Tesseract-OCR\tesseract.exe",
+        r"C:\Users\cdaniel\AppData\Local\Programs\Tesseract-OCR\tesseract.exe",
         r".\tesseract\tesseract.exe" 
     ]
     tesseract_found = False
@@ -42,8 +40,6 @@ from src.services.network_receiver import NetworkReceiver
 from src.ui.control_panel_ui import ControlPanelUI
 from src.utils.text_normalizer import normalize_aoi_text
 from src.core.moe_orchestrator import MoEOrchestrator
-
-# Importa o nosso novo Módulo de Extração de Matemática Pesada
 from src.core.epicenter_extractor import EpicenterExtractor
 
 class ImageRenderer:
@@ -91,6 +87,11 @@ class ControlPanel(QWidget):
         self.network_receiver = NetworkReceiver(port=5001)
         self.network_receiver.image_received.connect(self.handle_network_image)
         self.network_receiver.command_received.connect(self.handle_physical_keyboard)
+        # =========================================================
+        # STATUS BAR: Conecta o log da rede direto para a interface
+        # =========================================================
+        self.network_receiver.log_updated.connect(self.update_network_status)
+        
         self.network_receiver.start()
 
         self._setup_ui()
@@ -98,6 +99,44 @@ class ControlPanel(QWidget):
     def _setup_ui(self):
         self.ui_builder = ControlPanelUI()
         self.ui_builder.setup_ui(self)
+
+    def update_network_status(self, message: str):
+        """ Atualiza a barra de status de rede (Lado Esquerdo) """
+        if hasattr(self.ui_builder, 'lbl_status_network'):
+            if "Erro" in message or "Falha" in message or "❌" in message:
+                self.ui_builder.lbl_status_network.setStyleSheet("color: #ff7b72; font-size: 11px; font-weight: bold; border: none;")
+            elif "ALERTA" in message or "⚡" in message:
+                self.ui_builder.lbl_status_network.setStyleSheet("color: #ffd33d; font-size: 11px; font-weight: bold; border: none;")
+            else:
+                self.ui_builder.lbl_status_network.setStyleSheet("color: #3fb950; font-size: 11px; font-weight: bold; border: none;")
+            self.ui_builder.lbl_status_network.setText(message)
+
+    def update_brain_status(self, message: str, is_active: bool = False):
+        """ Atualiza a barra de status do processamento IA (Centro) """
+        if hasattr(self.ui_builder, 'lbl_status_brain'):
+            color = "#58a6ff" if is_active else "#8b949e"
+            self.ui_builder.lbl_status_brain.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: bold; border: none;")
+            self.ui_builder.lbl_status_brain.setText(message)
+
+    def update_history_status(self, label: str, source: str):
+        """ Atualiza a barra de status do Dataset (Lado Direito) """
+        if hasattr(self.ui_builder, 'lbl_status_history'):
+            color = "#ff7b72" if label == "NG" else "#3fb950"
+            src_text = "Autônomo" if source == "auto" else ("Operador IA" if source == "button" else "Operador AOI")
+            msg = f"💾 Última Peça: {label} ({src_text})"
+            self.ui_builder.lbl_status_history.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: bold; border: none;")
+            self.ui_builder.lbl_status_history.setText(msg)
+
+    def _safe_maximize(self):
+        """ Garante a restauração da janela sem estouro de layout. """
+        if self.isMinimized():
+            self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        
+        self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        QApplication.processEvents() # Estabiliza o cálculo de geometria do Windows/Qt
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -113,14 +152,15 @@ class ControlPanel(QWidget):
                 self.lbl_ng.setPixmap(px_ng.scaled(self.lbl_ng.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
     def handle_network_image(self, img_bgr: np.ndarray, ip: str):
-        if self.is_locked: return
         self.is_locked = True
         self.last_xp_ip = ip 
         self.capture_start_time = time.time()
-        if self.isMinimized(): self.showNormal() 
-        self.showMaximized() 
-        self.raise_()         
-        self.activateWindow()
+        
+        self._safe_maximize()
+        
+        # STATUS BAR: Cérebro ativado
+        self.update_brain_status("🧠 Recebendo da Rede...", True)
+        
         self.lbl_timer.setText("Latencia: Analisando Rede...")
         self.btn_start.setEnabled(False)
         self.btn_save_ok.setEnabled(False)
@@ -150,10 +190,13 @@ class ControlPanel(QWidget):
         event.accept()
 
     def start_monitoring(self):
-        if self.is_locked: return
         self.is_locked = True
         self.last_xp_ip = None 
         self.capture_start_time = time.time()
+        
+        # STATUS BAR: Cérebro ativado
+        self.update_brain_status("🧠 Capturando Tela (Local)...", True)
+        
         self.lbl_timer.setText("Latencia: Calculando...")
         self.btn_start.setEnabled(False)
         self.btn_save_ok.setEnabled(False)
@@ -193,7 +236,6 @@ class ControlPanel(QWidget):
         self.lbl_db_info.setText("Sem dados no momento.")
 
     def _reset_reference_panel(self):
-        # Desliga todos os cards do scroll (vai religar apenas os ativos)
         for frame in ['frame_ssim_debug', 'frame_silk', 'frame_dna', 'frame_shift', 'frame_radar']:
             if hasattr(self, frame):
                 getattr(self, frame).setVisible(False)
@@ -209,35 +251,26 @@ class ControlPanel(QWidget):
         detail = analysis.get("detail", {})
         active_engines = analysis.get("active_engines", [])
         
-        # O Layout é Horizontal (Carrossel). Nós apenas ativamos as janelas que o MoE usou.
-        # Assim eles vão se alinhar lado a lado!
-        
-        # 1. Rota de Textura (Obrigatória em Missing e Solder)
         if "ssim_expert.py" in active_engines and hasattr(self, 'frame_ssim_debug'):
             self.frame_ssim_debug.update_data(detail)
             self.frame_ssim_debug.setVisible(True)
             
-        # 2. Rota de Tinta
         if "silk_expert.py" in active_engines and hasattr(self, 'frame_silk'):
             self.frame_silk.update_data(detail)
             self.frame_silk.setVisible(True)
             
-        # 3. Rota Estrutural do ORB (Esta era a que não estava entrando no empilhamento horizontal)
         if "semantic_expert.py" in active_engines and hasattr(self, 'frame_dna'):
             self.frame_dna.update_data(detail)
             self.frame_dna.setVisible(True)
             
-        # 4. Rota Geométrica
         if "shift_expert.py" in active_engines and hasattr(self, 'frame_shift'):
             self.frame_shift.update_data(detail)
             self.frame_shift.setVisible(True)
             
-        # 5. Radar Legado
         if not active_engines and hasattr(self, 'frame_radar'):
             self.frame_radar.update_data(detail)
             self.frame_radar.setVisible(True)
             
-        # 6. Histórico (KNN) no rodapé
         if hasattr(self, 'frame_knn'):
             self.frame_knn.update_data(detail)
 
@@ -258,7 +291,6 @@ class ControlPanel(QWidget):
             self.lbl_reason.setText(f"Justificativa IA: {analysis.get('reason', '')}")
 
         detail = analysis.get("detail", {})
-        
         metrics_mapping = {
             "ssim": f"{detail.get('ssim', 0):.3f}",
             "pct_changed": f"{detail.get('pct_changed', 0):.1%}",
@@ -286,20 +318,20 @@ class ControlPanel(QWidget):
             sim = detail.get('best_similarity', detail.get('db_best_sim', 0.0))
             self.lbl_db_info.setText(f"Voto Dataset: {vote:.0%} NG | Match Visual: {sim:.0%}")
         else:
-            self.lbl_db_info.setText("Sem dados anteriores. Salve amostras para treinar.")
+            self.lbl_db_info.setText("Sem dados no momento.")
 
     def process_aoi_images(self, sample_crop: np.ndarray, ng_crop: np.ndarray, aoi_info: dict):
         if sample_crop.size == 0 or ng_crop.size == 0: return
+
+        # STATUS BAR: Cérebro ativo na matemática
+        self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)
 
         raw_val = aoi_info.get("value", "")
         cat_name, norm_val = normalize_aoi_text(raw_val)
         aoi_info["category"] = cat_name
         aoi_info["value"] = norm_val
 
-        if self.isMinimized(): self.showNormal() 
-        self.showMaximized() 
-        self.raise_()         
-        self.activateWindow() 
+        self._safe_maximize()
 
         self.current_sample = sample_crop
         self.current_ng = ng_crop
@@ -313,14 +345,10 @@ class ControlPanel(QWidget):
 
         raw_anomalies, old_epicenters, global_box_info, gab_focus, test_focus = detect_anomalies(sample_crop, ng_crop)
         
-        # =====================================================================
-        # DELEGAÇÃO SRP: O Módulo Externo faz o trabalho pesado matemático!
-        # =====================================================================
         real_epicenters, focus_gab, focus_ng = EpicenterExtractor.extract_focus(
             sample_crop, ng_crop, old_epicenters, global_box_info
         )
 
-        # Atualiza a UI Visual das Lupa Foco com o resultado retornado
         if focus_gab.size > 0 and hasattr(self, 'lbl_sample_focus') and self.lbl_sample_focus.width() > 0:
             px_focus_gab = self.numpy_to_pixmap(focus_gab)
             self.lbl_sample_focus.setPixmap(px_focus_gab.scaled(self.lbl_sample_focus.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
@@ -333,7 +361,6 @@ class ControlPanel(QWidget):
         else:
             if hasattr(self, 'lbl_ng_focus'): self.lbl_ng_focus.setText("Inválido/Sem Foco")
 
-        # O ORQUESTRADOR recebe a caixa finalizada e limpa!
         analysis = self.orchestrator.inspect(sample_crop, ng_crop, raw_anomalies, aoi_info, global_box_info, real_epicenters)
         self.current_analysis = analysis
 
@@ -352,14 +379,33 @@ class ControlPanel(QWidget):
         if self.lbl_ng.width() > 0 and self.lbl_ng.height() > 0:
             self.lbl_ng.setPixmap(px_ng.scaled(self.lbl_ng.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
-        self.btn_start.setText("Capturar Local Manualmente")
-        self.btn_save_ok.setEnabled(True)
-        self.btn_save_ng.setEnabled(True)
-        self.btn_skip.setEnabled(True) 
-        
         elapsed_time = time.time() - self.capture_start_time
         self.lbl_timer.setText(f"Latência: {elapsed_time:.2f}s")
         self.lbl_timer.setStyleSheet("font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #3fb950;")
+
+        # =====================================================================
+        # ROTEADOR DE MODOS DE OPERAÇÃO DA IA
+        # =====================================================================
+        current_mode = self.combo_mode.currentText()
+
+        if current_mode == "Modo Produção":
+            self.update_brain_status("✅ Análise Concluída (Emissão Autônoma)", False)
+            auto_decision = "NG" if analysis.get("is_defect", False) else "OK"
+            self.save_label(auto_decision, source="auto")
+            
+        elif current_mode == "Modo Sombra":
+            self.update_brain_status("⏳ Aguardando Decisão Humana no Teclado XP...", True)
+            self.btn_start.setText("Nova Captura (Forçar)")
+            self.btn_start.setEnabled(True) 
+            self.btn_skip.setEnabled(True)
+            
+        else:
+            self.update_brain_status("⏳ Aguardando Operador na Tela da IA...", True)
+            self.btn_start.setText("Nova Captura (Descartar Atual)")
+            self.btn_start.setEnabled(True) 
+            self.btn_save_ok.setEnabled(True)
+            self.btn_save_ng.setEnabled(True)
+            self.btn_skip.setEnabled(True) 
 
     def skip_image(self):
         self.btn_save_ok.setEnabled(False)
@@ -369,11 +415,17 @@ class ControlPanel(QWidget):
         self._reset_reference_panel()
         self._reset_aoi_info()
         self.is_locked = False
+        
+        self.btn_start.setText("Capturar Local (MSS)")
         self.btn_start.setEnabled(True)
+        
+        # STATUS BAR
+        self.update_brain_status("⏳ Sistema Ocioso", False)
 
     def save_label(self, user_decision: str, source="button"):
         if self.current_ng is None: return
-        if source == "button":
+        
+        if source == "button" or source == "auto":
             if user_decision == "OK": self.send_command_to_xp("0")
             elif user_decision == "NG": self.send_command_to_xp("1")
 
@@ -390,4 +442,9 @@ class ControlPanel(QWidget):
             self.orchestrator.reload_memory() 
 
         self.is_locked = False
+        self.btn_start.setText("Capturar Local (MSS)")
         self.btn_start.setEnabled(True)
+        
+        # STATUS BAR
+        self.update_brain_status("⏳ Sistema Ocioso", False)
+        self.update_history_status(user_decision, source)

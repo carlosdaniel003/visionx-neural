@@ -2,6 +2,8 @@
 """
 Módulo responsável por gerenciar a persistência de imagens para o Dataset.
 v4: Salvamento estruturado em subpastas por Categoria do OCR (Mixture of Experts Prep).
+Ajuste Active Learning: Extrai corretamente as assinaturas semânticas (Embeddings do KNN)
+para salvar no JSON. Esse JSON será a memória do sistema para decisões futuras.
 """
 import cv2
 import json
@@ -79,6 +81,11 @@ class DatasetManager:
 
         if analysis:
             detail = analysis.get("detail", {})
+            
+            # --- Active Learning ---
+            # Pega o array do KNN, não do ORB. O KNN usa MobileNet e é universal.
+            knn_embedding = detail.get("query_embedding", [])
+            
             metadata["analysis"] = {
                 "verdict": analysis.get("verdict", ""),
                 "is_defect": analysis.get("is_defect", False),
@@ -93,8 +100,8 @@ class DatasetManager:
                 "db_score": detail.get("db_score", 0),
                 "final_score": detail.get("final_score", 0),
                 
-                # O "código de barras matemático" da placa (Vetores Semânticos)
-                "embedding": detail.get("embedding", [])
+                # O "código de barras matemático" da placa (Vetores Semânticos do KNN)
+                "embedding": knn_embedding
             }
 
         try:

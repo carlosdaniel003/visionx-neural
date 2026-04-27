@@ -4,11 +4,16 @@ Módulo de Recepção de Rede em Background.
 Escuta a porta 5001 aguardando imagens comprimidas via zlib enviadas pelo Windows XP.
 Também escuta comandos curtos de texto (CMD_OK, CMD_NG) vindos do teclado do XP.
 Emite a imagem via PyQt Signal para ser processada pela IA sem travar a interface.
+
+Ajuste de Preempção: Lógica de 'Debounce de Socket' adicionada usando select.
+Garante que, se múltiplas imagens chegarem, o sistema descarte as obsoletas 
+e foque instantaneamente na mais recente (Tempo Real Absoluto).
 """
 import socket
 import zlib
 import numpy as np
 import cv2
+import select  # IMPORTANTE: Biblioteca nativa para espiar a fila do socket
 from PyQt6.QtCore import QThread, pyqtSignal
 
 class NetworkReceiver(QThread):
@@ -19,7 +24,7 @@ class NetworkReceiver(QThread):
     # Envia mensagens de texto para atualizar o painel
     log_updated = pyqtSignal(str) 
     
-    # NOVO: Envia um aviso de que o XP tomou uma decisão física
+    # Envia um aviso de que o XP tomou uma decisão física
     command_received = pyqtSignal(str)
 
     def __init__(self, port=5001):
@@ -65,7 +70,7 @@ class NetworkReceiver(QThread):
                         continue
 
                     # =========================================================
-                    # MUDANÇA: ROTEADOR DE FLUXO (FOTO vs COMANDO FÍSICO)
+                    # ROTEADOR DE FLUXO (FOTO vs COMANDO FÍSICO)
                     # =========================================================
                     
                     # Se for um comando do teclado físico do XP:
@@ -94,9 +99,20 @@ class NetworkReceiver(QThread):
                     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
                     if img is not None:
+                        # =========================================================
+                        # A MÁGICA DA PRIORIDADE ABSOLUTA (LIFO / DEBOUNCE)
+                        # Antes de acordar a IA, nós "espiamos" a porta de rede.
+                        # Se já houver outra conexão esperando, jogamos essa imagem fora!
+                        # =========================================================
+                        conexoes_esperando, _, _ = select.select([servidor], [], [], 0.0)
+                        
+                        if conexoes_esperando:
+                            self.log_updated.emit("⚡ Imagem MAIS RECENTE bateu na porta! Descartando a atual para garantir prioridade de Tempo Real.")
+                            continue # Cancela a emissão para a GUI e volta para o topo do 'while' para receber a nova!
+
                         self.log_updated.emit("✅ Imagem recebida com sucesso! Iniciando IA...")
                         
-                        # A MÁGICA: Em vez de usar cv2.imshow, enviamos a imagem para o ControlPanel!
+                        # Emite a imagem para o ControlPanel, acionando a análise
                         self.image_received.emit(img, ip_origem)
                     else:
                         self.log_updated.emit("❌ Erro ao decodificar a imagem da rede.")
