@@ -1,8 +1,10 @@
 # src/ui/control_panel_ui.py
 """
 Módulo responsável exclusivamente pela construção da Interface Gráfica (View).
-Ajuste de UX/Observabilidade: Adicionada uma Barra de Status Global no rodapé
-para exibir em tempo real a saúde da rede, o estado do cérebro da IA e o log da última ação.
+Ajuste de UX/Observabilidade: Adicionado Seletor de Modos (Sombra, Teste, Produção) no cabeçalho.
+Os botões de ação foram encapsulados em um QWidget para permitir ocultação dinâmica
+quando o Modo Sombra for ativado.
+Novos botões de Iluminação (MID, SIDE, TOP) e Indicador de Luz atual adicionados.
 """
 from PyQt6.QtWidgets import (QVBoxLayout, QPushButton, QLabel,
                              QHBoxLayout, QFrame, QGridLayout,
@@ -95,6 +97,12 @@ class ControlPanelUI:
         window.lbl_category_value = QLabel("-")
         window.lbl_category_value.setStyleSheet("color: #ffd33d; font-size: 14px; font-weight: bold; border: none;")
         window.lbl_value_value = QLabel("-")
+        
+        # =========================================================
+        # NOVO: INDICADOR DE LUZ ATUAL
+        # =========================================================
+        window.lbl_light_value = QLabel("TOP")
+        window.lbl_light_value.setStyleSheet("color: #58a6ff; font-size: 14px; font-weight: bold; border: none;")
 
         aoi_info_layout.addLayout(create_info_block("Placa / Máquina", window.lbl_board_value))
         aoi_info_layout.addStretch()
@@ -103,6 +111,8 @@ class ControlPanelUI:
         aoi_info_layout.addLayout(create_info_block("Categoria do Erro", window.lbl_category_value))
         aoi_info_layout.addStretch()
         aoi_info_layout.addLayout(create_info_block("Valor / OCR", window.lbl_value_value))
+        aoi_info_layout.addStretch()
+        aoi_info_layout.addLayout(create_info_block("Iluminação Atual", window.lbl_light_value))
 
         parent_layout.addWidget(window.aoi_info_frame)
 
@@ -249,17 +259,39 @@ class ControlPanelUI:
         parent_layout.addWidget(window.confidence_frame, stretch=0)
 
     def _build_action_buttons(self, window, parent_layout):
-        # QWidget container para ocultar/exibir botões facilmente
+        # QWidget container principal para os botões (para permitir ocultar todos no Modo Sombra)
         window.action_widget = QWidget()
-        btn_action_layout = QHBoxLayout(window.action_widget)
-        btn_action_layout.setContentsMargins(0, 0, 0, 0)
-        btn_action_layout.setSpacing(10)
+        master_action_layout = QVBoxLayout(window.action_widget)
+        master_action_layout.setContentsMargins(0, 0, 0, 0)
+        master_action_layout.setSpacing(10)
         
         button_style = """
             QPushButton { background-color: #21262d; color: #c9d1d9; font-weight: bold; border-radius: 6px; padding: 10px; }
             QPushButton:hover { background-color: #30363d; }
             QPushButton:disabled { background-color: #0d1117; color: #484f58; border: 1px solid #21262d; }
         """
+        
+        # =========================================================
+        # NOVO: LINHA 1 - CONTROLES DE ILUMINAÇÃO DA CÂMERA
+        # =========================================================
+        light_action_layout = QHBoxLayout()
+        light_action_layout.setSpacing(10)
+        
+        window.btn_light_mid = QPushButton("Luz MID (Seta Esquerda)")
+        window.btn_light_side = QPushButton("Luz SIDE (Seta Baixo)")
+        window.btn_light_top = QPushButton("Luz TOP (Seta Direita)")
+
+        for btn in [window.btn_light_mid, window.btn_light_side, window.btn_light_top]:
+            btn.setStyleSheet(button_style)
+            light_action_layout.addWidget(btn)
+            
+        master_action_layout.addLayout(light_action_layout)
+
+        # =========================================================
+        # LINHA 2 - CONTROLES DE ANÁLISE E DATASET
+        # =========================================================
+        btn_action_layout = QHBoxLayout()
+        btn_action_layout.setSpacing(10)
         
         window.btn_start = QPushButton("Capturar Local (MSS)")
         window.btn_skip = QPushButton("Descartar Imagem")
@@ -270,8 +302,10 @@ class ControlPanelUI:
             btn.setStyleSheet(button_style)
             btn_action_layout.addWidget(btn)
         
+        master_action_layout.addLayout(btn_action_layout)
         parent_layout.addWidget(window.action_widget, stretch=0)
 
+        # Ligação dos botões antigos
         window.btn_start.clicked.connect(window.start_monitoring)
         window.btn_skip.clicked.connect(window.skip_image)
         window.btn_save_ok.clicked.connect(lambda: window.save_label("OK", source="button"))

@@ -1,8 +1,9 @@
 # src/ui/control_panel.py
 """
 Módulo do Painel de Controle (Controller) e Console Duplo.
-Ajuste de UX/Observabilidade: Integração com a Barra de Status Global.
-Agora o sistema relata o estado da rede, o processamento da IA e o histórico de salvamento.
+Ajuste de Machine Learning: Implementado "Hard Negative Mining" (Filtro de Discordância).
+O sistema agora só salva imagens no HD para treinamento caso o Operador Humano
+discorde do Veredito da IA. Se ambos concordarem, a imagem é descartada para poupar disco.
 """
 import cv2
 import numpy as np
@@ -87,9 +88,6 @@ class ControlPanel(QWidget):
         self.network_receiver = NetworkReceiver(port=5001)
         self.network_receiver.image_received.connect(self.handle_network_image)
         self.network_receiver.command_received.connect(self.handle_physical_keyboard)
-        # =========================================================
-        # STATUS BAR: Conecta o log da rede direto para a interface
-        # =========================================================
         self.network_receiver.log_updated.connect(self.update_network_status)
         
         self.network_receiver.start()
@@ -99,9 +97,35 @@ class ControlPanel(QWidget):
     def _setup_ui(self):
         self.ui_builder = ControlPanelUI()
         self.ui_builder.setup_ui(self)
+        
+        if hasattr(self, 'btn_light_mid'):
+            self.btn_light_mid.clicked.connect(lambda: self.change_lighting("MID", "local"))
+            self.btn_light_side.clicked.connect(lambda: self.change_lighting("SIDE", "local"))
+            self.btn_light_top.clicked.connect(lambda: self.change_lighting("TOP", "local"))
+        
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def keyPressEvent(self, event):
+        super().keyPressEvent(event)
+        if event.key() == Qt.Key.Key_Left:
+            self.change_lighting("MID", "local")
+        elif event.key() == Qt.Key.Key_Down:
+            self.change_lighting("SIDE", "local")
+        elif event.key() == Qt.Key.Key_Right:
+            self.change_lighting("TOP", "local")
+
+    def change_lighting(self, light_mode: str, source: str):
+        if hasattr(self, 'lbl_light_value'):
+            self.lbl_light_value.setText(light_mode)
+            
+        self.update_brain_status(f"💡 Iluminação ajustada: {light_mode}", False)
+
+        if source == "local":
+            if light_mode == "MID": self.send_command_to_xp("LEFT")
+            elif light_mode == "SIDE": self.send_command_to_xp("DOWN")
+            elif light_mode == "TOP": self.send_command_to_xp("RIGHT")
 
     def update_network_status(self, message: str):
-        """ Atualiza a barra de status de rede (Lado Esquerdo) """
         if hasattr(self.ui_builder, 'lbl_status_network'):
             if "Erro" in message or "Falha" in message or "❌" in message:
                 self.ui_builder.lbl_status_network.setStyleSheet("color: #ff7b72; font-size: 11px; font-weight: bold; border: none;")
@@ -112,14 +136,12 @@ class ControlPanel(QWidget):
             self.ui_builder.lbl_status_network.setText(message)
 
     def update_brain_status(self, message: str, is_active: bool = False):
-        """ Atualiza a barra de status do processamento IA (Centro) """
         if hasattr(self.ui_builder, 'lbl_status_brain'):
             color = "#58a6ff" if is_active else "#8b949e"
             self.ui_builder.lbl_status_brain.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: bold; border: none;")
             self.ui_builder.lbl_status_brain.setText(message)
 
     def update_history_status(self, label: str, source: str):
-        """ Atualiza a barra de status do Dataset (Lado Direito) """
         if hasattr(self.ui_builder, 'lbl_status_history'):
             color = "#ff7b72" if label == "NG" else "#3fb950"
             src_text = "Autônomo" if source == "auto" else ("Operador IA" if source == "button" else "Operador AOI")
@@ -128,7 +150,6 @@ class ControlPanel(QWidget):
             self.ui_builder.lbl_status_history.setText(msg)
 
     def _safe_maximize(self):
-        """ Garante a restauração da janela sem estouro de layout. """
         if self.isMinimized():
             self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
         
@@ -136,7 +157,7 @@ class ControlPanel(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
-        QApplication.processEvents() # Estabiliza o cálculo de geometria do Windows/Qt
+        QApplication.processEvents() 
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -158,7 +179,6 @@ class ControlPanel(QWidget):
         
         self._safe_maximize()
         
-        # STATUS BAR: Cérebro ativado
         self.update_brain_status("🧠 Recebendo da Rede...", True)
         
         self.lbl_timer.setText("Latencia: Analisando Rede...")
@@ -174,6 +194,8 @@ class ControlPanel(QWidget):
     def handle_physical_keyboard(self, comando_xp: str):
         if comando_xp == "OK": self.save_label("OK", source="xp_keyboard")
         elif comando_xp == "NG": self.save_label("NG", source="xp_keyboard")
+        elif comando_xp in ["MID", "SIDE", "TOP"]:
+            self.change_lighting(comando_xp, source="network")
 
     def send_command_to_xp(self, tecla: str):
         if not self.last_xp_ip: return
@@ -194,7 +216,6 @@ class ControlPanel(QWidget):
         self.last_xp_ip = None 
         self.capture_start_time = time.time()
         
-        # STATUS BAR: Cérebro ativado
         self.update_brain_status("🧠 Capturando Tela (Local)...", True)
         
         self.lbl_timer.setText("Latencia: Calculando...")
@@ -323,7 +344,6 @@ class ControlPanel(QWidget):
     def process_aoi_images(self, sample_crop: np.ndarray, ng_crop: np.ndarray, aoi_info: dict):
         if sample_crop.size == 0 or ng_crop.size == 0: return
 
-        # STATUS BAR: Cérebro ativo na matemática
         self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)
 
         raw_val = aoi_info.get("value", "")
@@ -383,9 +403,6 @@ class ControlPanel(QWidget):
         self.lbl_timer.setText(f"Latência: {elapsed_time:.2f}s")
         self.lbl_timer.setStyleSheet("font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #3fb950;")
 
-        # =====================================================================
-        # ROTEADOR DE MODOS DE OPERAÇÃO DA IA
-        # =====================================================================
         current_mode = self.combo_mode.currentText()
 
         if current_mode == "Modo Produção":
@@ -419,15 +436,36 @@ class ControlPanel(QWidget):
         self.btn_start.setText("Capturar Local (MSS)")
         self.btn_start.setEnabled(True)
         
-        # STATUS BAR
         self.update_brain_status("⏳ Sistema Ocioso", False)
 
     def save_label(self, user_decision: str, source="button"):
         if self.current_ng is None: return
         
+        # Envia ordem para a máquina avançar, independentemente de salvar a foto
         if source == "button" or source == "auto":
             if user_decision == "OK": self.send_command_to_xp("0")
             elif user_decision == "NG": self.send_command_to_xp("1")
+
+        # =========================================================
+        # FILTRO DE DISCORDÂNCIA (HARD NEGATIVE MINING)
+        # =========================================================
+        ia_decision = "OK"
+        if self.current_analysis and self.current_analysis.get("is_defect", False):
+            ia_decision = "NG"
+
+        if ia_decision == user_decision:
+            # IA e Operador concordaram perfeitamente!
+            # Não salvamos nada no HD para manter o disco limpo e focar só no que é difícil.
+            self.is_locked = False
+            self.btn_start.setText("Capturar Local (MSS)")
+            self.btn_start.setEnabled(True)
+            self.btn_save_ok.setEnabled(False)
+            self.btn_save_ng.setEnabled(False)
+            self.btn_skip.setEnabled(False)
+            
+            self.update_brain_status("⏳ Sistema Ocioso", False)
+            self.update_history_status(f"{user_decision} (Concordou / Descartado)", source)
+            return
 
         save_heavy_image = True
         filepath = DatasetManager.save_sample(
@@ -445,6 +483,5 @@ class ControlPanel(QWidget):
         self.btn_start.setText("Capturar Local (MSS)")
         self.btn_start.setEnabled(True)
         
-        # STATUS BAR
         self.update_brain_status("⏳ Sistema Ocioso", False)
         self.update_history_status(user_decision, source)

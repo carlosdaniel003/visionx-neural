@@ -2,7 +2,7 @@
 """
 Módulo de Recepção de Rede em Background.
 Escuta a porta 5001 aguardando imagens comprimidas via zlib enviadas pelo Windows XP.
-Também escuta comandos curtos de texto (CMD_OK, CMD_NG) vindos do teclado do XP.
+Também escuta comandos curtos de texto (CMD_OK, CMD_NG, CMD_MID, CMD_SIDE, CMD_TOP) vindos do XP.
 Emite a imagem via PyQt Signal para ser processada pela IA sem travar a interface.
 
 Ajuste de Preempção: Lógica de 'Debounce de Socket' adicionada usando select.
@@ -24,7 +24,7 @@ class NetworkReceiver(QThread):
     # Envia mensagens de texto para atualizar o painel
     log_updated = pyqtSignal(str) 
     
-    # Envia um aviso de que o XP tomou uma decisão física
+    # Envia um aviso de que o XP tomou uma decisão física ou alterou a luz
     command_received = pyqtSignal(str)
 
     def __init__(self, port=5001):
@@ -70,12 +70,12 @@ class NetworkReceiver(QThread):
                         continue
 
                     # =========================================================
-                    # ROTEADOR DE FLUXO (FOTO vs COMANDO FÍSICO)
+                    # ROTEADOR DE FLUXO (FOTO vs COMANDO FÍSICO/HARDWARE)
                     # =========================================================
                     
-                    # Se for um comando do teclado físico do XP:
+                    # Se for um comando do teclado físico do XP (Decisão ou Luz):
                     if cabecalho_str.startswith("CMD_"):
-                        comando = cabecalho_str.split("_")[1] # Extrai apenas "OK" ou "NG"
+                        comando = cabecalho_str.split("_")[1] # Extrai dinamicamente "OK", "NG", "MID", etc.
                         self.log_updated.emit(f"⌨️ Comando físico detectado no XP: {comando}")
                         self.command_received.emit(comando)
                         conexao.close()

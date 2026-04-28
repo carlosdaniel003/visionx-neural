@@ -4,6 +4,8 @@ Módulo responsável por gerenciar a persistência de imagens para o Dataset.
 v4: Salvamento estruturado em subpastas por Categoria do OCR (Mixture of Experts Prep).
 Ajuste Active Learning: Extrai corretamente as assinaturas semânticas (Embeddings do KNN)
 para salvar no JSON. Esse JSON será a memória do sistema para decisões futuras.
+Ajuste de Mineração: Adicionada a tag 'status_treinamento' para permitir que rotinas
+futuras de limpeza aprendam com a divergência e deletem os arquivos pesados do HD.
 """
 import cv2
 import json
@@ -65,10 +67,11 @@ class DatasetManager:
             # Se a imagem não foi salva, avisamos o sistema deixando em branco
             "image_file": f"{filename}.png" if save_images else "",
             "image_type": "single_ng",  # marca que é imagem individual
+            "status_treinamento": "pendente", # NOVO: Flag para o pipeline de aprendizado/exclusão (Hard Negative Mining)
             "aoi_info": {
                 "board": "",
                 "parts": "",
-                "category": category, # NOVO: Salva a categoria para uso futuro da IA
+                "category": category, # Salva a categoria para uso futuro da IA
                 "value": "",
             },
             "analysis": {}
