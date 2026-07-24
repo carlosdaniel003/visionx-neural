@@ -22,6 +22,12 @@ class SSIMDebuggerWidget(QWidget):
         self.focus_box = None
         self.focus_width = 0
         self.focus_height = 0
+        self.heat_map_mode = "generic_ssim"
+        self.adhesive_coverage = 0.0
+        self.adhesive_evidence = 0.0
+        self.adhesive_centroid = None
+        self.alignment_shift = (0.0, 0.0)
+        self.alignment_score = 0.0
 
     def update_data(self, detail: dict):
         """Recebe os detalhes da análise do SSIMExpert."""
@@ -41,6 +47,12 @@ class SSIMDebuggerWidget(QWidget):
         self.focus_box = detail.get("focus_box")
         self.focus_width = int(detail.get("focus_width", 0) or 0)
         self.focus_height = int(detail.get("focus_height", 0) or 0)
+        self.heat_map_mode = detail.get("heat_map_mode", "generic_ssim")
+        self.adhesive_coverage = float(detail.get("adhesive_coverage", 0.0) or 0.0)
+        self.adhesive_evidence = float(detail.get("adhesive_evidence", 0.0) or 0.0)
+        self.adhesive_centroid = detail.get("adhesive_centroid")
+        self.alignment_shift = detail.get("alignment_shift", (0.0, 0.0))
+        self.alignment_score = float(detail.get("alignment_score", 0.0) or 0.0)
         self.update()
 
     @staticmethod
@@ -130,8 +142,53 @@ class SSIMDebuggerWidget(QWidget):
                 interpolation=cv2.INTER_LINEAR,
             )
 
-        heatmap_bgr = cv2.applyColorMap(heat_arr, cv2.COLORMAP_JET)
-        blended_bgr = cv2.addWeighted(bg_img, 0.58, heatmap_bgr, 0.62, 0)
+        heat_uint8 = np.clip(heat_arr, 0, 255).astype(np.uint8)
+        heatmap_bgr = cv2.applyColorMap(heat_uint8, cv2.COLORMAP_TURBO)
+
+        # A foto real permanece inalterada onde não existe evidência. O mapa
+        # colore somente o adesivo candidato em vez de tingir toda a ROI.
+        heat_strength = heat_uint8.astype(np.float32) / 255.0
+        alpha = np.power(heat_strength, 0.85) * 0.88
+        alpha[heat_uint8 < 18] = 0.0
+        alpha_3 = alpha[:, :, None]
+        blended = (
+            bg_img.astype(np.float32) * (1.0 - alpha_3)
+            + heatmap_bgr.astype(np.float32) * alpha_3
+        )
+        blended_bgr = np.clip(blended, 0, 255).astype(np.uint8)
+
+        if self.heat_map_mode == "adhesive_excess":
+            strong_mask = (heat_uint8 >= 96).astype(np.uint8) * 255
+            contours, _ = cv2.findContours(
+                strong_mask,
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE,
+            )
+            for contour in contours:
+                if cv2.contourArea(contour) >= 3:
+                    cv2.drawContours(
+                        blended_bgr,
+                        [contour],
+                        -1,
+                        (0, 220, 255),
+                        1,
+                        lineType=cv2.LINE_AA,
+                    )
+
+            if self.adhesive_centroid and len(self.adhesive_centroid) == 2:
+                center_x = int(round(self.adhesive_centroid[0]))
+                center_y = int(round(self.adhesive_centroid[1]))
+                if 0 <= center_x < bg_width and 0 <= center_y < bg_height:
+                    cv2.drawMarker(
+                        blended_bgr,
+                        (center_x, center_y),
+                        (0, 255, 255),
+                        markerType=cv2.MARKER_CROSS,
+                        markerSize=max(7, min(bg_width, bg_height) // 8),
+                        thickness=1,
+                        line_type=cv2.LINE_AA,
+                    )
+
         qimg = self._qimage_from_bgr(blended_bgr)
         scaled_img = qimg.scaled(
             max(1, int(rect.width() - 4)),
@@ -149,7 +206,10 @@ class SSIMDebuggerWidget(QWidget):
             "aoi_intersection": "Interseção da AOI",
             "raw_anomaly": "Fallback de anomalia",
         }
-        source = source_names.get(self.focus_source, self.focus_source or "Fonte desconhecida")
+        source = source_names.get(
+            self.focus_source,
+            self.focus_source or "Fonte desconhecida",
+        )
         dimensions = ""
         if self.focus_width > 0 and self.focus_height > 0:
             dimensions = f" • ROI {self.focus_width}×{self.focus_height}px"
@@ -158,6 +218,18 @@ class SSIMDebuggerWidget(QWidget):
             x, y, width, height = self.focus_box
             coordinates = f" • X:{x} Y:{y} W:{width} H:{height}"
         return source + dimensions + coordinates
+
+    def _map_description(self) -> str:
+        if self.heat_map_mode != "adhesive_excess":
+            return "Mapa: diferença estrutural genérica"
+
+        shift_x, shift_y = self.alignment_shift
+        return (
+            "Mapa: adesivo excedente"
+            f" • Cobertura {self.adhesive_coverage:.1%}"
+            f" • Evidência {self.adhesive_evidence:.2f}"
+            f" • Alinhamento X:{shift_x:.1f} Y:{shift_y:.1f}"
+        )
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -174,7 +246,11 @@ class SSIMDebuggerWidget(QWidget):
         if not self.is_active:
             painter.setPen(QColor("#555555"))
             painter.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Motor SSIM Inativo")
+            painter.drawText(
+                self.rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                "Motor SSIM Inativo",
+            )
             painter.end()
             return
 
@@ -183,11 +259,16 @@ class SSIMDebuggerWidget(QWidget):
         available_width = width - padding * 2 - spacing * 2
         box_width = available_width / 3.0
         y_start = 40
-        y_end = height - 58
+        y_end = height - 76
         box_height = max(20.0, y_end - y_start)
 
         rect_gab = QRectF(padding, y_start, box_width, box_height)
-        rect_test = QRectF(padding + box_width + spacing, y_start, box_width, box_height)
+        rect_test = QRectF(
+            padding + box_width + spacing,
+            y_start,
+            box_width,
+            box_height,
+        )
         rect_diff = QRectF(
             padding + box_width * 2 + spacing * 2,
             y_start,
@@ -210,17 +291,24 @@ class SSIMDebuggerWidget(QWidget):
             rect_test,
             "2. TESTE • MESMA ROI" + size_label,
         )
+
+        heat_title = (
+            "3. ADESIVO EXCEDENTE • MAPA SELETIVO"
+            if self.heat_map_mode == "adhesive_excess"
+            else "3. DIFERENÇA SSIM • MESMA ROI"
+        )
         self._draw_overlay_heatmap(
             painter,
             self.heat_map_raw,
             self.crop_test,
             rect_diff,
-            "3. DIFERENÇA SSIM • MESMA ROI",
+            heat_title,
         )
 
         painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
         painter.setPen(QColor("#f5c518"))
-        painter.drawText(padding, height - 34, self._focus_description())
+        painter.drawText(padding, height - 52, self._focus_description())
+        painter.drawText(padding, height - 34, self._map_description())
 
         painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
         painter.setPen(QColor("#aaaaaa"))
@@ -231,5 +319,9 @@ class SSIMDebuggerWidget(QWidget):
         status_text = f"Dano físico: {self.local_score:.0%}"
         text_width = painter.fontMetrics().horizontalAdvance(status_text)
         painter.setPen(status_color)
-        painter.drawText(int(width - padding - text_width), height - 12, status_text)
+        painter.drawText(
+            int(width - padding - text_width),
+            height - 12,
+            status_text,
+        )
         painter.end()
