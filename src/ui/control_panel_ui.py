@@ -240,20 +240,15 @@ class ControlPanelUI:
         self.image_viewports.append(viewport)
         return card
 
-    def _wrap_debug_widget(self, label_text: str, widget: QWidget) -> QFrame:
-        wrapper = QFrame()
-        wrapper.setObjectName("debugCard")
-        layout = QVBoxLayout(wrapper)
-        layout.setContentsMargins(7, 7, 7, 7)
-        layout.setSpacing(5)
-
-        label = QLabel(label_text)
-        label.setObjectName("eyebrowLabel")
+    def _wrap_debug_widget(self, label_text: str, widget: QWidget) -> QWidget:
+        # O próprio widget continua sendo o item do layout. Assim, os comandos
+        # setVisible() já usados pelo controller escondem o card completo.
+        widget.setObjectName("debugCard")
+        widget.setToolTip(label_text)
+        widget.setAccessibleName(label_text)
         widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        layout.addWidget(label)
-        layout.addWidget(widget, stretch=1)
-        self.debug_wrappers.append(wrapper)
-        return wrapper
+        self.debug_wrappers.append(widget)
+        return widget
 
     def _build_main_stage(self, window, parent_layout):
         window.main_splitter = QSplitter(Qt.Orientation.Horizontal)
