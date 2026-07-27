@@ -73,25 +73,82 @@ def memory_summary(trace: dict) -> tuple[str, str]:
     return primary, role
 
 
+def _physical_source_id(trace: dict, engines: list[dict]) -> str:
+    """Identifica qual motor físico forneceu o score usado na fusão por máximo."""
+    physical = [
+        engine
+        for engine in engines
+        if str(engine.get("id", "")) != "knn" and bool(engine.get("active", False))
+    ]
+    if not physical:
+        return ""
+    return str(
+        max(
+            physical,
+            key=lambda engine: float(engine.get("effective_score", 0.0)),
+        ).get("id", "")
+    )
+
+
 def influence_rows(trace: dict) -> list[dict]:
+    """Expõe evidência, peso e efeito sem confundir voto com influência.
+
+    A fusão usa apenas o motor físico de maior score e a memória KNN. Por isso,
+    somente essas duas linhas recebem ``fusion_weight``. A contribuição é a
+    parcela efetivamente somada ao score final. Para o KNN, ``effect_vs_physical``
+    mostra quanto a memória reforçou ou atenuou o score físico, em pontos.
+    """
+    if not trace:
+        return []
+
+    engines = [item for item in trace.get("engines", []) if isinstance(item, dict)]
+    weights = trace.get("weights", {}) if isinstance(trace.get("weights"), dict) else {}
+    physical_weight = float(weights.get("physical", 1.0))
+    knn_weight = float(weights.get("knn", 0.0))
+    physical_score = float(trace.get("physical_score", 0.0))
+    dominant_id = str(trace.get("dominant_engine", "none"))
+    physical_source_id = _physical_source_id(trace, engines)
+
     rows = []
-    for engine in trace.get("engines", []) if trace else []:
+    for engine in engines:
+        engine_id = str(engine.get("id", "unknown"))
+        raw_score = float(engine.get("raw_score", 0.0))
+        effective_score = float(engine.get("effective_score", 0.0))
+
+        if engine_id == "knn":
+            fusion_weight = knn_weight if bool(engine.get("active", False)) else 0.0
+            score_contribution = raw_score * fusion_weight
+            effect_vs_physical = (raw_score - physical_score) * fusion_weight
+        elif engine_id == physical_source_id:
+            fusion_weight = physical_weight
+            score_contribution = effective_score * fusion_weight
+            effect_vs_physical = 0.0
+        else:
+            fusion_weight = 0.0
+            score_contribution = 0.0
+            effect_vs_physical = 0.0
+
         rows.append(
             {
-                "id": str(engine.get("id", "unknown")),
+                "id": engine_id,
                 "label": str(
                     engine.get(
                         "label",
-                        ENGINE_LABELS.get(str(engine.get("id", "")), "Motor"),
+                        ENGINE_LABELS.get(engine_id, "Motor"),
                     )
                 ),
                 "active": bool(engine.get("active", False)),
                 "triggered": bool(engine.get("triggered", False)),
-                "raw_score": float(engine.get("raw_score", 0.0)),
-                "effective_score": float(engine.get("effective_score", 0.0)),
+                "raw_score": raw_score,
+                "effective_score": effective_score,
                 "threshold": float(engine.get("threshold", 0.45)),
-                "selected": bool(engine.get("selected", False)),
-                "final_influence": float(engine.get("final_influence", 0.0)),
+                "selected": engine_id == dominant_id,
+                "participates": fusion_weight > 0.0,
+                "fusion_weight": max(0.0, min(1.0, fusion_weight)),
+                "score_contribution": score_contribution,
+                "effect_vs_physical": effect_vs_physical,
+                # Compatibilidade com widgets/testes anteriores.
+                "final_influence": score_contribution,
                 "summary": str(engine.get("summary", "")),
             }
         )
