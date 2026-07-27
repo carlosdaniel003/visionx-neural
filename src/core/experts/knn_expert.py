@@ -1,5 +1,5 @@
 # src/core/experts/knn_expert.py
-"""Especialista KNN baseado em embeddings MobileNetV2."""
+"""KNN de memória visual orientado à anomalia, com fallback legado."""
 
 from __future__ import annotations
 
@@ -13,29 +13,38 @@ import numpy as np
 from numpy.linalg import norm
 
 from src.config.settings import settings
+from src.core.anomaly_signature import (
+    compare_anomaly_signatures,
+    valid_anomaly_signature,
+)
 
 
 class KNNExpert:
+    """Compara primeiro a divergência teste-gabarito, não a peça completa."""
+
     def __init__(self):
-        print("Inicializando K-NN Expert (cv2.dnn)...")
-        self.net = self._load_mobilenet_model()
+        print("Inicializando K-NN de anomalias...")
+        self.net = None
         self.signatures_ok: list[dict] = []
         self.signatures_ng: list[dict] = []
         self._load_all()
 
-    def _load_mobilenet_model(self):
+    def _ensure_legacy_model(self):
+        if self.net is not None:
+            return self.net
         model_dir = Path("models")
         model_dir.mkdir(parents=True, exist_ok=True)
         model_path = model_dir / "mobilenetv2-7.onnx"
 
         if not model_path.exists():
-            print("Modelo não encontrado. Baixando MobileNetV2 (13 MB)...")
+            print("Modelo legado não encontrado. Baixando MobileNetV2 (13 MB)...")
             url = (
                 "https://github.com/onnx/models/raw/main/validated/vision/"
                 "classification/mobilenet/model/mobilenetv2-7.onnx"
             )
             urllib.request.urlretrieve(url, str(model_path))
-        return cv2.dnn.readNetFromONNX(str(model_path))
+        self.net = cv2.dnn.readNetFromONNX(str(model_path))
+        return self.net
 
     @staticmethod
     def _clean_string(text: str) -> str:
@@ -60,25 +69,40 @@ class KNNExpert:
         return normalized_folder if normalized_folder in {"OK", "NG"} else "OK"
 
     @staticmethod
-    def _weighted_vote(neighbors: list[tuple[float, str, str]]) -> float:
-        """Calcula o voto de classe; similaridade e voto permanecem conceitos distintos."""
+    def _weighted_vote(neighbors: list[tuple]) -> float:
+        """Vota pela classe usando distância, sem confundir classe e similaridade."""
         if not neighbors:
             return 0.5
 
         votes_ng = 0.0
         votes_total = 0.0
-        for distance, label, _path in neighbors:
-            weight = 1.0 / max(float(distance), 0.0001)
+        for neighbor in neighbors:
+            distance = float(neighbor[0])
+            label = str(neighbor[1]).upper()
+            weight = 1.0 / max(distance, 0.0001)
             votes_total += weight
-            if str(label).upper() == "NG":
+            if label == "NG":
                 votes_ng += weight
 
         if votes_total <= 0.0:
             return 0.5
         return float(np.clip(votes_ng / votes_total, 0.0, 1.0))
 
+    @staticmethod
+    def _extract_anomaly_memory(data: dict) -> dict | None:
+        analysis = data.get("analysis", {})
+        candidates = (
+            analysis.get("anomaly_memory") if isinstance(analysis, dict) else None,
+            analysis.get("anomaly_signature") if isinstance(analysis, dict) else None,
+            data.get("anomaly_memory"),
+        )
+        for candidate in candidates:
+            if valid_anomaly_signature(candidate):
+                return candidate
+        return None
+
     def _load_all(self):
-        print("Varredura Semântica KNN...")
+        print("Varredura da memória de anomalias...")
         loaded_paths: set[str] = set()
 
         sources = (
@@ -100,34 +124,48 @@ class KNNExpert:
                     with open(json_path, "r", encoding="utf-8") as json_file:
                         data = json.load(json_file)
 
-                    embedding_list = data.get("analysis", {}).get("embedding", [])
-                    if not embedding_list:
-                        continue
-
-                    signature = np.asarray(embedding_list, dtype=np.float32).reshape(-1)
-                    if signature.size == 0 or not np.all(np.isfinite(signature)):
-                        continue
-
                     aoi_info = data.get("aoi_info", {})
                     part_name = self._clean_string(aoi_info.get("parts", ""))
                     category_name = self._clean_string(
                         aoi_info.get("category", "Unknown")
                     )
+                    resolved_label = self._resolve_record_label(data, folder_label)
+                    anomaly_memory = self._extract_anomaly_memory(data)
+
+                    analysis = data.get("analysis", {})
+                    legacy_embedding = (
+                        analysis.get("embedding", [])
+                        if isinstance(analysis, dict)
+                        else []
+                    )
+                    legacy_signature = None
+                    if legacy_embedding:
+                        candidate = np.asarray(
+                            legacy_embedding,
+                            dtype=np.float32,
+                        ).reshape(-1)
+                        if candidate.size and np.all(np.isfinite(candidate)):
+                            legacy_signature = candidate
+
+                    if anomaly_memory is None and legacy_signature is None:
+                        continue
+
                     image_file = str(data.get("image_file", ""))
                     match_path = (
                         str(json_path.parent / image_file)
                         if image_file
                         else str(json_path)
                     )
-                    resolved_label = self._resolve_record_label(data, folder_label)
                     record = {
                         "part": part_name,
                         "category": category_name,
-                        "sig": signature,
                         "path": match_path,
                         "json_path": str(json_path),
                         "label": resolved_label,
                         "folder_label": folder_label,
+                        "mode": "anomaly" if anomaly_memory is not None else "legacy_image",
+                        "anomaly_signature": anomaly_memory,
+                        "sig": legacy_signature,
                     }
 
                     if resolved_label == "NG":
@@ -143,27 +181,32 @@ class KNNExpert:
         self.signatures_ng = []
         self._load_all()
 
-    def _compute_embedding(self, img: np.ndarray) -> np.ndarray | None:
+    def _compute_embedding(self, image: np.ndarray) -> np.ndarray | None:
         if (
-            img is None
-            or img.size == 0
-            or img.shape[0] < 5
-            or img.shape[1] < 5
+            image is None
+            or not isinstance(image, np.ndarray)
+            or image.size == 0
+            or image.shape[0] < 5
+            or image.shape[1] < 5
         ):
             return None
+        net = self._ensure_legacy_model()
         blob = cv2.dnn.blobFromImage(
-            img,
+            image,
             scalefactor=1.0 / 255.0,
             size=(224, 224),
             mean=(0.485 * 255, 0.456 * 255, 0.406 * 255),
             swapRB=True,
             crop=False,
         )
-        self.net.setInput(blob)
-        return self.net.forward().flatten().astype(np.float32)
+        net.setInput(blob)
+        return net.forward().flatten().astype(np.float32)
 
     @staticmethod
-    def _cosine_similarity(query_sig: np.ndarray, stored_sig: np.ndarray) -> float | None:
+    def _cosine_similarity(
+        query_sig: np.ndarray,
+        stored_sig: np.ndarray,
+    ) -> float | None:
         if query_sig.size != stored_sig.size:
             return None
         denominator = float(norm(query_sig) * norm(stored_sig))
@@ -174,6 +217,208 @@ class KNNExpert:
             return None
         return float(np.clip(similarity, -1.0, 1.0))
 
+    @staticmethod
+    def _filter_by_mode(records: list[dict], mode: str) -> list[dict]:
+        return [record for record in records if record.get("mode") == mode]
+
+    def _context_candidates(
+        self,
+        mode: str,
+        target_part: str,
+        target_category: str,
+    ) -> tuple[list[dict], list[dict], str]:
+        ok_records = self._filter_by_mode(self.signatures_ok, mode)
+        ng_records = self._filter_by_mode(self.signatures_ng, mode)
+
+        def select(predicate):
+            return (
+                [item for item in ok_records if predicate(item)],
+                [item for item in ng_records if predicate(item)],
+            )
+
+        if target_category and target_part:
+            exact_ok, exact_ng = select(
+                lambda item: item.get("category") == target_category
+                and target_part in item.get("part", "")
+            )
+            if exact_ok or exact_ng:
+                return exact_ok, exact_ng, "categoria+componente"
+
+        if target_category:
+            category_ok, category_ng = select(
+                lambda item: item.get("category") == target_category
+            )
+            if category_ok or category_ng:
+                return category_ok, category_ng, "categoria"
+
+        if target_part:
+            part_ok, part_ng = select(
+                lambda item: target_part in item.get("part", "")
+            )
+            if part_ok or part_ng:
+                return part_ok, part_ng, "componente"
+
+        return list(ok_records), list(ng_records), "global"
+
+    @staticmethod
+    def _empty_result(
+        query_anomaly_signature: dict | None = None,
+        query_embedding: np.ndarray | None = None,
+    ) -> dict:
+        return {
+            "has_memory": False,
+            "vote_defect": 0.5,
+            "best_similarity": 0.0,
+            "n_neighbors": 0,
+            "best_match_label": "",
+            "neighbor_details": [],
+            "memory_mode": "none",
+            "memory_scope": "none",
+            "query_anomaly_signature": query_anomaly_signature or {},
+            "query_embedding": (
+                query_embedding.tolist()
+                if isinstance(query_embedding, np.ndarray)
+                else []
+            ),
+        }
+
+    def _analyze_anomaly_memory(
+        self,
+        query_signature: dict,
+        valid_ok: list[dict],
+        valid_ng: list[dict],
+        top_k: int,
+        scope: str,
+    ) -> dict:
+        distances: list[tuple[float, str, str, dict]] = []
+        for label, records in (("OK", valid_ok), ("NG", valid_ng)):
+            for item in records:
+                stored = item.get("anomaly_signature")
+                if not valid_anomaly_signature(stored):
+                    continue
+                similarity, breakdown = compare_anomaly_signatures(
+                    query_signature,
+                    stored,
+                )
+                distances.append(
+                    (
+                        1.0 - similarity,
+                        label,
+                        item["path"],
+                        breakdown,
+                    )
+                )
+
+        if not distances:
+            return self._empty_result(query_anomaly_signature=query_signature)
+
+        distances.sort(key=lambda item: item[0])
+        neighbors = distances[: max(1, int(top_k))]
+        vote_defect = self._weighted_vote(neighbors)
+
+        best_dist, best_label, best_path, best_breakdown = neighbors[0]
+        best_similarity = float(np.clip(1.0 - best_dist, 0.0, 1.0))
+        if len(neighbors) == 1:
+            vote_defect = 1.0 if best_label == "NG" else 0.0
+
+        neighbor_details = []
+        for distance, label, path, breakdown in neighbors:
+            neighbor_details.append(
+                {
+                    "label": label,
+                    "similarity": float(np.clip(1.0 - distance, 0.0, 1.0)),
+                    "distance": float(distance),
+                    "path": str(path),
+                    "similarity_breakdown": breakdown,
+                }
+            )
+
+        return {
+            "has_memory": True,
+            "vote_defect": float(vote_defect),
+            "best_similarity": best_similarity,
+            "n_neighbors": int(len(neighbors)),
+            "best_match_path": str(best_path),
+            "best_match_label": str(best_label),
+            "neighbor_details": neighbor_details,
+            "memory_label_counts": {
+                "OK": int(sum(item[1] == "OK" for item in neighbors)),
+                "NG": int(sum(item[1] == "NG" for item in neighbors)),
+            },
+            "memory_mode": "anomaly",
+            "memory_scope": scope,
+            "memory_schema": str(query_signature.get("schema", "")),
+            "similarity_breakdown": best_breakdown,
+            "query_anomaly_signature": query_signature,
+            "query_embedding": [],
+        }
+
+    def _analyze_legacy_memory(
+        self,
+        query_image: np.ndarray,
+        valid_ok: list[dict],
+        valid_ng: list[dict],
+        top_k: int,
+        scope: str,
+        query_anomaly_signature: dict | None,
+    ) -> dict:
+        query_sig = self._compute_embedding(query_image)
+        if query_sig is None:
+            return self._empty_result(
+                query_anomaly_signature=query_anomaly_signature,
+            )
+
+        distances: list[tuple[float, str, str]] = []
+        for label, records in (("OK", valid_ok), ("NG", valid_ng)):
+            for item in records:
+                stored = item.get("sig")
+                if not isinstance(stored, np.ndarray):
+                    continue
+                similarity = self._cosine_similarity(query_sig, stored)
+                if similarity is None:
+                    continue
+                distances.append((1.0 - similarity, label, item["path"]))
+
+        if not distances:
+            return self._empty_result(
+                query_anomaly_signature=query_anomaly_signature,
+                query_embedding=query_sig,
+            )
+
+        distances.sort(key=lambda item: item[0])
+        neighbors = distances[: max(1, int(top_k))]
+        vote_defect = self._weighted_vote(neighbors)
+        best_dist, best_label, best_path = neighbors[0]
+        best_similarity = float(np.clip(1.0 - best_dist, 0.0, 1.0))
+        if len(neighbors) == 1:
+            vote_defect = 1.0 if best_label == "NG" else 0.0
+
+        return {
+            "has_memory": True,
+            "vote_defect": float(vote_defect),
+            "best_similarity": best_similarity,
+            "n_neighbors": int(len(neighbors)),
+            "best_match_path": str(best_path),
+            "best_match_label": str(best_label),
+            "neighbor_details": [
+                {
+                    "label": label,
+                    "similarity": float(np.clip(1.0 - distance, 0.0, 1.0)),
+                    "distance": float(distance),
+                    "path": str(path),
+                }
+                for distance, label, path in neighbors
+            ],
+            "memory_label_counts": {
+                "OK": int(sum(item[1] == "OK" for item in neighbors)),
+                "NG": int(sum(item[1] == "NG" for item in neighbors)),
+            },
+            "memory_mode": "legacy_image",
+            "memory_scope": scope,
+            "query_anomaly_signature": query_anomaly_signature or {},
+            "query_embedding": query_sig.tolist(),
+        }
+
     def analyze(
         self,
         full_gab: np.ndarray,
@@ -182,134 +427,53 @@ class KNNExpert:
         crop_test: np.ndarray = None,
         aoi_info: dict = None,
         top_k: int = 5,
+        anomaly_signature: dict | None = None,
     ) -> dict:
         try:
-            query_img = (
-                full_test
-                if full_test is not None and full_test.size > 0
-                else crop_test
-            )
-            part_name = aoi_info.get("parts", "") if aoi_info else ""
-            raw_category = aoi_info.get("category", "") if aoi_info else ""
-            target_part = self._clean_string(part_name)
-            target_category = self._clean_string(raw_category)
+            info = aoi_info if isinstance(aoi_info, dict) else {}
+            target_part = self._clean_string(info.get("parts", ""))
+            target_category = self._clean_string(info.get("category", ""))
 
-            strict_categories = {"SHIFTED", "UPSIDEDOWN", "REVERSE"}
-            valid_ok = [
-                item
-                for item in self.signatures_ok
-                if (not target_part or target_part in item["part"])
-                and (not target_category or target_category == item.get("category", ""))
-            ]
-            valid_ng = [
-                item
-                for item in self.signatures_ng
-                if (not target_part or target_part in item["part"])
-                and (not target_category or target_category == item.get("category", ""))
-            ]
-
-            total_valid = len(valid_ok) + len(valid_ng)
-            if total_valid == 0:
-                if target_category in strict_categories:
-                    print(
-                        "KNN: fallback bloqueado. "
-                        f"Categoria {raw_category} exige memória estrita."
+            if valid_anomaly_signature(anomaly_signature):
+                valid_ok, valid_ng, scope = self._context_candidates(
+                    "anomaly",
+                    target_part,
+                    target_category,
+                )
+                if valid_ok or valid_ng:
+                    return self._analyze_anomaly_memory(
+                        anomaly_signature,
+                        valid_ok,
+                        valid_ng,
+                        top_k,
+                        scope,
                     )
-                else:
-                    valid_ok = [
-                        item
-                        for item in self.signatures_ok
-                        if not target_part or target_part in item["part"]
-                    ]
-                    valid_ng = [
-                        item
-                        for item in self.signatures_ng
-                        if not target_part or target_part in item["part"]
-                    ]
-                    total_valid = len(valid_ok) + len(valid_ng)
 
-                    if total_valid == 0:
-                        valid_ok = list(self.signatures_ok)
-                        valid_ng = list(self.signatures_ng)
-                        total_valid = len(valid_ok) + len(valid_ng)
-
-            query_sig = self._compute_embedding(query_img)
-            if total_valid == 0 or query_sig is None:
-                return {
-                    "has_memory": False,
-                    "vote_defect": 0.5,
-                    "best_similarity": 0.0,
-                    "n_neighbors": 0,
-                    "best_match_label": "",
-                    "neighbor_details": [],
-                    "query_embedding": query_sig.tolist() if query_sig is not None else [],
-                }
-
-            distances: list[tuple[float, str, str]] = []
-            for label, records in (("OK", valid_ok), ("NG", valid_ng)):
-                for item in records:
-                    similarity = self._cosine_similarity(query_sig, item["sig"])
-                    if similarity is None:
-                        continue
-                    distances.append((1.0 - similarity, label, item["path"]))
-
-            if not distances:
-                return {
-                    "has_memory": False,
-                    "vote_defect": 0.5,
-                    "best_similarity": 0.0,
-                    "n_neighbors": 0,
-                    "best_match_label": "",
-                    "neighbor_details": [],
-                    "query_embedding": query_sig.tolist(),
-                }
-
-            distances.sort(key=lambda item: item[0])
-            neighbors = distances[: max(1, int(top_k))]
-            vote_defect = self._weighted_vote(neighbors)
-
-            best_dist, best_label, best_path = neighbors[0]
-            best_similarity = float(np.clip(1.0 - best_dist, 0.0, 1.0))
-
-            # Um único vizinho representa integralmente a classe daquele registro.
-            # A similaridade controla o peso da memória na fusão, não troca seu rótulo.
-            if len(neighbors) == 1:
-                vote_defect = 1.0 if best_label == "NG" else 0.0
-
-            neighbor_details = []
-            for distance, label, path in neighbors:
-                similarity = float(np.clip(1.0 - distance, 0.0, 1.0))
-                neighbor_details.append(
-                    {
-                        "label": label,
-                        "similarity": similarity,
-                        "distance": float(distance),
-                        "path": str(path),
-                    }
+            valid_ok, valid_ng, scope = self._context_candidates(
+                "legacy_image",
+                target_part,
+                target_category,
+            )
+            if not valid_ok and not valid_ng:
+                return self._empty_result(
+                    query_anomaly_signature=anomaly_signature,
                 )
 
-            return {
-                "has_memory": True,
-                "vote_defect": float(vote_defect),
-                "best_similarity": best_similarity,
-                "n_neighbors": int(len(neighbors)),
-                "best_match_path": str(best_path),
-                "best_match_label": str(best_label),
-                "neighbor_details": neighbor_details,
-                "memory_label_counts": {
-                    "OK": int(sum(item[1] == "OK" for item in neighbors)),
-                    "NG": int(sum(item[1] == "NG" for item in neighbors)),
-                },
-                "query_embedding": query_sig.tolist(),
-            }
+            query_image = (
+                full_test
+                if isinstance(full_test, np.ndarray) and full_test.size > 0
+                else crop_test
+            )
+            return self._analyze_legacy_memory(
+                query_image,
+                valid_ok,
+                valid_ng,
+                top_k,
+                scope,
+                anomaly_signature,
+            )
         except Exception as exc:
             print(f"Erro no KNNExpert: {exc}")
-            return {
-                "has_memory": False,
-                "vote_defect": 0.5,
-                "best_similarity": 0.0,
-                "n_neighbors": 0,
-                "best_match_label": "",
-                "neighbor_details": [],
-                "query_embedding": [],
-            }
+            return self._empty_result(
+                query_anomaly_signature=anomaly_signature,
+            )
