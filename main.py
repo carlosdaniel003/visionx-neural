@@ -7,6 +7,8 @@ import sys
 
 from PyQt6.QtWidgets import QApplication
 
+from src.core.experts.semantic_calibration import install_semantic_calibration
+from src.core.experts.semantic_expert import SemanticExpert
 from src.ui.control_panel import ControlPanel
 from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
@@ -22,6 +24,7 @@ def main():
 
     # Os hooks precisam ser instalados antes de o controller conectar os sinais.
     install_iconography_hooks(ControlPanel, OperationalControlsPresenter)
+    install_semantic_calibration(SemanticExpert)
 
     panel = ControlPanel()
     install_decision_panel(panel)
