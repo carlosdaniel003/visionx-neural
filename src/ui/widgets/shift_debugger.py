@@ -45,7 +45,7 @@ class ShiftDebuggerWidget(QWidget):
     def update_data(self, detail: dict):
         if (
             not detail
-            or detail.get("comparison_mode") != "adhesive_flow"
+            or detail.get("adhesive_comparison_mode") != "adhesive_flow"
             or not detail.get("shift_active", False)
         ):
             self.is_active = False
@@ -73,12 +73,14 @@ class ShiftDebuggerWidget(QWidget):
         self.alignment_shift = tuple(
             detail.get("adhesive_alignment_shift", (0.0, 0.0))
         )
-        self.roi_width = int(detail.get("roi_width", 0) or 0)
-        self.roi_height = int(detail.get("roi_height", 0) or 0)
+        self.roi_width = int(detail.get("adhesive_roi_width", 0) or 0)
+        self.roi_height = int(detail.get("adhesive_roi_height", 0) or 0)
 
-        self.reference_view = self._copy_image(detail.get("reference_view"))
-        self.test_view = self._copy_image(detail.get("test_view"))
-        self.flow_view = self._copy_image(detail.get("flow_view"))
+        self.reference_view = self._copy_image(
+            detail.get("adhesive_reference_view")
+        )
+        self.test_view = self._copy_image(detail.get("adhesive_test_view"))
+        self.flow_view = self._copy_image(detail.get("adhesive_flow_view"))
         self.update()
 
     @staticmethod
