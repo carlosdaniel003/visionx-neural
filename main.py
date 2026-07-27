@@ -14,6 +14,7 @@ from src.core.experts.semantic_calibration import (
 )
 from src.core.experts.semantic_expert import SemanticExpert
 from src.core.moe_orchestrator import MoEOrchestrator
+from src.services.anomaly_learning import install_anomaly_learning
 from src.ui.control_panel import ControlPanel
 from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
@@ -33,6 +34,7 @@ def main():
     install_semantic_calibration(SemanticExpert)
     install_semantic_widget_calibration(SemanticDNAWidget)
     install_anomaly_memory_integration(MoEOrchestrator)
+    install_anomaly_learning(ControlPanel)
 
     panel = ControlPanel()
     install_decision_panel(panel)
