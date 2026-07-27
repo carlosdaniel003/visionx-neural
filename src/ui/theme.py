@@ -172,13 +172,69 @@ QPushButton:disabled {{
     border: 1px solid #222222;
 }}
 
-QScrollArea {{ border: none; background-color: transparent; }}
-QScrollBar:vertical {{ background: #0a0a0a; width: 11px; margin: 0; }}
-QScrollBar::handle:vertical {{ background: #3a3a3a; min-height: 28px; border-radius: 5px; }}
-QScrollBar::handle:vertical:hover {{ background: {ACCENT}; }}
-QScrollBar:horizontal {{ background: #0a0a0a; height: 11px; margin: 0; }}
-QScrollBar::handle:horizontal {{ background: #3a3a3a; min-width: 28px; border-radius: 5px; }}
-QScrollBar::handle:horizontal:hover {{ background: {ACCENT}; }}
+QScrollArea {{
+    border: none;
+    background-color: transparent;
+}}
+
+QAbstractScrollArea::corner {{
+    background-color: #151515;
+    border: none;
+}}
+
+QScrollBar:vertical {{
+    background-color: #151515;
+    width: 12px;
+    margin: 0;
+    border: 1px solid #252525;
+    border-radius: 6px;
+}}
+QScrollBar::handle:vertical,
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:vertical:pressed {{
+    background-color: {ACCENT};
+    min-height: 32px;
+    margin: 1px;
+    border: none;
+    border-radius: 5px;
+}}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {{
+    height: 0;
+    background: transparent;
+    border: none;
+}}
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {{
+    background: transparent;
+}}
+
+QScrollBar:horizontal {{
+    background-color: #151515;
+    height: 12px;
+    margin: 0;
+    border: 1px solid #252525;
+    border-radius: 6px;
+}}
+QScrollBar::handle:horizontal,
+QScrollBar::handle:horizontal:hover,
+QScrollBar::handle:horizontal:pressed {{
+    background-color: {ACCENT};
+    min-width: 32px;
+    margin: 1px;
+    border: none;
+    border-radius: 5px;
+}}
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {{
+    width: 0;
+    background: transparent;
+    border: none;
+}}
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {{
+    background: transparent;
+}}
 
 QFrame#statusBar {{
     background-color: #090909;
