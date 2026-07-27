@@ -31,6 +31,10 @@ def _render_panel(panel, analysis: dict | None) -> None:
     panel.lbl_decision_rule.setText(fusion_summary(trace))
 
     primary, role = memory_summary(trace)
+    detail = (analysis or {}).get("detail", {})
+    best_label = str(detail.get("best_match_label", "") or "").upper()
+    if best_label in {"OK", "NG"}:
+        primary += f" • melhor vizinho {best_label}"
     panel.lbl_db_info.setText(primary)
     panel.lbl_memory_role.setText(role)
 
@@ -118,7 +122,7 @@ def install_decision_panel(panel) -> None:
     panel.lbl_memory_role.setObjectName("memoryRole")
     panel.lbl_db_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
     panel.lbl_db_info.setWordWrap(True)
-    panel.frame_knn.setMinimumHeight(130)
+    panel.frame_knn.setMinimumHeight(138)
     panel.frame_knn.setSizePolicy(
         QSizePolicy.Policy.Expanding,
         QSizePolicy.Policy.Expanding,
