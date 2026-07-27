@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QWidget
 class KNNSpectrumWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(138)
+        self.setMinimumHeight(145)
 
         self.is_active = False
         self.has_memory = False
@@ -22,6 +22,8 @@ class KNNSpectrumWidget(QWidget):
         self.memory_weight = 0.0
         self.physical_weight = 1.0
         self.fusion_rule = "physical_only"
+        self.memory_mode = "none"
+        self.memory_scope = "none"
 
     def update_data(self, detail: dict):
         if not detail or (
@@ -70,6 +72,12 @@ class KNNSpectrumWidget(QWidget):
         self.memory_weight = float(weights.get("knn", 0.0))
         self.physical_weight = float(weights.get("physical", 1.0))
         self.fusion_rule = str(trace.get("fusion_rule", "physical_only"))
+        self.memory_mode = str(
+            memory.get("memory_mode", detail.get("memory_mode", "none"))
+        ).lower()
+        self.memory_scope = str(
+            memory.get("memory_scope", detail.get("memory_scope", "none"))
+        ).lower()
         self.update()
 
     @staticmethod
@@ -98,6 +106,20 @@ class KNNSpectrumWidget(QWidget):
             4,
         )
 
+    def _mode_label(self) -> str:
+        if self.memory_mode == "anomaly":
+            return "ANOMALIA"
+        if self.memory_mode == "legacy_image":
+            return "IMAGEM LEGADA"
+        return "SEM MODO"
+
+    def _similarity_label(self) -> str:
+        if self.memory_mode == "anomaly":
+            return "SIMILARIDADE DA ANOMALIA COM A MEMÓRIA"
+        if self.memory_mode == "legacy_image":
+            return "SIMILARIDADE DA IMAGEM COMPLETA (LEGADO)"
+        return "SIMILARIDADE DO MELHOR VIZINHO"
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -109,7 +131,11 @@ class KNNSpectrumWidget(QWidget):
         if not self.is_active:
             painter.setPen(QColor("#555555"))
             painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Motor KNN inativo")
+            painter.drawText(
+                self.rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                "Motor KNN inativo",
+            )
             painter.end()
             return
 
@@ -119,7 +145,7 @@ class KNNSpectrumWidget(QWidget):
             painter.drawText(
                 self.rect(),
                 Qt.AlignmentFlag.AlignCenter,
-                "Dataset sem vizinhos compatíveis",
+                "Dataset sem anomalias compatíveis",
             )
             painter.end()
             return
@@ -137,19 +163,29 @@ class KNNSpectrumWidget(QWidget):
             14,
             self._elide(
                 painter,
-                f"{self.role} • peso final KNN {self.memory_weight:.0%}",
+                (
+                    f"{self.role} • peso KNN {self.memory_weight:.0%} • "
+                    f"memória {self._mode_label()} • escopo {self.memory_scope}"
+                ),
                 width - padding * 2,
             ),
         )
 
-        label_color = QColor("#ff6262") if self.best_label == "NG" else QColor("#4ade80")
+        label_color = (
+            QColor("#ff6262")
+            if self.best_label == "NG"
+            else QColor("#4ade80")
+        )
         painter.setPen(label_color)
         painter.drawText(
             padding,
             29,
             self._elide(
                 painter,
-                f"Melhor vizinho: {self.best_label} • {self.best_sim:.0%} similar",
+                (
+                    f"Melhor anomalia: {self.best_label} • "
+                    f"{self.best_sim:.0%} similar"
+                ),
                 width - padding * 2,
             ),
         )
@@ -159,7 +195,11 @@ class KNNSpectrumWidget(QWidget):
 
         vote_y = 44
         painter.setPen(QColor("#a6a6a6"))
-        painter.drawText(padding, vote_y, "VOTO DOS RÓTULOS PARA DEFEITO NG")
+        painter.drawText(
+            padding,
+            vote_y,
+            "VOTO DOS RÓTULOS PARA DEFEITO NG",
+        )
         vote_rect = QRectF(padding, vote_y + 6, bar_width, bar_height)
         gradient = QLinearGradient(
             vote_rect.x(),
@@ -182,7 +222,11 @@ class KNNSpectrumWidget(QWidget):
 
         similarity_y = vote_y + 38
         painter.setPen(QColor("#a6a6a6"))
-        painter.drawText(padding, similarity_y, "SIMILARIDADE VISUAL DO MELHOR VIZINHO")
+        painter.drawText(
+            padding,
+            similarity_y,
+            self._similarity_label(),
+        )
         similarity_rect = QRectF(
             padding,
             similarity_y + 6,
@@ -199,7 +243,8 @@ class KNNSpectrumWidget(QWidget):
         painter.setPen(QColor("#d0d0d0"))
         info = (
             f"Voto {self.vote:.0%} NG • melhor rótulo {self.best_label} • "
-            f"{self.n_neighbors} vizinho(s) • peso físico {self.physical_weight:.0%}"
+            f"{self.n_neighbors} vizinho(s) • peso físico "
+            f"{self.physical_weight:.0%}"
         )
         painter.drawText(
             padding,
