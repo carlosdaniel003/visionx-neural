@@ -10,13 +10,14 @@ from PyQt6.QtWidgets import QWidget
 class KNNSpectrumWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(130)
+        self.setMinimumHeight(138)
 
         self.is_active = False
         self.has_memory = False
         self.vote = 0.5
         self.best_sim = 0.0
         self.n_neighbors = 0
+        self.best_label = "-"
         self.role = "SEM MEMÓRIA"
         self.memory_weight = 0.0
         self.physical_weight = 1.0
@@ -61,6 +62,10 @@ class KNNSpectrumWidget(QWidget):
                 detail.get("n_neighbors", detail.get("db_neighbors", 0)),
             )
         )
+        self.best_label = str(
+            memory.get("best_match_label", detail.get("best_match_label", "-"))
+            or "-"
+        ).upper()
         self.role = str(memory.get("role", "MEMÓRIA AUXILIAR"))
         self.memory_weight = float(weights.get("knn", 0.0))
         self.physical_weight = float(weights.get("physical", 1.0))
@@ -137,12 +142,24 @@ class KNNSpectrumWidget(QWidget):
             ),
         )
 
+        label_color = QColor("#ff6262") if self.best_label == "NG" else QColor("#4ade80")
+        painter.setPen(label_color)
+        painter.drawText(
+            padding,
+            29,
+            self._elide(
+                painter,
+                f"Melhor vizinho: {self.best_label} • {self.best_sim:.0%} similar",
+                width - padding * 2,
+            ),
+        )
+
         bar_width = max(60, width - padding * 2)
         bar_height = 10
 
-        vote_y = 31
+        vote_y = 44
         painter.setPen(QColor("#a6a6a6"))
-        painter.drawText(padding, vote_y, "VOTO DE DEFEITO")
+        painter.drawText(padding, vote_y, "VOTO DOS RÓTULOS PARA DEFEITO NG")
         vote_rect = QRectF(padding, vote_y + 6, bar_width, bar_height)
         gradient = QLinearGradient(
             vote_rect.x(),
@@ -165,7 +182,7 @@ class KNNSpectrumWidget(QWidget):
 
         similarity_y = vote_y + 38
         painter.setPen(QColor("#a6a6a6"))
-        painter.drawText(padding, similarity_y, "SIMILARIDADE DO MELHOR VIZINHO")
+        painter.drawText(padding, similarity_y, "SIMILARIDADE VISUAL DO MELHOR VIZINHO")
         similarity_rect = QRectF(
             padding,
             similarity_y + 6,
@@ -181,8 +198,8 @@ class KNNSpectrumWidget(QWidget):
 
         painter.setPen(QColor("#d0d0d0"))
         info = (
-            f"Voto {self.vote:.0%} NG • similaridade {self.best_sim:.0%} • "
-            f"{self.n_neighbors} vizinho(s) • físico {self.physical_weight:.0%}"
+            f"Voto {self.vote:.0%} NG • melhor rótulo {self.best_label} • "
+            f"{self.n_neighbors} vizinho(s) • peso físico {self.physical_weight:.0%}"
         )
         painter.drawText(
             padding,
