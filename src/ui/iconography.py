@@ -207,7 +207,7 @@ class SvgIconographyPresenter:
             return
 
         while layout.count():
-            layout.takeAt()
+            layout.takeAt(0)
 
         network_label = self.panel.lbl_status_network
         brain_label = self.panel.lbl_status_brain
