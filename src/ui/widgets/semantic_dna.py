@@ -1,161 +1,374 @@
-# src/ui/widgets/semantic_dna.py
-"""
-O Visor de DNA Semântico (Embedding Debugger).
-Lê os vetores (128 dimensões) criados pelo SemanticExpert.
-Gera três barras visuais: Gabarito, Anomalia e Divergência.
-"""
+"""Debugger técnico do embedding semântico e de sua reconstrução espacial."""
+
+from __future__ import annotations
+
+import cv2
 import numpy as np
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QPainter, QColor, QFont
 from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtGui import QColor, QFont, QImage, QPainter, QPen
+from PyQt6.QtWidgets import QWidget
+
 
 class SemanticDNAWidget(QWidget):
+    """Exibe vetores 128D, delta por dimensão e reconstrução espacial 4x4."""
+
+    GROUP_RANGES = (
+        ("EDGE", 0, 16),
+        ("LUMA", 16, 32),
+        ("HUE", 32, 64),
+        ("SAT", 64, 96),
+        ("VAL", 96, 128),
+    )
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(280) # Altura padrão dos Cards Horizontais do Carrossel
-        self.setMinimumWidth(550)
-        
+        self.setMinimumHeight(320)
+        self.setMinimumWidth(600)
+
         self.is_active = False
         self.sem_loss = 0.0
+        self.cosine_distance = 0.0
         self.query_emb = None
         self.ref_emb = None
+        self.delta_vector = None
+        self.debug = {}
+        self.reconstruction_view = None
 
     def update_data(self, detail: dict):
-        """ Recebe o dict completo do Orquestrador """
         if not detail or "semantic_loss" not in detail:
             self.is_active = False
             self.update()
             return
-            
+
+        query = detail.get("query_emb") or []
+        reference = detail.get("ref_emb") or []
+        if not query or not reference:
+            self.is_active = False
+            self.update()
+            return
+
         self.is_active = True
-        self.sem_loss = detail.get("semantic_loss", 0.0)
-        
-        # Puxa as listas de números
-        q_emb = detail.get("query_emb", [])
-        r_emb = detail.get("ref_emb", [])
-        
-        self.query_emb = np.array(q_emb) if q_emb else None
-        self.ref_emb = np.array(r_emb) if r_emb else None
-        
+        self.sem_loss = float(detail.get("semantic_loss", 0.0))
+        self.cosine_distance = float(
+            detail.get("semantic_distance_cosine", self.sem_loss / 2.5)
+        )
+        self.query_emb = np.asarray(query, dtype=np.float32)
+        self.ref_emb = np.asarray(reference, dtype=np.float32)
+        self.debug = detail.get("semantic_debug") or {}
+
+        delta = detail.get("semantic_delta")
+        if delta:
+            self.delta_vector = np.asarray(delta, dtype=np.float32)
+        else:
+            absolute = np.abs(self.query_emb - self.ref_emb)
+            scale = np.abs(self.query_emb) + np.abs(self.ref_emb) + 0.04
+            self.delta_vector = np.clip(absolute / scale, 0.0, 1.0)
+
+        reconstruction = detail.get("semantic_reconstruction_view")
+        self.reconstruction_view = (
+            np.asarray(reconstruction).copy()
+            if isinstance(reconstruction, np.ndarray) and reconstruction.size > 0
+            else None
+        )
         self.update()
 
-    def _get_color_heat(self, val):
-        """ Converte um valor (0.0 a 1.0) em uma cor térmica (Azul escuro -> Verde -> Amarelo) """
-        val = max(0.0, min(1.0, val))
-        r = int(min(255, max(0, 255 * (val * 2 - 1))))
-        b = int(min(255, max(0, 255 * (2 - val * 2))))
-        g = int(min(255, max(0, 255 * (1 - abs(val * 2 - 1)))))
-        return QColor(r, g, b)
+    @staticmethod
+    def _qimage_from_bgr(image_bgr: np.ndarray) -> QImage:
+        contiguous = np.ascontiguousarray(image_bgr)
+        rgb = cv2.cvtColor(contiguous, cv2.COLOR_BGR2RGB)
+        height, width = rgb.shape[:2]
+        return QImage(
+            rgb.data,
+            width,
+            height,
+            width * 3,
+            QImage.Format.Format_RGB888,
+        ).copy()
 
-    def _get_color_diff(self, val):
-        """ Converte a diferença em uma cor de alerta (Preto = Igual, Vermelho Vivo = Diferente) """
-        val = max(0.0, min(1.0, val))
-        return QColor(int(val * 255), 0, 0)
+    @staticmethod
+    def _signal_color(value: float) -> QColor:
+        value = float(np.clip(value, 0.0, 1.0))
+        if value < 0.5:
+            ratio = value / 0.5
+            return QColor(
+                15,
+                int(70 + 150 * ratio),
+                int(120 + 135 * ratio),
+            )
+        ratio = (value - 0.5) / 0.5
+        return QColor(
+            int(30 + 225 * ratio),
+            int(220 - 35 * ratio),
+            int(255 - 210 * ratio),
+        )
+
+    @staticmethod
+    def _delta_color(value: float) -> QColor:
+        value = float(np.clip(value, 0.0, 1.0))
+        if value < 0.5:
+            ratio = value / 0.5
+            return QColor(int(170 * ratio), 5, 20)
+        ratio = (value - 0.5) / 0.5
+        return QColor(170 + int(85 * ratio), int(190 * ratio), 10)
+
+    def _normalize_embedding_value(self, vector: np.ndarray, index: int) -> float:
+        for _, start, end in self.GROUP_RANGES:
+            if start <= index < end:
+                combined = np.concatenate(
+                    [self.ref_emb[start:end], self.query_emb[start:end]]
+                )
+                minimum = float(np.min(combined))
+                maximum = float(np.max(combined))
+                if maximum <= minimum:
+                    return 0.0
+                return float((vector[index] - minimum) / (maximum - minimum))
+        return 0.0
+
+    def _draw_vector(
+        self,
+        painter: QPainter,
+        rect: QRectF,
+        vector: np.ndarray,
+        title: str,
+        delta_mode: bool = False,
+    ) -> None:
+        painter.setPen(QColor("#a6a6a6") if not delta_mode else QColor("#ff7878"))
+        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        painter.drawText(
+            QRectF(rect.x(), rect.y(), rect.width(), 13),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            title,
+        )
+
+        bar_rect = QRectF(rect.x(), rect.y() + 14, rect.width(), rect.height() - 14)
+        painter.setPen(QPen(QColor("#303030"), 1))
+        painter.setBrush(QColor("#070707"))
+        painter.drawRect(bar_rect)
+
+        feature_width = bar_rect.width() / max(len(vector), 1)
+        painter.setPen(Qt.PenStyle.NoPen)
+        for index, raw_value in enumerate(vector):
+            value = (
+                float(np.clip(raw_value, 0.0, 1.0))
+                if delta_mode
+                else self._normalize_embedding_value(vector, index)
+            )
+            painter.setBrush(
+                self._delta_color(value) if delta_mode else self._signal_color(value)
+            )
+            painter.drawRect(
+                QRectF(
+                    bar_rect.x() + index * feature_width,
+                    bar_rect.y(),
+                    feature_width + 0.8,
+                    bar_rect.height(),
+                )
+            )
+
+        painter.setFont(QFont("Consolas", 6, QFont.Weight.Bold))
+        for label, start, end in self.GROUP_RANGES:
+            start_x = bar_rect.x() + start * feature_width
+            end_x = bar_rect.x() + end * feature_width
+            painter.setPen(QPen(QColor("#f5c518"), 1))
+            painter.drawLine(
+                int(start_x),
+                int(bar_rect.y()),
+                int(start_x),
+                int(bar_rect.bottom()),
+            )
+            painter.setPen(QColor("#e2e2e2"))
+            painter.drawText(
+                QRectF(start_x, bar_rect.y() + 1, end_x - start_x, 10),
+                Qt.AlignmentFlag.AlignCenter,
+                label,
+            )
+
+    def _draw_reconstruction(
+        self,
+        painter: QPainter,
+        rect: QRectF,
+    ) -> None:
+        painter.setPen(QColor("#f5c518"))
+        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        painter.drawText(
+            QRectF(rect.x(), rect.y(), rect.width(), 14),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            "RECONSTRUÇÃO ESPACIAL • GRID 4×4",
+        )
+
+        image_rect = QRectF(rect.x(), rect.y() + 16, rect.width(), rect.height() - 16)
+        painter.setPen(QPen(QColor("#303030"), 1))
+        painter.setBrush(QColor("#070707"))
+        painter.drawRect(image_rect)
+
+        if self.reconstruction_view is not None:
+            qimage = self._qimage_from_bgr(self.reconstruction_view)
+            scaled = qimage.scaled(
+                max(1, int(image_rect.width() - 4)),
+                max(1, int(image_rect.height() - 4)),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            image_x = image_rect.x() + (image_rect.width() - scaled.width()) / 2
+            image_y = image_rect.y() + (image_rect.height() - scaled.height()) / 2
+            painter.drawImage(int(image_x), int(image_y), scaled)
+            target = QRectF(image_x, image_y, scaled.width(), scaled.height())
+        else:
+            target = image_rect.adjusted(4, 4, -4, -4)
+
+        spatial = self.debug.get("spatial", {})
+        grid = spatial.get("combined_delta_grid") or []
+        if len(grid) == 4 and all(len(row) == 4 for row in grid):
+            cell_width = target.width() / 4.0
+            cell_height = target.height() / 4.0
+            painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+            for row in range(4):
+                for column in range(4):
+                    value = float(grid[row][column])
+                    cell = QRectF(
+                        target.x() + column * cell_width,
+                        target.y() + row * cell_height,
+                        cell_width,
+                        cell_height,
+                    )
+                    painter.setPen(QPen(QColor("#c0c0c0"), 1))
+                    painter.drawRect(cell)
+                    painter.setPen(
+                        QColor("#ffffff") if value >= 0.32 else QColor("#b0b0b0")
+                    )
+                    painter.drawText(
+                        cell,
+                        Qt.AlignmentFlag.AlignCenter,
+                        f"{value:.2f}",
+                    )
+
+    @staticmethod
+    def _elide(painter: QPainter, text: str, width: int) -> str:
+        return painter.fontMetrics().elidedText(
+            text,
+            Qt.TextElideMode.ElideRight,
+            max(width, 20),
+        )
+
+    def _telemetry_lines(self) -> list[str]:
+        groups = self.debug.get("groups", {})
+        dominant = self.debug.get("dominant_group", "unknown")
+        spatial = self.debug.get("spatial", {})
+        peak = spatial.get("peak_cell") or {}
+        approximate_box = spatial.get("approximate_box")
+        top_dimensions = self.debug.get("top_dimensions") or []
+
+        group_parts = []
+        for name, _, _ in self.GROUP_RANGES:
+            full_name = {
+                "EDGE": "edge_density",
+                "LUMA": "brightness",
+                "HUE": "hue_histogram",
+                "SAT": "saturation_histogram",
+                "VAL": "value_histogram",
+            }[name]
+            value = groups.get(full_name, {}).get("relative_divergence", 0.0)
+            group_parts.append(f"{name}={value:.2f}")
+
+        top_text = ", ".join(
+            f"{item.get('label', '?')}:{item.get('signed_delta', 0.0):+.3f}"
+            for item in top_dimensions[:5]
+        )
+        peak_text = (
+            f"R{peak.get('row', 0)}C{peak.get('column', 0)}"
+            f"={peak.get('value', 0.0):.2f}"
+        )
+
+        return [
+            (
+                f"schema={self.debug.get('schema', 'legacy')} • "
+                f"cos={self.cosine_distance:.4f} • loss={self.sem_loss:.1%} • "
+                f"dominante={dominant} • pico={peak_text} • box={approximate_box}"
+            ),
+            "grupos: " + " | ".join(group_parts),
+            "top_delta: " + (top_text or "nenhuma divergência relevante"),
+        ]
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        w = self.width()
-        h = self.height()
 
-        painter.fillRect(0, 0, w, h, QColor("#161b22"))
+        width = self.width()
+        height = self.height()
+        painter.fillRect(0, 0, width, height, QColor("#101010"))
 
-        painter.setPen(QColor("#c9d1d9"))
-        painter.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
-        painter.drawText(10, 20, "DNA SEMÂNTICO (EMBEDDING BARCODE)")
+        painter.setPen(QColor("#f5f5f5"))
+        painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
+        painter.drawText(9, 18, "DEBUG SEMÂNTICO • EMBEDDING 128D + RECONSTRUÇÃO")
 
         if not self.is_active or self.query_emb is None or self.ref_emb is None:
-            painter.setPen(QColor("#484f58"))
+            painter.setPen(QColor("#555555"))
             painter.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Motor Semântico Inativo (MoE ignorou rota)")
+            painter.drawText(
+                self.rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                "Motor semântico inativo",
+            )
             painter.end()
             return
 
-        # =========================================================
-        # MATEMÁTICA DE NORMALIZAÇÃO DAS BARRAS
-        # =========================================================
-        emb_q = self.query_emb # Câmera
-        emb_r = self.ref_emb   # Gabarito
-        
-        # Acha o maior e o menor número no vetor para poder pintar corretamente
-        all_vals = np.concatenate([emb_q, emb_r])
-        v_min, v_max = np.min(all_vals), np.max(all_vals)
-        if v_max == v_min: v_max = v_min + 1e-5
+        padding = 10
+        top = 30
+        telemetry_height = 62
+        content_height = max(120, height - top - telemetry_height - 8)
+        left_width = max(300.0, (width - padding * 3) * 0.66)
+        right_width = width - padding * 3 - left_width
 
-        # Calcula a diferença absoluta entre o gabarito e a câmera em cada posição
-        diff = np.abs(emb_q - emb_r)
-        d_max = np.max(diff) if np.max(diff) > 0 else 1.0
+        left_rect = QRectF(padding, top, left_width, content_height)
+        right_rect = QRectF(
+            padding * 2 + left_width,
+            top,
+            right_width,
+            content_height,
+        )
 
-        num_features = len(emb_q)
-        
-        padding_x = 10
-        available_w = w - (padding_x * 2)
-        bar_w = available_w / num_features
-        
-        # Calcula as alturas usando o espaço real do Widget
-        title_h = 15
-        spacing_y = 10
-        total_used_y = 35 # O topo (título) + um espaço extra
-        available_h = h - total_used_y - 20 # 20 de sobra no pé
-        
-        bar_h = (available_h - (title_h * 3) - (spacing_y * 2)) / 3
+        block_spacing = 7
+        block_height = (left_rect.height() - block_spacing * 2) / 3.0
+        self._draw_vector(
+            painter,
+            QRectF(left_rect.x(), left_rect.y(), left_rect.width(), block_height),
+            self.ref_emb,
+            "1. REFERÊNCIA • VETOR SALVO/GERADO",
+        )
+        self._draw_vector(
+            painter,
+            QRectF(
+                left_rect.x(),
+                left_rect.y() + block_height + block_spacing,
+                left_rect.width(),
+                block_height,
+            ),
+            self.query_emb,
+            "2. TESTE • VETOR DIGITALIZADO",
+        )
+        self._draw_vector(
+            painter,
+            QRectF(
+                left_rect.x(),
+                left_rect.y() + (block_height + block_spacing) * 2,
+                left_rect.width(),
+                block_height,
+            ),
+            self.delta_vector,
+            "3. DELTA RELATIVO • DIMENSÃO POR DIMENSÃO",
+            delta_mode=True,
+        )
+        self._draw_reconstruction(painter, right_rect)
 
-        font = QFont("Consolas", 8, QFont.Weight.Bold)
-        painter.setFont(font)
-
-        # =========================================================
-        # BARRA 1: GABARITO (REFERÊNCIA)
-        # =========================================================
-        y_offset = total_used_y
-        painter.setPen(QColor("#8b949e"))
-        painter.drawText(padding_x, int(y_offset + 10), "DNA: Gabarito (Padrão)")
-        y_offset += title_h
-        
-        painter.setPen(Qt.PenStyle.NoPen)
-        for i, val in enumerate(emb_r):
-            norm_val = (val - v_min) / (v_max - v_min)
-            painter.setBrush(self._get_color_heat(norm_val))
-            painter.drawRect(QRectF(padding_x + (i * bar_w), y_offset, bar_w + 1, bar_h))
-
-        # =========================================================
-        # BARRA 2: CÂMERA (PEÇA TESTADA)
-        # =========================================================
-        y_offset += bar_h + spacing_y
-        painter.setPen(QColor("#8b949e"))
-        painter.drawText(padding_x, int(y_offset + 10), "DNA: Câmera (Anomalia Reportada)")
-        y_offset += title_h
-        
-        painter.setPen(Qt.PenStyle.NoPen)
-        for i, val in enumerate(emb_q):
-            norm_val = (val - v_min) / (v_max - v_min)
-            painter.setBrush(self._get_color_heat(norm_val))
-            painter.drawRect(QRectF(padding_x + (i * bar_w), y_offset, bar_w + 1, bar_h))
-
-        # =========================================================
-        # BARRA 3: DIVERGÊNCIA (O ALARME DE DEFEITO)
-        # =========================================================
-        y_offset += bar_h + spacing_y
-        painter.setPen(QColor("#ff7b72"))
-        painter.drawText(padding_x, int(y_offset + 10), "Divergência (Foco de Alarme da IA)")
-        y_offset += title_h
-        
-        painter.setPen(Qt.PenStyle.NoPen)
-        for i, val in enumerate(diff):
-            norm_val = val / d_max # Aumenta o contraste das diferenças!
-            painter.setBrush(self._get_color_diff(norm_val))
-            painter.drawRect(QRectF(padding_x + (i * bar_w), y_offset, bar_w + 1, bar_h))
-
-        # =========================================================
-        # STATUS NUMÉRICO
-        # =========================================================
-        painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
-        is_critical = self.sem_loss > 0.40
-        status_color = QColor("#ff7b72") if is_critical else QColor("#3fb950")
-        
-        status_text = f"DISTÂNCIA SEMÂNTICA: {self.sem_loss:.0%}"
-        text_width = painter.fontMetrics().horizontalAdvance(status_text)
-        painter.setPen(status_color)
-        painter.drawText(int(w - padding_x - text_width), int(total_used_y + 10), status_text)
+        telemetry_y = top + content_height + 5
+        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        colors = (QColor("#f5c518"), QColor("#a6a6a6"), QColor("#ff7878"))
+        for index, line in enumerate(self._telemetry_lines()):
+            painter.setPen(colors[index])
+            painter.drawText(
+                padding,
+                int(telemetry_y + 16 + index * 16),
+                self._elide(painter, line, width - padding * 2),
+            )
 
         painter.end()
