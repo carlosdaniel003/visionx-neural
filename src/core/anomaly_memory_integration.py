@@ -23,57 +23,67 @@ def _focus_box(aoi_epicenters, analysis: dict, detail: dict):
 
 
 def _physical_inputs(detail: dict, category: str):
-    adhesive_active = bool(detail.get("shift_active", False))
-    adhesive_score = float(detail.get("adhesive_score", 0.0))
-    adhesive_tolerance = float(detail.get("adhesive_tolerance", 0.32))
-    adhesive_defect = bool(
-        detail.get(
-            "adhesive_is_defect",
-            adhesive_active and adhesive_score > adhesive_tolerance,
+    shift = None
+    if "shift_active" in detail or "adhesive_score" in detail:
+        adhesive_active = bool(detail.get("shift_active", False))
+        adhesive_score = float(detail.get("adhesive_score", 0.0))
+        adhesive_tolerance = float(detail.get("adhesive_tolerance", 0.32))
+        adhesive_defect = bool(
+            detail.get(
+                "adhesive_is_defect",
+                adhesive_active and adhesive_score > adhesive_tolerance,
+            )
         )
-    )
-    shift = {
-        "shift_active": adhesive_active,
-        "adhesive_score": adhesive_score,
-        "adhesive_tolerance": adhesive_tolerance,
-        "adhesive_is_defect": adhesive_defect,
-        "is_defect": adhesive_defect,
-        "adhesive_reason": detail.get("adhesive_reason", ""),
-        "reason": detail.get("adhesive_reason", ""),
-    }
+        shift = {
+            "shift_active": adhesive_active,
+            "adhesive_score": adhesive_score,
+            "adhesive_tolerance": adhesive_tolerance,
+            "adhesive_is_defect": adhesive_defect,
+            "is_defect": adhesive_defect,
+            "adhesive_reason": detail.get("adhesive_reason", ""),
+            "reason": detail.get("adhesive_reason", ""),
+        }
 
-    structural_error = float(detail.get("silk_error_pct", 0.0))
-    structural_tolerance = 0.15 if "SHIFT" in str(category).upper() else 0.08
-    silk = {
-        "silk_error_pct": structural_error,
-        "tolerance": structural_tolerance,
-        "is_defect": structural_error > structural_tolerance,
-        "reason": (
-            f"Divergência estrutural {structural_error:.0%}"
-            if structural_error > 0
-            else ""
-        ),
-    }
+    silk = None
+    if "silk_error_pct" in detail:
+        structural_error = float(detail.get("silk_error_pct", 0.0))
+        structural_tolerance = (
+            0.15 if "SHIFT" in str(category).upper() else 0.08
+        )
+        silk = {
+            "silk_error_pct": structural_error,
+            "tolerance": structural_tolerance,
+            "is_defect": structural_error > structural_tolerance,
+            "reason": (
+                f"Divergência estrutural {structural_error:.0%}"
+                if structural_error > 0
+                else ""
+            ),
+        }
 
-    semantic_score = float(detail.get("semantic_loss", 0.0))
-    semantic = {
-        "semantic_loss": semantic_score,
-        "is_defect": semantic_score > 0.45,
-        "reason": detail.get(
-            "semantic_reason",
-            f"Evidência semântica {semantic_score:.0%}",
-        ),
-    }
+    semantic = None
+    if "semantic_loss" in detail:
+        semantic_score = float(detail.get("semantic_loss", 0.0))
+        semantic = {
+            "semantic_loss": semantic_score,
+            "is_defect": semantic_score > 0.45,
+            "reason": detail.get(
+                "semantic_reason",
+                f"Evidência semântica {semantic_score:.0%}",
+            ),
+        }
 
-    local_score = float(detail.get("local_score", 0.0))
-    context_score = float(detail.get("ctx_score", 0.0))
-    ssim = {
-        "local_score": local_score,
-        "ctx_score": context_score,
-        "decision_threshold": float(detail.get("decision_threshold", 0.45)),
-        "ssim": float(detail.get("ssim", 1.0)),
-        "pct_changed": float(detail.get("pct_changed", 0.0)),
-    }
+    ssim = None
+    if "local_score" in detail or "ssim" in detail:
+        ssim = {
+            "local_score": float(detail.get("local_score", 0.0)),
+            "ctx_score": float(detail.get("ctx_score", 0.0)),
+            "decision_threshold": float(
+                detail.get("decision_threshold", 0.45)
+            ),
+            "ssim": float(detail.get("ssim", 1.0)),
+            "pct_changed": float(detail.get("pct_changed", 0.0)),
+        }
     return shift, silk, semantic, ssim
 
 
@@ -96,7 +106,13 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
         category = str((aoi_info or {}).get("category", "Unknown"))
         had_route = category in self.routing_table
         original_route = list(self.routing_table.get(category, []))
-        base_route = original_route or ["shift", "silk", "ssim", "semantic", "knn"]
+        base_route = original_route or [
+            "shift",
+            "silk",
+            "ssim",
+            "semantic",
+            "knn",
+        ]
         self.routing_table[category] = [
             engine for engine in base_route if engine != "knn"
         ]
