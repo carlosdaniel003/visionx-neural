@@ -33,8 +33,14 @@ def _render_panel(panel, analysis: dict | None) -> None:
     primary, role = memory_summary(trace)
     detail = (analysis or {}).get("detail", {})
     best_label = str(detail.get("best_match_label", "") or "").upper()
+    memory_mode = str(detail.get("memory_mode", "none")).lower()
+    memory_scope = str(detail.get("memory_scope", "none")).lower()
+    if memory_mode == "anomaly":
+        primary += f" • assinatura de anomalia • escopo {memory_scope}"
+    elif memory_mode == "legacy_image":
+        primary += " • imagem completa legada"
     if best_label in {"OK", "NG"}:
-        primary += f" • melhor vizinho {best_label}"
+        primary += f" • melhor vizinho de anomalia {best_label}"
     panel.lbl_db_info.setText(primary)
     panel.lbl_memory_role.setText(role)
 
@@ -46,7 +52,11 @@ def _render_panel(panel, analysis: dict | None) -> None:
     )
 
     rule = str(trace.get("fusion_rule", "physical_only"))
-    role_color = "#ff6262" if rule in {"memory_veto", "memory_override"} else "#f5c518"
+    role_color = (
+        "#ff6262"
+        if rule in {"memory_veto", "memory_override"}
+        else "#f5c518"
+    )
     panel.lbl_memory_role.setStyleSheet(
         f"color: {role_color}; font-size: 11px; font-weight: 800; "
         "border: 1px solid #3a3a3a; border-radius: 5px; "
@@ -78,7 +88,9 @@ def install_decision_panel(panel) -> None:
         QSizePolicy.Policy.Preferred,
     )
 
-    panel.lbl_decision_summary = QLabel("Aguardando rastreamento da decisão.")
+    panel.lbl_decision_summary = QLabel(
+        "Aguardando rastreamento da decisão."
+    )
     panel.lbl_decision_summary.setObjectName("decisionSummary")
     panel.lbl_decision_summary.setWordWrap(True)
     panel.lbl_decision_summary.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -112,17 +124,20 @@ def install_decision_panel(panel) -> None:
         QSizePolicy.Policy.Expanding,
         QSizePolicy.Policy.Expanding,
     )
-    influence_layout.addWidget(panel.frame_decision_influence, stretch=1)
+    influence_layout.addWidget(
+        panel.frame_decision_influence,
+        stretch=1,
+    )
 
     memory_card, memory_layout = builder._create_footer_card(
-        "MEMÓRIA LOCAL • KNN"
+        "MEMÓRIA DE ANOMALIAS • KNN"
     )
     panel.lbl_memory_role = QLabel("SEM MEMÓRIA")
     panel.lbl_memory_role.setAlignment(Qt.AlignmentFlag.AlignCenter)
     panel.lbl_memory_role.setObjectName("memoryRole")
     panel.lbl_db_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
     panel.lbl_db_info.setWordWrap(True)
-    panel.frame_knn.setMinimumHeight(138)
+    panel.frame_knn.setMinimumHeight(145)
     panel.frame_knn.setSizePolicy(
         QSizePolicy.Policy.Expanding,
         QSizePolicy.Policy.Expanding,
@@ -139,7 +154,11 @@ def install_decision_panel(panel) -> None:
         old_card.hide()
         old_card.deleteLater()
 
-    builder.apply_layout_profile(panel, max(panel.width(), 1), force=True)
+    builder.apply_layout_profile(
+        panel,
+        max(panel.width(), 1),
+        force=True,
+    )
 
     original_reference_update = panel._update_reference_panel
     original_reset = panel._reset_confidence_panel
@@ -152,11 +171,21 @@ def install_decision_panel(panel) -> None:
     def wrapped_reset(self):
         result = original_reset()
         self.frame_decision_influence.update_data({})
-        self.lbl_decision_summary.setText("Aguardando rastreamento da decisão.")
-        self.lbl_decision_rule.setText("Sem regra de fusão disponível.")
+        self.lbl_decision_summary.setText(
+            "Aguardando rastreamento da decisão."
+        )
+        self.lbl_decision_rule.setText(
+            "Sem regra de fusão disponível."
+        )
         self.lbl_memory_role.setText("SEM MEMÓRIA")
         return result
 
-    panel._update_reference_panel = MethodType(wrapped_reference_update, panel)
-    panel._reset_confidence_panel = MethodType(wrapped_reset, panel)
+    panel._update_reference_panel = MethodType(
+        wrapped_reference_update,
+        panel,
+    )
+    panel._reset_confidence_panel = MethodType(
+        wrapped_reset,
+        panel,
+    )
     panel._decision_panel_installed = True
