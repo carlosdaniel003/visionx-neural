@@ -7,7 +7,10 @@ import sys
 
 from PyQt6.QtWidgets import QApplication
 
-from src.core.experts.semantic_calibration import install_semantic_calibration
+from src.core.experts.semantic_calibration import (
+    install_semantic_calibration,
+    install_semantic_widget_calibration,
+)
 from src.core.experts.semantic_expert import SemanticExpert
 from src.ui.control_panel import ControlPanel
 from src.ui.decision_panel import install_decision_panel
@@ -17,6 +20,7 @@ from src.ui.operational_controls import (
     install_operational_controls,
 )
 from src.ui.test_mode_dataset_controls import install_test_mode_dataset_controls
+from src.ui.widgets.semantic_dna import SemanticDNAWidget
 
 
 def main():
@@ -25,6 +29,7 @@ def main():
     # Os hooks precisam ser instalados antes de o controller conectar os sinais.
     install_iconography_hooks(ControlPanel, OperationalControlsPresenter)
     install_semantic_calibration(SemanticExpert)
+    install_semantic_widget_calibration(SemanticDNAWidget)
 
     panel = ControlPanel()
     install_decision_panel(panel)
