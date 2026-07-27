@@ -1,143 +1,298 @@
-# src/ui/widgets/shift_debugger.py
-import math
+"""Debugger visual dedicado ao fluxo, expansão e vazamento de adesivo."""
+
+from __future__ import annotations
+
+import cv2
+import numpy as np
+from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtGui import QColor, QFont, QImage, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont
-from PyQt6.QtCore import Qt, QPointF
+
 
 class ShiftDebuggerWidget(QWidget):
+    """Mantém o nome histórico do widget, mas exibe telemetria de adesivo."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(150)
-        self.setMinimumWidth(150)
-        
+        self.setMinimumHeight(320)
+        self.setMinimumWidth(600)
+
         self.is_active = False
+        self.is_defect = False
+        self.reason = ""
+        self.adhesive_score = 0.0
+        self.tolerance = 0.32
+        self.excess_coverage = 0.0
+        self.padding_overlap = 0.0
+        self.area_growth_ratio = 0.0
+        self.spread_growth_ratio = 0.0
+        self.lower_leakage_ratio = 0.0
+        self.reference_area_pct = 0.0
+        self.test_area_pct = 0.0
         self.dx = 0.0
         self.dy = 0.0
         self.shift_pixels = 0.0
         self.shift_pct = 0.0
-        self.tolerance = 0.08
-        self.is_defect = False
+        self.direction = "ESTÁVEL"
+        self.alignment_score = 0.0
+        self.alignment_shift = (0.0, 0.0)
+        self.roi_width = 0
+        self.roi_height = 0
+        self.reference_view = None
+        self.test_view = None
+        self.flow_view = None
 
     def update_data(self, detail: dict):
-        """ Recebe os detalhes da análise do ShiftExpert """
-        # Verifica se o motor de Shift rodou nesta peça
-        if not detail or "shift_pct" not in detail:
+        if (
+            not detail
+            or detail.get("comparison_mode") != "adhesive_flow"
+            or not detail.get("shift_active", False)
+        ):
             self.is_active = False
             self.update()
             return
-            
+
         self.is_active = True
-        self.dx = detail.get("dx", 0.0)
-        self.dy = detail.get("dy", 0.0)
-        self.shift_pixels = detail.get("shift_pixels", 0.0)
-        self.shift_pct = detail.get("shift_pct", 0.0)
-        self.tolerance = detail.get("tolerance", 0.08)
-        self.is_defect = detail.get("is_defect", False)
-        
+        self.is_defect = bool(detail.get("adhesive_is_defect", False))
+        self.reason = str(detail.get("adhesive_reason", ""))
+        self.adhesive_score = float(detail.get("adhesive_score", 0.0))
+        self.tolerance = float(detail.get("adhesive_tolerance", 0.32))
+        self.excess_coverage = float(detail.get("excess_coverage", 0.0))
+        self.padding_overlap = float(detail.get("padding_overlap", 0.0))
+        self.area_growth_ratio = float(detail.get("area_growth_ratio", 0.0))
+        self.spread_growth_ratio = float(detail.get("spread_growth_ratio", 0.0))
+        self.lower_leakage_ratio = float(detail.get("lower_leakage_ratio", 0.0))
+        self.reference_area_pct = float(detail.get("reference_area_pct", 0.0))
+        self.test_area_pct = float(detail.get("test_area_pct", 0.0))
+        self.dx = float(detail.get("adhesive_dx", 0.0))
+        self.dy = float(detail.get("adhesive_dy", 0.0))
+        self.shift_pixels = float(detail.get("adhesive_shift_pixels", 0.0))
+        self.shift_pct = float(detail.get("adhesive_shift_pct", 0.0))
+        self.direction = str(detail.get("adhesive_direction", "ESTÁVEL"))
+        self.alignment_score = float(detail.get("adhesive_alignment_score", 0.0))
+        self.alignment_shift = tuple(
+            detail.get("adhesive_alignment_shift", (0.0, 0.0))
+        )
+        self.roi_width = int(detail.get("roi_width", 0) or 0)
+        self.roi_height = int(detail.get("roi_height", 0) or 0)
+
+        self.reference_view = self._copy_image(detail.get("reference_view"))
+        self.test_view = self._copy_image(detail.get("test_view"))
+        self.flow_view = self._copy_image(detail.get("flow_view"))
         self.update()
+
+    @staticmethod
+    def _copy_image(value):
+        if isinstance(value, np.ndarray) and value.size > 0:
+            return value.copy()
+        return None
+
+    @staticmethod
+    def _qimage_from_bgr(image_bgr: np.ndarray) -> QImage:
+        contiguous = np.ascontiguousarray(image_bgr)
+        rgb = cv2.cvtColor(contiguous, cv2.COLOR_BGR2RGB)
+        height, width = rgb.shape[:2]
+        return QImage(
+            rgb.data,
+            width,
+            height,
+            width * 3,
+            QImage.Format.Format_RGB888,
+        ).copy()
+
+    def _draw_image(
+        self,
+        painter: QPainter,
+        image_bgr: np.ndarray | None,
+        rect: QRectF,
+        title: str,
+        title_color: QColor,
+    ) -> None:
+        painter.setPen(QPen(QColor("#343434"), 1))
+        painter.setBrush(QColor("#070707"))
+        painter.drawRect(rect)
+
+        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        painter.setPen(title_color)
+        painter.drawText(
+            QRectF(rect.x(), rect.y() - 14, rect.width(), 12),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            title,
+        )
+
+        if image_bgr is None or image_bgr.size == 0:
+            painter.setPen(QColor("#555555"))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "SEM DADOS")
+            return
+
+        qimage = self._qimage_from_bgr(image_bgr)
+        scaled = qimage.scaled(
+            max(1, int(rect.width() - 4)),
+            max(1, int(rect.height() - 4)),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        image_x = rect.x() + (rect.width() - scaled.width()) / 2
+        image_y = rect.y() + (rect.height() - scaled.height()) / 2
+        painter.drawImage(int(image_x), int(image_y), scaled)
+
+    @staticmethod
+    def _elide(painter: QPainter, text: str, width: int) -> str:
+        return painter.fontMetrics().elidedText(
+            text,
+            Qt.TextElideMode.ElideRight,
+            max(20, width),
+        )
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        w = self.width()
-        h = self.height()
-        
-        # Fundo Escuro
-        painter.fillRect(0, 0, w, h, QColor("#1a1a1a"))
-        
-        # Título
-        painter.setPen(QColor("#dddddd"))
-        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
-        painter.drawText(5, 15, "Telemetria de Deslocamento (Shift)")
+
+        width = self.width()
+        height = self.height()
+        painter.fillRect(0, 0, width, height, QColor("#101010"))
+
+        painter.setPen(QColor("#f5f5f5"))
+        painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
+        painter.drawText(8, 18, "FLUXO DE ADESIVO • EXPANSÃO, PADDING E VAZAMENTO")
 
         if not self.is_active:
             painter.setPen(QColor("#555555"))
-            font = QFont("Consolas", 10, QFont.Weight.Bold)
-            painter.setFont(font)
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Motor Shift Inativo (MoE)")
+            painter.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
+            painter.drawText(
+                self.rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                "Motor de adesivo inativo para esta categoria",
+            )
             painter.end()
             return
-            
-        cx = w / 2.0
-        cy = (h / 2.0) + 10
 
-        # --- 1. Desenha a Grade / Mira Radar ---
-        painter.setPen(QPen(QColor("#333333"), 1, Qt.PenStyle.DashLine))
-        painter.drawLine(QPointF(0, cy), QPointF(w, cy)) # Eixo X
-        painter.drawLine(QPointF(cx, 0), QPointF(cx, h)) # Eixo Y
-        
-        # Desenha o limite de tolerância (Círculo)
-        max_visual_radius = min(cx, cy) - 20
-        # O raio da tolerância é proporcional a tolerancia máxima (ex: 8% de 15%)
-        tol_radius = (self.tolerance / 0.15) * max_visual_radius
-        
-        painter.setPen(QPen(QColor("#555555"), 1, Qt.PenStyle.SolidLine))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(QPointF(cx, cy), tol_radius, tol_radius)
+        padding = 10
+        spacing = 7
+        top = 42
+        footer_height = 94
+        available_width = width - padding * 2 - spacing * 2
+        box_width = available_width / 3.0
+        box_height = max(40.0, height - top - footer_height)
 
-        # Identifica se é uma anomalia estrutural gigante (Passo 0 do Expert)
-        is_macro_anomaly = self.is_defect and self.dx == 0.0 and self.dy == 0.0 and self.shift_pct > 0.15
+        reference_rect = QRectF(padding, top, box_width, box_height)
+        test_rect = QRectF(
+            padding + box_width + spacing,
+            top,
+            box_width,
+            box_height,
+        )
+        flow_rect = QRectF(
+            padding + box_width * 2 + spacing * 2,
+            top,
+            box_width,
+            box_height,
+        )
 
-        vec_color = QColor("#ff5555") if self.is_defect else QColor("#55ff55")
+        roi_label = ""
+        if self.roi_width > 0 and self.roi_height > 0:
+            roi_label = f" • {self.roi_width}×{self.roi_height}px"
 
-        if is_macro_anomaly:
-            # --- 2A. Desenha o Alerta de Anomalia Estrutural (Gross Error) ---
-            # Escala visual dinâmica: 50% de anomalia já preenche o radar inteiro
-            escala_visual = min(1.0, self.shift_pct / 0.50)
-            anomaly_radius = max_visual_radius * escala_visual
-            
-            painter.setPen(QPen(QColor("#ff5555"), 2, Qt.PenStyle.DashLine))
-            painter.setBrush(QColor(255, 85, 85, 60)) # Fundo vermelho translúcido
-            painter.drawEllipse(QPointF(cx, cy), anomaly_radius, anomaly_radius)
-            
-            painter.setPen(QColor("#ffffff"))
-            painter.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
-            text_rect = painter.boundingRect(0, 0, w, int(h/2), Qt.AlignmentFlag.AlignCenter, "ALERTA MACRO:\nDano\nEstrutural")
-            painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "ALERTA MACRO:\nDano\nEstrutural")
-            
-        else:
-            # --- 2B. Desenha o Vetor de Deslocamento Padrão ---
-            # Amplifica o dx e dy visualmente (15% = borda da tela)
-            visual_dx = (self.dx / 15.0) * max_visual_radius if self.shift_pct > 0 else 0
-            visual_dy = (self.dy / 15.0) * max_visual_radius if self.shift_pct > 0 else 0
-            
-            target_x = cx + visual_dx
-            target_y = cy + visual_dy
-            
-            # Linha do vetor
-            painter.setPen(QPen(vec_color, 2, Qt.PenStyle.SolidLine))
-            painter.drawLine(QPointF(cx, cy), QPointF(target_x, target_y))
-            
-            # Ponto de impacto
-            painter.setBrush(vec_color)
-            painter.drawEllipse(QPointF(target_x, target_y), 4, 4)
-            
-            # Ponto central (Gabarito)
-            painter.setBrush(QColor("#ffffff"))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPointF(cx, cy), 2, 2)
+        self._draw_image(
+            painter,
+            self.reference_view,
+            reference_rect,
+            "1. GABARITO • MASSA ESPERADA" + roi_label,
+            QColor("#4ade80"),
+        )
+        self._draw_image(
+            painter,
+            self.test_view,
+            test_rect,
+            "2. TESTE • MASSA ENCONTRADA" + roi_label,
+            QColor("#46d9ff"),
+        )
+        self._draw_image(
+            painter,
+            self.flow_view,
+            flow_rect,
+            "3. RECONSTRUÇÃO • EXCESSO E FLUXO",
+            QColor("#f5c518"),
+        )
 
-        # --- 3. HUD de Informações ---
-        painter.setFont(QFont("Consolas", 7))
-        
-        # Info Tolerância
-        painter.setPen(QColor("#888888"))
-        painter.drawText(5, h - 20, f"Max Tol: {self.tolerance:.1%}")
-        
-        if is_macro_anomaly:
-            # Info Status Atual (Macro)
-            painter.setPen(vec_color)
-            painter.drawText(5, h - 5, f"Área Alterada: {self.shift_pct:.1%}")
-        else:
-            # Info Status Atual (Vetor)
-            painter.setPen(vec_color)
-            painter.drawText(5, h - 5, f"Shift: {self.shift_pct:.1%} ({self.shift_pixels}px)")
-            
-            # Info Eixos
-            painter.setPen(QColor("#aaaaaa"))
-            axes_text = f"X:{self.dx:.1f} Y:{self.dy:.1f}"
-            axes_width = painter.fontMetrics().horizontalAdvance(axes_text)
-            painter.drawText(int(w - axes_width - 5), int(h - 5), axes_text)
+        gauge_y = height - 78
+        gauge_x = width * 0.10
+        gauge_width = width * 0.80
+        gauge_height = 8
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#303030"))
+        painter.drawRoundedRect(
+            QRectF(gauge_x, gauge_y, gauge_width, gauge_height),
+            4,
+            4,
+        )
 
+        gauge_max = max(0.65, self.tolerance * 1.8, self.adhesive_score * 1.08)
+        gauge_max = min(1.0, gauge_max)
+        fill_ratio = min(1.0, self.adhesive_score / max(gauge_max, 1e-6))
+        status_color = QColor("#ff6262") if self.is_defect else QColor("#4ade80")
+        painter.setBrush(status_color)
+        painter.drawRoundedRect(
+            QRectF(gauge_x, gauge_y, gauge_width * fill_ratio, gauge_height),
+            4,
+            4,
+        )
+
+        cutoff_x = gauge_x + gauge_width * min(
+            1.0,
+            self.tolerance / max(gauge_max, 1e-6),
+        )
+        painter.setPen(QPen(QColor("#f5c518"), 2))
+        painter.drawLine(
+            int(cutoff_x),
+            int(gauge_y - 3),
+            int(cutoff_x),
+            int(gauge_y + gauge_height + 3),
+        )
+
+        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        painter.setPen(QColor("#a6a6a6"))
+        painter.drawText(
+            padding,
+            height - 55,
+            (
+                "Legenda: VERDE = adesivo estável • VERMELHO = excesso • "
+                "AMARELO = excesso sobre padding • seta = fluxo da massa"
+            ),
+        )
+
+        painter.setPen(status_color)
+        metrics = (
+            f"Score {self.adhesive_score:.0%}/{self.tolerance:.0%} • "
+            f"Excesso {self.excess_coverage:.1%} • "
+            f"Padding {self.padding_overlap:.1%} • "
+            f"Área {self.reference_area_pct:.1%}→{self.test_area_pct:.1%} • "
+            f"Expansão {self.area_growth_ratio:.0%} • "
+            f"Espalhamento {self.spread_growth_ratio:.0%}"
+        )
+        painter.drawText(
+            padding,
+            height - 37,
+            self._elide(painter, metrics, width - padding * 2),
+        )
+
+        painter.setPen(QColor("#f5c518"))
+        flow = (
+            f"Fluxo {self.direction} • centro X:{self.dx:+.1f}px Y:{self.dy:+.1f}px "
+            f"({self.shift_pixels:.1f}px) • vazamento inferior "
+            f"{self.lower_leakage_ratio:.0%} • alinhamento "
+            f"{self.alignment_score:.2f}"
+        )
+        painter.drawText(
+            padding,
+            height - 20,
+            self._elide(painter, flow, width - padding * 2),
+        )
+
+        painter.setPen(QColor("#d0d0d0"))
+        painter.drawText(
+            padding,
+            height - 4,
+            self._elide(painter, self.reason, width - padding * 2),
+        )
         painter.end()
