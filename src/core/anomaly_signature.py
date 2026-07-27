@@ -30,9 +30,9 @@ RANGES = {
 }
 
 GROUP_WEIGHTS = {
-    "semantic_delta": 0.25,
-    "spatial_grid": 0.25,
-    "anomaly_map": 0.35,
+    "semantic_delta": 0.15,
+    "spatial_grid": 0.15,
+    "anomaly_map": 0.55,
     "physics": 0.15,
 }
 
@@ -62,9 +62,7 @@ def _normalize_map(value: Any) -> np.ndarray | None:
         return None
     array = value.astype(np.float32)
     if array.ndim == 3:
-        array = cv2.cvtColor(array.astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(
-            np.float32
-        )
+        array = cv2.cvtColor(array.astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)
     if array.ndim != 2:
         return None
     maximum = float(np.max(array))
@@ -91,24 +89,15 @@ def _extract_roi_pair(
     ref = reference.copy()
     tst = test.copy()
     if ref.shape != tst.shape:
-        tst = cv2.resize(
-            tst,
-            (ref.shape[1], ref.shape[0]),
-            interpolation=cv2.INTER_AREA,
-        )
+        tst = cv2.resize(tst, (ref.shape[1], ref.shape[0]), interpolation=cv2.INTER_AREA)
 
     if focus_box and len(focus_box) >= 4:
-        x, y, width, height = (
-            int(round(float(value))) for value in focus_box[:4]
-        )
+        x, y, width, height = (int(round(float(v))) for v in focus_box[:4])
         x1, y1 = max(0, x), max(0, y)
         x2 = min(ref.shape[1], x1 + max(1, width))
         y2 = min(ref.shape[0], y1 + max(1, height))
         if x2 > x1 and y2 > y1:
-            return (
-                ref[y1:y2, x1:x2].copy(),
-                tst[y1:y2, x1:x2].copy(),
-            )
+            return ref[y1:y2, x1:x2].copy(), tst[y1:y2, x1:x2].copy()
     return ref, tst
 
 
@@ -126,11 +115,7 @@ def _pixel_difference_map(
     delta = np.linalg.norm(test_lab - ref_lab, axis=2) / 180.0
     delta = np.clip((delta - 0.025) / 0.60, 0.0, 1.0)
     delta = cv2.GaussianBlur(delta, (3, 3), 0)
-    return cv2.resize(
-        delta,
-        (MAP_SIDE, MAP_SIDE),
-        interpolation=cv2.INTER_AREA,
-    )
+    return cv2.resize(delta, (MAP_SIDE, MAP_SIDE), interpolation=cv2.INTER_AREA)
 
 
 def _combined_anomaly_map(
@@ -156,23 +141,17 @@ def _combined_anomaly_map(
         if normalized is not None:
             layers.append(
                 (
-                    cv2.resize(
-                        normalized,
-                        (MAP_SIDE, MAP_SIDE),
-                        interpolation=cv2.INTER_AREA,
-                    ),
+                    cv2.resize(normalized, (MAP_SIDE, MAP_SIDE), interpolation=cv2.INTER_AREA),
                     weight,
                 )
             )
 
-    layers.append((_pixel_difference_map(reference, test, focus_box), 0.60))
+    pixel_map = _pixel_difference_map(reference, test, focus_box)
+    layers.append((pixel_map, 0.60))
 
     combined = np.zeros((MAP_SIDE, MAP_SIDE), dtype=np.float32)
     for layer, weight in layers:
-        combined = np.maximum(
-            combined,
-            np.clip(layer * weight, 0.0, 1.0),
-        )
+        combined = np.maximum(combined, np.clip(layer * weight, 0.0, 1.0))
 
     peak = float(np.max(combined))
     if peak > 1e-8:
@@ -181,76 +160,29 @@ def _combined_anomaly_map(
 
 
 def _physics_vector(detail: dict) -> tuple[np.ndarray, dict]:
-    roi_width = max(
-        1.0,
-        _safe_float(
-            detail.get("adhesive_roi_width", detail.get("roi_width", 1))
-        ),
-    )
-    roi_height = max(
-        1.0,
-        _safe_float(
-            detail.get("adhesive_roi_height", detail.get("roi_height", 1))
-        ),
-    )
+    roi_width = max(1.0, _safe_float(detail.get("adhesive_roi_width", detail.get("roi_width", 1))))
+    roi_height = max(1.0, _safe_float(detail.get("adhesive_roi_height", detail.get("roi_height", 1))))
     dx = _safe_float(detail.get("adhesive_dx", detail.get("dx", 0.0)))
     dy = _safe_float(detail.get("adhesive_dy", detail.get("dy", 0.0)))
 
     values = np.asarray(
         [
             np.clip(_safe_float(detail.get("adhesive_score", 0.0)), 0.0, 1.0),
-            np.clip(
-                _safe_float(detail.get("excess_coverage", 0.0)) / 0.10,
-                0.0,
-                1.0,
-            ),
-            np.clip(
-                _safe_float(detail.get("padding_overlap", 0.0)) / 0.045,
-                0.0,
-                1.0,
-            ),
-            np.clip(
-                _safe_float(detail.get("area_growth_ratio", 0.0)) / 3.0,
-                0.0,
-                1.0,
-            ),
-            np.clip(
-                _safe_float(detail.get("spread_growth_ratio", 0.0)) / 2.0,
-                0.0,
-                1.0,
-            ),
-            np.clip(
-                _safe_float(detail.get("lower_leakage_ratio", 0.0)),
-                0.0,
-                1.0,
-            ),
+            np.clip(_safe_float(detail.get("excess_coverage", 0.0)) / 0.10, 0.0, 1.0),
+            np.clip(_safe_float(detail.get("padding_overlap", 0.0)) / 0.045, 0.0, 1.0),
+            np.clip(_safe_float(detail.get("area_growth_ratio", 0.0)) / 3.0, 0.0, 1.0),
+            np.clip(_safe_float(detail.get("spread_growth_ratio", 0.0)) / 2.0, 0.0, 1.0),
+            np.clip(_safe_float(detail.get("lower_leakage_ratio", 0.0)), 0.0, 1.0),
             np.clip(dx / roi_width * 0.5 + 0.5, 0.0, 1.0),
             np.clip(dy / roi_height * 0.5 + 0.5, 0.0, 1.0),
-            np.clip(
-                _safe_float(
-                    detail.get(
-                        "silk_error_pct",
-                        detail.get("pct_changed", 0.0),
-                    )
-                ),
-                0.0,
-                1.0,
-            ),
+            np.clip(_safe_float(detail.get("silk_error_pct", detail.get("pct_changed", 0.0))), 0.0, 1.0),
             np.clip(_safe_float(detail.get("extra_pct", 0.0)), 0.0, 1.0),
             np.clip(_safe_float(detail.get("missing_pct", 0.0)), 0.0, 1.0),
             np.clip(_safe_float(detail.get("local_score", 0.0)), 0.0, 1.0),
             np.clip(_safe_float(detail.get("ctx_score", 0.0)), 0.0, 1.0),
             np.clip(_safe_float(detail.get("semantic_loss", 0.0)), 0.0, 1.0),
-            np.clip(
-                _safe_float(detail.get("semantic_local_evidence", 0.0)),
-                0.0,
-                1.0,
-            ),
-            np.clip(
-                _safe_float(detail.get("hist_corr", 1.0)) * -0.5 + 0.5,
-                0.0,
-                1.0,
-            ),
+            np.clip(_safe_float(detail.get("semantic_local_evidence", 0.0)), 0.0, 1.0),
+            np.clip(_safe_float(detail.get("hist_corr", 1.0)) * -0.5 + 0.5, 0.0, 1.0),
         ],
         dtype=np.float32,
     )
@@ -272,10 +204,7 @@ def _physics_vector(detail: dict) -> tuple[np.ndarray, dict]:
         "semantic_local",
         "histogram_inversion",
     )
-    return values, {
-        name: float(value)
-        for name, value in zip(names, values)
-    }
+    return values, {name: float(value) for name, value in zip(names, values)}
 
 
 def build_anomaly_signature(
@@ -285,7 +214,7 @@ def build_anomaly_signature(
     aoi_info: dict | None = None,
     focus_box: tuple[int, int, int, int] | list[int] | None = None,
 ) -> dict:
-    """Cria a memória compacta da anomalia, não da peça completa."""
+    """Cria a memória compacta da anomalia, não da aparência completa da peça."""
     payload = detail if isinstance(detail, dict) else {}
     context = aoi_info if isinstance(aoi_info, dict) else {}
 
@@ -301,21 +230,11 @@ def build_anomaly_signature(
         ),
         SPATIAL_SIZE,
     )
-    anomaly_map = _combined_anomaly_map(
-        payload,
-        reference,
-        test,
-        focus_box,
-    )
+    anomaly_map = _combined_anomaly_map(payload, reference, test, focus_box)
     physics, physics_named = _physics_vector(payload)
 
     vector = np.concatenate(
-        [
-            semantic_delta,
-            spatial,
-            anomaly_map.reshape(-1),
-            physics,
-        ]
+        [semantic_delta, spatial, anomaly_map.reshape(-1), physics]
     ).astype(np.float32)
 
     weights = anomaly_map.astype(np.float64)
@@ -332,10 +251,7 @@ def build_anomaly_signature(
         "schema": SCHEMA_VERSION,
         "vector_size": VECTOR_SIZE,
         "vector": vector.tolist(),
-        "ranges": {
-            name: [start, end]
-            for name, (start, end) in RANGES.items()
-        },
+        "ranges": {name: [start, end] for name, (start, end) in RANGES.items()},
         "group_weights": dict(GROUP_WEIGHTS),
         "semantic_delta": semantic_delta.tolist(),
         "spatial_grid_4x4": spatial.reshape(4, 4).tolist(),
@@ -369,29 +285,37 @@ def _group_similarity(query: np.ndarray, stored: np.ndarray) -> float:
     cosine = float(np.clip((cosine + 1.0) / 2.0, 0.0, 1.0))
     distance = float(np.mean(np.abs(query - stored)))
     magnitude = float(np.clip(1.0 - distance, 0.0, 1.0))
-    return float(
-        np.clip(cosine * 0.60 + magnitude * 0.40, 0.0, 1.0)
-    )
+    return float(np.clip(cosine * 0.60 + magnitude * 0.40, 0.0, 1.0))
 
 
-def compare_anomaly_signatures(
-    query_signature: dict,
-    stored_signature: dict,
-) -> tuple[float, dict]:
-    """Compara forma, posição e física da anomalia por grupos."""
+def compare_anomaly_signatures(query_signature: dict, stored_signature: dict) -> tuple[float, dict]:
+    """Compara forma, posição e física da anomalia por grupos explicáveis."""
     query = _fixed_vector(query_signature.get("vector", []), VECTOR_SIZE)
     stored = _fixed_vector(stored_signature.get("vector", []), VECTOR_SIZE)
 
     scores = {}
-    total = 0.0
+    active_groups = {}
+    weighted_total = 0.0
+    active_weight = 0.0
     for name, (start, end) in RANGES.items():
-        score = _group_similarity(query[start:end], stored[start:end])
+        query_group = query[start:end]
+        stored_group = stored[start:end]
+        informative = bool(
+            np.linalg.norm(query_group) > 1e-8
+            or np.linalg.norm(stored_group) > 1e-8
+        )
+        score = _group_similarity(query_group, stored_group)
         scores[name] = score
-        total += score * GROUP_WEIGHTS[name]
+        active_groups[name] = informative
+        if informative:
+            weighted_total += score * GROUP_WEIGHTS[name]
+            active_weight += GROUP_WEIGHTS[name]
 
-    return float(np.clip(total, 0.0, 1.0)), {
+    similarity = weighted_total / active_weight if active_weight > 1e-9 else 1.0
+    return float(np.clip(similarity, 0.0, 1.0)), {
         "schema": SCHEMA_VERSION,
         "groups": scores,
+        "active_groups": active_groups,
         "weights": dict(GROUP_WEIGHTS),
     }
 
@@ -399,8 +323,9 @@ def compare_anomaly_signatures(
 def valid_anomaly_signature(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
+    vector = value.get("vector", [])
     try:
-        array = np.asarray(value.get("vector", []), dtype=np.float32).reshape(-1)
+        array = np.asarray(vector, dtype=np.float32).reshape(-1)
     except (TypeError, ValueError):
         return False
     return array.size == VECTOR_SIZE and bool(np.all(np.isfinite(array)))
