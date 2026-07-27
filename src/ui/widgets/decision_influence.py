@@ -12,7 +12,7 @@ from src.ui.decision_model import influence_rows
 class DecisionInfluenceWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(210)
+        self.setMinimumHeight(220)
         self.setMinimumWidth(320)
         self.trace = {}
         self.rows = []
@@ -42,6 +42,40 @@ class DecisionInfluenceWidget(QWidget):
             max(20, width),
         )
 
+    @staticmethod
+    def _status_text(row: dict) -> str:
+        if row["selected"]:
+            return "DOMINANTE"
+        if row.get("participates", False):
+            return "PARTICIPA"
+        if not row["active"]:
+            return "INATIVO"
+        if row["triggered"]:
+            return "EVIDÊNCIA"
+        return "ABAIXO"
+
+    @staticmethod
+    def _row_value_text(row: dict, score: float, threshold: float) -> str:
+        weight = float(row.get("fusion_weight", 0.0))
+        contribution = float(row.get("score_contribution", 0.0))
+        status = DecisionInfluenceWidget._status_text(row)
+
+        if row.get("id") == "knn":
+            effect = float(row.get("effect_vs_physical", 0.0))
+            effect_text = f"{effect * 100:+.0f} pp"
+            return (
+                f"voto {score:.0%} NG • peso {weight:.0%} • "
+                f"efeito {effect_text}"
+            )
+
+        if weight > 0.0:
+            return (
+                f"{score:.0%}/{threshold:.0%} • peso {weight:.0%} • "
+                f"parcela {contribution:.0%}"
+            )
+
+        return f"{score:.0%}/{threshold:.0%} • {status} • peso direto 0%"
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -63,20 +97,20 @@ class DecisionInfluenceWidget(QWidget):
 
         padding = 8
         top = 5
-        footer_height = 42
-        row_area = max(100, height - footer_height - top)
+        footer_height = 48
+        row_area = max(105, height - footer_height - top)
         row_height = row_area / max(len(self.rows), 1)
 
-        label_width = min(165, max(95, int(width * 0.28)))
-        value_width = min(160, max(112, int(width * 0.24)))
+        label_width = min(160, max(92, int(width * 0.25)))
+        value_width = min(245, max(145, int(width * 0.34)))
         bar_x = padding + label_width
-        bar_width = max(45, width - bar_x - value_width - padding)
+        bar_width = max(42, width - bar_x - value_width - padding)
 
         painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
 
         for index, row in enumerate(self.rows):
             y = top + index * row_height
-            center_y = y + row_height * 0.50
+            center_y = y + row_height * 0.46
             color = self._status_color(row)
 
             painter.setPen(color)
@@ -87,7 +121,8 @@ class DecisionInfluenceWidget(QWidget):
                 label,
             )
 
-            bar_h = min(12.0, max(7.0, row_height * 0.30))
+            # Barra principal: evidência do motor ou voto NG do KNN.
+            bar_h = min(11.0, max(7.0, row_height * 0.27))
             bar_y = center_y - bar_h / 2
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor("#2d2d2d"))
@@ -98,12 +133,13 @@ class DecisionInfluenceWidget(QWidget):
             )
 
             score = max(0.0, min(1.0, row["raw_score"]))
-            painter.setBrush(color)
-            painter.drawRoundedRect(
-                QRectF(bar_x, bar_y, bar_width * score, bar_h),
-                3,
-                3,
-            )
+            if score > 0.0:
+                painter.setBrush(color)
+                painter.drawRoundedRect(
+                    QRectF(bar_x, bar_y, bar_width * score, bar_h),
+                    3,
+                    3,
+                )
 
             threshold = max(0.0, min(1.0, row["threshold"]))
             threshold_x = bar_x + bar_width * threshold
@@ -115,19 +151,26 @@ class DecisionInfluenceWidget(QWidget):
                 int(bar_y + bar_h + 2),
             )
 
-            if row["selected"]:
-                status = "DOMINANTE"
-            elif not row["active"]:
-                status = "INATIVO"
-            elif row["triggered"]:
-                status = "ACIMA"
-            else:
-                status = "ABAIXO"
-
-            value_text = (
-                f"{score:.0%}/{threshold:.0%} • {status} • "
-                f"impacto {row['final_influence']:.0%}"
+            # Barra fina amarela: peso efetivo usado na fórmula de fusão.
+            weight = max(0.0, min(1.0, float(row.get("fusion_weight", 0.0))))
+            weight_y = bar_y + bar_h + 3
+            weight_h = 3.0
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor("#232323"))
+            painter.drawRoundedRect(
+                QRectF(bar_x, weight_y, bar_width, weight_h),
+                1.5,
+                1.5,
             )
+            if weight > 0.0:
+                painter.setBrush(QColor("#f5c518"))
+                painter.drawRoundedRect(
+                    QRectF(bar_x, weight_y, bar_width * weight, weight_h),
+                    1.5,
+                    1.5,
+                )
+
+            value_text = self._row_value_text(row, score, threshold)
             painter.setPen(color)
             painter.drawText(
                 QRectF(
@@ -144,28 +187,31 @@ class DecisionInfluenceWidget(QWidget):
         physical = float(self.trace.get("physical_score", 0.0))
         final_score = float(self.trace.get("final_score", 0.0))
         weights = self.trace.get("weights", {})
+        physical_weight = float(weights.get("physical", 1.0))
+        knn_weight = float(weights.get("knn", 0.0))
+        memory = self.trace.get("memory", {})
+        knn_vote = float(memory.get("vote_defect", 0.5))
 
-        footer_y = height - footer_height + 3
-        painter.setPen(QColor("#a6a6a6"))
-        footer_1 = (
-            f"Físico {physical:.0%} • Final {final_score:.0%} • "
-            f"Corte {cutoff:.0%}"
+        footer_y = height - footer_height + 2
+        painter.setPen(QColor("#d0d0d0"))
+        formula = (
+            f"Fusão: físico {physical:.0%}×{physical_weight:.0%} + "
+            f"KNN {knn_vote:.0%}×{knn_weight:.0%} = {final_score:.0%}"
         )
         painter.drawText(
             padding,
-            int(footer_y + 13),
-            self._elide(painter, footer_1, width - padding * 2),
+            int(footer_y + 14),
+            self._elide(painter, formula, width - padding * 2),
         )
 
         painter.setPen(QColor("#f5c518"))
         footer_2 = (
-            f"Regra {self.trace.get('fusion_rule', 'physical_only')} • "
-            f"peso físico {float(weights.get('physical', 1.0)):.0%} • "
-            f"peso KNN {float(weights.get('knn', 0.0)):.0%}"
+            f"Corte {cutoff:.0%} • regra {self.trace.get('fusion_rule', 'physical_only')} • "
+            "barra maior = evidência; barra amarela fina = peso"
         )
         painter.drawText(
             padding,
-            int(footer_y + 30),
+            int(footer_y + 32),
             self._elide(painter, footer_2, width - padding * 2),
         )
         painter.end()
