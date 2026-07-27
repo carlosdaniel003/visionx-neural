@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QApplication
 from src.ui.control_panel import ControlPanel
 from src.ui.decision_panel import install_decision_panel
 from src.ui.test_mode_dataset_controls import install_test_mode_dataset_controls
+from src.ui.operational_controls import install_operational_controls
 
 
 def main():
@@ -16,6 +17,7 @@ def main():
     panel = ControlPanel()
     install_decision_panel(panel)
     install_test_mode_dataset_controls(panel)
+    install_operational_controls(panel)
     panel.show()
 
     sys.exit(app.exec())
