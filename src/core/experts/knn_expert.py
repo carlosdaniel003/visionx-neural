@@ -70,7 +70,7 @@ class KNNExpert:
 
     @staticmethod
     def _weighted_vote(neighbors: list[tuple]) -> float:
-        """Vota pela classe usando distância, sem confundir classe e similaridade."""
+        """Vota pela classe usando a distância, sem confundir classe e similaridade."""
         if not neighbors:
             return 0.5
 
@@ -236,14 +236,8 @@ class KNNExpert:
                 [item for item in ng_records if predicate(item)],
             )
 
-        if target_category and target_part:
-            exact_ok, exact_ng = select(
-                lambda item: item.get("category") == target_category
-                and target_part in item.get("part", "")
-            )
-            if exact_ok or exact_ng:
-                return exact_ok, exact_ng, "categoria+componente"
-
+        # A categoria da anomalia é o filtro principal. O componente não limita
+        # a busca quando já existem memórias da mesma classe de defeito.
         if target_category:
             category_ok, category_ng = select(
                 lambda item: item.get("category") == target_category
