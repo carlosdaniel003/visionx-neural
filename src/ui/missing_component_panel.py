@@ -22,7 +22,7 @@ def install_missing_component_panel(panel) -> None:
             layout.takeAt(layout.count() - 1)
 
     wrapped = panel.ui_builder._wrap_debug_widget(
-        "EXPECTATIVA DA ROI • MOTOR FALTANDO",
+        "EXPECTATIVA DO PATCH • MOTOR FALTANDO",
         panel.frame_missing,
     )
     layout.addWidget(wrapped)
