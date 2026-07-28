@@ -22,16 +22,19 @@ class InvertedFaceUIContractTests(unittest.TestCase):
             source.index("install_decision_panel(panel)"),
         )
 
-    def test_debugger_exposes_three_explainable_views(self):
+    def test_debugger_exposes_witness_views_and_metrics(self):
         source = (
             ROOT / "src" / "ui" / "widgets" / "inverted_face_debugger.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("ASSINATURA DA FACE", source)
-        self.assertIn("ASSINATURA ESPERADA", source)
-        self.assertIn("ASSINATURA OBSERVADA", source)
-        self.assertIn("EVIDÊNCIA DE INVERSÃO", source)
+        self.assertIn("MARCA TESTEMUNHA", source)
+        self.assertIn("MARCA ESPERADA", source)
+        self.assertIn("MARCA OBSERVADA", source)
+        self.assertIn("RETIDA / PERDIDA / NOVA", source)
+        self.assertIn("inverted_witness_retention", source)
+        self.assertIn("inverted_witness_loss", source)
+        self.assertIn("inverted_relocation_similarity", source)
+        self.assertIn("inverted_relocation_dx", source)
         self.assertIn("inverted_feature_loss", source)
-        self.assertIn("inverted_topology_mismatch", source)
         self.assertIn("inverted_orientation_mismatch", source)
         self.assertIn("inverted_best_transform", source)
 
@@ -42,8 +45,9 @@ class InvertedFaceUIContractTests(unittest.TestCase):
         self.assertIn('"inverted_expert.py" in active_engines', source)
         self.assertIn("frame_inverted.setVisible(active)", source)
         self.assertIn("frame_inverted.setVisible(False)", source)
+        self.assertIn("MARCA TESTEMUNHA • MOTOR INVERTIDO", source)
 
-    def test_decision_model_has_inverted_label(self):
+    def test_decision_model_keeps_inverted_engine_label(self):
         source = (
             ROOT / "src" / "ui" / "decision_model.py"
         ).read_text(encoding="utf-8")
