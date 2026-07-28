@@ -18,6 +18,7 @@ from src.services.anomaly_learning import install_anomaly_learning
 from src.ui.control_panel import ControlPanel
 from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
+from src.ui.missing_component_panel import install_missing_component_panel
 from src.ui.operational_controls import (
     OperationalControlsPresenter,
     install_operational_controls,
@@ -37,6 +38,7 @@ def main():
     install_anomaly_learning(ControlPanel)
 
     panel = ControlPanel()
+    install_missing_component_panel(panel)
     install_decision_panel(panel)
     install_test_mode_dataset_controls(panel)
     install_operational_controls(panel)
