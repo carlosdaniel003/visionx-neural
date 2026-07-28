@@ -8,12 +8,14 @@ on:
       - "src/core/experts/inverted_face_expert.py"
       - "src/core/experts/inverted_witness_expert.py"
       - "src/core/inverted_face_integration.py"
+      - "src/core/inverted_signature_extension.py"
       - "src/services/dataset_manager.py"
       - "src/ui/inverted_face_panel.py"
       - "src/ui/widgets/inverted_face_debugger.py"
       - "src/ui/decision_model.py"
       - "main.py"
       - "tests/test_inverted_face_*.py"
+      - "tests/test_inverted_signature_extension.py"
       - ".github/workflows/inverted-face-tests.yml"
   workflow_dispatch:
 
@@ -40,6 +42,7 @@ jobs:
             src/core/experts/inverted_face_expert.py \
             src/core/experts/inverted_witness_expert.py \
             src/core/inverted_face_integration.py \
+            src/core/inverted_signature_extension.py \
             src/services/dataset_manager.py \
             src/ui/inverted_face_panel.py \
             src/ui/widgets/inverted_face_debugger.py
@@ -51,4 +54,5 @@ jobs:
             tests.test_inverted_face_integration \
             tests.test_inverted_face_json \
             tests.test_inverted_face_ui_contract \
+            tests.test_inverted_signature_extension \
             -v
