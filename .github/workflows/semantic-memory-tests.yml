@@ -1,0 +1,49 @@
+name: Semantic ROI and Category Memory Tests
+
+on:
+  push:
+    branches:
+      - central
+    paths:
+      - "src/core/semantic_roi_extension.py"
+      - "src/core/strict_category_memory.py"
+      - "src/core/experts/semantic_expert.py"
+      - "src/core/experts/knn_expert.py"
+      - "src/core/anomaly_memory_integration.py"
+      - "main.py"
+      - "tests/test_semantic_roi_only.py"
+      - "tests/test_strict_category_memory.py"
+      - ".github/workflows/semantic-memory-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy scipy opencv-python-headless
+
+      - name: Compile
+        run: |
+          python -m py_compile \
+            src/core/semantic_roi_extension.py \
+            src/core/strict_category_memory.py \
+            src/core/experts/semantic_expert.py \
+            src/core/experts/knn_expert.py
+
+      - name: Unit tests
+        run: |
+          python -m unittest \
+            tests.test_semantic_roi_only \
+            tests.test_strict_category_memory \
+            -v
