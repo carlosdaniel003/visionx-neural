@@ -6,6 +6,7 @@ from __future__ import annotations
 ENGINE_LABELS = {
     "adhesive": "Fluxo de adesivo",
     "missing": "Presença do componente",
+    "inverted": "Assinatura da face",
     "structural": "Comparador estrutural",
     "semantic": "Debug semântico",
     "texture": "Laboratório de textura",
