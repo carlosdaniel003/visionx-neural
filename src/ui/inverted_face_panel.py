@@ -21,7 +21,7 @@ def install_inverted_face_panel(panel) -> None:
             layout.takeAt(layout.count() - 1)
 
     wrapped = panel.ui_builder._wrap_debug_widget(
-        "ASSINATURA DA FACE • MOTOR INVERTIDO",
+        "MARCA TESTEMUNHA • MOTOR INVERTIDO",
         panel.frame_inverted,
     )
     layout.addWidget(wrapped)
