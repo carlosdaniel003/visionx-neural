@@ -4,7 +4,18 @@ from src.core.experts.adhesive_shift_expert import ShiftExpert as _AdhesiveShift
 
 
 class ShiftExpert(_AdhesiveShiftExpert):
-    """Publica aliases exclusivos para evitar colisões na fusão do MoE."""
+    """Publica aliases exclusivos e restringe o motor à categoria correta."""
+
+    ADHESIVE_CATEGORIES = frozenset({"MUCH ADHESIVE", "MUITO ADESIVO"})
+
+    @classmethod
+    def _is_adhesive_context(cls, info: dict | None) -> bool:
+        if not isinstance(info, dict):
+            return False
+        category = " ".join(
+            str(info.get("category", "")).strip().upper().split()
+        )
+        return category in cls.ADHESIVE_CATEGORIES
 
     def analyze(self, *args, **kwargs):
         result = super().analyze(*args, **kwargs)
