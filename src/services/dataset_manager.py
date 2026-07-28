@@ -194,11 +194,26 @@ class DatasetManager:
                     },
                     "missing": {
                         "score": detail.get("missing_score", 0),
+                        "expectation_mode": detail.get(
+                            "missing_expectation_mode",
+                            "unknown",
+                        ),
+                        "classification": detail.get(
+                            "missing_classification",
+                            "",
+                        ),
                         "structure_loss": detail.get(
                             "missing_structure_loss",
                             0,
                         ),
-                        "coverage": detail.get("missing_coverage", 0),
+                        "extra_structure": detail.get(
+                            "missing_extra_structure",
+                            0,
+                        ),
+                        "coverage": detail.get(
+                            "missing_changed_coverage",
+                            detail.get("missing_coverage", 0),
+                        ),
                         "appearance_loss": detail.get(
                             "missing_appearance_loss",
                             0,
@@ -210,6 +225,30 @@ class DatasetManager:
                         "presence_retention": detail.get(
                             "missing_presence_retention",
                             1,
+                        ),
+                        "direct_similarity": detail.get(
+                            "missing_direct_similarity",
+                            1,
+                        ),
+                        "best_nearby_similarity": detail.get(
+                            "missing_best_similarity",
+                            1,
+                        ),
+                        "displacement": {
+                            "dx": detail.get("missing_displacement_dx", 0),
+                            "dy": detail.get("missing_displacement_dy", 0),
+                            "pixels": detail.get(
+                                "missing_displacement_pixels",
+                                0,
+                            ),
+                            "normalized": detail.get(
+                                "missing_displacement_pct",
+                                0,
+                            ),
+                        },
+                        "reference_distinctness": detail.get(
+                            "missing_reference_distinctness",
+                            0,
                         ),
                     },
                     "structural": {
