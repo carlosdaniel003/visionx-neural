@@ -32,7 +32,9 @@ from src.ui.operational_controls import (
     OperationalControlsPresenter,
     install_operational_controls,
 )
+from src.ui.strict_category_memory_ui import install_strict_category_memory_ui
 from src.ui.test_mode_dataset_controls import install_test_mode_dataset_controls
+from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
 from src.ui.widgets.semantic_dna import SemanticDNAWidget
 
 
@@ -46,6 +48,7 @@ def main():
     install_semantic_widget_calibration(SemanticDNAWidget)
     install_semantic_roi_widget(SemanticDNAWidget)
     install_strict_category_memory(KNNExpert)
+    install_strict_category_memory_ui(KNNSpectrumWidget)
     install_anomaly_memory_integration(MoEOrchestrator)
     install_inverted_signature_extension()
     install_inverted_face_integration(MoEOrchestrator)
