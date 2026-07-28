@@ -5,6 +5,7 @@ from __future__ import annotations
 
 ENGINE_LABELS = {
     "adhesive": "Fluxo de adesivo",
+    "missing": "Presença do componente",
     "structural": "Comparador estrutural",
     "semantic": "Debug semântico",
     "texture": "Laboratório de textura",
@@ -91,13 +92,7 @@ def _physical_source_id(trace: dict, engines: list[dict]) -> str:
 
 
 def influence_rows(trace: dict) -> list[dict]:
-    """Expõe evidência, peso e efeito sem confundir voto com influência.
-
-    A fusão usa apenas o motor físico de maior score e a memória KNN. Por isso,
-    somente essas duas linhas recebem ``fusion_weight``. A contribuição é a
-    parcela efetivamente somada ao score final. Para o KNN, ``effect_vs_physical``
-    mostra quanto a memória reforçou ou atenuou o score físico, em pontos.
-    """
+    """Expõe apenas os motores presentes no rastreamento desta categoria."""
     if not trace:
         return []
 
@@ -147,7 +142,6 @@ def influence_rows(trace: dict) -> list[dict]:
                 "fusion_weight": max(0.0, min(1.0, fusion_weight)),
                 "score_contribution": score_contribution,
                 "effect_vs_physical": effect_vs_physical,
-                # Compatibilidade com widgets/testes anteriores.
                 "final_influence": score_contribution,
                 "summary": str(engine.get("summary", "")),
             }
