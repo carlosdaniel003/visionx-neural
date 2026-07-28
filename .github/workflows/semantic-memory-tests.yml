@@ -10,9 +10,11 @@ on:
       - "src/core/experts/semantic_expert.py"
       - "src/core/experts/knn_expert.py"
       - "src/core/anomaly_memory_integration.py"
+      - "src/ui/strict_category_memory_ui.py"
       - "main.py"
       - "tests/test_semantic_roi_only.py"
       - "tests/test_strict_category_memory.py"
+      - "tests/test_semantic_memory_ui_contract.py"
       - ".github/workflows/semantic-memory-tests.yml"
   workflow_dispatch:
 
@@ -39,11 +41,13 @@ jobs:
             src/core/semantic_roi_extension.py \
             src/core/strict_category_memory.py \
             src/core/experts/semantic_expert.py \
-            src/core/experts/knn_expert.py
+            src/core/experts/knn_expert.py \
+            src/ui/strict_category_memory_ui.py
 
       - name: Unit tests
         run: |
           python -m unittest \
             tests.test_semantic_roi_only \
             tests.test_strict_category_memory \
+            tests.test_semantic_memory_ui_contract \
             -v
