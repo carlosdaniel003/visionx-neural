@@ -146,4 +146,29 @@ def install_semantic_roi_extension(semantic_expert_cls) -> None:
     semantic_expert_cls._epicenter_roi_only_installed = True
 
 
-__all__ = ["install_semantic_roi_extension"]
+def install_semantic_roi_widget(widget_cls) -> None:
+    """Exibe no primeiro campo da telemetria que a análise usa só a ROI."""
+    if getattr(widget_cls, "_epicenter_roi_telemetry_installed", False):
+        return
+
+    original_telemetry_lines = widget_cls._telemetry_lines
+
+    def telemetry_lines(self):
+        lines = list(original_telemetry_lines(self))
+        scope = (
+            self.debug.get("analysis_scope", "")
+            if isinstance(self.debug, dict)
+            else ""
+        )
+        if lines and scope == "epicenter_roi":
+            lines[0] = "escopo=ROI DO EPICENTRO • " + lines[0]
+        return lines
+
+    widget_cls._telemetry_lines = telemetry_lines
+    widget_cls._epicenter_roi_telemetry_installed = True
+
+
+__all__ = [
+    "install_semantic_roi_extension",
+    "install_semantic_roi_widget",
+]
