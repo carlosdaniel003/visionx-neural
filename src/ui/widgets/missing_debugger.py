@@ -1,4 +1,4 @@
-"""Debugger visual do motor exclusivo para a categoria FALTANDO."""
+"""Debugger visual do motor de expectativa da ROI para FALTANDO."""
 
 from __future__ import annotations
 
@@ -13,16 +13,25 @@ class MissingDebuggerWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(320)
-        self.setMinimumWidth(600)
+        self.setMinimumWidth(650)
         self.is_active = False
         self.is_defect = False
         self.score = 0.0
-        self.tolerance = 0.42
+        self.tolerance = 0.40
+        self.expectation_mode = "unknown"
+        self.classification = "SEM DADOS"
         self.structure_loss = 0.0
+        self.extra_structure = 0.0
         self.coverage = 0.0
         self.appearance_loss = 0.0
         self.background_exposure = 0.0
         self.retention = 1.0
+        self.direct_similarity = 1.0
+        self.best_similarity = 1.0
+        self.displacement_dx = 0.0
+        self.displacement_dy = 0.0
+        self.displacement_pixels = 0.0
+        self.reference_distinctness = 0.0
         self.alignment_score = 0.0
         self.roi_width = 0
         self.roi_height = 0
@@ -34,7 +43,8 @@ class MissingDebuggerWidget(QWidget):
     def update_data(self, detail: dict):
         if (
             not detail
-            or detail.get("missing_comparison_mode") != "missing_component"
+            or detail.get("missing_comparison_mode")
+            not in {"missing_component", "roi_expectation"}
             or not detail.get("missing_active", False)
         ):
             self.is_active = False
@@ -44,14 +54,36 @@ class MissingDebuggerWidget(QWidget):
         self.is_active = True
         self.is_defect = bool(detail.get("missing_is_defect", False))
         self.score = float(detail.get("missing_score", 0.0))
-        self.tolerance = float(detail.get("missing_tolerance", 0.42))
+        self.tolerance = float(detail.get("missing_tolerance", 0.40))
+        self.expectation_mode = str(
+            detail.get("missing_expectation_mode", "structure")
+        ).lower()
+        self.classification = str(
+            detail.get("missing_classification", "SEM CLASSIFICAÇÃO")
+        )
         self.structure_loss = float(detail.get("missing_structure_loss", 0.0))
-        self.coverage = float(detail.get("missing_coverage", 0.0))
+        self.extra_structure = float(detail.get("missing_extra_structure", 0.0))
+        self.coverage = float(
+            detail.get(
+                "missing_changed_coverage",
+                detail.get("missing_coverage", 0.0),
+            )
+        )
         self.appearance_loss = float(detail.get("missing_appearance_loss", 0.0))
         self.background_exposure = float(
             detail.get("missing_background_exposure", 0.0)
         )
         self.retention = float(detail.get("missing_presence_retention", 1.0))
+        self.direct_similarity = float(detail.get("missing_direct_similarity", 1.0))
+        self.best_similarity = float(detail.get("missing_best_similarity", 1.0))
+        self.displacement_dx = float(detail.get("missing_displacement_dx", 0.0))
+        self.displacement_dy = float(detail.get("missing_displacement_dy", 0.0))
+        self.displacement_pixels = float(
+            detail.get("missing_displacement_pixels", 0.0)
+        )
+        self.reference_distinctness = float(
+            detail.get("missing_reference_distinctness", 0.0)
+        )
         self.alignment_score = float(detail.get("missing_alignment_score", 0.0))
         self.roi_width = int(detail.get("missing_roi_width", 0) or 0)
         self.roi_height = int(detail.get("missing_roi_height", 0) or 0)
@@ -123,6 +155,13 @@ class MissingDebuggerWidget(QWidget):
         image_y = rect.y() + (rect.height() - scaled.height()) / 2
         painter.drawImage(int(image_x), int(image_y), scaled)
 
+    def _expectation_label(self) -> str:
+        if self.expectation_mode == "background":
+            return "FUNDO LIVRE"
+        if self.expectation_mode == "structure":
+            return "ESTRUTURA ESPERADA"
+        return "NÃO DEFINIDA"
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -132,7 +171,7 @@ class MissingDebuggerWidget(QWidget):
 
         painter.setPen(QColor("#f5f5f5"))
         painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
-        painter.drawText(8, 18, "PRESENÇA DO COMPONENTE • MOTOR FALTANDO")
+        painter.drawText(8, 18, "EXPECTATIVA DA ROI • MOTOR FALTANDO")
 
         if not self.is_active:
             painter.setPen(QColor("#555555"))
@@ -147,8 +186,8 @@ class MissingDebuggerWidget(QWidget):
 
         padding = 10
         spacing = 7
-        top = 42
-        footer_height = 94
+        top = 44
+        footer_height = 112
         available_width = width - padding * 2 - spacing * 2
         box_width = available_width / 3.0
         box_height = max(40.0, height - top - footer_height)
@@ -162,29 +201,44 @@ class MissingDebuggerWidget(QWidget):
             if self.roi_width and self.roi_height
             else ""
         )
+        expectation = self._expectation_label()
         self._draw_image(
             painter,
             self.reference_view,
             rects[0],
-            "1. GABARITO • COMPONENTE ESPERADO" + roi_label,
+            f"1. GABARITO • {expectation}" + roi_label,
             QColor("#4ade80"),
         )
         self._draw_image(
             painter,
             self.test_view,
             rects[1],
-            "2. TESTE • PRESENÇA ENCONTRADA" + roi_label,
+            "2. TESTE • CONTEÚDO RECEBIDO NA ROI" + roi_label,
             QColor("#46d9ff"),
         )
         self._draw_image(
             painter,
             self.reconstruction_view,
             rects[2],
-            "3. RECONSTRUÇÃO • REGIÃO AUSENTE",
+            "3. RECONSTRUÇÃO • QUEBRA DA EXPECTATIVA",
             QColor("#f5c518"),
         )
 
-        gauge_y = height - 78
+        status_color = QColor("#ff6262") if self.is_defect else QColor("#4ade80")
+        classification_color = QColor("#ff6262") if self.is_defect else QColor("#4ade80")
+        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+        painter.setPen(classification_color)
+        painter.drawText(
+            padding,
+            height - 94,
+            self._elide(
+                painter,
+                f"Expectativa: {expectation} • Resultado: {self.classification}",
+                width - padding * 2,
+            ),
+        )
+
+        gauge_y = height - 80
         gauge_x = width * 0.10
         gauge_width = width * 0.80
         gauge_height = 8
@@ -195,7 +249,6 @@ class MissingDebuggerWidget(QWidget):
             4,
             4,
         )
-        status_color = QColor("#ff6262") if self.is_defect else QColor("#4ade80")
         painter.setBrush(status_color)
         painter.drawRoundedRect(
             QRectF(gauge_x, gauge_y, gauge_width * min(1.0, self.score), gauge_height),
@@ -215,34 +268,40 @@ class MissingDebuggerWidget(QWidget):
         painter.setPen(QColor("#a6a6a6"))
         painter.drawText(
             padding,
-            height - 55,
-            "Legenda: VERDE = presença preservada • VERMELHO = região esperada ausente • AMARELO = limite esperado",
+            height - 58,
+            self._elide(
+                painter,
+                "Legenda: VERDE = conforme • VERMELHO = divergência • AMARELO = limite esperado • CIANO = direção/localização",
+                width - padding * 2,
+            ),
         )
         painter.setPen(status_color)
         metrics = (
-            f"Score {self.score:.0%}/{self.tolerance:.0%} • estrutura ausente "
-            f"{self.structure_loss:.0%} • cobertura perdida {self.coverage:.0%} • "
-            f"aparência perdida {self.appearance_loss:.0%}"
+            f"Score {self.score:.0%}/{self.tolerance:.0%} • divergência da ROI "
+            f"{self.coverage:.0%} • estrutura ausente {self.structure_loss:.0%} • "
+            f"estrutura extra {self.extra_structure:.0%} • aparência {self.appearance_loss:.0%}"
         )
         painter.drawText(
             padding,
-            height - 37,
+            height - 41,
             self._elide(painter, metrics, width - padding * 2),
         )
         painter.setPen(QColor("#f5c518"))
         details = (
-            f"Retenção {self.retention:.0%} • fundo/padding exposto "
-            f"{self.background_exposure:.0%} • alinhamento {self.alignment_score:.2f}"
+            f"Similaridade na posição {self.direct_similarity:.0%} • melhor próxima "
+            f"{self.best_similarity:.0%} • deslocamento X:{self.displacement_dx:+.1f}px "
+            f"Y:{self.displacement_dy:+.1f}px ({self.displacement_pixels:.1f}px) • "
+            f"fundo exposto {self.background_exposure:.0%}"
         )
         painter.drawText(
             padding,
-            height - 20,
+            height - 24,
             self._elide(painter, details, width - padding * 2),
         )
         painter.setPen(QColor("#d0d0d0"))
         painter.drawText(
             padding,
-            height - 4,
+            height - 7,
             self._elide(painter, self.reason, width - padding * 2),
         )
         painter.end()
