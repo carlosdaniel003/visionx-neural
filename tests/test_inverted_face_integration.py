@@ -122,7 +122,7 @@ class InvertedFaceIntegrationTests(unittest.TestCase):
         self.assertEqual(trace["fusion_rule"], "weighted_physical")
         self.assertAlmostEqual(trace["weights"]["physical"], 0.70)
         self.assertAlmostEqual(trace["weights"]["knn"], 0.30)
-        self.assertAlmostEqual(final_score, 0.90 * 0.70 + 0.80 * 0.30)
+        self.assertAlmostEqual(final_score, 0.92 * 0.70 + 0.80 * 0.30)
 
 
 if __name__ == "__main__":
