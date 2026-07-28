@@ -1,4 +1,4 @@
-"""Debugger técnico do especialista de assinatura da face."""
+"""Debugger técnico do motor INVERTIDO orientado à marca testemunha."""
 
 from __future__ import annotations
 
@@ -30,7 +30,10 @@ class InvertedFaceDebuggerWidget(QWidget):
         self.tolerance = 0.43
         self.classification = "SEM DADOS"
         self.signature_strength = 0.0
+        self.test_signature_strength = 0.0
         self.direct_similarity = 1.0
+        self.witness_retention = 1.0
+        self.witness_loss = 0.0
         self.feature_loss = 0.0
         self.extra_structure = 0.0
         self.topology_mismatch = 0.0
@@ -39,9 +42,15 @@ class InvertedFaceDebuggerWidget(QWidget):
         self.transform_gain = 0.0
         self.best_transform = "none"
         self.best_transform_similarity = 0.0
+        self.relocation_similarity = 0.0
+        self.relocation_gain = 0.0
+        self.relocation_dx = 0.0
+        self.relocation_dy = 0.0
+        self.relocation_pixels = 0.0
         self.expected_angle = 0.0
         self.observed_angle = 0.0
         self.changed_coverage = 0.0
+        self.witness_coverage = 0.0
         self.roi_width = 0
         self.roi_height = 0
         self.reason = ""
@@ -75,9 +84,16 @@ class InvertedFaceDebuggerWidget(QWidget):
         self.signature_strength = float(
             detail.get("inverted_signature_strength", 0.0)
         )
+        self.test_signature_strength = float(
+            detail.get("inverted_test_signature_strength", 0.0)
+        )
         self.direct_similarity = float(
             detail.get("inverted_direct_similarity", 1.0)
         )
+        self.witness_retention = float(
+            detail.get("inverted_witness_retention", 1.0)
+        )
+        self.witness_loss = float(detail.get("inverted_witness_loss", 0.0))
         self.feature_loss = float(detail.get("inverted_feature_loss", 0.0))
         self.extra_structure = float(
             detail.get("inverted_extra_structure", 0.0)
@@ -96,10 +112,22 @@ class InvertedFaceDebuggerWidget(QWidget):
         self.best_transform_similarity = float(
             detail.get("inverted_best_transform_similarity", 0.0)
         )
+        self.relocation_similarity = float(
+            detail.get("inverted_relocation_similarity", 0.0)
+        )
+        self.relocation_gain = float(detail.get("inverted_relocation_gain", 0.0))
+        self.relocation_dx = float(detail.get("inverted_relocation_dx", 0.0))
+        self.relocation_dy = float(detail.get("inverted_relocation_dy", 0.0))
+        self.relocation_pixels = float(
+            detail.get("inverted_relocation_pixels", 0.0)
+        )
         self.expected_angle = float(detail.get("inverted_expected_angle", 0.0))
         self.observed_angle = float(detail.get("inverted_observed_angle", 0.0))
         self.changed_coverage = float(
             detail.get("inverted_changed_coverage", 0.0)
+        )
+        self.witness_coverage = float(
+            detail.get("inverted_witness_coverage", 0.0)
         )
         self.roi_width = int(detail.get("inverted_roi_width", 0) or 0)
         self.roi_height = int(detail.get("inverted_roi_height", 0) or 0)
@@ -132,14 +160,7 @@ class InvertedFaceDebuggerWidget(QWidget):
             max(20, width),
         )
 
-    def _draw_image(
-        self,
-        painter: QPainter,
-        image,
-        rect: QRectF,
-        title: str,
-        title_color: QColor,
-    ) -> None:
+    def _draw_image(self, painter, image, rect, title, title_color):
         painter.setPen(QPen(QColor("#343434"), 1))
         painter.setBrush(QColor("#070707"))
         painter.drawRect(rect)
@@ -161,9 +182,11 @@ class InvertedFaceDebuggerWidget(QWidget):
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        image_x = rect.x() + (rect.width() - scaled.width()) / 2
-        image_y = rect.y() + (rect.height() - scaled.height()) / 2
-        painter.drawImage(int(image_x), int(image_y), scaled)
+        painter.drawImage(
+            int(rect.x() + (rect.width() - scaled.width()) / 2),
+            int(rect.y() + (rect.height() - scaled.height()) / 2),
+            scaled,
+        )
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -174,7 +197,7 @@ class InvertedFaceDebuggerWidget(QWidget):
 
         painter.setPen(QColor("#f5f5f5"))
         painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
-        painter.drawText(8, 18, "ASSINATURA DA FACE • MOTOR INVERTIDO")
+        painter.drawText(8, 18, "MARCA TESTEMUNHA • MOTOR INVERTIDO")
 
         if not self.is_active:
             painter.setPen(QColor("#555555"))
@@ -190,7 +213,7 @@ class InvertedFaceDebuggerWidget(QWidget):
         padding = 10
         spacing = 7
         top = 44
-        footer_height = 114
+        footer_height = 116
         available_width = width - padding * 2 - spacing * 2
         box_width = available_width / 3.0
         box_height = max(40.0, height - top - footer_height)
@@ -208,21 +231,21 @@ class InvertedFaceDebuggerWidget(QWidget):
             painter,
             self.reference_view,
             rects[0],
-            "1. GABARITO • ASSINATURA ESPERADA" + roi_label,
+            "1. GABARITO • MARCA ESPERADA" + roi_label,
             QColor("#4ade80"),
         )
         self._draw_image(
             painter,
             self.test_view,
             rects[1],
-            "2. TESTE • ASSINATURA OBSERVADA" + roi_label,
+            "2. TESTE • MARCA OBSERVADA" + roi_label,
             QColor("#46d9ff"),
         )
         self._draw_image(
             painter,
             self.reconstruction_view,
             rects[2],
-            "3. RECONSTRUÇÃO • EVIDÊNCIA DE INVERSÃO",
+            "3. RECONSTRUÇÃO • RETIDA / PERDIDA / NOVA",
             QColor("#f5c518"),
         )
 
@@ -231,25 +254,21 @@ class InvertedFaceDebuggerWidget(QWidget):
         painter.setPen(status_color)
         painter.drawText(
             padding,
-            height - 96,
+            height - 98,
             self._elide(
                 painter,
-                f"Resultado: {self.classification} • força da assinatura {self.signature_strength:.0%}",
+                f"Resultado: {self.classification} • retenção da marca {self.witness_retention:.0%}",
                 width - padding * 2,
             ),
         )
 
-        gauge_y = height - 81
+        gauge_y = height - 82
         gauge_x = width * 0.10
         gauge_width = width * 0.80
         gauge_height = 8
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor("#303030"))
-        painter.drawRoundedRect(
-            QRectF(gauge_x, gauge_y, gauge_width, gauge_height),
-            4,
-            4,
-        )
+        painter.drawRoundedRect(QRectF(gauge_x, gauge_y, gauge_width, gauge_height), 4, 4)
         painter.setBrush(status_color)
         painter.drawRoundedRect(
             QRectF(gauge_x, gauge_y, gauge_width * min(1.0, self.score), gauge_height),
@@ -269,43 +288,41 @@ class InvertedFaceDebuggerWidget(QWidget):
         painter.setPen(QColor("#a6a6a6"))
         painter.drawText(
             padding,
-            height - 59,
+            height - 60,
             self._elide(
                 painter,
-                "Legenda: VERDE = coincide • AMARELO = esperado ausente • VERMELHO = estrutura extra • setas = orientação dominante",
+                "Legenda: VERDE = preservada • AMARELO = marca perdida • VERMELHO = estrutura nova • setas = direção dominante",
                 width - padding * 2,
             ),
         )
         painter.setPen(status_color)
         metrics = (
-            f"Score {self.score:.0%}/{self.tolerance:.0%} • marca perdida {self.feature_loss:.0%} • "
-            f"topologia {self.topology_mismatch:.0%} • orientação {self.orientation_mismatch:.0%} • "
-            f"face alternativa {self.alternate_face_signal:.0%}"
+            f"Score {self.score:.0%}/{self.tolerance:.0%} • perda testemunha {self.witness_loss:.0%} • "
+            f"perda estrutural {self.feature_loss:.0%} • topologia {self.topology_mismatch:.0%} • "
+            f"orientação {self.orientation_mismatch:.0%}"
         )
         painter.drawText(
             padding,
-            height - 42,
+            height - 43,
             self._elide(painter, metrics, width - padding * 2),
         )
-        transform_label = TRANSFORM_LABELS.get(
-            self.best_transform,
-            self.best_transform,
-        )
+        transform_label = TRANSFORM_LABELS.get(self.best_transform, self.best_transform)
         painter.setPen(QColor("#f5c518"))
         details = (
-            f"Similaridade direta {self.direct_similarity:.0%} • ângulo esperado {self.expected_angle:.0f}° • "
-            f"observado {self.observed_angle:.0f}° • melhor transformação: {transform_label} "
-            f"{self.best_transform_similarity:.0%} (+{self.transform_gain:.0%}) • área {self.changed_coverage:.0%}"
+            f"Assinatura gabarito/teste {self.signature_strength:.0%}/{self.test_signature_strength:.0%} • "
+            f"ângulo {self.expected_angle:.0f}°→{self.observed_angle:.0f}° • "
+            f"busca próxima {self.relocation_similarity:.0%} X:{self.relocation_dx:+.1f}px Y:{self.relocation_dy:+.1f}px • "
+            f"transformação {transform_label} {self.best_transform_similarity:.0%}"
         )
         painter.drawText(
             padding,
-            height - 25,
+            height - 26,
             self._elide(painter, details, width - padding * 2),
         )
         painter.setPen(QColor("#d0d0d0"))
         painter.drawText(
             padding,
-            height - 8,
+            height - 9,
             self._elide(painter, self.reason, width - padding * 2),
         )
         painter.end()
