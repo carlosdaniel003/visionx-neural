@@ -14,15 +14,18 @@ class MissingComponentUIContractTests(unittest.TestCase):
             source.index("install_decision_panel(panel)"),
         )
 
-    def test_debugger_uses_exact_three_view_reconstruction(self):
+    def test_debugger_explains_roi_expectation_and_three_views(self):
         source = (
             ROOT / "src" / "ui" / "widgets" / "missing_debugger.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("COMPONENTE ESPERADO", source)
-        self.assertIn("PRESENÇA ENCONTRADA", source)
-        self.assertIn("REGIÃO AUSENTE", source)
-        self.assertIn("missing_structure_loss", source)
-        self.assertIn("missing_presence_retention", source)
+        self.assertIn("EXPECTATIVA DA ROI", source)
+        self.assertIn("CONTEÚDO RECEBIDO NA ROI", source)
+        self.assertIn("QUEBRA DA EXPECTATIVA", source)
+        self.assertIn("missing_expectation_mode", source)
+        self.assertIn("missing_classification", source)
+        self.assertIn("missing_direct_similarity", source)
+        self.assertIn("missing_best_similarity", source)
+        self.assertIn("missing_displacement_pixels", source)
 
     def test_panel_visibility_follows_active_engine(self):
         source = (
@@ -32,7 +35,7 @@ class MissingComponentUIContractTests(unittest.TestCase):
         self.assertIn("frame_missing.setVisible(active)", source)
         self.assertIn("frame_missing.setVisible(False)", source)
 
-    def test_decision_model_has_missing_engine_label(self):
+    def test_decision_model_keeps_missing_engine_label(self):
         source = (
             ROOT / "src" / "ui" / "decision_model.py"
         ).read_text(encoding="utf-8")
