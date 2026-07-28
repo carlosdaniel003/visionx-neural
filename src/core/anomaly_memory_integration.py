@@ -5,6 +5,24 @@ from __future__ import annotations
 from src.core.anomaly_signature import build_anomaly_signature
 
 
+ADHESIVE_CATEGORIES = frozenset({"MUCH ADHESIVE", "MUITO ADESIVO"})
+STANDARD_ROUTES = ("silk", "ssim", "semantic", "knn")
+ADHESIVE_ROUTES = ("shift",) + STANDARD_ROUTES
+
+
+def normalize_category_name(category: str) -> str:
+    return " ".join(str(category or "").strip().upper().split())
+
+
+def is_adhesive_category(category: str) -> bool:
+    """O fluxo de adesivo depende exclusivamente da categoria AOI."""
+    return normalize_category_name(category) in ADHESIVE_CATEGORIES
+
+
+def routes_for_category(category: str) -> tuple[str, ...]:
+    return ADHESIVE_ROUTES if is_adhesive_category(category) else STANDARD_ROUTES
+
+
 def _focus_box(aoi_epicenters, analysis: dict, detail: dict):
     if aoi_epicenters:
         candidate = aoi_epicenters[0]
@@ -24,7 +42,9 @@ def _focus_box(aoi_epicenters, analysis: dict, detail: dict):
 
 def _physical_inputs(detail: dict, category: str):
     shift = None
-    if "shift_active" in detail or "adhesive_score" in detail:
+    if is_adhesive_category(category) and (
+        "shift_active" in detail or "adhesive_score" in detail
+    ):
         adhesive_active = bool(detail.get("shift_active", False))
         adhesive_score = float(detail.get("adhesive_score", 0.0))
         adhesive_tolerance = float(detail.get("adhesive_tolerance", 0.32))
@@ -47,9 +67,7 @@ def _physical_inputs(detail: dict, category: str):
     silk = None
     if "silk_error_pct" in detail:
         structural_error = float(detail.get("silk_error_pct", 0.0))
-        structural_tolerance = (
-            0.15 if "SHIFT" in str(category).upper() else 0.08
-        )
+        structural_tolerance = 0.08
         silk = {
             "silk_error_pct": structural_error,
             "tolerance": structural_tolerance,
@@ -106,15 +124,13 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
         category = str((aoi_info or {}).get("category", "Unknown"))
         had_route = category in self.routing_table
         original_route = list(self.routing_table.get(category, []))
-        base_route = original_route or [
-            "shift",
-            "silk",
-            "ssim",
-            "semantic",
-            "knn",
-        ]
+
+        # O KNN é executado depois da construção da assinatura. O motor Shift
+        # só entra na primeira etapa quando a categoria é realmente adesiva.
         self.routing_table[category] = [
-            engine for engine in base_route if engine != "knn"
+            engine
+            for engine in routes_for_category(category)
+            if engine != "knn"
         ]
 
         try:
