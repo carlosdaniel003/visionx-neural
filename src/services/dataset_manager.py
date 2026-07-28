@@ -68,6 +68,7 @@ class DatasetManager:
             focus_box = (
                 detail.get("semantic_focus_box")
                 or detail.get("adhesive_roi_box")
+                or detail.get("missing_roi_box")
                 or detail.get("roi_box")
                 or (analysis or {}).get("bounding_box")
             )
@@ -125,7 +126,6 @@ class DatasetManager:
                 "reference_image_file": reference_image_file,
                 "images_required_for_knn": False,
             },
-            # Compatibilidade com leitores antigos.
             "image_file": test_image_file,
             "image_type": "anomaly_signature",
             "status_treinamento": "memoria_ativa",
@@ -154,7 +154,6 @@ class DatasetManager:
                 "physical_score": detail.get("physical_score", 0.0),
                 "fusion_rule": detail.get("fusion_rule", ""),
                 "anomaly_memory": anomaly_memory,
-                # Apenas compatibilidade para JSONs/rotinas anteriores.
                 "embedding": legacy_embedding,
                 "semantic": {
                     "schema": semantic_debug.get(
@@ -191,6 +190,26 @@ class DatasetManager:
                         "lower_leakage_ratio": detail.get(
                             "lower_leakage_ratio",
                             0,
+                        ),
+                    },
+                    "missing": {
+                        "score": detail.get("missing_score", 0),
+                        "structure_loss": detail.get(
+                            "missing_structure_loss",
+                            0,
+                        ),
+                        "coverage": detail.get("missing_coverage", 0),
+                        "appearance_loss": detail.get(
+                            "missing_appearance_loss",
+                            0,
+                        ),
+                        "background_exposure": detail.get(
+                            "missing_background_exposure",
+                            0,
+                        ),
+                        "presence_retention": detail.get(
+                            "missing_presence_retention",
+                            1,
                         ),
                     },
                     "structural": {
