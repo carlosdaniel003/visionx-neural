@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from src.core.anomaly_signature import build_anomaly_signature
 
 
@@ -9,9 +11,29 @@ ADHESIVE_CATEGORIES = frozenset({"MUCH ADHESIVE", "MUITO ADESIVO"})
 STANDARD_ROUTES = ("silk", "ssim", "semantic", "knn")
 ADHESIVE_ROUTES = ("shift",) + STANDARD_ROUTES
 
+CATEGORY_KEY_ALIASES = {
+    "INVERTIDO": "INVERTIDO",
+    "INVERTED": "INVERTIDO",
+    "REVERSE": "INVERTIDO",
+    "UPSIDEDOWN": "INVERTIDO",
+    "FALTANDO": "FALTANDO",
+    "MISSING": "FALTANDO",
+    "MUSING": "FALTANDO",
+    "MISSMG": "FALTANDO",
+    "MUITOADESIVO": "MUITOADESIVO",
+    "MUCHADHESIVE": "MUITOADESIVO",
+    "EXCESSADHESIVE": "MUITOADESIVO",
+    "ADESIVOEMEXCESSO": "MUITOADESIVO",
+}
+
 
 def normalize_category_name(category: str) -> str:
     return " ".join(str(category or "").strip().upper().split())
+
+
+def canonical_category_key(category: str) -> str:
+    compact = re.sub(r"[^A-Z0-9]", "", normalize_category_name(category))
+    return CATEGORY_KEY_ALIASES.get(compact, compact)
 
 
 def is_adhesive_category(category: str) -> bool:
@@ -21,6 +43,16 @@ def is_adhesive_category(category: str) -> bool:
 
 def routes_for_category(category: str) -> tuple[str, ...]:
     return ADHESIVE_ROUTES if is_adhesive_category(category) else STANDARD_ROUTES
+
+
+def _normalize_knn_memory_categories(knn_expert) -> None:
+    """Converte em memória as categorias antigas para as novas chaves."""
+    for attribute in ("signatures_ok", "signatures_ng"):
+        for record in getattr(knn_expert, attribute, []) or []:
+            if isinstance(record, dict):
+                record["category"] = canonical_category_key(
+                    record.get("category", "")
+                )
 
 
 def _focus_box(aoi_epicenters, analysis: dict, detail: dict):
@@ -159,7 +191,9 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
             focus,
         )
 
-        knn_result = self.experts["knn"].analyze(
+        knn_expert = self.experts["knn"]
+        _normalize_knn_memory_categories(knn_expert)
+        knn_result = knn_expert.analyze(
             full_gab,
             full_test,
             None,
