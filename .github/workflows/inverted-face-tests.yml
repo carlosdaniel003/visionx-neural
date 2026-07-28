@@ -1,4 +1,4 @@
-name: Inverted Face Tests
+name: Inverted Witness Tests
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - central
     paths:
       - "src/core/experts/inverted_face_expert.py"
+      - "src/core/experts/inverted_witness_expert.py"
       - "src/core/inverted_face_integration.py"
       - "src/services/dataset_manager.py"
       - "src/ui/inverted_face_panel.py"
@@ -37,6 +38,7 @@ jobs:
         run: |
           python -m py_compile \
             src/core/experts/inverted_face_expert.py \
+            src/core/experts/inverted_witness_expert.py \
             src/core/inverted_face_integration.py \
             src/services/dataset_manager.py \
             src/ui/inverted_face_panel.py \
