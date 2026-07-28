@@ -13,11 +13,13 @@ from src.core.experts.semantic_calibration import (
     install_semantic_widget_calibration,
 )
 from src.core.experts.semantic_expert import SemanticExpert
+from src.core.inverted_face_integration import install_inverted_face_integration
 from src.core.moe_orchestrator import MoEOrchestrator
 from src.services.anomaly_learning import install_anomaly_learning
 from src.ui.control_panel import ControlPanel
 from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
+from src.ui.inverted_face_panel import install_inverted_face_panel
 from src.ui.missing_component_panel import install_missing_component_panel
 from src.ui.operational_controls import (
     OperationalControlsPresenter,
@@ -35,10 +37,12 @@ def main():
     install_semantic_calibration(SemanticExpert)
     install_semantic_widget_calibration(SemanticDNAWidget)
     install_anomaly_memory_integration(MoEOrchestrator)
+    install_inverted_face_integration(MoEOrchestrator)
     install_anomaly_learning(ControlPanel)
 
     panel = ControlPanel()
     install_missing_component_panel(panel)
+    install_inverted_face_panel(panel)
     install_decision_panel(panel)
     install_test_mode_dataset_controls(panel)
     install_operational_controls(panel)
