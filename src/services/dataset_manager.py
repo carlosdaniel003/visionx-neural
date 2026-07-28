@@ -69,6 +69,7 @@ class DatasetManager:
                 detail.get("semantic_focus_box")
                 or detail.get("adhesive_roi_box")
                 or detail.get("missing_roi_box")
+                or detail.get("inverted_roi_box")
                 or detail.get("roi_box")
                 or (analysis or {}).get("bounding_box")
             )
@@ -249,6 +250,93 @@ class DatasetManager:
                         "reference_distinctness": detail.get(
                             "missing_reference_distinctness",
                             0,
+                        ),
+                    },
+                    "inverted": {
+                        "score": detail.get("inverted_score", 0),
+                        "classification": detail.get(
+                            "inverted_classification",
+                            "",
+                        ),
+                        "signature_strength": detail.get(
+                            "inverted_signature_strength",
+                            0,
+                        ),
+                        "direct_similarity": detail.get(
+                            "inverted_direct_similarity",
+                            1,
+                        ),
+                        "feature_loss": detail.get(
+                            "inverted_feature_loss",
+                            0,
+                        ),
+                        "extra_structure": detail.get(
+                            "inverted_extra_structure",
+                            0,
+                        ),
+                        "topology_mismatch": detail.get(
+                            "inverted_topology_mismatch",
+                            0,
+                        ),
+                        "orientation_mismatch": detail.get(
+                            "inverted_orientation_mismatch",
+                            0,
+                        ),
+                        "alternate_face_signal": detail.get(
+                            "inverted_alternate_face_signal",
+                            0,
+                        ),
+                        "changed_coverage": detail.get(
+                            "inverted_changed_coverage",
+                            0,
+                        ),
+                        "orientation": {
+                            "expected_angle": detail.get(
+                                "inverted_expected_angle",
+                                0,
+                            ),
+                            "observed_angle": detail.get(
+                                "inverted_observed_angle",
+                                0,
+                            ),
+                            "reference_histogram": detail.get(
+                                "inverted_orientation_hist_reference",
+                                [],
+                            ),
+                            "test_histogram": detail.get(
+                                "inverted_orientation_hist_test",
+                                [],
+                            ),
+                        },
+                        "best_transform": {
+                            "name": detail.get(
+                                "inverted_best_transform",
+                                "none",
+                            ),
+                            "similarity": detail.get(
+                                "inverted_best_transform_similarity",
+                                0,
+                            ),
+                            "gain": detail.get(
+                                "inverted_transform_gain",
+                                0,
+                            ),
+                        },
+                        "edge_grid_reference": detail.get(
+                            "inverted_edge_grid_reference",
+                            [],
+                        ),
+                        "edge_grid_test": detail.get(
+                            "inverted_edge_grid_test",
+                            [],
+                        ),
+                        "polarity_grid_reference": detail.get(
+                            "inverted_polarity_grid_reference",
+                            [],
+                        ),
+                        "polarity_grid_test": detail.get(
+                            "inverted_polarity_grid_test",
+                            [],
                         ),
                     },
                     "structural": {
