@@ -14,6 +14,7 @@ from src.core.experts.semantic_calibration import (
 )
 from src.core.experts.semantic_expert import SemanticExpert
 from src.core.inverted_face_integration import install_inverted_face_integration
+from src.core.inverted_signature_extension import install_inverted_signature_extension
 from src.core.moe_orchestrator import MoEOrchestrator
 from src.services.anomaly_learning import install_anomaly_learning
 from src.ui.control_panel import ControlPanel
@@ -37,6 +38,7 @@ def main():
     install_semantic_calibration(SemanticExpert)
     install_semantic_widget_calibration(SemanticDNAWidget)
     install_anomaly_memory_integration(MoEOrchestrator)
+    install_inverted_signature_extension()
     install_inverted_face_integration(MoEOrchestrator)
     install_anomaly_learning(ControlPanel)
 
