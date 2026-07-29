@@ -40,6 +40,92 @@ class MissingDebuggerWidget(QWidget):
         self.test_view = None
         self.reconstruction_view = None
 
+    @staticmethod
+    def _copy(value):
+        if isinstance(value, np.ndarray) and value.size > 0:
+            return value.copy()
+        return None
+
+    @staticmethod
+    def _fit_gray(value, shape):
+        if not isinstance(value, np.ndarray) or value.size == 0:
+            return None
+        height, width = shape[:2]
+        image = value.copy()
+        if image.ndim == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        if image.shape[:2] != (height, width):
+            image = cv2.resize(
+                image,
+                (width, height),
+                interpolation=cv2.INTER_LINEAR,
+            )
+        return image
+
+    @classmethod
+    def _rebuild_on_canonical_test(cls, canonical_test, detail):
+        """Aplica o mapa do motor sobre a mesma ROI exibida no Laboratório."""
+        if canonical_test is None:
+            return cls._copy(detail.get("missing_reconstruction_view"))
+
+        residual = cls._fit_gray(detail.get("missing_residual_map"), canonical_test.shape)
+        anomaly_mask = cls._fit_gray(detail.get("roi_anomaly_mask"), canonical_test.shape)
+        if anomaly_mask is None:
+            anomaly_mask = cls._fit_gray(
+                detail.get("component_missing_mask"),
+                canonical_test.shape,
+            )
+
+        reconstruction = (canonical_test.astype(np.float32) * 0.78).astype(np.uint8)
+        if residual is None:
+            residual = np.zeros(canonical_test.shape[:2], dtype=np.float32)
+        else:
+            residual = residual.astype(np.float32)
+            if float(np.max(residual)) > 1.0:
+                residual /= 255.0
+            residual = np.clip(residual, 0.0, 1.0)
+
+        if anomaly_mask is None:
+            anomaly_mask = (residual >= 0.31).astype(np.uint8) * 255
+        else:
+            anomaly_mask = (anomaly_mask > 0).astype(np.uint8) * 255
+
+        heat_source = np.clip(residual * 255.0, 0, 255).astype(np.uint8)
+        heatmap = cv2.applyColorMap(heat_source, cv2.COLORMAP_TURBO)
+        selected = anomaly_mask > 0
+        if np.any(selected):
+            reconstruction[selected] = (
+                reconstruction[selected].astype(np.float32) * 0.20
+                + heatmap[selected].astype(np.float32) * 0.80
+            ).astype(np.uint8)
+
+        contours, _ = cv2.findContours(
+            anomaly_mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        cv2.drawContours(
+            reconstruction,
+            contours,
+            -1,
+            (0, 220, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        if np.any(selected):
+            weighted = residual * selected.astype(np.float32)
+            _, _, _, maximum_location = cv2.minMaxLoc(weighted.astype(np.float32))
+            cv2.drawMarker(
+                reconstruction,
+                maximum_location,
+                (255, 230, 40),
+                cv2.MARKER_CROSS,
+                10,
+                1,
+                cv2.LINE_AA,
+            )
+        return reconstruction
+
     def update_data(self, detail: dict):
         valid_modes = {
             "missing_component",
@@ -90,21 +176,36 @@ class MissingDebuggerWidget(QWidget):
         self.background_signal = float(
             detail.get("missing_background_exposure", 0.0)
         )
-        self.roi_width = int(detail.get("missing_roi_width", 0) or 0)
-        self.roi_height = int(detail.get("missing_roi_height", 0) or 0)
         self.reason = str(detail.get("missing_reason", ""))
-        self.reference_view = self._copy(detail.get("missing_reference_view"))
-        self.test_view = self._copy(detail.get("missing_test_view"))
-        self.reconstruction_view = self._copy(
-            detail.get("missing_reconstruction_view")
-        )
-        self.update()
 
-    @staticmethod
-    def _copy(value):
-        if isinstance(value, np.ndarray) and value.size > 0:
-            return value.copy()
-        return None
+        # Mesma fonte do Laboratório de Textura: nenhuma nova extração da ROI.
+        canonical_reference = self._copy(detail.get("crop_gab"))
+        canonical_test = self._copy(detail.get("crop_test"))
+        if canonical_reference is None:
+            canonical_reference = self._copy(detail.get("canonical_roi_reference"))
+        if canonical_test is None:
+            canonical_test = self._copy(detail.get("canonical_roi_test"))
+        if canonical_reference is None:
+            canonical_reference = self._copy(detail.get("missing_reference_view"))
+        if canonical_test is None:
+            canonical_test = self._copy(detail.get("missing_test_input_raw"))
+        if canonical_test is None:
+            canonical_test = self._copy(detail.get("missing_test_view"))
+
+        self.reference_view = canonical_reference
+        self.test_view = canonical_test
+        self.reconstruction_view = self._rebuild_on_canonical_test(
+            canonical_test,
+            detail,
+        )
+
+        source = canonical_test if canonical_test is not None else self.test_view
+        if isinstance(source, np.ndarray) and source.size > 0:
+            self.roi_height, self.roi_width = source.shape[:2]
+        else:
+            self.roi_width = int(detail.get("missing_roi_width", 0) or 0)
+            self.roi_height = int(detail.get("missing_roi_height", 0) or 0)
+        self.update()
 
     @staticmethod
     def _qimage(image_bgr: np.ndarray) -> QImage:
@@ -210,21 +311,21 @@ class MissingDebuggerWidget(QWidget):
             painter,
             self.reference_view,
             rects[0],
-            "1. GABARITO • PATCH ESPERADO" + roi_label,
+            "1. GABARITO • MESMA ROI DO LABORATÓRIO" + roi_label,
             QColor("#4ade80"),
         )
         self._draw_image(
             painter,
             self.test_view,
             rects[1],
-            "2. TESTE • PATCH RECEBIDO" + roi_label,
+            "2. TESTE • MESMA ROI DO LABORATÓRIO" + roi_label,
             QColor("#46d9ff"),
         )
         self._draw_image(
             painter,
             self.reconstruction_view,
             rects[2],
-            "3. DIVERGÊNCIA • SOMENTE PIXELS INCOMPATÍVEIS",
+            "3. DIVERGÊNCIA SOBRE A MESMA ROI",
             QColor("#f5c518"),
         )
 
@@ -247,11 +348,7 @@ class MissingDebuggerWidget(QWidget):
         gauge_height = 8
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor("#303030"))
-        painter.drawRoundedRect(
-            QRectF(gauge_x, gauge_y, gauge_width, gauge_height),
-            4,
-            4,
-        )
+        painter.drawRoundedRect(QRectF(gauge_x, gauge_y, gauge_width, gauge_height), 4, 4)
         painter.setBrush(status_color)
         painter.drawRoundedRect(
             QRectF(gauge_x, gauge_y, gauge_width * min(1.0, self.score), gauge_height),
