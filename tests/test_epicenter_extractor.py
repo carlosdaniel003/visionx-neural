@@ -130,11 +130,92 @@ class EpicenterExtractorTests(unittest.TestCase):
         self.assertEqual(len(epicenters), 1)
         assert_box_near(self, epicenters[0], (95, 70, 30, 29), tolerance=5)
 
-    def test_legacy_fallback_chooses_smallest_valid_box(self):
+    def test_green_reflections_and_text_do_not_beat_real_frame(self):
+        reference = draw_nested_rectangles(
+            canvas(width=305, height=516),
+            outer=(35, 33, 240, 465),
+            inner=(106, 378, 98, 51),
+            outer_thickness=3,
+            inner_thickness=2,
+        )
+        test = reference.copy()
+
+        # Simulam reflexos, letras e pequenos blobs verdes dentro do componente.
+        cv2.rectangle(reference, (63, 42), (158, 76), GREEN, -1)
+        cv2.rectangle(test, (119, 34), (132, 43), GREEN, -1)
+        cv2.rectangle(test, (137, 412), (143, 418), GREEN, -1)
+        cv2.line(reference, (120, 457), (144, 457), GREEN, 5)
+
+        epicenters, focus_reference, focus_test = EpicenterExtractor.extract_focus(
+            reference,
+            test,
+            old_epicenters=[(106, 378, 98, 51)],
+            global_box_info={"x": 35, "y": 33, "w": 240, "h": 465},
+        )
+
+        self.assertEqual(len(epicenters), 1)
+        selected = epicenters[0]
+        assert_box_near(self, selected, (106, 378, 98, 51), tolerance=6)
+        self.assertGreater(selected[2], 80)
+        self.assertGreater(selected[3], 35)
+        self.assertEqual(focus_reference.shape, focus_test.shape)
+
+    def test_largest_reliable_inner_frame_beats_tiny_deep_blob(self):
+        reference = draw_nested_rectangles(
+            canvas(width=305, height=516),
+            outer=(35, 33, 240, 465),
+            inner=(106, 376, 96, 49),
+        )
+        test = draw_nested_rectangles(
+            canvas(width=305, height=516),
+            outer=(35, 26, 240, 464),
+            inner=(106, 378, 98, 51),
+        )
+        cv2.rectangle(test, (136, 411), (144, 419), GREEN, -1)
+        cv2.rectangle(test, (119, 34), (133, 43), GREEN, -1)
+
+        epicenters, _, focus_test = EpicenterExtractor.extract_focus(
+            reference,
+            test,
+            old_epicenters=[],
+            global_box_info={"x": 35, "y": 33, "w": 240, "h": 465},
+        )
+
+        self.assertEqual(len(epicenters), 1)
+        assert_box_near(self, epicenters[0], (106, 377, 97, 50), tolerance=7)
+        self.assertGreater(focus_test.shape[1], 80)
+        self.assertGreater(focus_test.shape[0], 35)
+
+    def test_content_crop_removes_green_frame(self):
+        reference = draw_nested_rectangles(
+            canvas(),
+            outer=(20, 15, 180, 150),
+            inner=(80, 60, 62, 45),
+            outer_thickness=3,
+            inner_thickness=3,
+        )
+        test = reference.copy()
+        test[70:95, 94:128] = (220, 220, 220)
+
+        epicenters, focus_reference, focus_test = EpicenterExtractor.extract_focus(
+            reference,
+            test,
+            old_epicenters=[],
+            global_box_info={"x": 20, "y": 15, "w": 180, "h": 150},
+        )
+
+        self.assertEqual(len(epicenters), 1)
+        green_reference = EpicenterExtractor._green_mask(focus_reference)
+        green_test = EpicenterExtractor._green_mask(focus_test)
+        self.assertLess(float(np.mean(green_reference > 0)), 0.08)
+        self.assertLess(float(np.mean(green_test > 0)), 0.08)
+        self.assertGreater(float(np.mean(focus_test)), float(np.mean(focus_reference)))
+
+    def test_legacy_fallback_chooses_largest_valid_inner_box(self):
         reference = canvas()
         old_epicenters = [
-            (25, 18, 170, 140),
             (94, 71, 31, 27),
+            (105, 75, 12, 11),
         ]
 
         epicenters, focus_reference, _ = EpicenterExtractor.extract_focus(
@@ -144,8 +225,9 @@ class EpicenterExtractorTests(unittest.TestCase):
             global_box_info={"x": 25, "y": 18, "w": 170, "h": 140},
         )
 
-        self.assertEqual(epicenters[0], (94, 71, 31, 27))
-        self.assertEqual(focus_reference.shape[:2], (27, 31))
+        assert_box_near(self, epicenters[0], (94, 71, 31, 27), tolerance=3)
+        self.assertGreater(focus_reference.shape[1], 20)
+        self.assertGreater(focus_reference.shape[0], 18)
 
     def test_global_fallback_preserves_absolute_position(self):
         reference = canvas()
