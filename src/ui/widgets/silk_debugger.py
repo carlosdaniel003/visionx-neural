@@ -187,14 +187,14 @@ class SilkDebuggerWidget(QWidget):
             painter,
             self.test_view,
             test_rect,
-            "2. TESTE ALINHADO • CONTORNOS ENCONTRADOS" + roi_label,
+            "2. TESTE • ROI BRUTA DO EPICENTRO" + roi_label,
             QColor("#46d9ff"),
         )
         self._draw_image(
             painter,
             self.difference_view,
             difference_rect,
-            "3. RECONSTRUÇÃO • EXTRA / AUSENTE",
+            "3. RECONSTRUÇÃO SOBRE A ROI BRUTA",
             QColor("#ff7878"),
         )
 
@@ -256,7 +256,7 @@ class SilkDebuggerWidget(QWidget):
         painter.drawText(
             padding,
             height - 9,
-            f"Alinhamento do teste: X {self.dx:.1f}px • Y {self.dy:.1f}px • "
+            f"Alinhamento usado somente no cálculo: X {self.dx:.1f}px • Y {self.dy:.1f}px • "
             f"confiança {self.alignment_score:.2f} • {self.reason}",
         )
         painter.end()
