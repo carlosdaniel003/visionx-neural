@@ -414,7 +414,14 @@ class EpicenterExtractor:
         """Remove a espessura da linha verde do recorte analisado."""
         image_height, image_width = image_shape[:2]
         x, y, width, height = box
-        inset = max(1, min(3, int(round(min(width, height) * 0.04))))
+        # O boundingRect inclui a expansão externa da linha. Um recuo de cerca
+        # de 10% remove a borda externa e a espessura interna da moldura.
+        minimum_side = min(width, height)
+        inset = (
+            0
+            if minimum_side < 35
+            else max(2, min(5, int(round(minimum_side * 0.10))))
+        )
         if width - 2 * inset < cls.MIN_SIDE_PX:
             inset = 0
         if height - 2 * inset < cls.MIN_SIDE_PX:
@@ -464,7 +471,15 @@ class EpicenterExtractor:
                 cls._legacy_candidates(old_epicenters, sample_crop.shape)
             )
             candidates = cls._deduplicate(candidates)
-            selected = cls._select_epicenter(candidates, sample_crop.shape)
+            has_visual_candidate = any(
+                bool(candidate.get("sources", set()) & {"gabarito", "teste"})
+                for candidate in candidates
+            )
+            selected = (
+                cls._select_epicenter(candidates, sample_crop.shape)
+                if has_visual_candidate
+                else None
+            )
             if selected is not None:
                 content_box = cls._content_box(
                     selected["box"],
