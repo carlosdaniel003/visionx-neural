@@ -1,13 +1,15 @@
-name: Epicenter Hierarchy Tests
+name: Epicenter ROI Tests
 
 on:
   push:
     branches:
       - central
     paths:
+      - "src/config/settings.py"
       - "src/core/epicenter_extractor.py"
       - "src/core/inspection.py"
       - "tests/test_epicenter_extractor.py"
+      - "tests/test_epicenter_green_signature.py"
       - ".github/workflows/epicenter-tests.yml"
   workflow_dispatch:
 
@@ -31,9 +33,13 @@ jobs:
       - name: Compile
         run: |
           python -m py_compile \
+            src/config/settings.py \
             src/core/epicenter_extractor.py \
             src/core/inspection.py
 
       - name: Unit tests
         run: |
-          python -m unittest tests.test_epicenter_extractor -v
+          python -m unittest \
+            tests.test_epicenter_extractor \
+            tests.test_epicenter_green_signature \
+            -v
