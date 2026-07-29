@@ -13,9 +13,12 @@ on:
       - "src/core/experts/roi_patch_expert.py"
       - "src/core/semantic_roi_extension.py"
       - "src/core/anomaly_memory_integration.py"
+      - "src/ui/widgets/silk_debugger.py"
+      - "src/ui/widgets/missing_debugger.py"
       - "main.py"
       - "tests/test_roi_input_contract.py"
       - "tests/test_roi_visual_alignment.py"
+      - "tests/test_debugger_canonical_roi_contract.py"
       - ".github/workflows/roi-input-contract-tests.yml"
   workflow_dispatch:
 
@@ -47,12 +50,16 @@ jobs:
             src/core/experts/roi_patch_expert.py \
             src/core/semantic_roi_extension.py \
             src/core/anomaly_memory_integration.py \
+            src/ui/widgets/silk_debugger.py \
+            src/ui/widgets/missing_debugger.py \
             tests/test_roi_input_contract.py \
-            tests/test_roi_visual_alignment.py
+            tests/test_roi_visual_alignment.py \
+            tests/test_debugger_canonical_roi_contract.py
 
       - name: Unit tests
         run: |
           python -m unittest \
             tests.test_roi_input_contract \
             tests.test_roi_visual_alignment \
+            tests.test_debugger_canonical_roi_contract \
             -v
