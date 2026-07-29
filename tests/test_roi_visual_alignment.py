@@ -62,7 +62,7 @@ class ROIVisualAlignmentTests(unittest.TestCase):
         self.assertGreater(score, 0.70)
         self.assertLess(mean_error(reference, aligned), mean_error(reference, test) * 0.55)
 
-    def test_structural_expert_uses_correct_alignment_direction(self):
+    def test_structural_calculates_with_alignment_but_displays_raw_test_roi(self):
         reference = asymmetric_patch()
         test = translate(reference, 0, 10)
         expert = SilkExpert()
@@ -81,8 +81,13 @@ class ROIVisualAlignmentTests(unittest.TestCase):
             mean_error(reference, test) * 0.60,
         )
         self.assertEqual(result["roi_box"], (0, 0, 150, 110))
+        self.assertEqual(result["structural_display_mode"], "raw_roi")
+        self.assertTrue(np.array_equal(result["roi_test_display_raw"], test))
+        self.assertTrue(np.array_equal(result["test_view"], test))
+        self.assertEqual(result["difference_view"].shape, test.shape)
+        self.assertFalse(np.array_equal(result["test_view"], result["roi_test_aligned"]))
 
-    def test_missing_debug_aligns_view_but_preserves_raw_input(self):
+    def test_missing_keeps_raw_roi_in_second_and_third_debug_images(self):
         reference = asymmetric_patch()
         test = translate(reference, 0, 9)
         expert = MissingComponentExpert()
@@ -102,8 +107,13 @@ class ROIVisualAlignmentTests(unittest.TestCase):
             mean_error(reference, result["missing_test_aligned_raw"]),
             mean_error(reference, test) * 0.65,
         )
-        self.assertIn("missing_test_view_raw", result)
-        self.assertEqual(result["missing_display_mode"], "aligned_debug")
+        self.assertEqual(result["missing_display_mode"], "raw_roi")
+        self.assertTrue(np.array_equal(result["missing_test_view"], test))
+        self.assertEqual(result["missing_reconstruction_view"].shape, test.shape)
+        self.assertIs(
+            result["missing_reconstruction_view_raw"],
+            result["missing_reconstruction_view"],
+        )
 
     def test_identical_roi_is_not_shifted(self):
         reference = asymmetric_patch()
