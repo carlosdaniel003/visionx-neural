@@ -37,6 +37,14 @@ class SilkDebuggerWidget(QWidget):
         return None
 
     @staticmethod
+    def _first_array(detail: dict, *keys):
+        for key in keys:
+            value = detail.get(key)
+            if isinstance(value, np.ndarray) and value.size > 0:
+                return value
+        return None
+
+    @staticmethod
     def _mask_to_bgr(mask: np.ndarray | None) -> np.ndarray | None:
         if mask is None or mask.size == 0:
             return None
@@ -86,14 +94,18 @@ class SilkDebuggerWidget(QWidget):
             return cls._copy(detail.get("difference_view"))
 
         output = (canonical_test.astype(np.float32) * 0.72).astype(np.uint8)
-        matched = cls._fit_mask(
-            detail.get("match_mask_raw_coordinates") or detail.get("match_mask"),
-            output.shape,
+        matched_source = cls._first_array(
+            detail,
+            "match_mask_raw_coordinates",
+            "match_mask",
         )
-        extra = cls._fit_mask(
-            detail.get("extra_mask_raw_coordinates") or detail.get("extra_mask"),
-            output.shape,
+        extra_source = cls._first_array(
+            detail,
+            "extra_mask_raw_coordinates",
+            "extra_mask",
         )
+        matched = cls._fit_mask(matched_source, output.shape)
+        extra = cls._fit_mask(extra_source, output.shape)
         missing = cls._fit_mask(detail.get("missing_mask"), output.shape)
 
         if matched is not None:
@@ -156,9 +168,8 @@ class SilkDebuggerWidget(QWidget):
         self.dy = float(detail.get("dy", 0.0))
         self.alignment_score = float(detail.get("alignment_score", 0.0))
 
-        # crop_gab/crop_test são as matrizes exibidas no Laboratório de Textura.
-        # Elas têm prioridade absoluta para impedir um segundo recorte ou o uso
-        # acidental da versão alinhada pelo comparador estrutural.
+        # crop_gab/crop_test são exatamente as matrizes exibidas no Laboratório
+        # de Textura. O widget as usa diretamente, sem novo recorte.
         canonical_reference = self._copy(detail.get("crop_gab"))
         canonical_test = self._copy(detail.get("crop_test"))
         if canonical_reference is None:
