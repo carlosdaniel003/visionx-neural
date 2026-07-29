@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import QApplication
 
 from src.core.anomaly_memory_integration import install_anomaly_memory_integration
 from src.core.experts.knn_expert import KNNExpert
+from src.core.experts.missing_component_expert import MissingComponentExpert
 from src.core.experts.semantic_calibration import (
     install_semantic_calibration,
     install_semantic_widget_calibration,
@@ -20,6 +21,7 @@ from src.core.inverted_face_integration import install_inverted_face_integration
 from src.core.inverted_signature_extension import install_inverted_signature_extension
 from src.core.moe_orchestrator import MoEOrchestrator
 from src.core.roi_input_contract import install_roi_input_contract
+from src.core.roi_visual_alignment import install_roi_visual_alignment
 from src.core.semantic_roi_extension import (
     install_semantic_roi_extension,
     install_semantic_roi_widget,
@@ -52,6 +54,11 @@ def main():
     install_semantic_roi_widget(SemanticDNAWidget)
     install_strict_category_memory(KNNExpert)
     install_strict_category_memory_ui(KNNSpectrumWidget)
+
+    # Corrige somente o alinhamento posterior ao recorte. A caixa escolhida pelo
+    # EpicenterExtractor permanece exatamente a mesma.
+    install_roi_visual_alignment(SilkExpert, MissingComponentExpert)
+
     install_anomaly_memory_integration(MoEOrchestrator)
     install_inverted_signature_extension()
     install_inverted_face_integration(MoEOrchestrator)
