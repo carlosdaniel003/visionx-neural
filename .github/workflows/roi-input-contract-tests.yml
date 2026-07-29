@@ -6,12 +6,16 @@ on:
       - central
     paths:
       - "src/core/roi_input_contract.py"
+      - "src/core/roi_visual_alignment.py"
       - "src/core/experts/ssim_texture_expert.py"
       - "src/core/experts/silk_structural_expert.py"
+      - "src/core/experts/missing_component_expert.py"
+      - "src/core/experts/roi_patch_expert.py"
       - "src/core/semantic_roi_extension.py"
       - "src/core/anomaly_memory_integration.py"
       - "main.py"
       - "tests/test_roi_input_contract.py"
+      - "tests/test_roi_visual_alignment.py"
       - ".github/workflows/roi-input-contract-tests.yml"
   workflow_dispatch:
 
@@ -36,12 +40,19 @@ jobs:
         run: |
           python -m py_compile \
             src/core/roi_input_contract.py \
+            src/core/roi_visual_alignment.py \
             src/core/experts/ssim_texture_expert.py \
             src/core/experts/silk_structural_expert.py \
+            src/core/experts/missing_component_expert.py \
+            src/core/experts/roi_patch_expert.py \
             src/core/semantic_roi_extension.py \
             src/core/anomaly_memory_integration.py \
-            tests/test_roi_input_contract.py
+            tests/test_roi_input_contract.py \
+            tests/test_roi_visual_alignment.py
 
       - name: Unit tests
         run: |
-          python -m unittest tests.test_roi_input_contract -v
+          python -m unittest \
+            tests.test_roi_input_contract \
+            tests.test_roi_visual_alignment \
+            -v
