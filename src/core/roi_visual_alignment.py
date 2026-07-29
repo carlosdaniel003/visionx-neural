@@ -1,12 +1,8 @@
-"""Alinhamento visual robusto da mesma ROI entre gabarito e teste.
+"""Alinhamento interno sem substituir a ROI exibida nos debuggers.
 
-A captura do epicentro não é alterada. Este módulo corrige somente a
-translação aplicada depois do recorte:
-
-* o Comparador Estrutural avalia os dois sentidos do deslocamento e conserva
-  aquele que realmente aproxima o teste do gabarito;
-* o Motor FALTANDO mantém o julgamento sobre o recorte original, mas mostra no
-  debugger uma versão alinhada para facilitar a comparação visual.
+A caixa escolhida pelo EpicenterExtractor e os pixels de ``TESTE • EPICENTRO``
+são o contrato visual. O alinhamento por translação pode auxiliar os cálculos,
+mas nunca pode substituir a imagem 2 nem a base da reconstrução da imagem 3.
 """
 
 from __future__ import annotations
@@ -152,14 +148,16 @@ def _candidate_shifts(reference_gray, test_gray, maximum_shift: int):
 
     bounded = set()
     for dx, dy in candidates:
-        dx = float(np.clip(dx, -maximum_shift, maximum_shift))
-        dy = float(np.clip(dy, -maximum_shift, maximum_shift))
-        rounded_x = int(round(dx))
-        rounded_y = int(round(dy))
+        rounded_x = int(round(np.clip(dx, -maximum_shift, maximum_shift)))
+        rounded_y = int(round(np.clip(dy, -maximum_shift, maximum_shift)))
         for offset_y in range(-2, 3):
             for offset_x in range(-2, 3):
-                candidate_x = int(np.clip(rounded_x + offset_x, -maximum_shift, maximum_shift))
-                candidate_y = int(np.clip(rounded_y + offset_y, -maximum_shift, maximum_shift))
+                candidate_x = int(
+                    np.clip(rounded_x + offset_x, -maximum_shift, maximum_shift)
+                )
+                candidate_y = int(
+                    np.clip(rounded_y + offset_y, -maximum_shift, maximum_shift)
+                )
                 bounded.add((float(candidate_x), float(candidate_y)))
     return bounded
 
@@ -195,8 +193,7 @@ def best_translation(reference: np.ndarray, test: np.ndarray):
             best_image = candidate
 
     gain = float(best_score - base_score)
-    minimum_gain = 0.018
-    if gain < minimum_gain:
+    if gain < 0.018:
         return test.copy(), (0.0, 0.0), float(base_score), 0.0
     return best_image, best_shift, float(best_score), gain
 
@@ -223,15 +220,144 @@ def _crop_pair(full_reference, full_test, box):
     )
 
 
+def _project_mask_to_raw(mask, dx: float, dy: float):
+    if not isinstance(mask, np.ndarray) or mask.size == 0:
+        return None
+    return _warp(
+        mask,
+        -float(dx),
+        -float(dy),
+        interpolation=cv2.INTER_NEAREST,
+        border_mode=cv2.BORDER_CONSTANT,
+    )
+
+
+def _raw_structural_reconstruction(expert_cls, raw_test, result, dx: float, dy: float):
+    """Desenha o resultado estrutural sobre a ROI bruta do teste."""
+    difference = (raw_test.astype(np.float32) * 0.72).astype(np.uint8)
+    match_raw = _project_mask_to_raw(result.get("match_mask"), dx, dy)
+    extra_raw = _project_mask_to_raw(result.get("extra_mask"), dx, dy)
+    missing_reference = result.get("missing_mask")
+
+    def dilate(mask, size):
+        if not isinstance(mask, np.ndarray) or mask.size == 0:
+            return None
+        return cv2.dilate(
+            mask,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)),
+        )
+
+    match_visible = dilate(match_raw, 3)
+    extra_visible = dilate(extra_raw, 5)
+    missing_visible = dilate(missing_reference, 5)
+
+    if match_visible is not None:
+        difference = expert_cls._paint_mask(
+            difference,
+            match_visible,
+            (70, 190, 90),
+            0.38,
+        )
+    if missing_visible is not None:
+        difference = expert_cls._paint_mask(
+            difference,
+            missing_visible,
+            (0, 220, 255),
+            0.92,
+        )
+    if extra_visible is not None:
+        difference = expert_cls._paint_mask(
+            difference,
+            extra_visible,
+            (45, 65, 255),
+            0.94,
+        )
+
+    for mask, color in (
+        (extra_visible, (30, 30, 255)),
+        (missing_visible, (0, 220, 255)),
+    ):
+        if mask is None:
+            continue
+        contours, _ = cv2.findContours(
+            mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        for contour in contours:
+            if cv2.contourArea(contour) >= 3:
+                cv2.drawContours(
+                    difference,
+                    [contour],
+                    -1,
+                    color,
+                    1,
+                    lineType=cv2.LINE_AA,
+                )
+    return difference, match_raw, extra_raw
+
+
 def install_roi_visual_alignment(silk_expert_cls, missing_expert_cls) -> None:
     if getattr(silk_expert_cls, "_robust_roi_alignment_installed", False):
         return
 
+    # O alinhamento continua disponível para os cálculos do comparador.
     def structural_alignment(reference, test):
         aligned, shift, score, _ = best_translation(reference, test)
         return aligned, shift, score
 
     silk_expert_cls._align_test_to_reference = staticmethod(structural_alignment)
+
+    original_silk_analyze = silk_expert_cls.analyze
+
+    def silk_analyze(
+        self,
+        full_gab,
+        full_test,
+        global_box_info=None,
+        aoi_info=None,
+        aoi_epicenters=None,
+    ):
+        result = original_silk_analyze(
+            self,
+            full_gab,
+            full_test,
+            global_box_info,
+            aoi_info,
+            aoi_epicenters,
+        )
+        if not isinstance(result, dict):
+            return result
+
+        reference, raw_test, resolved_box = _crop_pair(
+            full_gab,
+            full_test,
+            result.get("roi_box") or (aoi_epicenters[0] if aoi_epicenters else None),
+        )
+        if resolved_box is None:
+            return result
+
+        dx = float(result.get("dx", 0.0))
+        dy = float(result.get("dy", 0.0))
+        result["structural_test_view_aligned"] = result.get("test_view")
+        result["structural_difference_view_aligned"] = result.get("difference_view")
+        result["roi_test_display_raw"] = raw_test.copy()
+        result["test_view"] = raw_test.copy()
+
+        reconstruction, match_raw, extra_raw = _raw_structural_reconstruction(
+            silk_expert_cls,
+            raw_test,
+            result,
+            dx,
+            dy,
+        )
+        result["difference_view"] = reconstruction
+        result["match_mask_raw_coordinates"] = match_raw
+        result["extra_mask_raw_coordinates"] = extra_raw
+        result["structural_display_mode"] = "raw_roi"
+        return result
+
+    silk_expert_cls.analyze = silk_analyze
     silk_expert_cls._robust_roi_alignment_installed = True
 
     original_missing_analyze = missing_expert_cls.analyze
@@ -255,14 +381,17 @@ def install_roi_visual_alignment(silk_expert_cls, missing_expert_cls) -> None:
         if not isinstance(result, dict) or not result.get("missing_active", False):
             return result
 
-        box = result.get("missing_roi_box")
-        reference, test, resolved_box = _crop_pair(full_reference, full_test, box)
+        reference, raw_test, resolved_box = _crop_pair(
+            full_reference,
+            full_test,
+            result.get("missing_roi_box"),
+        )
         if resolved_box is None:
             return result
 
-        aligned_test, shift, score, gain = best_translation(reference, test)
+        aligned_test, shift, score, gain = best_translation(reference, raw_test)
         dx, dy = shift
-        result["missing_test_input_raw"] = test
+        result["missing_test_input_raw"] = raw_test.copy()
         result["missing_test_aligned_raw"] = aligned_test
         result["missing_visual_alignment_shift"] = (float(dx), float(dy))
         result["missing_visual_alignment_dx"] = float(dx)
@@ -271,46 +400,14 @@ def install_roi_visual_alignment(silk_expert_cls, missing_expert_cls) -> None:
         result["missing_visual_alignment_gain"] = float(gain)
         result["missing_visual_alignment_applied"] = bool(dx != 0.0 or dy != 0.0)
 
-        if dx == 0.0 and dy == 0.0:
-            return result
-
-        anomaly_mask = result.get("roi_anomaly_mask")
-        residual = result.get("missing_residual_map")
-        if not isinstance(anomaly_mask, np.ndarray) or anomaly_mask.size == 0:
-            return result
-        if not isinstance(residual, np.ndarray) or residual.size == 0:
-            return result
-
-        aligned_mask = _warp(
-            anomaly_mask,
-            dx,
-            dy,
-            interpolation=cv2.INTER_NEAREST,
-            border_mode=cv2.BORDER_CONSTANT,
-        )
-        aligned_residual = _warp(
-            residual.astype(np.float32),
-            dx,
-            dy,
-            interpolation=cv2.INTER_LINEAR,
-            border_mode=cv2.BORDER_CONSTANT,
-        )
-
-        result["missing_test_view_raw"] = result.get("missing_test_view")
+        # Regra visual: a imagem 2 é exatamente TESTE • EPICENTRO. A imagem 3
+        # permanece a reconstrução original, já produzida sobre a ROI bruta.
+        result["missing_test_view_analysis"] = result.get("missing_test_view")
+        result["missing_test_view"] = raw_test.copy()
         result["missing_reconstruction_view_raw"] = result.get(
             "missing_reconstruction_view"
         )
-        reference_view, test_view, reconstruction, heatmap = self._views(
-            reference,
-            aligned_test,
-            aligned_residual,
-            aligned_mask,
-        )
-        result["missing_reference_view"] = reference_view
-        result["missing_test_view"] = test_view
-        result["missing_reconstruction_view"] = reconstruction
-        result["missing_heatmap_aligned"] = heatmap
-        result["missing_display_mode"] = "aligned_debug"
+        result["missing_display_mode"] = "raw_roi"
         return result
 
     missing_expert_cls.analyze = missing_analyze
