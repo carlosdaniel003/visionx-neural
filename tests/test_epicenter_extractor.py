@@ -155,7 +155,8 @@ class EpicenterExtractorTests(unittest.TestCase):
 
         self.assertEqual(len(epicenters), 1)
         selected = epicenters[0]
-        assert_box_near(self, selected, (106, 378, 98, 51), tolerance=6)
+        # O retorno é a área interna, já sem a espessura da moldura verde.
+        assert_box_near(self, selected, (110, 382, 90, 43), tolerance=4)
         self.assertGreater(selected[2], 80)
         self.assertGreater(selected[3], 35)
         self.assertEqual(focus_reference.shape, focus_test.shape)
