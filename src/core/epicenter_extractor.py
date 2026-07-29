@@ -1,5 +1,5 @@
 # src/core/epicenter_extractor.py
-"""Extração simples da menor moldura verde desenhada pela AOI."""
+"""Extração direta da menor caixa verde desenhada pela AOI."""
 
 from __future__ import annotations
 
@@ -12,20 +12,18 @@ from src.config.settings import settings
 
 
 class EpicenterExtractor:
-    """Encontra os dois retângulos verdes e usa o menor como epicentro.
+    """Usa a regra objetiva do layout da AOI.
 
-    Regra da AOI:
-    - retângulo verde maior: componente/região global;
-    - retângulo verde menor: ROI do defeito.
+    Existem duas caixas verdes:
+    - a maior delimita o componente;
+    - a menor delimita o defeito.
 
-    A escolha é feita somente no gabarito. A imagem de teste recebe exatamente
-    as mesmas coordenadas, independentemente da cor da marcação NG.
+    O epicentro é sempre a menor caixa verde. Não há pontuação, classificação
+    semântica da moldura ou tentativa de escolher pela posição na imagem.
     """
 
-    MIN_SIDE_PX = 7
-    MAX_IMAGE_RATIO = 0.98
-    DUPLICATE_IOU = 0.68
-    MAX_INNER_AREA_RATIO = 0.78
+    MIN_SIDE_PX = 6
+    DUPLICATE_IOU = 0.65
 
     @staticmethod
     def _valid_image(image: np.ndarray) -> bool:
@@ -33,11 +31,10 @@ class EpicenterExtractor:
 
     @staticmethod
     def _green_mask(image: np.ndarray) -> np.ndarray:
-        """Aceita os verdes reais da AOI e seus pixels antialiasados.
+        """Máscara flexível dos verdes usados nas linhas da AOI.
 
-        Os exemplos fornecidos ficam aproximadamente entre H=55..66 no HSV do
-        OpenCV. A faixa é ampliada porque a linha é misturada ao conteúdo da
-        fotografia durante redimensionamento e antialiasing.
+        Os tons fornecidos ficam aproximadamente em H=55..66 no HSV do OpenCV.
+        A faixa é ampliada para absorver transparência, blur e antialiasing.
         """
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.int16)
@@ -47,15 +44,13 @@ class EpicenterExtractor:
         blue = rgb[:, :, 2]
         green_excess = green - np.maximum(red, blue)
 
-        hue_mask = cv2.inRange(
+        hsv_green = cv2.inRange(
             hsv,
             np.asarray((45, 25, 35), dtype=np.uint8),
             np.asarray((82, 255, 255), dtype=np.uint8),
         ) > 0
-        dominance = (green_excess >= 4) & (green >= 45)
+        dominant_green = (green_excess >= 4) & (green >= 40)
 
-        # Mantém também proximidade dos sete tons informados, mas não exige
-        # correspondência exata: a moldura pode estar translúcida ou suavizada.
         prototypes = np.asarray(
             getattr(settings, "AOI_GREEN_RGB_SAMPLES", ()),
             dtype=np.int16,
@@ -63,22 +58,21 @@ class EpicenterExtractor:
         if prototypes.size:
             delta = rgb[:, :, None, :] - prototypes[None, None, :, :]
             distance = np.sqrt(np.sum(delta.astype(np.float32) ** 2, axis=3))
-            prototype_mask = np.min(distance, axis=2) <= 105.0
+            near_sample = np.min(distance, axis=2) <= 110.0
         else:
-            prototype_mask = np.zeros(hue_mask.shape, dtype=bool)
+            near_sample = np.zeros(hsv_green.shape, dtype=bool)
 
-        mask = ((hue_mask & dominance) | (prototype_mask & dominance)).astype(
-            np.uint8
-        ) * 255
+        mask = (
+            (hsv_green & dominant_green)
+            | (near_sample & dominant_green)
+        ).astype(np.uint8) * 255
 
-        # Une interrupções de 1–2 pixels sem engrossar excessivamente a linha.
-        mask = cv2.morphologyEx(
+        return cv2.morphologyEx(
             mask,
             cv2.MORPH_CLOSE,
             cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),
             iterations=1,
         )
-        return mask
 
     @staticmethod
     def _iou(first, second) -> float:
@@ -98,7 +92,7 @@ class EpicenterExtractor:
             return True
         ax, ay, aw, ah = first
         bx, by, bw, bh = second
-        tolerance = max(3, int(round(min(aw, ah, bw, bh) * 0.15)))
+        tolerance = max(3, int(round(min(aw, ah, bw, bh) * 0.18)))
         return (
             abs(ax - bx) <= tolerance
             and abs(ay - by) <= tolerance
@@ -107,13 +101,12 @@ class EpicenterExtractor:
         )
 
     @staticmethod
-    def _contains(outer, inner, tolerance: int = 8) -> bool:
+    def _contains(outer, inner, tolerance: int = 10) -> bool:
         ox, oy, ow, oh = outer
         ix, iy, iw, ih = inner
-        if iw * ih >= ow * oh:
-            return False
         return (
-            ix >= ox - tolerance
+            iw * ih < ow * oh
+            and ix >= ox - tolerance
             and iy >= oy - tolerance
             and ix + iw <= ox + ow + tolerance
             and iy + ih <= oy + oh + tolerance
@@ -130,77 +123,53 @@ class EpicenterExtractor:
             )
         except (TypeError, ValueError):
             return None
+
         x1 = max(0, x)
         y1 = max(0, y)
         x2 = min(image_width, x + width)
         y2 = min(image_height, y + height)
-        if x2 - x1 < cls.MIN_SIDE_PX or y2 - y1 < cls.MIN_SIDE_PX:
+        width = x2 - x1
+        height = y2 - y1
+        if width < cls.MIN_SIDE_PX or height < cls.MIN_SIDE_PX:
             return None
-        return x1, y1, x2 - x1, y2 - y1
-
-    @staticmethod
-    def _border_support(mask: np.ndarray, box) -> dict:
-        """Mede somente se o contorno possui aparência de moldura fina."""
-        x, y, width, height = box
-        image_height, image_width = mask.shape[:2]
-        band = max(1, min(4, int(round(min(width, height) * 0.08))))
-
-        def density(x1, y1, x2, y2) -> float:
-            patch = mask[
-                max(0, y1) : min(image_height, y2),
-                max(0, x1) : min(image_width, x2),
-            ]
-            return float(np.mean(patch > 0)) if patch.size else 0.0
-
-        top = density(x, y - band, x + width, y + band + 1)
-        bottom = density(
-            x,
-            y + height - 1 - band,
-            x + width,
-            y + height + band,
-        )
-        left = density(x - band, y, x + band + 1, y + height)
-        right = density(
-            x + width - 1 - band,
-            y,
-            x + width + band,
-            y + height,
-        )
-
-        inset = max(2, min(6, int(round(min(width, height) * 0.16))))
-        interior = density(
-            x + inset,
-            y + inset,
-            x + width - inset,
-            y + height - inset,
-        )
-        sides = (top, bottom, left, right)
-        opposite = max(min(top, bottom), min(left, right))
-        side_count = sum(value >= 0.10 for value in sides)
-        frame_score = max(opposite, float(np.mean(sorted(sides)[-3:])))
-        return {
-            "sides": sides,
-            "side_count": side_count,
-            "opposite_support": opposite,
-            "frame_score": frame_score,
-            "interior_density": interior,
-        }
+        return int(x1), int(y1), int(width), int(height)
 
     @classmethod
-    def _visual_rectangles(cls, image: np.ndarray) -> list[dict]:
-        """Retorna molduras verdes do gabarito sem classificá-las por função."""
+    def _deduplicate_boxes(cls, boxes: list[tuple]) -> list[tuple]:
+        unique: list[tuple] = []
+        # Mantém a caixa maior de cada par duplicado. A espessura da linha verde
+        # normalmente gera dois contornos quase iguais, interno e externo.
+        for box in sorted(boxes, key=lambda value: value[2] * value[3], reverse=True):
+            if any(cls._same_rectangle(box, current) for current in unique):
+                continue
+            unique.append(box)
+        return unique
+
+    @classmethod
+    def _legacy_boxes(cls, old_epicenters, image_shape) -> list[tuple]:
+        normalized = []
+        for raw_box in old_epicenters or []:
+            box = cls._normalize_box(raw_box, image_shape)
+            if box is not None:
+                normalized.append(box)
+        return cls._deduplicate_boxes(normalized)
+
+    @classmethod
+    def _visual_boxes(cls, image: np.ndarray) -> list[tuple]:
+        """Fallback: encontra contornos verdes retangulares no gabarito."""
         if not cls._valid_image(image):
             return []
-        image_height, image_width = image.shape[:2]
-        image_area = max(1, image_height * image_width)
+
         mask = cls._green_mask(image)
         contours, _ = cv2.findContours(
             mask,
             cv2.RETR_LIST,
             cv2.CHAIN_APPROX_SIMPLE,
         )
+        image_height, image_width = image.shape[:2]
+        image_area = max(1, image_height * image_width)
+        boxes = []
 
-        candidates = []
         for contour in contours:
             box = cls._normalize_box(cv2.boundingRect(contour), image.shape)
             if box is None:
@@ -209,142 +178,89 @@ class EpicenterExtractor:
             area = width * height
             if area >= image_area * 0.96:
                 continue
-            if width >= image_width * cls.MAX_IMAGE_RATIO:
-                continue
-            if height >= image_height * cls.MAX_IMAGE_RATIO:
+            if width >= image_width * 0.99 or height >= image_height * 0.99:
                 continue
             aspect = max(width, height) / max(1.0, min(width, height))
-            if aspect > 16.0:
+            if aspect > 18.0:
                 continue
 
-            metrics = cls._border_support(mask, box)
-            # Aceita moldura parcialmente coberta por etiqueta da AOI. Basta um
-            # par de lados opostos ou três lados detectáveis.
-            looks_like_frame = (
-                metrics["opposite_support"] >= 0.08
-                or metrics["side_count"] >= 3
+            perimeter = cv2.arcLength(contour, True)
+            approximation = (
+                cv2.approxPolyDP(contour, 0.04 * perimeter, True)
+                if perimeter > 0
+                else contour
             )
-            if not looks_like_frame:
+            # Linhas da AOI podem ser interrompidas por etiquetas. Aceita de 4
+            # a 10 vértices, mas rejeita pontos e formas muito irregulares.
+            if not (4 <= len(approximation) <= 10):
                 continue
-            if metrics["interior_density"] > 0.72:
-                continue
-            candidates.append(
-                {
-                    "box": box,
-                    "area": area,
-                    "source": "visual",
-                    **metrics,
-                }
-            )
+            boxes.append(box)
 
-        return cls._deduplicate(candidates)
+        return cls._deduplicate_boxes(boxes)
 
     @classmethod
-    def _legacy_rectangles(cls, boxes, image_shape) -> list[dict]:
-        candidates = []
-        for raw_box in boxes or []:
-            box = cls._normalize_box(raw_box, image_shape)
-            if box is None:
-                continue
-            candidates.append(
-                {
-                    "box": box,
-                    "area": box[2] * box[3],
-                    "source": "legacy",
-                    "sides": (0.0, 0.0, 0.0, 0.0),
-                    "side_count": 0,
-                    "opposite_support": 0.0,
-                    "frame_score": 0.0,
-                    "interior_density": 0.0,
-                }
-            )
-        return candidates
-
-    @classmethod
-    def _deduplicate(cls, candidates: list[dict]) -> list[dict]:
-        unique: list[dict] = []
-        for candidate in sorted(candidates, key=lambda item: item["area"], reverse=True):
-            duplicate = next(
-                (
-                    item
-                    for item in unique
-                    if cls._same_rectangle(item["box"], candidate["box"])
-                ),
-                None,
-            )
-            if duplicate is None:
-                unique.append(candidate.copy())
-                continue
-            if candidate.get("source") == "visual":
-                duplicate.update(candidate)
-                duplicate["source"] = "visual+legacy"
-            elif duplicate.get("source") == "visual":
-                duplicate["source"] = "visual+legacy"
-        return unique
-
-    @classmethod
-    def _select_smaller_rectangle(
+    def _select_smallest(
         cls,
-        visual: list[dict],
-        legacy: list[dict],
+        old_epicenters,
+        sample_crop: np.ndarray,
         global_box_info: dict,
-        image_shape,
     ):
-        """Descarta o maior retângulo e retorna literalmente o menor interno."""
-        candidates = cls._deduplicate(visual + legacy)
-        if not candidates:
-            return None
+        """Seleciona diretamente a menor caixa interna disponível."""
+        # Caminho principal: detect_anomalies já removeu a caixa maior e nos
+        # entregou apenas as caixas internas. Portanto basta usar a menor.
+        legacy = cls._legacy_boxes(old_epicenters, sample_crop.shape)
+        if legacy:
+            return min(legacy, key=lambda box: box[2] * box[3]), "old_epicenters"
 
-        # A maior moldura visual é a caixa do componente. global_box_info é
-        # usado apenas quando não existe uma moldura visual grande.
-        if visual:
-            outer = max(visual, key=lambda item: item["area"])["box"]
-        else:
-            outer = cls._normalize_box(
-                (
-                    (global_box_info or {}).get("x", 0),
-                    (global_box_info or {}).get("y", 0),
-                    (global_box_info or {}).get("w", 0),
-                    (global_box_info or {}).get("h", 0),
-                ),
-                image_shape,
-            )
-            if outer is None:
-                return None
+        # Fallback visual: detecta todas as caixas no gabarito, considera a maior
+        # como caixa global e escolhe a menor que esteja dentro dela.
+        visual = cls._visual_boxes(sample_crop)
+        if len(visual) >= 2:
+            outer = max(visual, key=lambda box: box[2] * box[3])
+            internal = [
+                box
+                for box in visual
+                if not cls._same_rectangle(box, outer)
+                and cls._contains(outer, box)
+            ]
+            if internal:
+                return min(internal, key=lambda box: box[2] * box[3]), "visual"
 
-        outer_area = max(1, outer[2] * outer[3])
-        internal = [
-            item
-            for item in candidates
-            if not cls._same_rectangle(item["box"], outer)
-            and cls._contains(outer, item["box"])
-            and item["area"] <= outer_area * cls.MAX_INNER_AREA_RATIO
-        ]
-        if not internal:
-            return None
-
-        # Regra solicitada: dentre os retângulos internos, usar o menor.
-        # Uma detecção visual ganha de uma caixa legada de área parecida.
-        internal.sort(
-            key=lambda item: (
-                int(item["area"]),
-                0 if "visual" in item.get("source", "") else 1,
-            )
+        # Se a caixa global veio do estágio anterior e só uma caixa verde menor
+        # foi detectada visualmente, ela já é o epicentro.
+        global_box = cls._normalize_box(
+            (
+                (global_box_info or {}).get("x", 0),
+                (global_box_info or {}).get("y", 0),
+                (global_box_info or {}).get("w", 0),
+                (global_box_info or {}).get("h", 0),
+            ),
+            sample_crop.shape,
         )
-        return internal[0]
+        if global_box is not None and visual:
+            internal = [
+                box
+                for box in visual
+                if not cls._same_rectangle(box, global_box)
+                and cls._contains(global_box, box)
+            ]
+            if internal:
+                return min(internal, key=lambda box: box[2] * box[3]), "visual+global"
+
+        return None, "none"
 
     @classmethod
     def _content_box(cls, box, image_shape):
-        """Remove somente a linha verde, preservando praticamente toda a ROI."""
+        """Retira apenas 1 pixel da linha, sem mudar a ROI escolhida."""
         image_height, image_width = image_shape[:2]
         x, y, width, height = box
-        inset = 1 if min(width, height) < 20 else 2
-        if width - inset * 2 >= cls.MIN_SIDE_PX:
+        inset = 1
+        if width - 2 >= cls.MIN_SIDE_PX:
             x += inset
-            width -= inset * 2
-        if height - inset * 2 >= cls.MIN_SIDE_PX:
+            width -= 2
+        if height - 2 >= cls.MIN_SIDE_PX:
             y += inset
-            height -= inset * 2
+            height -= 2
         x = max(0, min(image_width - 1, x))
         y = max(0, min(image_height - 1, y))
         width = max(1, min(width, image_width - x))
@@ -359,7 +275,7 @@ class EpicenterExtractor:
         old_epicenters: list,
         global_box_info: dict,
     ) -> Tuple[list, np.ndarray, np.ndarray]:
-        """Recorta o menor retângulo verde do gabarito nas duas imagens."""
+        """Recorta a menor caixa verde nas mesmas coordenadas das duas imagens."""
         real_epicenters: list[tuple[int, int, int, int]] = []
         focus_gab = np.array([])
         focus_ng = np.array([])
@@ -375,33 +291,24 @@ class EpicenterExtractor:
             )
 
         try:
-            visual = cls._visual_rectangles(sample_crop)
-            legacy = cls._legacy_rectangles(old_epicenters, sample_crop.shape)
-            selected = cls._select_smaller_rectangle(
-                visual,
-                legacy,
+            selected, source = cls._select_smallest(
+                old_epicenters,
+                sample_crop,
                 global_box_info,
-                sample_crop.shape,
             )
             if selected is not None:
-                box = cls._content_box(selected["box"], sample_crop.shape)
-                real_epicenters.append(box)
-                x, y, width, height = box
-                ordered = sorted(
-                    [item["box"] for item in visual],
-                    key=lambda value: value[2] * value[3],
-                    reverse=True,
-                )
+                content_box = cls._content_box(selected, sample_crop.shape)
+                real_epicenters.append(content_box)
                 print(
-                    "ROI AOI menor selecionada: "
-                    f"X:{x} Y:{y} W:{width} H:{height} • "
-                    f"retângulos verdes:{ordered} • origem:{selected.get('source')}"
+                    "Menor retângulo verde selecionado: "
+                    f"externo={selected} • conteúdo={content_box} • origem={source} • "
+                    f"candidatos={old_epicenters}"
                 )
             else:
                 print(
-                    "ROI AOI menor não encontrada • "
-                    f"visuais:{[item['box'] for item in visual]} • "
-                    f"legadas:{[item['box'] for item in legacy]}"
+                    "Menor retângulo verde não encontrado • "
+                    f"candidatos recebidos={old_epicenters} • "
+                    f"candidatos visuais={cls._visual_boxes(sample_crop)}"
                 )
         except Exception as exc:
             print(f"Erro ao selecionar o menor retângulo verde: {exc}")
