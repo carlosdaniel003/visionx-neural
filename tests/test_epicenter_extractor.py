@@ -11,15 +11,96 @@ BACKGROUND = (28, 30, 34)
 
 
 class EpicenterExtractorRegressionTests(unittest.TestCase):
+    def test_inspection_epicenter_has_priority_over_central_status_bar(self):
+        reference = np.full((300, 280, 3), BACKGROUND, dtype=np.uint8)
+        test = reference.copy()
+
+        # Moldura global da peça.
+        cv2.rectangle(reference, (20, 18), (250, 225), GREEN, 2)
+        cv2.rectangle(test, (20, 18), (250, 225), GREEN, 2)
+
+        # ROI real, vertical e deslocada para a direita.
+        expected = (178, 54, 42, 130)
+        x, y, width, height = expected
+        cv2.rectangle(
+            reference,
+            (x, y),
+            (x + width - 1, y + height - 1),
+            GREEN,
+            2,
+        )
+        cv2.rectangle(
+            test,
+            (x, y),
+            (x + width - 1, y + height - 1),
+            GREEN,
+            2,
+        )
+        test[y + 5 : y + height - 5, x + 5 : x + width - 5] = (220, 220, 220)
+
+        # Barra verde da interface, mais próxima do centro horizontal.
+        cv2.rectangle(reference, (78, 246), (190, 278), GREEN, -1)
+
+        epicenters, focus_reference, focus_test = EpicenterExtractor.extract_focus(
+            reference,
+            test,
+            old_epicenters=[expected],
+            global_box_info={"w": 231, "h": 208},
+        )
+
+        self.assertEqual(epicenters, [expected])
+        self.assertEqual(focus_reference.shape[:2], (height, width))
+        self.assertEqual(focus_reference.shape, focus_test.shape)
+        self.assertGreater(float(np.mean(focus_test)), float(np.mean(focus_reference)))
+
+    def test_radar_rejects_status_bar_outside_global_frame(self):
+        reference = np.full((300, 280, 3), BACKGROUND, dtype=np.uint8)
+        test = reference.copy()
+
+        cv2.rectangle(reference, (20, 18), (250, 225), GREEN, 2)
+        cv2.rectangle(test, (20, 18), (250, 225), GREEN, 2)
+
+        expected = (178, 54, 42, 130)
+        x, y, width, height = expected
+        cv2.rectangle(
+            reference,
+            (x, y),
+            (x + width - 1, y + height - 1),
+            GREEN,
+            2,
+        )
+        cv2.rectangle(
+            test,
+            (x, y),
+            (x + width - 1, y + height - 1),
+            GREEN,
+            2,
+        )
+
+        cv2.rectangle(reference, (78, 246), (190, 278), GREEN, -1)
+
+        epicenters, _, _ = EpicenterExtractor.extract_focus(
+            reference,
+            test,
+            old_epicenters=[],
+            global_box_info={},
+        )
+
+        self.assertEqual(len(epicenters), 1)
+        selected = epicenters[0]
+        for current, target in zip(selected, expected):
+            self.assertLessEqual(abs(int(current) - int(target)), 5)
+        self.assertLess(selected[1] + selected[3], 230)
+
     def test_radar_ignores_global_frame_and_selects_central_inner_roi(self):
         reference = np.full((180, 240, 3), BACKGROUND, dtype=np.uint8)
         test = reference.copy()
 
-        # A moldura global ocupa mais de 85% da imagem e deve ser ignorada.
+        # A moldura global ocupa mais de 85% da imagem e deve ser usada apenas
+        # como limite de contenção, nunca como epicentro.
         cv2.rectangle(reference, (5, 5), (234, 174), GREEN, 2)
         cv2.rectangle(test, (5, 5), (234, 174), GREEN, 2)
 
-        # A ROI real está dentro da moldura global e próxima ao centro.
         expected = (102, 68, 38, 44)
         x, y, width, height = expected
         cv2.rectangle(
@@ -53,7 +134,7 @@ class EpicenterExtractorRegressionTests(unittest.TestCase):
         self.assertEqual(focus_reference.shape[:2], (selected[3], selected[2]))
         self.assertGreater(float(np.mean(focus_test)), float(np.mean(focus_reference)))
 
-    def test_radar_prefers_candidate_closest_to_image_center(self):
+    def test_radar_prefers_candidate_closest_to_image_center_without_global_frame(self):
         reference = np.full((200, 260, 3), BACKGROUND, dtype=np.uint8)
         test = reference.copy()
 
