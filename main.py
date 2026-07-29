@@ -14,9 +14,12 @@ from src.core.experts.semantic_calibration import (
     install_semantic_widget_calibration,
 )
 from src.core.experts.semantic_expert import SemanticExpert
+from src.core.experts.silk_expert import SilkExpert
+from src.core.experts.ssim_expert import SSIMExpert
 from src.core.inverted_face_integration import install_inverted_face_integration
 from src.core.inverted_signature_extension import install_inverted_signature_extension
 from src.core.moe_orchestrator import MoEOrchestrator
+from src.core.roi_input_contract import install_roi_input_contract
 from src.core.semantic_roi_extension import (
     install_semantic_roi_extension,
     install_semantic_roi_widget,
@@ -52,6 +55,9 @@ def main():
     install_anomaly_memory_integration(MoEOrchestrator)
     install_inverted_signature_extension()
     install_inverted_face_integration(MoEOrchestrator)
+    # Deve ser a última extensão do orquestrador: audita o resultado final de
+    # todos os motores e garante a categoria correta no Laboratório de Textura.
+    install_roi_input_contract(MoEOrchestrator, SSIMExpert, SilkExpert)
     install_anomaly_learning(ControlPanel)
 
     panel = ControlPanel()
