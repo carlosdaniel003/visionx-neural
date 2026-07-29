@@ -1,10 +1,11 @@
 # src\config\settings.py
-"""
-Módulo de configurações centralizadas do VisionX Neural.
-"""
+"""Configurações centralizadas do VisionX Neural."""
+
 from pathlib import Path
 
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 
 class Config:
     PUBLIC_DIR = BASE_DIR / "public"
@@ -19,7 +20,7 @@ class Config:
     HUD_BORDER_COLOR_NG = (0, 0, 255)
     HUD_BORDER_THICKNESS = 4
 
-    # --- Assinaturas de Cor do Layout da AOI (Formato HSV do OpenCV) ---
+    # Assinaturas de cor do layout da AOI, no formato HSV do OpenCV.
     COLOR_BLUE_LOWER = (100, 150, 50)
     COLOR_BLUE_UPPER = (130, 255, 255)
 
@@ -28,19 +29,33 @@ class Config:
     COLOR_RED2_LOWER = (170, 150, 50)
     COLOR_RED2_UPPER = (180, 255, 255)
 
-    COLOR_GREEN_LOWER = (40, 100, 50)
-    COLOR_GREEN_UPPER = (80, 255, 255)
+    # Tons reais medidos na moldura verde menor da AOI. A faixa anterior
+    # H=40..80 aceitava grande parte da própria placa verde.
+    AOI_GREEN_RGB_SAMPLES = (
+        (22, 149, 21),
+        (15, 124, 13),
+        (86, 188, 105),
+        (60, 202, 74),
+        (12, 203, 12),
+        (153, 246, 133),
+        (88, 203, 66),
+    )
+    COLOR_GREEN_LOWER = (52, 108, 92)
+    COLOR_GREEN_UPPER = (70, 255, 255)
+    AOI_GREEN_MAX_RGB_DISTANCE = 68.0
+    AOI_GREEN_MIN_EXCESS = 10
 
-    # --- Fundo cinza da interface da AOI (LIMITES MAIS AGRESSIVOS) ---
-    AOI_GRAY_THRESHOLD = 45  # Permite mais variação entre os canais (pega o tom mais amarelado do #d4d0c7)
-    AOI_GRAY_MIN = 100       # Brilho mínimo (pega as sombras dos painéis)
-    AOI_GRAY_MAX = 245       # Brilho máximo (pega o brilho quase branco do efeito 3D)
+    # Fundo cinza da interface da AOI.
+    AOI_GRAY_THRESHOLD = 45
+    AOI_GRAY_MIN = 100
+    AOI_GRAY_MAX = 245
 
-    # --- Configurações de Rede (Ponte VisionX - Windows XP) ---
     PORTA_RECEPTORA = 5001
 
-    # --- Tesseract OCR ---
-    TESSERACT_CMD = r"C:\Users\cdaniel\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
+    TESSERACT_CMD = (
+        r"C:\Users\cdaniel\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
+    )
+
 
 settings = Config()
 settings.ANOMALY_DIR.mkdir(parents=True, exist_ok=True)
