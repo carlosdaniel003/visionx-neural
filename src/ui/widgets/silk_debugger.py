@@ -6,7 +6,7 @@ from PyQt6.QtCore import Qt, QRectF, QPointF
 
 
 class SilkDebuggerWidget(QWidget):
-    """Explica a comparação estrutural da mesma ROI por alinhamento e XOR."""
+    """Explica a comparação estrutural sem trocar o enquadramento do epicentro."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -31,10 +31,112 @@ class SilkDebuggerWidget(QWidget):
         self.difference_view = None
 
     @staticmethod
+    def _copy(value):
+        if isinstance(value, np.ndarray) and value.size > 0:
+            return value.copy()
+        return None
+
+    @staticmethod
     def _mask_to_bgr(mask: np.ndarray | None) -> np.ndarray | None:
         if mask is None or mask.size == 0:
             return None
         return cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+
+    @staticmethod
+    def _fit_mask(mask, shape):
+        if not isinstance(mask, np.ndarray) or mask.size == 0:
+            return None
+        height, width = shape[:2]
+        if mask.shape[:2] != (height, width):
+            mask = cv2.resize(
+                mask,
+                (width, height),
+                interpolation=cv2.INTER_NEAREST,
+            )
+        if mask.ndim == 3:
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        return mask.astype(np.uint8)
+
+    @staticmethod
+    def _paint(image, mask, color, alpha):
+        if mask is None:
+            return image
+        output = image.astype(np.float32).copy()
+        selected = mask > 0
+        if np.any(selected):
+            paint = np.asarray(color, dtype=np.float32)
+            output[selected] = output[selected] * (1.0 - alpha) + paint * alpha
+        return np.clip(output, 0, 255).astype(np.uint8)
+
+    @classmethod
+    def _reference_overlay(cls, canonical_reference, detail):
+        if canonical_reference is None:
+            return cls._copy(detail.get("reference_view"))
+        output = canonical_reference.copy()
+        expected = cls._fit_mask(detail.get("mask_gab"), output.shape)
+        if expected is not None:
+            expected = cv2.dilate(expected, np.ones((2, 2), np.uint8))
+            output = cls._paint(output, expected, (0, 210, 255), 0.78)
+        return output
+
+    @classmethod
+    def _raw_reconstruction(cls, canonical_test, detail):
+        """Reconstrói extra/ausente usando sempre a ROI bruta como fundo."""
+        if canonical_test is None:
+            return cls._copy(detail.get("difference_view"))
+
+        output = (canonical_test.astype(np.float32) * 0.72).astype(np.uint8)
+        matched = cls._fit_mask(
+            detail.get("match_mask_raw_coordinates") or detail.get("match_mask"),
+            output.shape,
+        )
+        extra = cls._fit_mask(
+            detail.get("extra_mask_raw_coordinates") or detail.get("extra_mask"),
+            output.shape,
+        )
+        missing = cls._fit_mask(detail.get("missing_mask"), output.shape)
+
+        if matched is not None:
+            matched = cv2.dilate(
+                matched,
+                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+            )
+            output = cls._paint(output, matched, (70, 190, 90), 0.38)
+        if missing is not None:
+            missing = cv2.dilate(
+                missing,
+                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)),
+            )
+            output = cls._paint(output, missing, (0, 220, 255), 0.92)
+        if extra is not None:
+            extra = cv2.dilate(
+                extra,
+                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)),
+            )
+            output = cls._paint(output, extra, (45, 65, 255), 0.94)
+
+        for mask, color in (
+            (extra, (30, 30, 255)),
+            (missing, (0, 220, 255)),
+        ):
+            if mask is None:
+                continue
+            contours, _ = cv2.findContours(
+                mask,
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE,
+            )
+            for contour in contours:
+                if cv2.contourArea(contour) >= 3:
+                    cv2.drawContours(
+                        output,
+                        [contour],
+                        -1,
+                        color,
+                        1,
+                        lineType=cv2.LINE_AA,
+                    )
+        return output
 
     def update_data(self, detail: dict):
         if not detail or "silk_error_pct" not in detail:
@@ -53,12 +155,31 @@ class SilkDebuggerWidget(QWidget):
         self.dx = float(detail.get("dx", 0.0))
         self.dy = float(detail.get("dy", 0.0))
         self.alignment_score = float(detail.get("alignment_score", 0.0))
-        self.roi_width = int(detail.get("roi_width", 0) or 0)
-        self.roi_height = int(detail.get("roi_height", 0) or 0)
 
-        self.reference_view = detail.get("reference_view")
-        self.test_view = detail.get("test_view")
-        self.difference_view = detail.get("difference_view")
+        # crop_gab/crop_test são as matrizes exibidas no Laboratório de Textura.
+        # Elas têm prioridade absoluta para impedir um segundo recorte ou o uso
+        # acidental da versão alinhada pelo comparador estrutural.
+        canonical_reference = self._copy(detail.get("crop_gab"))
+        canonical_test = self._copy(detail.get("crop_test"))
+        if canonical_reference is None:
+            canonical_reference = self._copy(detail.get("canonical_roi_reference"))
+        if canonical_test is None:
+            canonical_test = self._copy(detail.get("canonical_roi_test"))
+        if canonical_reference is None:
+            canonical_reference = self._copy(detail.get("roi_reference_raw"))
+        if canonical_test is None:
+            canonical_test = self._copy(detail.get("roi_test_raw"))
+
+        self.reference_view = self._reference_overlay(canonical_reference, detail)
+        self.test_view = canonical_test
+        self.difference_view = self._raw_reconstruction(canonical_test, detail)
+
+        if self.reference_view is None:
+            self.reference_view = self._copy(detail.get("reference_view"))
+        if self.test_view is None:
+            self.test_view = self._copy(detail.get("test_view"))
+        if self.difference_view is None:
+            self.difference_view = self._copy(detail.get("difference_view"))
 
         if self.reference_view is None:
             self.reference_view = self._mask_to_bgr(detail.get("mask_gab"))
@@ -66,11 +187,17 @@ class SilkDebuggerWidget(QWidget):
             self.test_view = self._mask_to_bgr(detail.get("mask_test"))
         if self.difference_view is None:
             diff = detail.get("diff_mask")
-            if diff is not None and diff.size > 0:
+            if isinstance(diff, np.ndarray) and diff.size > 0:
                 fallback = np.zeros((*diff.shape, 3), dtype=np.uint8)
                 fallback[diff > 0] = (45, 65, 255)
                 self.difference_view = fallback
 
+        source = canonical_test if canonical_test is not None else self.test_view
+        if isinstance(source, np.ndarray) and source.size > 0:
+            self.roi_height, self.roi_width = source.shape[:2]
+        else:
+            self.roi_width = int(detail.get("roi_width", 0) or 0)
+            self.roi_height = int(detail.get("roi_height", 0) or 0)
         self.update()
 
     @staticmethod
@@ -133,11 +260,7 @@ class SilkDebuggerWidget(QWidget):
 
         painter.setPen(QColor("#f5f5f5"))
         painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
-        painter.drawText(
-            7,
-            15,
-            "Comparador Estrutural do Epicentro • XOR",
-        )
+        painter.drawText(7, 15, "Comparador Estrutural do Epicentro • XOR")
 
         if not self.is_active:
             painter.setPen(QColor("#555555"))
@@ -187,14 +310,14 @@ class SilkDebuggerWidget(QWidget):
             painter,
             self.test_view,
             test_rect,
-            "2. TESTE • ROI BRUTA DO EPICENTRO" + roi_label,
+            "2. TESTE • MESMA ROI DO LABORATÓRIO" + roi_label,
             QColor("#46d9ff"),
         )
         self._draw_image(
             painter,
             self.difference_view,
             difference_rect,
-            "3. RECONSTRUÇÃO SOBRE A ROI BRUTA",
+            "3. RECONSTRUÇÃO SOBRE A MESMA ROI",
             QColor("#ff7878"),
         )
 
@@ -207,11 +330,7 @@ class SilkDebuggerWidget(QWidget):
 
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor("#303030"))
-        painter.drawRoundedRect(
-            QRectF(bar_x, bar_y, bar_width, bar_height),
-            3,
-            3,
-        )
+        painter.drawRoundedRect(QRectF(bar_x, bar_y, bar_width, bar_height), 3, 3)
 
         fill_ratio = min(1.0, self.silk_error_pct / max(gauge_max, 1e-6))
         status_color = QColor("#ff6262") if self.is_defect else QColor("#4ade80")
