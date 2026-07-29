@@ -1,36 +1,28 @@
 # src/core/inspection.py
-"""
-Módulo de Inspeção de Defeitos v3.5.
-
-A caixa verde maior representa o componente e as caixas verdes internas
-representam os epicentros definidos pela AOI. A posição absoluta da caixa
-global é preservada para que os fallbacks nunca recortem a partir de (0, 0).
-"""
+"""Detecção inicial de diferenças e caixas de interface da AOI."""
 
 import cv2
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
 
 from src.config.settings import settings
+from src.core.epicenter_extractor import EpicenterExtractor
 
 
 def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
-    """Detecta diferenças e retorna caixas verdes da AOI em coordenadas absolutas."""
+    """Detecta diferenças e retorna caixas da AOI em coordenadas absolutas."""
     if img_gabarito.shape != img_teste.shape:
         height, width = img_gabarito.shape[:2]
         img_teste = cv2.resize(img_teste, (width, height))
 
     full_height, full_width = img_gabarito.shape[:2]
 
-    # ------------------------------------------------------------------
-    # Passo A: hierarquia inicial de caixas verdes
-    # ------------------------------------------------------------------
-    hsv_test = cv2.cvtColor(img_teste, cv2.COLOR_BGR2HSV)
-    mask_green = cv2.inRange(
-        hsv_test,
-        settings.COLOR_GREEN_LOWER,
-        settings.COLOR_GREEN_UPPER,
-    )
+    # ---------------------------------------------------------------
+    # Passo A: caixas verdes usando a assinatura da sobreposição AOI
+    # ---------------------------------------------------------------
+    mask_green_gabarito = EpicenterExtractor._green_mask(img_gabarito)
+    mask_green_teste = EpicenterExtractor._green_mask(img_teste)
+    mask_green = cv2.bitwise_or(mask_green_gabarito, mask_green_teste)
     contours_green, _ = cv2.findContours(
         mask_green,
         cv2.RETR_LIST,
@@ -48,7 +40,11 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
 
     if contours_green:
         valid_greens = [cv2.boundingRect(contour) for contour in contours_green]
-        valid_greens = [box for box in valid_greens if box[2] > 10 and box[3] > 10]
+        valid_greens = [
+            box
+            for box in valid_greens
+            if box[2] > 10 and box[3] > 10
+        ]
 
         unique_greens = []
         for box in valid_greens:
@@ -98,31 +94,19 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
                         )
                     )
 
-            # O fallback recebe primeiro as menores caixas internas.
             inner_boxes.sort(key=lambda box: box[2] * box[3])
 
     gab_focus = img_gabarito[focus_y1:focus_y2, focus_x1:focus_x2]
     test_focus = img_teste[focus_y1:focus_y2, focus_x1:focus_x2]
 
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------------
     # Passo B: invisibilidade das linhas de interface
-    # ------------------------------------------------------------------
-    hsv_focus_test = hsv_test[focus_y1:focus_y2, focus_x1:focus_x2]
-    hsv_focus_gab = cv2.cvtColor(
-        img_gabarito[focus_y1:focus_y2, focus_x1:focus_x2],
-        cv2.COLOR_BGR2HSV,
-    )
+    # ---------------------------------------------------------------
+    hsv_focus_test = cv2.cvtColor(test_focus, cv2.COLOR_BGR2HSV)
+    hsv_focus_gab = cv2.cvtColor(gab_focus, cv2.COLOR_BGR2HSV)
 
-    mask_green_test = cv2.inRange(
-        hsv_focus_test,
-        settings.COLOR_GREEN_LOWER,
-        settings.COLOR_GREEN_UPPER,
-    )
-    mask_green_gab = cv2.inRange(
-        hsv_focus_gab,
-        settings.COLOR_GREEN_LOWER,
-        settings.COLOR_GREEN_UPPER,
-    )
+    mask_green_test = EpicenterExtractor._green_mask(test_focus)
+    mask_green_gab = EpicenterExtractor._green_mask(gab_focus)
 
     mask_red1_test = cv2.inRange(
         hsv_focus_test,
@@ -169,9 +153,9 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
     mask_ui_expanded = cv2.dilate(mask_ui, kernel_antidote, iterations=2)
     mask_ignore = cv2.bitwise_not(mask_ui_expanded)
 
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------------
     # Passo C: ignora bordas do foco
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------------
     focus_height, focus_width = gab_focus.shape[:2]
     border_margin = 8
     border_mask = np.zeros((focus_height, focus_width), dtype=np.uint8)
@@ -182,9 +166,9 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
         ] = 255
     mask_ignore = cv2.bitwise_and(mask_ignore, border_mask)
 
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------------
     # Passo D: análise de diferenças
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------------
     gab_blur = cv2.GaussianBlur(gab_focus, (3, 3), 0)
     test_blur = cv2.GaussianBlur(test_focus, (3, 3), 0)
 
