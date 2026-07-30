@@ -49,6 +49,12 @@ class ProductionConfidencePolicyTests(unittest.TestCase):
 
 
 class ProductionConfidenceIntegrationContractTests(unittest.TestCase):
+    @staticmethod
+    def gate_source() -> str:
+        return (
+            ROOT / "src" / "ui" / "production_confidence_gate.py"
+        ).read_text(encoding="utf-8")
+
     def test_gate_is_installed_after_anomaly_learning(self):
         source = (ROOT / "main.py").read_text(encoding="utf-8")
         self.assertLess(
@@ -59,9 +65,7 @@ class ProductionConfidenceIntegrationContractTests(unittest.TestCase):
         )
 
     def test_low_confidence_blocks_auto_save_and_exposes_zero_one(self):
-        source = (
-            ROOT / "src" / "ui" / "production_confidence_gate.py"
-        ).read_text(encoding="utf-8")
+        source = self.gate_source()
         self.assertIn('source == "auto"', source)
         self.assertIn('if not policy["auto_allowed"]', source)
         self.assertIn("self.production_review_pending = True", source)
@@ -71,12 +75,27 @@ class ProductionConfidenceIntegrationContractTests(unittest.TestCase):
         self.assertIn('{"1", "NG"}', source)
 
     def test_production_hides_decision_buttons_until_review(self):
-        source = (
-            ROOT / "src" / "ui" / "production_confidence_gate.py"
-        ).read_text(encoding="utf-8")
+        source = self.gate_source()
         self.assertIn("decision_buttons_visible = (not is_production) or pending", source)
         self.assertIn("panel.btn_save_ok.setVisible(decision_buttons_visible)", source)
         self.assertIn("panel.btn_save_ng.setVisible(decision_buttons_visible)", source)
+
+    def test_pending_review_blocks_capture_discard_and_lighting(self):
+        source = self.gate_source()
+        self.assertIn('if getattr(self, "production_review_pending", False):', source)
+        self.assertIn("def wrapped_start_monitoring", source)
+        self.assertIn("def wrapped_handle_network_image", source)
+        self.assertIn("def wrapped_skip_image", source)
+        self.assertIn("if pending:\n            _show_pending_message(self)", source)
+        self.assertIn("self._set_enabled(panel.btn_start, False)", source)
+        self.assertIn("self._set_enabled(panel.btn_skip, False)", source)
+
+    def test_policy_is_persisted_in_analysis_detail(self):
+        source = self.gate_source()
+        self.assertIn('detail["production_decision_policy"]', source)
+        self.assertIn('resolution="automatic"', source)
+        self.assertIn('resolution="pending"', source)
+        self.assertIn('resolution = "operator_ok"', source)
 
 
 if __name__ == "__main__":
