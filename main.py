@@ -37,6 +37,7 @@ from src.ui.operational_controls import (
     OperationalControlsPresenter,
     install_operational_controls,
 )
+from src.ui.production_confidence_gate import install_production_confidence_gate
 from src.ui.strict_category_memory_ui import install_strict_category_memory_ui
 from src.ui.test_mode_dataset_controls import install_test_mode_dataset_controls
 from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
@@ -48,6 +49,7 @@ def main():
 
     # Os hooks precisam ser instalados antes de o controller conectar os sinais.
     install_iconography_hooks(ControlPanel, OperationalControlsPresenter)
+    install_production_confidence_gate(ControlPanel, OperationalControlsPresenter)
     install_semantic_calibration(SemanticExpert)
     install_semantic_roi_extension(SemanticExpert)
     install_semantic_widget_calibration(SemanticDNAWidget)
