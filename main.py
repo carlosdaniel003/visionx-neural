@@ -49,7 +49,6 @@ def main():
 
     # Os hooks precisam ser instalados antes de o controller conectar os sinais.
     install_iconography_hooks(ControlPanel, OperationalControlsPresenter)
-    install_production_confidence_gate(ControlPanel, OperationalControlsPresenter)
     install_semantic_calibration(SemanticExpert)
     install_semantic_roi_extension(SemanticExpert)
     install_semantic_widget_calibration(SemanticDNAWidget)
@@ -67,7 +66,11 @@ def main():
     # Deve ser a última extensão do orquestrador: audita o resultado final de
     # todos os motores e garante a categoria correta no Laboratório de Textura.
     install_roi_input_contract(MoEOrchestrator, SSIMExpert, SilkExpert)
+
+    # O aprendizado envolve save_label. A trava deve ser instalada depois para
+    # permanecer como a camada externa que decide entre autonomia e operador.
     install_anomaly_learning(ControlPanel)
+    install_production_confidence_gate(ControlPanel, OperationalControlsPresenter)
 
     panel = ControlPanel()
     install_missing_component_panel(panel)
