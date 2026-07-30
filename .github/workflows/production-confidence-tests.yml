@@ -1,0 +1,34 @@
+name: Production Confidence Gate Tests
+
+on:
+  push:
+    branches:
+      - central
+    paths:
+      - "main.py"
+      - "src/ui/production_confidence_gate.py"
+      - "src/services/anomaly_learning.py"
+      - "src/ui/operational_controls.py"
+      - "tests/test_production_confidence_gate.py"
+      - ".github/workflows/production-confidence-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile policy
+        run: |
+          python -m py_compile src/ui/production_confidence_gate.py
+
+      - name: Unit tests
+        run: |
+          python -m unittest tests.test_production_confidence_gate -v
