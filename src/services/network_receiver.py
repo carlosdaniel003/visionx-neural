@@ -68,8 +68,12 @@ class NetworkReceiver(QThread):
                 break
             remaining -= len(packet)
 
-    def _log_ignored_image(self) -> None:
-        ignored = self._image_gate.note_ignored()
+    def _log_ignored_image(self, *, already_counted: bool = False) -> None:
+        ignored = (
+            self._image_gate.snapshot().ignored_images
+            if already_counted
+            else self._image_gate.note_ignored()
+        )
         now = time.monotonic()
         if ignored == 1 or now - self._last_ignored_log_at >= 3.0:
             self.log_updated.emit(
@@ -162,7 +166,7 @@ class NetworkReceiver(QThread):
 
                     # Reserva atomicamente o ciclo antes de emitir o sinal.
                     if not self._image_gate.try_reserve():
-                        self._log_ignored_image()
+                        self._log_ignored_image(already_counted=True)
                         continue
 
                     self.log_updated.emit(
