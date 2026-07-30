@@ -7,7 +7,6 @@ congelada e somente a decisão humana 0=OK ou 1=NG é liberada.
 
 from __future__ import annotations
 
-from types import MethodType
 from typing import Any
 
 
@@ -63,6 +62,19 @@ def _clear_pending(panel) -> None:
         analysis["production_review_required"] = False
 
 
+def _show_pending_message(panel) -> None:
+    policy = getattr(panel, "production_review_policy", None) or production_decision_policy(
+        getattr(panel, "current_analysis", None)
+    )
+    confidence_pct = float(policy.get("confidence", 0.0)) * 100.0
+    panel.update_brain_status(
+        f"Confiança {confidence_pct:.1f}% abaixo de 99% — aguardando operador: 0=OK | 1=NG",
+        True,
+    )
+    if hasattr(panel, "_operational_controls"):
+        panel._operational_controls.sync(force=True)
+
+
 def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None:
     """Instala a trava no controller e na apresentação dos controles."""
     if getattr(control_panel_cls, "_production_confidence_gate_installed", False):
@@ -85,14 +97,23 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
         self.production_review_policy = None
 
     def wrapped_start_monitoring(self, *args, **kwargs):
+        if getattr(self, "production_review_pending", False):
+            _show_pending_message(self)
+            return None
         _clear_pending(self)
         return original_start_monitoring(self, *args, **kwargs)
 
     def wrapped_handle_network_image(self, *args, **kwargs):
+        if getattr(self, "production_review_pending", False):
+            _show_pending_message(self)
+            return None
         _clear_pending(self)
         return original_handle_network_image(self, *args, **kwargs)
 
     def wrapped_skip_image(self, *args, **kwargs):
+        if getattr(self, "production_review_pending", False):
+            _show_pending_message(self)
+            return None
         _clear_pending(self)
         return original_skip_image(self, *args, **kwargs)
 
@@ -106,13 +127,7 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
                 self.production_review_pending = True
                 self.is_locked = True
                 _record_policy(self, policy, resolution="pending")
-                confidence_pct = policy["confidence"] * 100.0
-                self.update_brain_status(
-                    f"Confiança {confidence_pct:.1f}% abaixo de 99% — aguardando operador: 0=OK | 1=NG",
-                    True,
-                )
-                if hasattr(self, "_operational_controls"):
-                    self._operational_controls.sync(force=True)
+                _show_pending_message(self)
                 return None
 
             _record_policy(self, policy, resolution="automatic")
@@ -139,11 +154,14 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
             if is_production and not pending:
                 return None
             return self.save_label("NG", source="xp_keyboard")
+        if pending:
+            _show_pending_message(self)
+            return None
         return original_handle_physical_keyboard(self, comando_xp)
 
     def wrapped_key_press(self, event):
         pending = bool(getattr(self, "production_review_pending", False))
-        if pending and event.key() in {Qt.Key.Key_0, Qt.Key.Key_1}:
+        if pending:
             if event.key() == Qt.Key.Key_0 and self.btn_save_ok.isEnabled():
                 self.save_label("OK", source="button")
                 event.accept()
@@ -152,6 +170,9 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
                 self.save_label("NG", source="button")
                 event.accept()
                 return
+            event.accept()
+            _show_pending_message(self)
+            return
         return original_key_press(self, event)
 
     def wrapped_presenter_sync(self, force: bool = False):
