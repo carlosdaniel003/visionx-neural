@@ -1,0 +1,38 @@
+name: Image Cycle Gate Tests
+
+on:
+  push:
+    branches:
+      - central
+    paths:
+      - "src/services/image_cycle_gate.py"
+      - "src/services/network_receiver.py"
+      - "src/ui/network_image_cycle_gate.py"
+      - "src/ui/production_confidence_gate.py"
+      - "main.py"
+      - "tests/test_image_cycle_gate.py"
+      - ".github/workflows/image-cycle-gate-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile
+        run: |
+          python -m py_compile \
+            src/services/image_cycle_gate.py \
+            src/ui/network_image_cycle_gate.py \
+            tests/test_image_cycle_gate.py
+
+      - name: Unit tests
+        run: |
+          python -m unittest tests.test_image_cycle_gate -v
