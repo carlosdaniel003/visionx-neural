@@ -142,10 +142,15 @@ class ImageCycleContractTests(unittest.TestCase):
 
     def test_cycle_gate_is_outermost_wrapper(self):
         source = (ROOT / "main.py").read_text(encoding="utf-8")
-        self.assertLess(
-            source.index("install_production_confidence_gate"),
-            source.index("install_network_image_cycle_gate"),
+        production_call = (
+            "install_production_confidence_gate("
+            "ControlPanel, OperationalControlsPresenter)"
         )
+        cycle_call = (
+            "install_network_image_cycle_gate("
+            "ControlPanel, OperationalControlsPresenter)"
+        )
+        self.assertLess(source.index(production_call), source.index(cycle_call))
 
     def test_commands_remain_available_while_images_are_blocked(self):
         source = (
