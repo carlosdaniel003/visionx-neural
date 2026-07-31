@@ -32,6 +32,7 @@ from src.ui.control_panel import ControlPanel
 from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
 from src.ui.inverted_face_panel import install_inverted_face_panel
+from src.ui.local_capture_safety import install_local_capture_safety
 from src.ui.missing_component_panel import install_missing_component_panel
 from src.ui.network_image_cycle_gate import install_network_image_cycle_gate
 from src.ui.operational_controls import (
@@ -68,13 +69,15 @@ def main():
     # todos os motores e garante a categoria correta no Laboratório de Textura.
     install_roi_input_contract(MoEOrchestrator, SSIMExpert, SilkExpert)
 
-    # Ordem dos wrappers de ciclo:
+    # Ordem dos wrappers operacionais:
     # 1. aprendizado humano;
     # 2. confiança mínima de produção;
-    # 3. trava geral de uma única imagem ativa.
+    # 3. trava geral de uma única imagem ativa;
+    # 4. supervisão externa do MSS e recuperação de exceções.
     install_anomaly_learning(ControlPanel)
     install_production_confidence_gate(ControlPanel, OperationalControlsPresenter)
     install_network_image_cycle_gate(ControlPanel, OperationalControlsPresenter)
+    install_local_capture_safety(ControlPanel)
 
     panel = ControlPanel()
     install_missing_component_panel(panel)
