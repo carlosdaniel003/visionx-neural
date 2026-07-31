@@ -11,6 +11,7 @@ on:
       - "src/core/anomaly_signature.py"
       - "src/core/strict_category_memory.py"
       - "src/services/dataset_manager.py"
+      - "src/ui/widgets/knn_spectrum.py"
       - "main.py"
       - "tests/test_best_match_memory.py"
       - "tests/test_aoi_categories.py"
@@ -20,6 +21,8 @@ on:
 jobs:
   test:
     runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,7 +35,7 @@ jobs:
       - name: Dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy opencv-python-headless
+          python -m pip install numpy opencv-python-headless PyQt6
 
       - name: Compile memory modules
         run: |
@@ -42,7 +45,9 @@ jobs:
             src/core/anomaly_memory_integration.py `
             src/core/anomaly_signature.py `
             src/core/strict_category_memory.py `
-            src/services/dataset_manager.py
+            src/services/dataset_manager.py `
+            src/ui/widgets/knn_spectrum.py `
+            main.py
 
       - name: Run memory tests
         run: |
