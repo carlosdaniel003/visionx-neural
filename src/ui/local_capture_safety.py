@@ -21,6 +21,8 @@ from src.ui.network_image_cycle_gate import (
 
 LOCAL_CAPTURE_TIMEOUT_MS = 20_000
 LOCAL_MONITOR_FINISH_GRACE_MS = 150
+LOCAL_MONITOR_STOP_TIMEOUT_MS = 1_500
+LOCAL_MONITOR_TERMINATE_TIMEOUT_MS = 400
 
 
 def _safe_status(panel, message: str, active: bool = False) -> None:
@@ -61,14 +63,41 @@ def _monitor_is_running(monitor) -> bool:
 
 
 def _stop_monitor(panel) -> None:
+    """Encerra o MSS sem bloquear a thread da interface indefinidamente."""
     monitor = getattr(panel, "monitor", None)
-    if monitor is None:
+    if monitor is None or not _monitor_is_running(monitor):
         return
+
     try:
-        if _monitor_is_running(monitor):
-            stop = getattr(monitor, "stop", None)
-            if callable(stop):
-                stop()
+        if hasattr(monitor, "running"):
+            monitor.running = False
+        request_interruption = getattr(monitor, "requestInterruption", None)
+        if callable(request_interruption):
+            request_interruption()
+
+        wait = getattr(monitor, "wait", None)
+        if callable(wait):
+            finished = bool(wait(LOCAL_MONITOR_STOP_TIMEOUT_MS))
+            if finished or not _monitor_is_running(monitor):
+                return
+
+            print(
+                "Monitor MSS não respondeu ao encerramento normal; "
+                "aplicando término de emergência."
+            )
+            terminate = getattr(monitor, "terminate", None)
+            if callable(terminate):
+                terminate()
+                try:
+                    wait(LOCAL_MONITOR_TERMINATE_TIMEOUT_MS)
+                except Exception:
+                    pass
+            return
+
+        # Fakes e implementações alternativas sem QThread.wait().
+        stop = getattr(monitor, "stop", None)
+        if callable(stop):
+            stop()
     except Exception as exc:
         print(f"Falha não fatal ao encerrar monitor MSS: {exc}")
 
@@ -143,6 +172,7 @@ def install_local_capture_safety(control_panel_cls) -> None:
     original_start_monitoring = control_panel_cls.start_monitoring
     original_process_aoi_images = control_panel_cls.process_aoi_images
     original_skip_image = control_panel_cls.skip_image
+    original_change_lighting = control_panel_cls.change_lighting
     original_close_event = control_panel_cls.closeEvent
 
     def wrapped_init(self, *args, **kwargs):
@@ -261,7 +291,10 @@ def install_local_capture_safety(control_panel_cls) -> None:
             _stop_monitor(self)
             self.monitor = None
         try:
-            return original_skip_image(self, *args, **kwargs)
+            result = original_skip_image(self, *args, **kwargs)
+            if not bool(getattr(self, "is_locked", False)):
+                _restore_window(self)
+            return result
         except Exception as exc:
             print("Falha recuperada no botão Descartar captura:")
             traceback.print_exc()
@@ -270,6 +303,20 @@ def install_local_capture_safety(control_panel_cls) -> None:
                 "A captura foi descartada com recuperação de segurança.",
                 error=exc,
             )
+            return None
+
+    def wrapped_change_lighting(self, light_mode: str, source: str):
+        try:
+            return original_change_lighting(self, light_mode, source)
+        except Exception as exc:
+            print(f"Falha recuperada ao selecionar iluminação {light_mode}: {exc}")
+            _safe_status(
+                self,
+                f"Não foi possível selecionar a iluminação {light_mode}. "
+                "O sistema permanece ativo.",
+                False,
+            )
+            _safe_sync(self)
             return None
 
     def wrapped_close_event(self, event):
@@ -291,11 +338,13 @@ def install_local_capture_safety(control_panel_cls) -> None:
     control_panel_cls._start_radar = wrapped_start_radar
     control_panel_cls.process_aoi_images = wrapped_process_aoi_images
     control_panel_cls.skip_image = wrapped_skip_image
+    control_panel_cls.change_lighting = wrapped_change_lighting
     control_panel_cls.closeEvent = wrapped_close_event
     control_panel_cls._local_capture_safety_installed = True
 
 
 __all__ = [
     "LOCAL_CAPTURE_TIMEOUT_MS",
+    "LOCAL_MONITOR_STOP_TIMEOUT_MS",
     "install_local_capture_safety",
 ]
