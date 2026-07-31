@@ -1,0 +1,61 @@
+name: Operational Button Sequences
+
+on:
+  push:
+    branches:
+      - central
+    paths:
+      - "src/ui/network_image_cycle_gate.py"
+      - "src/ui/local_capture_safety.py"
+      - "src/ui/production_confidence_gate.py"
+      - "src/ui/operational_controls.py"
+      - "src/ui/operational_controls_model.py"
+      - "src/ui/test_mode_dataset_controls.py"
+      - "src/services/network_receiver.py"
+      - "src/services/image_cycle_gate.py"
+      - "main.py"
+      - "tests/test_operational_button_sequences.py"
+      - "tests/test_image_cycle_gate.py"
+      - "tests/test_production_confidence_gate.py"
+      - ".github/workflows/operational-button-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PyQt6 mss numpy opencv-python-headless pillow
+
+      - name: Compile operational modules
+        run: |
+          python -m py_compile `
+            src/ui/network_image_cycle_gate.py `
+            src/ui/local_capture_safety.py `
+            src/ui/production_confidence_gate.py `
+            src/ui/operational_controls.py `
+            src/ui/operational_controls_model.py `
+            src/ui/test_mode_dataset_controls.py `
+            src/services/network_receiver.py `
+            src/services/image_cycle_gate.py `
+            main.py
+
+      - name: Run button and cycle tests
+        run: |
+          python -m unittest `
+            tests.test_operational_button_sequences `
+            tests.test_image_cycle_gate `
+            tests.test_production_confidence_gate `
+            -v
