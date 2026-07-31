@@ -35,6 +35,7 @@ from src.ui.iconography import install_iconography_hooks, install_svg_iconograph
 from src.ui.inverted_face_panel import install_inverted_face_panel
 from src.ui.local_capture_safety import install_local_capture_safety
 from src.ui.missing_component_panel import install_missing_component_panel
+from src.ui.mode_selector_gate import install_mode_selector_gate
 from src.ui.network_image_cycle_gate import install_network_image_cycle_gate
 from src.ui.operational_controls import (
     OperationalControlsPresenter,
@@ -75,11 +76,13 @@ def main():
     # 1. aprendizado humano;
     # 2. confiança mínima de produção;
     # 3. trava geral de uma única imagem ativa;
-    # 4. supervisão externa do MSS e recuperação de exceções.
+    # 4. supervisão externa do MSS e recuperação de exceções;
+    # 5. seletor de modo bloqueado durante o ciclo ativo.
     install_anomaly_learning(ControlPanel)
     install_production_confidence_gate(ControlPanel, OperationalControlsPresenter)
     install_network_image_cycle_gate(ControlPanel, OperationalControlsPresenter)
     install_local_capture_safety(ControlPanel)
+    install_mode_selector_gate(OperationalControlsPresenter)
 
     panel = ControlPanel()
     install_missing_component_panel(panel)
