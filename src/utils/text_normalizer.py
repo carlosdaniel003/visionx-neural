@@ -10,14 +10,27 @@ import unicodedata
 
 # Categorias canônicas exibidas e persistidas pelo VisionX.
 CATEGORIES = (
-    "INVERTIDO",
+    "DESLOCADO",
+    "EMBORCADO",
     "FALTANDO",
+    "INVERTIDO",
     "MUITO ADESIVO",
 )
 
 # Entradas antigas, traduções e erros recorrentes de OCR permanecem aceitos,
-# mas sempre são convertidos para uma das três categorias canônicas.
+# mas sempre são convertidos para uma categoria canônica.
 ALIASES = {
+    "DESLOCADO": "DESLOCADO",
+    "DDESLOCADO": "DESLOCADO",
+    "DESLOCAMENTO": "DESLOCADO",
+    "SHIFTED": "DESLOCADO",
+    "MISALIGNED": "DESLOCADO",
+    "OFFSET": "DESLOCADO",
+    "EMBORCADO": "EMBORCADO",
+    "EMBORCADA": "EMBORCADO",
+    "TOMBSTONE": "EMBORCADO",
+    "TOMBSTONED": "EMBORCADO",
+    "STANDING": "EMBORCADO",
     "INVERTIDO": "INVERTIDO",
     "INVERTED": "INVERTIDO",
     "REVERSE": "INVERTIDO",
