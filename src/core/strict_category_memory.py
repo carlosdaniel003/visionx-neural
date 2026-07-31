@@ -1,8 +1,7 @@
 """Memória de anomalias estritamente isolada pela categoria da AOI.
 
-Não há fallback por componente, busca global ou imagem legada. Uma inspeção de
-INVERTIDO consulta somente JSONs INVERTIDO; FALTANDO e MUITO ADESIVO seguem a
-mesma regra.
+Não há fallback por componente, busca global ou imagem legada. Cada inspeção
+consulta somente JSONs da mesma categoria canônica.
 """
 
 from __future__ import annotations
@@ -13,6 +12,17 @@ from src.core.anomaly_signature import valid_anomaly_signature
 
 
 CATEGORY_ALIASES = {
+    "DESLOCADO": "DESLOCADO",
+    "DDESLOCADO": "DESLOCADO",
+    "DESLOCAMENTO": "DESLOCADO",
+    "SHIFTED": "DESLOCADO",
+    "MISALIGNED": "DESLOCADO",
+    "OFFSET": "DESLOCADO",
+    "EMBORCADO": "EMBORCADO",
+    "EMBORCADA": "EMBORCADO",
+    "TOMBSTONE": "EMBORCADO",
+    "TOMBSTONED": "EMBORCADO",
+    "STANDING": "EMBORCADO",
     "INVERTIDO": "INVERTIDO",
     "INVERTED": "INVERTIDO",
     "REVERSE": "INVERTIDO",
