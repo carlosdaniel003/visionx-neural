@@ -128,6 +128,7 @@ def _abort_local_capture(
     _invalidate_local_capture(panel)
     _stop_monitor(panel)
     panel.monitor = None
+    panel.local_capture_monitor_generation = -1
     panel.is_locked = False
     _force_discard_cleanup(panel, error=error)
     _release_cycle(panel)
@@ -179,6 +180,7 @@ def install_local_capture_safety(control_panel_cls) -> None:
         self.local_capture_pending = False
         self.local_capture_starting = False
         self.local_capture_generation = 0
+        self.local_capture_monitor_generation = -1
         self.local_capture_last_error = None
 
     def wrapped_start_monitoring(self, *args, **kwargs):
@@ -228,16 +230,26 @@ def install_local_capture_safety(control_panel_cls) -> None:
         if not bool(getattr(self, "local_capture_pending", False)):
             return False
 
+        generation = int(getattr(self, "local_capture_generation", 0))
         existing = getattr(self, "monitor", None)
+        existing_generation = int(
+            getattr(self, "local_capture_monitor_generation", -1)
+        )
         if _monitor_is_running(existing):
-            _safe_status(self, "Monitor MSS já está ativo.", True)
-            return True
+            if existing_generation == generation:
+                _safe_status(self, "Monitor MSS já está ativo.", True)
+                return True
+
+            # O monitor pertence ao ciclo anterior e não pode bloquear o novo.
+            _stop_monitor(self)
+            self.monitor = None
+            self.local_capture_monitor_generation = -1
 
         factory = getattr(self, "_screen_monitor_factory", ScreenMonitor)
-        generation = int(getattr(self, "local_capture_generation", 0))
         try:
             monitor = factory()
             self.monitor = monitor
+            self.local_capture_monitor_generation = generation
 
             def deliver_layout(sample, test, aoi_info):
                 if monitor is not getattr(self, "monitor", None):
@@ -301,6 +313,7 @@ def install_local_capture_safety(control_panel_cls) -> None:
             _invalidate_local_capture(self)
             _stop_monitor(self)
             self.monitor = None
+            self.local_capture_monitor_generation = -1
         try:
             result = original_skip_image(self, *args, **kwargs)
             if not bool(getattr(self, "is_locked", False)):
@@ -334,6 +347,7 @@ def install_local_capture_safety(control_panel_cls) -> None:
         _invalidate_local_capture(self)
         _stop_monitor(self)
         self.monitor = None
+        self.local_capture_monitor_generation = -1
         try:
             return original_close_event(self, event)
         except Exception as exc:
