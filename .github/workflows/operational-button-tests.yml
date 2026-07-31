@@ -8,6 +8,7 @@ on:
       - "src/ui/network_image_cycle_gate.py"
       - "src/ui/local_capture_safety.py"
       - "src/ui/capture_button_copy.py"
+      - "src/ui/mode_selector_gate.py"
       - "src/ui/production_confidence_gate.py"
       - "src/ui/operational_controls.py"
       - "src/ui/operational_controls_model.py"
@@ -46,6 +47,7 @@ jobs:
             src/ui/network_image_cycle_gate.py `
             src/ui/local_capture_safety.py `
             src/ui/capture_button_copy.py `
+            src/ui/mode_selector_gate.py `
             src/ui/production_confidence_gate.py `
             src/ui/operational_controls.py `
             src/ui/operational_controls_model.py `
