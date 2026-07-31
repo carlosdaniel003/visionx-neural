@@ -69,6 +69,17 @@ class NetworkFrameSignatureTests(unittest.TestCase):
             )
         )
 
+    def test_localized_defect_change_is_not_suppressed(self):
+        first_image = np.full((480, 640, 3), 65, dtype=np.uint8)
+        second_image = first_image.copy()
+        second_image[220:270, 300:350] = (230, 230, 230)
+        self.assertFalse(
+            NetworkReceiver._same_signature(
+                NetworkReceiver._frame_signature(first_image),
+                NetworkReceiver._frame_signature(second_image),
+            )
+        )
+
 
 class FakeButton:
     def __init__(self):
@@ -153,6 +164,10 @@ class FakePresenter:
 
 
 class ExplodingDiscardPanel(FakePanel):
+    # FakePanel já recebe o wrapper em outro teste; esta flag própria força uma
+    # instalação independente sobre o método que lança a exceção.
+    _network_image_cycle_gate_installed = False
+
     def skip_image(self):
         raise RuntimeError("debugger falhou durante reset")
 
@@ -208,7 +223,6 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         panel.capture_cycle_active = True
         panel.network_receiver.locked = True
 
-        # Não pode propagar a exceção do debugger/reset para o loop do Qt.
         panel.skip_image()
 
         self.assertFalse(panel.is_locked)
