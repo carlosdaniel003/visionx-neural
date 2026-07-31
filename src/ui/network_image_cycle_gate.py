@@ -1,8 +1,8 @@
 """Integra a trava de ciclo de imagens ao painel de controle.
 
 A primeira imagem aceita permanece como captura ativa até OK, NG ou descarte.
-Imagens seguintes e novas capturas locais não substituem a captura pendente.
-O descarte é protegido contra falhas de reset para não encerrar a aplicação.
+No Modo Teste, "Capturar nova peça" executa atomicamente: descartar a captura
+atual e iniciar o MSS local, sem abrir uma janela para imagens repetidas do XP.
 """
 
 from __future__ import annotations
@@ -10,6 +10,14 @@ from __future__ import annotations
 
 def _receiver(panel):
     return getattr(panel, "network_receiver", None)
+
+
+def _mode(panel) -> str:
+    combo = getattr(panel, "combo_mode", None)
+    try:
+        return str(combo.currentText()).strip() if combo is not None else ""
+    except Exception:
+        return ""
 
 
 def _safe_sync(panel) -> None:
@@ -20,6 +28,16 @@ def _safe_sync(panel) -> None:
         presenter.sync(force=True)
     except Exception as exc:
         print(f"Falha não fatal ao sincronizar controles: {exc}")
+
+
+def _restore_window(panel) -> None:
+    try:
+        if hasattr(panel, "_safe_maximize"):
+            panel._safe_maximize()
+        else:
+            panel.show()
+    except Exception as exc:
+        print(f"Falha não fatal ao restaurar a janela: {exc}")
 
 
 def _lock_cycle(panel) -> None:
@@ -44,10 +62,11 @@ def _release_cycle(panel) -> None:
     _safe_sync(panel)
 
 
-def _show_locked_message(panel) -> None:
+def _show_locked_message(panel, message: str | None = None) -> None:
     try:
         panel.update_brain_status(
-            "Captura atual protegida — julgue como OK/NG ou descarte antes de receber outra imagem.",
+            message
+            or "Captura atual protegida — julgue como OK/NG ou descarte antes de receber outra imagem.",
             True,
         )
     except Exception as exc:
@@ -75,9 +94,6 @@ def _force_discard_cleanup(panel, error: Exception | None = None) -> None:
     panel.capture_cycle_active = False
     panel.capture_cycle_ignored_signals = 0
 
-    # O descarte não deve manter uma revisão de produção pendente quando houve
-    # falha interna no reset. No fluxo normal, a trava de produção bloqueia o
-    # descarte antes de chegar a esta função.
     if hasattr(panel, "production_review_pending"):
         panel.production_review_pending = False
 
@@ -100,18 +116,30 @@ def _force_discard_cleanup(panel, error: Exception | None = None) -> None:
     _safe_call(panel, "_reset_confidence_panel")
     _safe_call(panel, "_reset_reference_panel")
     _safe_call(panel, "_reset_aoi_info")
+    _restore_window(panel)
 
     message = "Sistema ocioso — captura descartada com segurança."
     if error is not None:
         message = (
-            "Captura descartada com recuperação após uma falha de interface. "
+            "Captura recuperada após uma falha interna. "
             "O sistema permanece ativo."
         )
-        print(f"Erro recuperado durante descarte: {error}")
+        print(f"Erro recuperado durante limpeza da captura: {error}")
     try:
         panel.update_brain_status(message, False)
     except Exception:
         pass
+
+
+def _can_replace_with_local_capture(panel) -> bool:
+    """Apenas o Modo Teste pode descartar a análise e iniciar MSS pelo botão."""
+    return bool(
+        _mode(panel) == "Modo Teste"
+        and getattr(panel, "current_analysis", None) is not None
+        and not bool(getattr(panel, "production_review_pending", False))
+        and not bool(getattr(panel, "capture_cycle_discarding", False))
+        and not bool(getattr(panel, "capture_cycle_local_transition", False))
+    )
 
 
 def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
@@ -131,42 +159,101 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
         self.capture_cycle_active = False
         self.capture_cycle_ignored_signals = 0
         self.capture_cycle_discarding = False
+        self.capture_cycle_local_transition = False
+        self.capture_cycle_source = None
 
     def wrapped_handle_network_image(self, img_bgr, ip: str):
-        if bool(getattr(self, "capture_cycle_active", False)) or bool(
-            getattr(self, "is_locked", False)
-        ) or bool(getattr(self, "capture_cycle_discarding", False)):
+        if (
+            bool(getattr(self, "capture_cycle_active", False))
+            or bool(getattr(self, "is_locked", False))
+            or bool(getattr(self, "capture_cycle_discarding", False))
+            or bool(getattr(self, "capture_cycle_local_transition", False))
+        ):
             self.capture_cycle_ignored_signals = int(
                 getattr(self, "capture_cycle_ignored_signals", 0)
             ) + 1
             _lock_cycle(self)
             if self.capture_cycle_ignored_signals == 1:
                 _show_locked_message(self)
-            return None
+            return False
 
         _lock_cycle(self)
+        self.capture_cycle_source = "network"
         try:
-            return original_handle_network_image(self, img_bgr, ip)
-        except Exception:
+            original_handle_network_image(self, img_bgr, ip)
+            return True
+        except Exception as exc:
+            print(f"Falha recuperada ao aceitar imagem da rede: {exc}")
+            _force_discard_cleanup(self, error=exc)
             _release_cycle(self)
-            raise
+            return False
+
+    def _launch_local_capture(self, *args, **kwargs) -> bool:
+        _lock_cycle(self)
+        self.capture_cycle_source = "local"
+        try:
+            original_start_monitoring(self, *args, **kwargs)
+            return True
+        except Exception as exc:
+            print(f"Falha recuperada ao iniciar captura MSS: {exc}")
+            _force_discard_cleanup(self, error=exc)
+            _release_cycle(self)
+            return False
 
     def wrapped_start_monitoring(self, *args, **kwargs):
-        if bool(getattr(self, "capture_cycle_active", False)) or bool(
-            getattr(self, "is_locked", False)
-        ) or bool(getattr(self, "capture_cycle_discarding", False)):
-            _show_locked_message(self)
-            return None
+        if bool(getattr(self, "capture_cycle_discarding", False)) or bool(
+            getattr(self, "capture_cycle_local_transition", False)
+        ):
+            _show_locked_message(
+                self,
+                "Transição de captura em andamento — aguarde alguns instantes.",
+            )
+            return False
 
+        active = bool(getattr(self, "capture_cycle_active", False)) or bool(
+            getattr(self, "is_locked", False)
+        )
+
+        if not active:
+            return _launch_local_capture(self, *args, **kwargs)
+
+        if not _can_replace_with_local_capture(self):
+            _show_locked_message(self)
+            return False
+
+        # Operação atômica: a rede permanece fechada entre descarte e MSS.
+        self.capture_cycle_local_transition = True
+        self.capture_cycle_discarding = True
         _lock_cycle(self)
+        discard_error = None
         try:
-            return original_start_monitoring(self, *args, **kwargs)
-        except Exception:
-            _release_cycle(self)
-            raise
+            original_skip_image(self)
+        except Exception as exc:
+            discard_error = exc
+            _force_discard_cleanup(self, error=exc)
+        finally:
+            self.capture_cycle_discarding = False
+
+        # Uma trava interna, como revisão obrigatória de produção, pode recusar
+        # o descarte. Nesse caso não iniciamos outra captura.
+        if bool(getattr(self, "is_locked", False)):
+            self.capture_cycle_local_transition = False
+            _lock_cycle(self)
+            _show_locked_message(self)
+            return False
+
+        if discard_error is None:
+            self.current_analysis = None
+            self.current_sample = None
+            self.current_ng = None
+            self.current_aoi_info = {}
+
+        launched = _launch_local_capture(self, *args, **kwargs)
+        self.capture_cycle_local_transition = False
+        _safe_sync(self)
+        return bool(launched)
 
     def wrapped_skip_image(self, *args, **kwargs):
-        # Mantém o receptor fechado durante todo o reset da interface.
         self.capture_cycle_discarding = True
         _lock_cycle(self)
         try:
@@ -177,9 +264,10 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
         finally:
             self.capture_cycle_discarding = False
 
-        # Em revisão obrigatória de produção, o wrapper interno recusa o
-        # descarte e mantém is_locked=True. Nos demais casos, libera o ciclo.
         if not bool(getattr(self, "is_locked", False)):
+            self.current_sample = None
+            self.current_ng = None
+            self.current_analysis = None
             _release_cycle(self)
         else:
             _lock_cycle(self)
@@ -202,6 +290,9 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
             return None
 
         if not bool(getattr(self, "is_locked", False)):
+            self.current_sample = None
+            self.current_ng = None
+            self.current_analysis = None
             _release_cycle(self)
         else:
             _lock_cycle(self)
@@ -219,19 +310,46 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
         if not active:
             return
 
-        self._set_enabled(panel.btn_start, False)
-
         has_analysis = getattr(panel, "current_analysis", None) is not None
+        mode = _mode(panel)
+        production_pending = bool(
+            getattr(panel, "production_review_pending", False)
+        )
+        transitioning = bool(
+            getattr(panel, "capture_cycle_discarding", False)
+            or getattr(panel, "capture_cycle_local_transition", False)
+        )
+
+        allow_replace = bool(
+            has_analysis
+            and mode == "Modo Teste"
+            and not production_pending
+            and not transitioning
+        )
+        self._set_enabled(panel.btn_start, allow_replace)
+
+        if allow_replace:
+            self._set_text(
+                panel.btn_start,
+                "Capturar nova peça (descarta a atual)",
+            )
+            panel.lbl_operation_hint.setText(
+                "Você pode julgar, descartar ou iniciar outra captura local. "
+                "A captura atual será descartada antes do MSS."
+            )
+            return
+
         if has_analysis:
             self._set_text(
                 panel.btn_start,
                 "Captura bloqueada — finalize ou descarte a atual",
             )
-
-            if not bool(getattr(panel, "production_review_pending", False)):
+            if not production_pending:
                 panel.lbl_operation_hint.setText(
-                    "A imagem atual não será substituída. Julgue como OK/NG ou descarte a captura."
+                    "A imagem atual não será substituída sem julgamento ou descarte."
                 )
+        else:
+            self._set_text(panel.btn_start, "Processando captura...")
 
     control_panel_cls.__init__ = wrapped_init
     control_panel_cls.handle_network_image = wrapped_handle_network_image
@@ -242,4 +360,9 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
     control_panel_cls._network_image_cycle_gate_installed = True
 
 
-__all__ = ["install_network_image_cycle_gate"]
+__all__ = [
+    "_force_discard_cleanup",
+    "_lock_cycle",
+    "_release_cycle",
+    "install_network_image_cycle_gate",
+]
