@@ -42,6 +42,7 @@ from src.ui.operational_controls import (
     install_operational_controls,
 )
 from src.ui.production_confidence_gate import install_production_confidence_gate
+from src.ui.qt_button_signal_adapter import install_qt_button_signal_adapter
 from src.ui.strict_category_memory_ui import install_strict_category_memory_ui
 from src.ui.test_mode_dataset_controls import install_test_mode_dataset_controls
 from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
@@ -77,11 +78,13 @@ def main():
     # 2. confiança mínima de produção;
     # 3. trava geral de uma única imagem ativa;
     # 4. supervisão externa do MSS e recuperação de exceções;
-    # 5. seletor de modo bloqueado durante o ciclo ativo.
+    # 5. adaptador final que consome o checked(bool) dos QPushButtons;
+    # 6. seletor de modo bloqueado durante o ciclo ativo.
     install_anomaly_learning(ControlPanel)
     install_production_confidence_gate(ControlPanel, OperationalControlsPresenter)
     install_network_image_cycle_gate(ControlPanel, OperationalControlsPresenter)
     install_local_capture_safety(ControlPanel)
+    install_qt_button_signal_adapter(ControlPanel)
     install_mode_selector_gate(OperationalControlsPresenter)
 
     panel = ControlPanel()
