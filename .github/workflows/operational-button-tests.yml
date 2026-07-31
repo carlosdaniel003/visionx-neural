@@ -17,6 +17,7 @@ on:
       - "src/services/image_cycle_gate.py"
       - "main.py"
       - "tests/test_operational_button_sequences.py"
+      - "tests/test_local_capture_network_takeover.py"
       - "tests/test_image_cycle_gate.py"
       - "tests/test_production_confidence_gate.py"
       - ".github/workflows/operational-button-tests.yml"
@@ -60,6 +61,7 @@ jobs:
         run: |
           python -m unittest `
             tests.test_operational_button_sequences `
+            tests.test_local_capture_network_takeover `
             tests.test_image_cycle_gate `
             tests.test_production_confidence_gate `
             -v
