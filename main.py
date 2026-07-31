@@ -28,6 +28,7 @@ from src.core.semantic_roi_extension import (
 )
 from src.core.strict_category_memory import install_strict_category_memory
 from src.services.anomaly_learning import install_anomaly_learning
+from src.ui.capture_button_copy import install_capture_button_copy
 from src.ui.control_panel import ControlPanel
 from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
@@ -51,6 +52,7 @@ def main():
 
     # Os hooks precisam ser instalados antes de o controller conectar os sinais.
     install_iconography_hooks(ControlPanel, OperationalControlsPresenter)
+    install_capture_button_copy(OperationalControlsPresenter)
     install_semantic_calibration(SemanticExpert)
     install_semantic_roi_extension(SemanticExpert)
     install_semantic_widget_calibration(SemanticDNAWidget)
