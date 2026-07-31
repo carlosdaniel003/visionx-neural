@@ -94,7 +94,6 @@ def _stop_monitor(panel) -> None:
                     pass
             return
 
-        # Fakes e implementações alternativas sem QThread.wait().
         stop = getattr(monitor, "stop", None)
         if callable(stop):
             stop()
@@ -239,7 +238,19 @@ def install_local_capture_safety(control_panel_cls) -> None:
         try:
             monitor = factory()
             self.monitor = monitor
-            monitor.layout_detected.connect(self.process_aoi_images)
+
+            def deliver_layout(sample, test, aoi_info):
+                if monitor is not getattr(self, "monitor", None):
+                    return
+                if generation != int(
+                    getattr(self, "local_capture_generation", -1)
+                ):
+                    return
+                if not bool(getattr(self, "local_capture_pending", False)):
+                    return
+                self.process_aoi_images(sample, test, aoi_info)
+
+            monitor.layout_detected.connect(deliver_layout)
             if hasattr(monitor, "log_updated"):
                 monitor.log_updated.connect(self.update_network_status)
             if hasattr(monitor, "finished"):
