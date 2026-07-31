@@ -24,10 +24,12 @@ class KNNSpectrumWidget(QWidget):
         self.fusion_rule = "physical_only"
         self.memory_mode = "none"
         self.memory_scope = "none"
+        self.quantity_influence = False
 
     def update_data(self, detail: dict):
         if not detail or (
             "vote_defect" not in detail
+            and "memory_score" not in detail
             and "db_vote" not in detail
             and "decision_trace" not in detail
         ):
@@ -48,8 +50,14 @@ class KNNSpectrumWidget(QWidget):
         )
         self.vote = float(
             memory.get(
-                "vote_defect",
-                detail.get("vote_defect", detail.get("db_vote", 0.5)),
+                "memory_score",
+                memory.get(
+                    "vote_defect",
+                    detail.get(
+                        "memory_score",
+                        detail.get("vote_defect", detail.get("db_vote", 0.5)),
+                    ),
+                ),
             )
         )
         self.best_sim = float(
@@ -78,6 +86,12 @@ class KNNSpectrumWidget(QWidget):
         self.memory_scope = str(
             memory.get("memory_scope", detail.get("memory_scope", "none"))
         ).lower()
+        self.quantity_influence = bool(
+            memory.get(
+                "quantity_influence",
+                detail.get("quantity_influence", False),
+            )
+        )
         self.update()
 
     @staticmethod
@@ -115,10 +129,10 @@ class KNNSpectrumWidget(QWidget):
 
     def _similarity_label(self) -> str:
         if self.memory_mode == "anomaly":
-            return "SIMILARIDADE DA ANOMALIA COM A MEMÓRIA"
+            return "SIMILARIDADE DA ANOMALIA COM A MELHOR MEMÓRIA"
         if self.memory_mode == "legacy_image":
             return "SIMILARIDADE DA IMAGEM COMPLETA (LEGADO)"
-        return "SIMILARIDADE DO MELHOR VIZINHO"
+        return "SIMILARIDADE DA MELHOR CORRESPONDÊNCIA"
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -145,7 +159,7 @@ class KNNSpectrumWidget(QWidget):
             painter.drawText(
                 self.rect(),
                 Qt.AlignmentFlag.AlignCenter,
-                "Dataset sem anomalias compatíveis",
+                "Sem correspondência visual confiável na memória",
             )
             painter.end()
             return
@@ -154,7 +168,11 @@ class KNNSpectrumWidget(QWidget):
         painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
         role_color = (
             QColor("#ff6262")
-            if self.fusion_rule in {"memory_veto", "memory_override"}
+            if self.fusion_rule in {
+                "memory_veto",
+                "memory_override",
+                "best_match_strong",
+            }
             else QColor("#f5c518")
         )
         painter.setPen(role_color)
@@ -198,7 +216,7 @@ class KNNSpectrumWidget(QWidget):
         painter.drawText(
             padding,
             vote_y,
-            "VOTO DOS RÓTULOS PARA DEFEITO NG",
+            "SCORE HERDADO DA MELHOR CORRESPONDÊNCIA",
         )
         vote_rect = QRectF(padding, vote_y + 6, bar_width, bar_height)
         gradient = QLinearGradient(
@@ -241,10 +259,14 @@ class KNNSpectrumWidget(QWidget):
         )
 
         painter.setPen(QColor("#d0d0d0"))
+        audit_text = (
+            "sem votação por quantidade"
+            if not self.quantity_influence
+            else "quantidade habilitada"
+        )
         info = (
-            f"Voto {self.vote:.0%} NG • melhor rótulo {self.best_label} • "
-            f"{self.n_neighbors} vizinho(s) • peso físico "
-            f"{self.physical_weight:.0%}"
+            f"Score {self.vote:.0%} NG • melhor rótulo {self.best_label} • "
+            f"{self.n_neighbors} vizinho(s) auditados • {audit_text}"
         )
         painter.drawText(
             padding,
