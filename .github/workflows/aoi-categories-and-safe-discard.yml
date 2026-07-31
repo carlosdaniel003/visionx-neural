@@ -1,0 +1,49 @@
+name: AOI Categories and Safe Discard
+
+on:
+  push:
+    branches:
+      - central
+    paths:
+      - "src/utils/text_normalizer.py"
+      - "src/core/strict_category_memory.py"
+      - "src/services/network_receiver.py"
+      - "src/services/image_cycle_gate.py"
+      - "src/ui/network_image_cycle_gate.py"
+      - "tests/test_aoi_categories.py"
+      - "tests/test_image_cycle_gate.py"
+      - ".github/workflows/aoi-categories-and-safe-discard.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy opencv-python-headless PyQt6
+
+      - name: Compile
+        run: |
+          python -m py_compile \
+            src/utils/text_normalizer.py \
+            src/core/strict_category_memory.py \
+            src/services/network_receiver.py \
+            src/services/image_cycle_gate.py \
+            src/ui/network_image_cycle_gate.py
+
+      - name: Unit tests
+        run: |
+          python -m unittest \
+            tests.test_aoi_categories \
+            tests.test_image_cycle_gate \
+            -v
