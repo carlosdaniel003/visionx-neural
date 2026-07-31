@@ -7,7 +7,9 @@ import sys
 
 from PyQt6.QtWidgets import QApplication
 
+import src.core.anomaly_memory_integration as anomaly_memory_module
 from src.core.anomaly_memory_integration import install_anomaly_memory_integration
+from src.core.best_match_memory import install_best_match_memory
 from src.core.experts.knn_expert import KNNExpert
 from src.core.experts.missing_component_expert import MissingComponentExpert
 from src.core.experts.semantic_calibration import (
@@ -67,6 +69,9 @@ def main():
     install_roi_visual_alignment(SilkExpert, MissingComponentExpert)
 
     install_anomaly_memory_integration(MoEOrchestrator)
+    # A memória consulta todos os registros da mesma categoria, mas somente a
+    # melhor correspondência visual fornece o rótulo. Quantidade não vota.
+    install_best_match_memory(KNNExpert, anomaly_memory_module)
     install_inverted_signature_extension()
     install_inverted_face_integration(MoEOrchestrator)
     # Deve ser a última extensão do orquestrador: audita o resultado final de
