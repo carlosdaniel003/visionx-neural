@@ -164,8 +164,6 @@ class FakePresenter:
 
 
 class ExplodingDiscardPanel(FakePanel):
-    # FakePanel já recebe o wrapper em outro teste; esta flag própria força uma
-    # instalação independente sobre o método que lança a exceção.
     _network_image_cycle_gate_installed = False
 
     def skip_image(self):
@@ -244,15 +242,19 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
 
 
 class ImageCycleContractTests(unittest.TestCase):
-    def test_network_receiver_reserves_before_emitting(self):
+    def test_network_receiver_reserves_before_emitting_stable_candidate(self):
         source = (
             ROOT / "src" / "services" / "network_receiver.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("if not self._image_gate.try_reserve()", source)
-        self.assertLess(
-            source.index("if not self._image_gate.try_reserve()"),
-            source.index("self.image_received.emit(img, ip_origem)"),
-        )
+        reserve = "if not self._image_gate.try_reserve()"
+        emit = "self.image_received.emit(candidate_image, candidate_ip)"
+        self.assertIn(reserve, source)
+        self.assertIn(emit, source)
+        self.assertLess(source.index(reserve), source.index(emit))
+        self.assertIn("STABLE_REQUIRED_FRAMES = 2", source)
+        self.assertIn("self._stage_latest_candidate", source)
+        self.assertIn("self._last_rejected_signature", source)
+        self.assertIn("self._reserved_signature", source)
         self.assertIn("if not self._image_gate.is_open()", source)
         self.assertIn("self._discard_payload(conexao, tamanho_total)", source)
         self.assertIn("self._require_image_change", source)
@@ -268,7 +270,9 @@ class ImageCycleContractTests(unittest.TestCase):
             "install_network_image_cycle_gate("
             "ControlPanel, OperationalControlsPresenter)"
         )
+        intake_call = "install_network_aoi_intake_filter(ControlPanel)"
         self.assertLess(source.index(production_call), source.index(cycle_call))
+        self.assertLess(source.index(cycle_call), source.index(intake_call))
 
     def test_commands_remain_available_while_images_are_blocked(self):
         source = (
