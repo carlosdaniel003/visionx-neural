@@ -38,6 +38,7 @@ from src.ui.inverted_face_panel import install_inverted_face_panel
 from src.ui.local_capture_safety import install_local_capture_safety
 from src.ui.missing_component_panel import install_missing_component_panel
 from src.ui.mode_selector_gate import install_mode_selector_gate
+from src.ui.network_aoi_intake_filter import install_network_aoi_intake_filter
 from src.ui.network_image_cycle_gate import install_network_image_cycle_gate
 from src.ui.operational_controls import (
     OperationalControlsPresenter,
@@ -82,12 +83,14 @@ def main():
     # 1. aprendizado humano;
     # 2. confiança mínima de produção;
     # 3. trava geral de uma única imagem ativa;
-    # 4. supervisão externa do MSS e recuperação de exceções;
-    # 5. adaptador final que consome o checked(bool) dos QPushButtons;
-    # 6. seletor de modo bloqueado durante o ciclo ativo.
+    # 4. filtro de rede: dois frames estáveis + epicentro válido;
+    # 5. supervisão externa do MSS e recuperação de exceções;
+    # 6. adaptador final que consome o checked(bool) dos QPushButtons;
+    # 7. seletor de modo bloqueado durante o ciclo ativo.
     install_anomaly_learning(ControlPanel)
     install_production_confidence_gate(ControlPanel, OperationalControlsPresenter)
     install_network_image_cycle_gate(ControlPanel, OperationalControlsPresenter)
+    install_network_aoi_intake_filter(ControlPanel)
     install_local_capture_safety(ControlPanel)
     install_qt_button_signal_adapter(ControlPanel)
     install_mode_selector_gate(OperationalControlsPresenter)
