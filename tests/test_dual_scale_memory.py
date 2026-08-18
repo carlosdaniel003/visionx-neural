@@ -1,4 +1,5 @@
 import json
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from src.config.settings import settings
 from src.core.anomaly_signature import build_anomaly_signature
 from src.core.dual_scale_memory import (
     CONTEXT_WEIGHT,
@@ -16,6 +18,7 @@ from src.core.dual_scale_memory import (
     install_dual_scale_memory,
     valid_context_signature,
 )
+from src.services.dataset_manager import DatasetManager
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +26,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _scene(style: str = "a", anomaly: bool = False) -> np.ndarray:
     image = np.full((240, 320, 3), 28, dtype=np.uint8)
-    # Caixa maior da AOI.
     cv2.rectangle(image, (38, 38), (282, 202), (0, 255, 0), 4)
 
     if style == "a":
@@ -79,36 +81,66 @@ class DualScaleSignatureTests(unittest.TestCase):
 
         self.assertEqual(expanded["vector"], original_vector)
         self.assertEqual(expanded["vector_size"], local["vector_size"])
-        self.assertEqual(
-            expanded["memory_scales"],
-            ["epicenter", "component_context"],
-        )
+        self.assertEqual(expanded["memory_scales"], ["epicenter", "component_context"])
         self.assertTrue(valid_context_signature(expanded["context_signature"]))
         self.assertEqual(expanded["scale_weights"]["epicenter"], EPICENTER_WEIGHT)
-        self.assertEqual(
-            expanded["scale_weights"]["component_context"],
-            CONTEXT_WEIGHT,
-        )
+        self.assertEqual(expanded["scale_weights"]["component_context"], CONTEXT_WEIGHT)
 
     def test_context_distinguishes_different_component_appearance(self):
-        query = build_component_context_signature(
-            _scene("a", False),
-            _scene("a", True),
-        )
-        same = build_component_context_signature(
-            _scene("a", False),
-            _scene("a", True),
-        )
-        different = build_component_context_signature(
-            _scene("b", False),
-            _scene("b", True),
-        )
+        query = build_component_context_signature(_scene("a", False), _scene("a", True))
+        same = build_component_context_signature(_scene("a", False), _scene("a", True))
+        different = build_component_context_signature(_scene("b", False), _scene("b", True))
 
         same_score, _ = compare_component_context_signatures(query, same)
         different_score, _ = compare_component_context_signatures(query, different)
 
         self.assertGreater(same_score, 0.99)
         self.assertLess(different_score, same_score - 0.08)
+
+    def test_dataset_json_persists_epicenter_and_component_context(self):
+        reference = _scene("a", False)
+        test = _scene("a", True)
+        local = build_anomaly_signature(
+            reference,
+            test,
+            {},
+            {"category": "FALTANDO", "parts": "C100"},
+            (140, 100, 42, 42),
+        )
+        expanded = attach_component_context(local, reference, test)
+
+        old_normal = settings.NORMAL_DIR
+        old_anomaly = settings.ANOMALY_DIR
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            settings.NORMAL_DIR = root / "normal"
+            settings.ANOMALY_DIR = root / "anomaly"
+            try:
+                path = DatasetManager.save_sample(
+                    ng_image=test,
+                    label="NG",
+                    sample_image=reference,
+                    aoi_info={"category": "FALTANDO", "parts": "C100"},
+                    analysis={
+                        "is_defect": True,
+                        "confidence": 0.99,
+                        "detail": {"anomaly_signature": expanded},
+                    },
+                    save_images=False,
+                    source="button",
+                    ai_decision="NG",
+                )
+                self.assertTrue(path)
+                saved = json.loads(Path(path).read_text(encoding="utf-8"))
+            finally:
+                settings.NORMAL_DIR = old_normal
+                settings.ANOMALY_DIR = old_anomaly
+
+        memory = saved["analysis"]["anomaly_memory"]
+        self.assertEqual(memory["vector"], expanded["vector"])
+        self.assertEqual(memory["memory_scales"], ["epicenter", "component_context"])
+        self.assertTrue(valid_context_signature(memory["context_signature"]))
+        self.assertEqual(memory["context_signature"]["schema"], "visionx.context.v1")
 
 
 class DualScaleInstallerTests(unittest.TestCase):
@@ -122,42 +154,23 @@ class DualScaleInstallerTests(unittest.TestCase):
         }
 
     def _modules(self, local_similarity: float):
-        anomaly_module = types.SimpleNamespace(
-            build_anomaly_signature=self._local_builder,
-        )
+        anomaly_module = types.SimpleNamespace(build_anomaly_signature=self._local_builder)
         best_module = types.SimpleNamespace(
             compare_anomaly_signatures=lambda query, stored: (
                 float(local_similarity),
                 {"schema": "local", "groups": {}},
             ),
         )
-        dataset_module = types.SimpleNamespace(
-            build_anomaly_signature=self._local_builder,
-        )
-        install_dual_scale_memory(
-            anomaly_module,
-            best_module,
-            dataset_module,
-        )
+        dataset_module = types.SimpleNamespace(build_anomaly_signature=self._local_builder)
+        install_dual_scale_memory(anomaly_module, best_module, dataset_module)
         return anomaly_module, best_module, dataset_module
 
     def test_dual_scale_similarity_uses_local_and_context(self):
         anomaly_module, best_module, dataset_module = self._modules(1.0)
-        query = anomaly_module.build_anomaly_signature(
-            _scene("a", False),
-            _scene("a", True),
-            {},
-        )
-        stored = dataset_module.build_anomaly_signature(
-            _scene("b", False),
-            _scene("b", True),
-            {},
-        )
+        query = anomaly_module.build_anomaly_signature(_scene("a", False), _scene("a", True), {})
+        stored = dataset_module.build_anomaly_signature(_scene("b", False), _scene("b", True), {})
 
-        similarity, breakdown = best_module.compare_anomaly_signatures(
-            query,
-            stored,
-        )
+        similarity, breakdown = best_module.compare_anomaly_signatures(query, stored)
 
         self.assertTrue(breakdown["dual_scale"])
         self.assertAlmostEqual(breakdown["epicenter_similarity"], 1.0, places=7)
@@ -171,21 +184,14 @@ class DualScaleInstallerTests(unittest.TestCase):
 
     def test_legacy_memory_without_context_keeps_old_similarity(self):
         anomaly_module, best_module, _ = self._modules(0.83)
-        query = anomaly_module.build_anomaly_signature(
-            _scene("a", False),
-            _scene("a", True),
-            {},
-        )
+        query = anomaly_module.build_anomaly_signature(_scene("a", False), _scene("a", True), {})
         legacy = {
             "schema": "visionx.anomaly.v1",
             "vector_size": 224,
             "vector": [0.25] * 224,
         }
 
-        similarity, breakdown = best_module.compare_anomaly_signatures(
-            query,
-            legacy,
-        )
+        similarity, breakdown = best_module.compare_anomaly_signatures(query, legacy)
 
         self.assertAlmostEqual(similarity, 0.83, places=7)
         self.assertFalse(breakdown["dual_scale"])
@@ -194,11 +200,7 @@ class DualScaleInstallerTests(unittest.TestCase):
 
     def test_dataset_fallback_builder_also_receives_second_scale(self):
         _, _, dataset_module = self._modules(0.9)
-        signature = dataset_module.build_anomaly_signature(
-            _scene("a", False),
-            _scene("a", True),
-            {},
-        )
+        signature = dataset_module.build_anomaly_signature(_scene("a", False), _scene("a", True), {})
         self.assertIn("context_signature", signature)
         self.assertTrue(valid_context_signature(signature["context_signature"]))
         json.dumps(signature)
