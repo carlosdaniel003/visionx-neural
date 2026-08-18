@@ -24,6 +24,7 @@ from src.core.experts.silk_expert import SilkExpert
 from src.core.experts.ssim_expert import SSIMExpert
 from src.core.inverted_face_integration import install_inverted_face_integration
 from src.core.inverted_signature_extension import install_inverted_signature_extension
+from src.core.memory_hypothesis_contrast import install_memory_hypothesis_contrast
 from src.core.moe_orchestrator import MoEOrchestrator
 from src.core.prototype_memory import install_prototype_memory
 from src.core.roi_input_contract import install_roi_input_contract
@@ -92,6 +93,14 @@ def main():
         KNNExpert,
         DatasetManager,
         dataset_manager_module,
+        best_match_memory_module,
+    )
+    # Contrasta explicitamente a melhor hipótese NG com a melhor hipótese OK.
+    # Empates confiáveis dentro de 1 ponto percentual ficam inconclusivos e
+    # forçam revisão humana, sem desfazer dual-scale ou protótipos.
+    install_memory_hypothesis_contrast(
+        KNNExpert,
+        anomaly_memory_module,
         best_match_memory_module,
     )
     install_inverted_signature_extension()
