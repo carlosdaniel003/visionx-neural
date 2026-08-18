@@ -25,6 +25,7 @@ from src.core.experts.ssim_expert import SSIMExpert
 from src.core.inverted_face_integration import install_inverted_face_integration
 from src.core.inverted_signature_extension import install_inverted_signature_extension
 from src.core.moe_orchestrator import MoEOrchestrator
+from src.core.prototype_memory import install_prototype_memory
 from src.core.roi_input_contract import install_roi_input_contract
 from src.core.roi_visual_alignment import install_roi_visual_alignment
 from src.core.semantic_roi_extension import (
@@ -33,6 +34,7 @@ from src.core.semantic_roi_extension import (
 )
 from src.core.strict_category_memory import install_strict_category_memory
 from src.services.anomaly_learning import install_anomaly_learning
+from src.services.dataset_manager import DatasetManager
 from src.ui.capture_button_copy import install_capture_button_copy
 from src.ui.control_panel import ControlPanel
 from src.ui.decision_panel import install_decision_panel
@@ -83,6 +85,14 @@ def main():
         anomaly_memory_module,
         best_match_memory_module,
         dataset_manager_module,
+    )
+    # Compacta apenas padrões OK redundantes. Cada NG permanece como memória
+    # individual protegida; contadores de ocorrência nunca alteram o score.
+    install_prototype_memory(
+        KNNExpert,
+        DatasetManager,
+        dataset_manager_module,
+        best_match_memory_module,
     )
     install_inverted_signature_extension()
     install_inverted_face_integration(MoEOrchestrator)
