@@ -146,7 +146,7 @@ class KNNSpectrumWidget(QWidget):
 
         painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
         painter.setPen(QColor("#a6a6a6"))
-        painter.drawText(x, rect.y() + 16, "ESCALAS DA CORRESPONDÊNCIA LÍDER")
+        painter.drawText(int(x), int(rect.y() + 16), "ESCALAS DA CORRESPONDÊNCIA LÍDER")
 
         rows = [
             ("Epicentro", model["epicenter_similarity"], QColor("#58a6ff")),
@@ -157,7 +157,7 @@ class KNNSpectrumWidget(QWidget):
         for label, value, color in rows:
             painter.setFont(QFont("Consolas", 7))
             painter.setPen(QColor("#c9d1d9"))
-            painter.drawText(x, y + 8, label)
+            painter.drawText(int(x), int(y + 8), label)
             painter.setPen(color if value is not None else QColor("#6e7681"))
             painter.drawText(
                 QRectF(x, y, width, 11),
@@ -190,7 +190,7 @@ class KNNSpectrumWidget(QWidget):
 
         painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
         painter.setPen(QColor("#a6a6a6"))
-        painter.drawText(x, rect.y() + 16, "CONTRASTE DE HIPÓTESES")
+        painter.drawText(int(x), int(rect.y() + 16), "CONTRASTE DE HIPÓTESES")
 
         rows = [
             ("Defeito NG", model["best_ng_similarity"], QColor("#ff6262")),
@@ -200,7 +200,7 @@ class KNNSpectrumWidget(QWidget):
         for label, value, color in rows:
             painter.setFont(QFont("Consolas", 7))
             painter.setPen(color)
-            painter.drawText(x, y + 8, label)
+            painter.drawText(int(x), int(y + 8), label)
             painter.drawText(
                 QRectF(x, y, width, 11),
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
@@ -245,7 +245,7 @@ class KNNSpectrumWidget(QWidget):
 
         painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
         painter.setPen(QColor("#a6a6a6"))
-        painter.drawText(x, rect.y() + 15, "PERSISTÊNCIA DA MEMÓRIA")
+        painter.drawText(int(x), int(rect.y() + 15), "PERSISTÊNCIA DA MEMÓRIA")
 
         if model["prototype_stats_available"]:
             stats = (
