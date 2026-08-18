@@ -1,5 +1,6 @@
 import json
 import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
@@ -230,7 +231,15 @@ class PersistencePrototypeTests(unittest.TestCase):
             "detail": {"anomaly_signature": signature},
         }
 
-    def _save(self, style, label, *, part="C120", ai_decision=None):
+    def _save(
+        self,
+        style,
+        label,
+        *,
+        part="C120",
+        ai_decision=None,
+        save_images=False,
+    ):
         signature, reference, test = _dual_signature(style, part=part)
         return PrototypeDatasetManager.save_sample(
             ng_image=test,
@@ -242,7 +251,7 @@ class PersistencePrototypeTests(unittest.TestCase):
                 "category": "FALTANDO",
             },
             analysis=self._analysis(signature, label),
-            save_images=False,
+            save_images=save_images,
             source="button",
             ai_decision=ai_decision or label,
         )
@@ -262,8 +271,29 @@ class PersistencePrototypeTests(unittest.TestCase):
         self.assertFalse(prototype["protected"])
         self.assertFalse(prototype["quantity_influence"])
 
+    def test_redundant_ok_disagreement_keeps_audit_images(self):
+        first_path = self._save("a", "OK")
+        second_path = self._save(
+            "a",
+            "OK",
+            ai_decision="NG",
+            save_images=True,
+        )
+
+        self.assertEqual(first_path, second_path)
+        self.assertEqual(len(list(settings.NORMAL_DIR.rglob("*.json"))), 1)
+        audit_images = list(settings.NORMAL_DIR.rglob("prototype_audit/*.png"))
+        self.assertEqual(len(audit_images), 2)
+
+        data = json.loads(Path(first_path).read_text(encoding="utf-8"))
+        prototype = data["prototype"]
+        self.assertEqual(prototype["occurrences"], 2)
+        self.assertEqual(prototype["disagreement_occurrences"], 1)
+        self.assertEqual(prototype["audit_image_occurrences"], 1)
+
     def test_distinct_ok_creates_another_prototype(self):
         self._save("a", "OK")
+        time.sleep(0.005)
         self._save("b", "OK")
 
         files = list(settings.NORMAL_DIR.rglob("*.json"))
@@ -276,12 +306,14 @@ class PersistencePrototypeTests(unittest.TestCase):
 
     def test_same_visual_pattern_on_other_component_is_not_persistently_merged(self):
         self._save("a", "OK", part="C120")
+        time.sleep(0.005)
         self._save("a", "OK", part="C121")
 
         self.assertEqual(len(list(settings.NORMAL_DIR.rglob("*.json"))), 2)
 
     def test_every_ng_is_saved_as_individual_protected_memory(self):
         first_path = self._save("a", "NG")
+        time.sleep(0.005)
         second_path = self._save("a", "NG")
 
         self.assertNotEqual(first_path, second_path)
