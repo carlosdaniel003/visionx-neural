@@ -33,10 +33,7 @@ CONTEXT_FEATURE_WEIGHTS = {
 }
 
 
-def _safe_pair(
-    reference: np.ndarray | None,
-    test: np.ndarray | None,
-) -> tuple[np.ndarray | None, np.ndarray | None]:
+def _safe_pair(reference: np.ndarray | None, test: np.ndarray | None):
     if (
         not isinstance(reference, np.ndarray)
         or not isinstance(test, np.ndarray)
@@ -47,30 +44,18 @@ def _safe_pair(
     ref = reference.copy()
     tst = test.copy()
     if ref.shape != tst.shape:
-        tst = cv2.resize(
-            tst,
-            (ref.shape[1], ref.shape[0]),
-            interpolation=cv2.INTER_AREA,
-        )
+        tst = cv2.resize(tst, (ref.shape[1], ref.shape[0]), interpolation=cv2.INTER_AREA)
     return ref, tst
 
 
-def find_component_context_box(image: np.ndarray | None) -> tuple[int, int, int, int] | None:
+def find_component_context_box(image: np.ndarray | None):
     """Retorna a maior caixa verde, que representa o contexto do componente."""
     if not isinstance(image, np.ndarray) or image.size == 0:
         return None
     try:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(
-            hsv,
-            settings.COLOR_GREEN_LOWER,
-            settings.COLOR_GREEN_UPPER,
-        )
-        contours, _ = cv2.findContours(
-            mask,
-            cv2.RETR_LIST,
-            cv2.CHAIN_APPROX_SIMPLE,
-        )
+        mask = cv2.inRange(hsv, settings.COLOR_GREEN_LOWER, settings.COLOR_GREEN_UPPER)
+        contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     except Exception:
         return None
 
@@ -83,7 +68,7 @@ def find_component_context_box(image: np.ndarray | None) -> tuple[int, int, int,
     if not boxes:
         return None
 
-    unique: list[tuple[int, int, int, int]] = []
+    unique = []
     for candidate in boxes:
         x, y, width, height = candidate
         duplicate = any(
@@ -102,10 +87,7 @@ def find_component_context_box(image: np.ndarray | None) -> tuple[int, int, int,
     return unique[0]
 
 
-def _crop_box(
-    image: np.ndarray,
-    box: tuple[int, int, int, int],
-) -> np.ndarray | None:
+def _crop_box(image: np.ndarray, box):
     x, y, width, height = (int(value) for value in box)
     h, w = image.shape[:2]
     x1 = max(0, x)
@@ -115,8 +97,6 @@ def _crop_box(
     if x2 - x1 < CONTEXT_MIN_SIDE or y2 - y1 < CONTEXT_MIN_SIDE:
         return None
 
-    # Remove somente alguns pixels da moldura verde. A caixa registrada no JSON
-    # continua sendo a caixa AOI original; o inset serve apenas ao descritor.
     margin = max(1, min(4, int(round(min(x2 - x1, y2 - y1) * 0.015))))
     if x2 - x1 > margin * 2 + CONTEXT_MIN_SIDE:
         x1 += margin
@@ -128,7 +108,6 @@ def _crop_box(
 
 
 def _appearance_embedding(image: np.ndarray) -> np.ndarray:
-    """Descritor 128D de aparência, compatível conceitualmente com o semântico."""
     resized = cv2.resize(image, (64, 64), interpolation=cv2.INTER_AREA)
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 50, 150)
@@ -137,32 +116,18 @@ def _appearance_embedding(image: np.ndarray) -> np.ndarray:
     brightness_grid = []
     for y in range(0, 64, 16):
         for x in range(0, 64, 16):
-            edge_grid.append(
-                float(np.mean(edges[y : y + 16, x : x + 16]) / 255.0)
-            )
-            brightness_grid.append(
-                float(np.mean(gray[y : y + 16, x : x + 16]) / 255.0)
-            )
+            edge_grid.append(float(np.mean(edges[y:y + 16, x:x + 16]) / 255.0))
+            brightness_grid.append(float(np.mean(gray[y:y + 16, x:x + 16]) / 255.0))
 
     hsv = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
     histograms = []
     for channel, limit in ((0, 180), (1, 256), (2, 256)):
-        histogram = cv2.calcHist(
-            [hsv],
-            [channel],
-            None,
-            [32],
-            [0, limit],
-        )
+        histogram = cv2.calcHist([hsv], [channel], None, [32], [0, limit])
         cv2.normalize(histogram, histogram)
         histograms.append(histogram.flatten())
 
     embedding = np.concatenate(
-        [
-            np.asarray(edge_grid, dtype=np.float32),
-            np.asarray(brightness_grid, dtype=np.float32),
-            *histograms,
-        ]
+        [np.asarray(edge_grid, dtype=np.float32), np.asarray(brightness_grid, dtype=np.float32), *histograms]
     ).astype(np.float32)
     return np.clip(embedding, 0.0, 1.0)
 
@@ -176,38 +141,22 @@ def _relative_delta(reference: np.ndarray, test: np.ndarray) -> np.ndarray:
 def _spatial_delta(reference: np.ndarray, test: np.ndarray) -> np.ndarray:
     edge_delta = _relative_delta(reference[:16], test[:16]).reshape(4, 4)
     brightness_delta = _relative_delta(reference[16:32], test[16:32]).reshape(4, 4)
-    return np.clip(
-        edge_delta * 0.62 + brightness_delta * 0.38,
-        0.0,
-        1.0,
-    ).astype(np.float32)
+    return np.clip(edge_delta * 0.62 + brightness_delta * 0.38, 0.0, 1.0).astype(np.float32)
 
 
 def _difference_map(reference: np.ndarray, test: np.ndarray) -> np.ndarray:
     test_resized = test
     if reference.shape != test.shape:
-        test_resized = cv2.resize(
-            test,
-            (reference.shape[1], reference.shape[0]),
-            interpolation=cv2.INTER_AREA,
-        )
+        test_resized = cv2.resize(test, (reference.shape[1], reference.shape[0]), interpolation=cv2.INTER_AREA)
     ref_lab = cv2.cvtColor(reference, cv2.COLOR_BGR2LAB).astype(np.float32)
     test_lab = cv2.cvtColor(test_resized, cv2.COLOR_BGR2LAB).astype(np.float32)
     delta = np.linalg.norm(test_lab - ref_lab, axis=2) / 180.0
     delta = np.clip((delta - 0.025) / 0.60, 0.0, 1.0)
     delta = cv2.GaussianBlur(delta.astype(np.float32), (3, 3), 0)
-    return cv2.resize(
-        delta,
-        (CONTEXT_MAP_SIDE, CONTEXT_MAP_SIDE),
-        interpolation=cv2.INTER_AREA,
-    ).astype(np.float32)
+    return cv2.resize(delta, (CONTEXT_MAP_SIDE, CONTEXT_MAP_SIDE), interpolation=cv2.INTER_AREA).astype(np.float32)
 
 
-def build_component_context_signature(
-    reference: np.ndarray | None,
-    test: np.ndarray | None,
-    context_box: tuple[int, int, int, int] | list[int] | None = None,
-) -> dict:
+def build_component_context_signature(reference, test, context_box=None) -> dict:
     """Descreve a aparência e a mudança dentro da caixa maior da AOI."""
     ref, tst = _safe_pair(reference, test)
     if ref is None or tst is None:
@@ -229,11 +178,7 @@ def build_component_context_signature(
     if ref_context is None or test_context is None:
         return {}
     if ref_context.shape != test_context.shape:
-        test_context = cv2.resize(
-            test_context,
-            (ref_context.shape[1], ref_context.shape[0]),
-            interpolation=cv2.INTER_AREA,
-        )
+        test_context = cv2.resize(test_context, (ref_context.shape[1], ref_context.shape[0]), interpolation=cv2.INTER_AREA)
 
     reference_embedding = _appearance_embedding(ref_context)
     test_embedding = _appearance_embedding(test_context)
@@ -247,19 +192,14 @@ def build_component_context_signature(
         "aspect_ratio": float(width / max(height, 1)),
         "width_normalized": float(width / max(full_w, 1)),
         "height_normalized": float(height / max(full_h, 1)),
-        "area_normalized": float(
-            (width * height) / max(full_w * full_h, 1)
-        ),
+        "area_normalized": float((width * height) / max(full_w * full_h, 1)),
     }
 
     return {
         "schema": CONTEXT_SCHEMA,
         "valid": True,
         "context_box": [int(x), int(y), int(width), int(height)],
-        "context_size": [
-            int(ref_context.shape[1]),
-            int(ref_context.shape[0]),
-        ],
+        "context_size": [int(ref_context.shape[1]), int(ref_context.shape[0])],
         "reference_embedding_128": reference_embedding.tolist(),
         "test_embedding_128": test_embedding.tolist(),
         "semantic_delta_128": semantic_delta.tolist(),
@@ -279,26 +219,11 @@ def valid_context_signature(value: Any) -> bool:
     if not isinstance(value, dict) or value.get("schema") != CONTEXT_SCHEMA:
         return False
     try:
-        reference = np.asarray(
-            value.get("reference_embedding_128", []),
-            dtype=np.float32,
-        ).reshape(-1)
-        test = np.asarray(
-            value.get("test_embedding_128", []),
-            dtype=np.float32,
-        ).reshape(-1)
-        delta = np.asarray(
-            value.get("semantic_delta_128", []),
-            dtype=np.float32,
-        ).reshape(-1)
-        spatial = np.asarray(
-            value.get("spatial_delta_4x4", []),
-            dtype=np.float32,
-        ).reshape(-1)
-        difference = np.asarray(
-            value.get("difference_map_8x8", []),
-            dtype=np.float32,
-        ).reshape(-1)
+        reference = np.asarray(value.get("reference_embedding_128", []), dtype=np.float32).reshape(-1)
+        test = np.asarray(value.get("test_embedding_128", []), dtype=np.float32).reshape(-1)
+        delta = np.asarray(value.get("semantic_delta_128", []), dtype=np.float32).reshape(-1)
+        spatial = np.asarray(value.get("spatial_delta_4x4", []), dtype=np.float32).reshape(-1)
+        difference = np.asarray(value.get("difference_map_8x8", []), dtype=np.float32).reshape(-1)
     except (TypeError, ValueError):
         return False
     arrays = (reference, test, delta, spatial, difference)
@@ -323,21 +248,17 @@ def _vector_similarity(first: Any, second: Any) -> float:
         return 1.0
     if left_norm <= 1e-9 or right_norm <= 1e-9:
         return 0.0
+
+    # Os descritores contextuais são não-negativos. Usar o cosseno diretamente
+    # evita inflar artificialmente a semelhança entre componentes diferentes.
     cosine = float(np.dot(left, right) / (left_norm * right_norm))
-    cosine = float(np.clip((cosine + 1.0) / 2.0, 0.0, 1.0))
-    magnitude = float(
-        np.clip(1.0 - np.mean(np.abs(left - right)), 0.0, 1.0)
-    )
+    cosine = float(np.clip(cosine, 0.0, 1.0))
+    magnitude = float(np.clip(1.0 - np.mean(np.abs(left - right)), 0.0, 1.0))
     return float(np.clip(cosine * 0.60 + magnitude * 0.40, 0.0, 1.0))
 
 
 def _geometry_similarity(query: dict, stored: dict) -> float:
-    keys = (
-        "aspect_ratio",
-        "width_normalized",
-        "height_normalized",
-        "area_normalized",
-    )
+    keys = ("aspect_ratio", "width_normalized", "height_normalized", "area_normalized")
     differences = []
     for key in keys:
         try:
@@ -350,50 +271,24 @@ def _geometry_similarity(query: dict, stored: dict) -> float:
     return float(np.clip(1.0 - np.mean(differences), 0.0, 1.0))
 
 
-def compare_component_context_signatures(
-    query: dict,
-    stored: dict,
-) -> tuple[float, dict]:
+def compare_component_context_signatures(query: dict, stored: dict):
     if not valid_context_signature(query) or not valid_context_signature(stored):
-        return 0.0, {
-            "schema": CONTEXT_SCHEMA,
-            "valid": False,
-            "reason": "context_signature_missing_or_invalid",
-        }
+        return 0.0, {"schema": CONTEXT_SCHEMA, "valid": False, "reason": "context_signature_missing_or_invalid"}
 
     scores = {
-        "reference_appearance": _vector_similarity(
-            query.get("reference_embedding_128", []),
-            stored.get("reference_embedding_128", []),
-        ),
-        "test_appearance": _vector_similarity(
-            query.get("test_embedding_128", []),
-            stored.get("test_embedding_128", []),
-        ),
-        "semantic_delta": _vector_similarity(
-            query.get("semantic_delta_128", []),
-            stored.get("semantic_delta_128", []),
-        ),
-        "spatial_delta": _vector_similarity(
-            query.get("spatial_delta_4x4", []),
-            stored.get("spatial_delta_4x4", []),
-        ),
-        "difference_map": _vector_similarity(
-            query.get("difference_map_8x8", []),
-            stored.get("difference_map_8x8", []),
-        ),
+        "reference_appearance": _vector_similarity(query.get("reference_embedding_128", []), stored.get("reference_embedding_128", [])),
+        "test_appearance": _vector_similarity(query.get("test_embedding_128", []), stored.get("test_embedding_128", [])),
+        "semantic_delta": _vector_similarity(query.get("semantic_delta_128", []), stored.get("semantic_delta_128", [])),
+        "spatial_delta": _vector_similarity(query.get("spatial_delta_4x4", []), stored.get("spatial_delta_4x4", [])),
+        "difference_map": _vector_similarity(query.get("difference_map_8x8", []), stored.get("difference_map_8x8", [])),
         "geometry": _geometry_similarity(query, stored),
     }
-    similarity = float(
-        sum(
-            scores[name] * CONTEXT_FEATURE_WEIGHTS[name]
-            for name in CONTEXT_FEATURE_WEIGHTS
-        )
-    )
-    return float(np.clip(similarity, 0.0, 1.0)), {
+    similarity = float(sum(scores[name] * CONTEXT_FEATURE_WEIGHTS[name] for name in CONTEXT_FEATURE_WEIGHTS))
+    similarity = float(np.clip(similarity, 0.0, 1.0))
+    return similarity, {
         "schema": CONTEXT_SCHEMA,
         "valid": True,
-        "similarity": float(np.clip(similarity, 0.0, 1.0)),
+        "similarity": similarity,
         "features": scores,
         "weights": dict(CONTEXT_FEATURE_WEIGHTS),
         "query_box": list(query.get("context_box", [])),
@@ -401,11 +296,7 @@ def compare_component_context_signatures(
     }
 
 
-def attach_component_context(
-    local_signature: dict,
-    reference: np.ndarray | None,
-    test: np.ndarray | None,
-) -> dict:
+def attach_component_context(local_signature: dict, reference, test) -> dict:
     """Anexa a segunda escala sem alterar o vetor local já existente."""
     if not isinstance(local_signature, dict):
         return local_signature
@@ -414,21 +305,14 @@ def attach_component_context(
     if valid_context_signature(context):
         output["dual_scale_schema"] = DUAL_SCALE_SCHEMA
         output["memory_scales"] = ["epicenter", "component_context"]
-        output["scale_weights"] = {
-            "epicenter": EPICENTER_WEIGHT,
-            "component_context": CONTEXT_WEIGHT,
-        }
+        output["scale_weights"] = {"epicenter": EPICENTER_WEIGHT, "component_context": CONTEXT_WEIGHT}
         output["context_signature"] = context
     else:
         output["memory_scales"] = ["epicenter"]
     return output
 
 
-def install_dual_scale_memory(
-    anomaly_memory_module,
-    best_match_module,
-    dataset_manager_module,
-) -> None:
+def install_dual_scale_memory(anomaly_memory_module, best_match_module, dataset_manager_module) -> None:
     """Expande construção e comparação mantendo contratos antigos intactos."""
     if getattr(anomaly_memory_module, "_dual_scale_memory_installed", False):
         return
@@ -436,55 +320,18 @@ def install_dual_scale_memory(
     original_build = anomaly_memory_module.build_anomaly_signature
     original_compare = best_match_module.compare_anomaly_signatures
 
-    def build_dual_scale_signature(
-        reference,
-        test,
-        detail,
-        aoi_info=None,
-        focus_box=None,
-    ):
-        local = original_build(
-            reference,
-            test,
-            detail,
-            aoi_info,
-            focus_box,
-        )
+    def build_dual_scale_signature(reference, test, detail, aoi_info=None, focus_box=None):
+        local = original_build(reference, test, detail, aoi_info, focus_box)
         return attach_component_context(local, reference, test)
 
     def compare_dual_scale_signatures(query_signature, stored_signature):
-        epicenter_similarity, epicenter_breakdown = original_compare(
-            query_signature,
-            stored_signature,
-        )
-        query_context = (
-            query_signature.get("context_signature", {})
-            if isinstance(query_signature, dict)
-            else {}
-        )
-        stored_context = (
-            stored_signature.get("context_signature", {})
-            if isinstance(stored_signature, dict)
-            else {}
-        )
+        epicenter_similarity, epicenter_breakdown = original_compare(query_signature, stored_signature)
+        query_context = query_signature.get("context_signature", {}) if isinstance(query_signature, dict) else {}
+        stored_context = stored_signature.get("context_signature", {}) if isinstance(stored_signature, dict) else {}
 
-        if valid_context_signature(query_context) and valid_context_signature(
-            stored_context
-        ):
-            context_similarity, context_breakdown = (
-                compare_component_context_signatures(
-                    query_context,
-                    stored_context,
-                )
-            )
-            combined = float(
-                np.clip(
-                    epicenter_similarity * EPICENTER_WEIGHT
-                    + context_similarity * CONTEXT_WEIGHT,
-                    0.0,
-                    1.0,
-                )
-            )
+        if valid_context_signature(query_context) and valid_context_signature(stored_context):
+            context_similarity, context_breakdown = compare_component_context_signatures(query_context, stored_context)
+            combined = float(np.clip(epicenter_similarity * EPICENTER_WEIGHT + context_similarity * CONTEXT_WEIGHT, 0.0, 1.0))
             return combined, {
                 "schema": DUAL_SCALE_SCHEMA,
                 "policy": "epicenter_plus_component_context",
@@ -492,10 +339,7 @@ def install_dual_scale_memory(
                 "similarity": combined,
                 "epicenter_similarity": float(epicenter_similarity),
                 "context_similarity": float(context_similarity),
-                "scale_weights": {
-                    "epicenter": EPICENTER_WEIGHT,
-                    "component_context": CONTEXT_WEIGHT,
-                },
+                "scale_weights": {"epicenter": EPICENTER_WEIGHT, "component_context": CONTEXT_WEIGHT},
                 "epicenter": epicenter_breakdown,
                 "component_context": context_breakdown,
             }
@@ -514,9 +358,6 @@ def install_dual_scale_memory(
 
     anomaly_memory_module.build_anomaly_signature = build_dual_scale_signature
     best_match_module.compare_anomaly_signatures = compare_dual_scale_signatures
-
-    # DatasetManager possui uma referência importada do mesmo builder. O patch
-    # garante que um eventual fallback de persistência também gere duas escalas.
     if hasattr(dataset_manager_module, "build_anomaly_signature"):
         dataset_manager_module.build_anomaly_signature = build_dual_scale_signature
 
