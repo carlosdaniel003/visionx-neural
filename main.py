@@ -42,6 +42,7 @@ from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
 from src.ui.inverted_face_panel import install_inverted_face_panel
 from src.ui.local_capture_safety import install_local_capture_safety
+from src.ui.memory_status_ui import install_memory_status_ui
 from src.ui.missing_component_panel import install_missing_component_panel
 from src.ui.mode_selector_gate import install_mode_selector_gate
 from src.ui.network_aoi_intake_filter import install_network_aoi_intake_filter
@@ -124,6 +125,10 @@ def main():
     install_local_capture_safety(ControlPanel)
     install_qt_button_signal_adapter(ControlPanel)
     install_mode_selector_gate(OperationalControlsPresenter)
+
+    # Camada exclusivamente visual: resume dual-scale, protótipos e contraste
+    # OK x NG sem modificar analysis, score, confiança ou persistência.
+    install_memory_status_ui(ControlPanel)
 
     panel = ControlPanel()
     install_missing_component_panel(panel)
