@@ -46,9 +46,14 @@ def install_strict_category_memory_ui(widget_cls) -> None:
             getattr(self, "memory_category", ""),
             getattr(self, "memory_category", ""),
         )
+        # Só substitui o painel quando realmente não existe memória da categoria.
+        # Conflito e correspondência insuficiente possuem memória disponível e
+        # precisam continuar visíveis no painel hierárquico novo.
         if (
             getattr(self, "is_active", False)
             and not getattr(self, "has_memory", False)
+            and not getattr(self, "memory_available", False)
+            and not getattr(self, "memory_conflict", False)
             and category
         ):
             painter = QPainter(self)
