@@ -110,6 +110,9 @@ install_network_image_cycle_gate(FastDecisionPanel, FakePresenter)
 class FastDecisionCycleTests(unittest.TestCase):
     def test_zero_clears_old_capture_and_releases_gate_before_persistence_runs(self):
         panel = FastDecisionPanel()
+        panel.capture_cycle_active = True
+        panel.capture_cycle_source = "network"
+        panel.network_receiver.locked = True
         original_ng = panel.current_ng.copy()
 
         panel.save_label("OK", source="button")
@@ -133,6 +136,9 @@ class FastDecisionCycleTests(unittest.TestCase):
 
     def test_xp_keyboard_decision_does_not_echo_press_command_back_to_xp(self):
         panel = FastDecisionPanel()
+        panel.capture_cycle_active = True
+        panel.capture_cycle_source = "network"
+        panel.network_receiver.locked = True
 
         panel.save_label("NG", source="xp_keyboard")
 
