@@ -455,6 +455,34 @@ class ControlPanel(QWidget):
         
         self.update_brain_status("⏳ Sistema Ocioso", False)
 
+    def prepare_for_next_network_image(self):
+        """Limpa a peça julgada imediatamente e deixa o painel aguardando a AOI."""
+        for label, placeholder in (
+            (self.lbl_sample, "Aguardando próxima imagem"),
+            (self.lbl_sample_focus, "Sem Foco"),
+            (self.lbl_ng, "Aguardando próxima imagem"),
+            (self.lbl_ng_focus, "Sem Foco"),
+        ):
+            label.clear()
+            label.setText(placeholder)
+
+        self._reset_confidence_panel()
+        self._reset_reference_panel()
+        self._reset_aoi_info()
+
+        self.current_sample = None
+        self.current_ng = None
+        self.current_analysis = None
+
+        self.btn_save_ok.setEnabled(False)
+        self.btn_save_ng.setEnabled(False)
+        self.btn_skip.setEnabled(False)
+        self.btn_start.setText("Capturar Local (MSS)")
+        self.btn_start.setEnabled(True)
+
+        self.lbl_timer.setText("Latência: aguardando próxima imagem da AOI")
+        self.update_brain_status("Aguardando próxima imagem da AOI...", True)
+
     def save_label(self, user_decision: str, source="button"):
         if self.current_ng is None: return
         
