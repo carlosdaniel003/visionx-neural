@@ -18,7 +18,8 @@ class DecisionInfluenceContractTests(unittest.TestCase):
 
     def test_footer_exposes_the_actual_fusion_formula(self):
         self.assertIn('f"Fusão: físico {physical:.0%}×{physical_weight:.0%} + "', self.source)
-        self.assertIn('f"KNN {knn_vote:.0%}×{knn_weight:.0%} = {final_score:.0%}"', self.source)
+        self.assertIn('f"KNN {knn_vote_label} ({knn_vote:.0%} NG)×{knn_weight:.0%} "', self.source)
+        self.assertIn('f"= {final_score:.0%} • match {knn_match:.0%}"', self.source)
 
     def test_visual_has_separate_weight_indicator(self):
         self.assertIn('row.get("fusion_weight", 0.0)', self.source)
