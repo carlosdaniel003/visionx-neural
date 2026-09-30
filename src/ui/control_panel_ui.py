@@ -516,6 +516,7 @@ class ControlPanelUI:
             "}"
             "QLabel#networkDebugState[state='ready'] { color: #4ade80; }"
             "QLabel#networkDebugState[state='partial'] { color: #f5c518; }"
+            "QLabel#networkDebugState[state='rejected'] { color: #ff7777; }"
             "QPushButton#networkDebugTextButton,"
             "QPushButton#networkDebugImageButton {"
             "min-height: 36px; min-width: 132px; padding: 6px 12px; "
