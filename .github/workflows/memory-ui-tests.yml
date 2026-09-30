@@ -8,9 +8,13 @@ on:
       - "src/ui/memory_status_model.py"
       - "src/ui/memory_status_ui.py"
       - "src/ui/widgets/knn_spectrum.py"
+      - "src/ui/widgets/decision_influence.py"
+      - "src/ui/decision_model.py"
       - "src/ui/strict_category_memory_ui.py"
       - "main.py"
       - "tests/test_memory_ui.py"
+      - "tests/test_decision_model.py"
+      - "tests/test_decision_influence_contract.py"
       - "tests/test_memory_hypothesis_contrast.py"
       - "tests/test_prototype_memory.py"
       - "tests/test_dual_scale_memory.py"
@@ -45,6 +49,8 @@ jobs:
             src/ui/memory_status_model.py `
             src/ui/memory_status_ui.py `
             src/ui/widgets/knn_spectrum.py `
+            src/ui/widgets/decision_influence.py `
+            src/ui/decision_model.py `
             src/ui/strict_category_memory_ui.py `
             src/core/memory_hypothesis_contrast.py `
             src/core/prototype_memory.py `
@@ -58,6 +64,8 @@ jobs:
         run: |
           python -m unittest `
             tests.test_memory_ui `
+            tests.test_decision_model `
+            tests.test_decision_influence_contract `
             tests.test_memory_hypothesis_contrast `
             tests.test_prototype_memory `
             tests.test_dual_scale_memory `
