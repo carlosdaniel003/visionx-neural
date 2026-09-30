@@ -7,8 +7,10 @@ on:
       - "src/ui/network_aoi_intake_filter.py"
       - "src/ui/network_xp_debug.py"
       - "src/ui/control_panel_ui.py"
+      - "src/ui/responsive_layout.py"
       - "tests/test_network_aoi_intake_filter.py"
       - "tests/test_network_xp_debug.py"
+      - "tests/test_responsive_layout.py"
       - "tests/test_image_cycle_gate.py"
       - ".github/workflows/network-xp-debug-tests.yml"
   workflow_dispatch:
@@ -36,4 +38,4 @@ jobs:
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m unittest tests.test_network_xp_debug tests.test_network_aoi_intake_filter tests.test_image_cycle_gate tests.test_production_confidence_gate -v
+        run: python -m unittest tests.test_network_xp_debug tests.test_responsive_layout tests.test_network_aoi_intake_filter tests.test_image_cycle_gate tests.test_production_confidence_gate -v
