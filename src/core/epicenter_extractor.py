@@ -37,8 +37,16 @@ class EpicenterExtractor:
             
             for c in cnts:
                 x, y, w, h = cv2.boundingRect(c)
-                # Regras: Maior que 15px (Ignora poeira), Menor que 85% (Ignora Moldura)
-                if w > 15 and h > 15 and w < (img_w * 0.85) and h < (img_h * 0.85):
+
+                # Uma moldura global é grande nos DOIS eixos. Uma ROI legítima
+                # pode ser muito alta e estreita (ou muito larga e baixa), como
+                # ocorre em componentes verticais da AOI. O filtro antigo usava
+                # "w < 85% E h < 85%" e descartava essas ROIs válidas.
+                oversized_width = w >= (img_w * 0.85)
+                oversized_height = h >= (img_h * 0.85)
+                is_global_frame = oversized_width and oversized_height
+
+                if w > 15 and h > 15 and not is_global_frame:
                     box_cx = x + (w / 2)
                     box_cy = y + (h / 2)
                     dist = math.sqrt((center_x - box_cx)**2 + (center_y - box_cy)**2)
@@ -56,7 +64,17 @@ class EpicenterExtractor:
             if old_epicenters:
                 old_epicenters.sort(key=lambda b: b[2] * b[3], reverse=True)
                 for (x, y, w, h) in old_epicenters:
-                    if w < img_w * 0.90 and h < img_h * 0.90 and w > 20 and h > 20:
+                    oversized_width = w >= img_w * 0.90
+                    oversized_height = h >= img_h * 0.90
+
+                    # O epicentro legado já veio da hierarquia interna da AOI.
+                    # Só o rejeitamos como moldura se ocupar quase toda a largura
+                    # E quase toda a altura ao mesmo tempo.
+                    if (
+                        w > 20
+                        and h > 20
+                        and not (oversized_width and oversized_height)
+                    ):
                         real_epicenters.append((x, y, w, h))
                         break
             # Fallback 2: Caixa global
