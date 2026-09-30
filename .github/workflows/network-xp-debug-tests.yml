@@ -1,0 +1,38 @@
+name: Network XP Debug Tests
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/ui/network_aoi_intake_filter.py"
+      - "src/ui/network_xp_debug.py"
+      - "src/ui/control_panel_ui.py"
+      - "tests/test_network_aoi_intake_filter.py"
+      - "tests/test_network_xp_debug.py"
+      - ".github/workflows/network-xp-debug-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  network-xp-debug:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy opencv-python-headless PyQt6 scikit-image scipy
+
+      - name: Run XP intake and regression tests
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest tests.test_network_xp_debug tests.test_network_aoi_intake_filter tests.test_image_cycle_gate tests.test_production_confidence_gate -v
