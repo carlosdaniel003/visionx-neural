@@ -21,7 +21,7 @@ class LayoutProfile:
 
 def profile_for_width(width: int) -> LayoutProfile:
     """Retorna o perfil visual apropriado para a largura disponível."""
-    if width < 1100:
+    if width < 1500:
         return LayoutProfile(
             name="compact",
             outer_margin=8,
@@ -31,11 +31,11 @@ def profile_for_width(width: int) -> LayoutProfile:
             action_columns=2,
             splitter_vertical=True,
             image_min_height=105,
-            debugger_min_width=340,
-            debugger_max_width=460,
+            debugger_min_width=280,
+            debugger_max_width=400,
         )
 
-    if width < 1600:
+    if width < 1800:
         return LayoutProfile(
             name="standard",
             outer_margin=10,
@@ -45,8 +45,8 @@ def profile_for_width(width: int) -> LayoutProfile:
             action_columns=4,
             splitter_vertical=False,
             image_min_height=120,
-            debugger_min_width=420,
-            debugger_max_width=540,
+            debugger_min_width=380,
+            debugger_max_width=520,
         )
 
     return LayoutProfile(
@@ -58,6 +58,6 @@ def profile_for_width(width: int) -> LayoutProfile:
         action_columns=4,
         splitter_vertical=False,
         image_min_height=145,
-        debugger_min_width=500,
+        debugger_min_width=480,
         debugger_max_width=620,
     )
