@@ -597,13 +597,12 @@ class ControlPanelUI:
             grid.removeWidget(widget)
 
         if compact:
-            grid.addWidget(window.lbl_network_debug_title, 0, 0, 1, 2)
-            grid.addWidget(window.lbl_network_debug_state, 1, 0, 1, 2)
+            grid.addWidget(window.lbl_network_debug_title, 0, 0)
+            grid.addWidget(window.lbl_network_debug_state, 1, 0)
             grid.addWidget(window.btn_copy_network_debug, 2, 0)
-            grid.addWidget(window.btn_copy_network_image, 2, 1)
+            grid.addWidget(window.btn_copy_network_image, 3, 0)
             grid.setColumnStretch(0, 1)
-            grid.setColumnStretch(1, 1)
-            window.network_debug_frame.setMinimumHeight(112)
+            window.network_debug_frame.setMinimumHeight(160)
         else:
             grid.addWidget(window.lbl_network_debug_title, 0, 0)
             grid.addWidget(window.lbl_network_debug_state, 0, 1)
