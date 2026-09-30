@@ -54,6 +54,7 @@ def install_strict_category_memory_ui(widget_cls) -> None:
             and not getattr(self, "has_memory", False)
             and not getattr(self, "memory_available", False)
             and not getattr(self, "memory_conflict", False)
+            and getattr(self, "memory_candidate_count", 0) == 0
             and category
         ):
             painter = QPainter(self)
@@ -64,7 +65,7 @@ def install_strict_category_memory_ui(widget_cls) -> None:
             painter.drawText(
                 self.rect(),
                 Qt.AlignmentFlag.AlignCenter,
-                f"Sem JSON de anomalia para {category}",
+                f"PRIMEIRA OCORRÊNCIA • sem memória para {category}",
             )
             painter.end()
             return
