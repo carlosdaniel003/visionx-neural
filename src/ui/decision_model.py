@@ -99,6 +99,7 @@ def influence_rows(trace: dict) -> list[dict]:
 
     engines = [item for item in trace.get("engines", []) if isinstance(item, dict)]
     weights = trace.get("weights", {}) if isinstance(trace.get("weights"), dict) else {}
+    memory = trace.get("memory", {}) if isinstance(trace.get("memory"), dict) else {}
     physical_weight = float(weights.get("physical", 1.0))
     knn_weight = float(weights.get("knn", 0.0))
     physical_score = float(trace.get("physical_score", 0.0))
@@ -115,14 +116,32 @@ def influence_rows(trace: dict) -> list[dict]:
             fusion_weight = knn_weight if bool(engine.get("active", False)) else 0.0
             score_contribution = raw_score * fusion_weight
             effect_vs_physical = (raw_score - physical_score) * fusion_weight
+
+            # Para o KNN, raw_score é voto de defeito (0=OK, 1=NG), não força
+            # da memória. A evidência visual correta é a similaridade do melhor
+            # match. Separar os dois evita que um match OK forte apareça vazio.
+            evidence_score = float(
+                memory.get(
+                    "best_similarity",
+                    engine.get("best_similarity", 0.0),
+                )
+                or 0.0
+            )
+            evidence_threshold = float(
+                memory.get("match_min_similarity", 0.75) or 0.75
+            )
         elif engine_id == physical_source_id:
             fusion_weight = physical_weight
             score_contribution = effective_score * fusion_weight
             effect_vs_physical = 0.0
+            evidence_score = raw_score
+            evidence_threshold = float(engine.get("threshold", 0.45))
         else:
             fusion_weight = 0.0
             score_contribution = 0.0
             effect_vs_physical = 0.0
+            evidence_score = raw_score
+            evidence_threshold = float(engine.get("threshold", 0.45))
 
         rows.append(
             {
@@ -138,6 +157,8 @@ def influence_rows(trace: dict) -> list[dict]:
                 "raw_score": raw_score,
                 "effective_score": effective_score,
                 "threshold": float(engine.get("threshold", 0.45)),
+                "evidence_score": max(0.0, min(1.0, evidence_score)),
+                "evidence_threshold": max(0.0, min(1.0, evidence_threshold)),
                 "selected": engine_id == dominant_id,
                 "participates": fusion_weight > 0.0,
                 "fusion_weight": max(0.0, min(1.0, fusion_weight)),
