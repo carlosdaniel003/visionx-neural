@@ -222,6 +222,8 @@ class NetworkIntakeIntegrationTests(unittest.TestCase):
 
     def test_invalid_network_screen_never_reaches_analysis(self):
         panel = FakePanel()
+        network_frame = np.full((840, 1165, 3), 75, dtype=np.uint8)
+        panel.handle_network_image(network_frame, "169.254.95.200")
         with patch.object(
             intake_module,
             "validate_network_inspection",
