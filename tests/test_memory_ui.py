@@ -160,6 +160,78 @@ class MemoryStatusModelTests(unittest.TestCase):
         self.assertEqual(model["context_weight"], 0.0)
 
 
+    def test_best_hypothesis_fills_visual_match_when_combined_field_is_missing(self):
+        detail = {
+            "memory_available": True,
+            "has_memory": False,
+            "memory_category": "DESLOCADO",
+            "best_ng_similarity": 0.82,
+            "best_ok_similarity": 0.41,
+            "best_match_label": "NG",
+            "memory_candidate_count": 6,
+            "hypotheses": {
+                "NG": {
+                    "similarity": 0.82,
+                    "similarity_breakdown": {
+                        "dual_scale": True,
+                        "epicenter_similarity": 0.85,
+                        "context_similarity": 0.75,
+                        "scale_weights": {
+                            "epicenter": 0.70,
+                            "component_context": 0.30,
+                        },
+                    },
+                }
+            },
+        }
+
+        model = memory_status_from_detail(detail)
+
+        self.assertAlmostEqual(model["combined_similarity"], 0.82)
+        self.assertAlmostEqual(model["epicenter_similarity"], 0.85)
+        self.assertAlmostEqual(model["context_similarity"], 0.75)
+        self.assertTrue(model["stored_memory_available"])
+        self.assertTrue(model["visual_match_available"])
+        self.assertFalse(model["first_occurrence"])
+        self.assertIn("MEMÓRIA ENCONTRADA", memory_summary_text(detail))
+        self.assertIn("82.0%", memory_summary_text(detail))
+
+    def test_existing_category_jsons_are_not_presented_as_first_occurrence(self):
+        detail = {
+            "has_memory": False,
+            "memory_available": False,
+            "memory_category": "DESLOCADO",
+            "memory_candidate_count": 4,
+            "memory_candidate_count_compared": 0,
+            "best_similarity": 0.0,
+        }
+
+        model = memory_status_from_detail(detail)
+        summary = memory_summary_text(detail)
+
+        self.assertTrue(model["stored_memory_available"])
+        self.assertFalse(model["visual_match_available"])
+        self.assertFalse(model["first_occurrence"])
+        self.assertEqual(model["category_candidate_count"], 4)
+        self.assertIn("MEMÓRIA CARREGADA", summary)
+        self.assertIn("4 registro(s)", summary)
+        self.assertIn("não é primeira ocorrência", summary)
+
+    def test_zero_category_records_is_the_only_first_occurrence_state(self):
+        detail = {
+            "has_memory": False,
+            "memory_available": False,
+            "memory_category": "DESLOCADO",
+            "memory_candidate_count": 0,
+        }
+
+        model = memory_status_from_detail(detail)
+
+        self.assertTrue(model["first_occurrence"])
+        self.assertFalse(model["stored_memory_available"])
+        self.assertIn("PRIMEIRA OCORRÊNCIA", memory_summary_text(detail))
+
+
 class FakeLabel:
     def __init__(self):
         self.text = ""
@@ -244,6 +316,24 @@ class MemoryWidgetTests(unittest.TestCase):
         self.assertTrue(widget.memory_available)
         self.assertTrue(widget.memory_conflict)
 
+    def test_widget_uses_best_hypothesis_for_yellow_match_bar(self):
+        widget = KNNSpectrumWidget()
+        widget.update_data(
+            {
+                "memory_available": True,
+                "has_memory": False,
+                "memory_category": "DESLOCADO",
+                "memory_candidate_count": 3,
+                "best_ng_similarity": 0.84,
+                "best_ok_similarity": 0.35,
+                "best_match_label": "NG",
+            }
+        )
+
+        self.assertAlmostEqual(widget.best_sim, 0.84)
+        self.assertTrue(widget.stored_memory_available)
+        self.assertFalse(widget.has_memory)
+
     def test_responsive_widget_renders_wide_and_narrow(self):
         widget = KNNSpectrumWidget()
         widget.update_data(conflict_detail())
@@ -267,6 +357,16 @@ class UiOnlyScopeTests(unittest.TestCase):
         self.assertNotIn("src.core", source)
         self.assertNotIn("DatasetManager", source)
         self.assertNotIn("save_sample", source)
+
+    def test_strict_category_ui_only_calls_first_occurrence_with_zero_records(self):
+        source = (
+            ROOT / "src" / "ui" / "strict_category_memory_ui.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'getattr(self, "memory_candidate_count", 0) == 0',
+            source,
+        )
+        self.assertIn("PRIMEIRA OCORRÊNCIA", source)
 
     def test_main_installs_visual_layer_before_panel_creation(self):
         source = (ROOT / "main.py").read_text(encoding="utf-8")
