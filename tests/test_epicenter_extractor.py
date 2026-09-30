@@ -74,6 +74,50 @@ class EpicenterExtractorRegressionTests(unittest.TestCase):
         self.assertLess(abs((x + width / 2) - 130), 8)
         self.assertLess(abs((y + height / 2) - 100), 8)
 
+
+    def test_tall_narrow_aoi_roi_is_not_mistaken_for_global_frame(self):
+        reference = np.full((540, 345, 3), BACKGROUND, dtype=np.uint8)
+        test = reference.copy()
+
+        # Geometria equivalente ao caso real capturado da AOI: a moldura ocupa
+        # quase todo o recorte, enquanto o epicentro é estreito e passa de 90%
+        # da altura.
+        cv2.rectangle(reference, (21, 21), (326, 539), GREEN, 2)
+        cv2.rectangle(test, (21, 21), (326, 539), GREEN, 2)
+        cv2.rectangle(reference, (133, 48), (213, 539), GREEN, 2)
+        cv2.rectangle(test, (133, 48), (213, 539), GREEN, 2)
+
+        epicenters, focus_reference, focus_test = EpicenterExtractor.extract_focus(
+            reference,
+            test,
+            old_epicenters=[(134, 49, 81, 491)],
+            global_box_info={"w": 307, "h": 519},
+        )
+
+        self.assertEqual(len(epicenters), 1)
+        x, y, width, height = epicenters[0]
+        self.assertGreater(height / 540.0, 0.85)
+        self.assertLess(width / 345.0, 0.50)
+        self.assertEqual(focus_reference.shape, focus_test.shape)
+        self.assertGreater(focus_reference.size, 0)
+
+    def test_global_frame_alone_remains_rejected(self):
+        reference = np.full((540, 345, 3), BACKGROUND, dtype=np.uint8)
+        test = reference.copy()
+        cv2.rectangle(reference, (21, 21), (326, 539), GREEN, 2)
+        cv2.rectangle(test, (21, 21), (326, 539), GREEN, 2)
+
+        epicenters, focus_reference, focus_test = EpicenterExtractor.extract_focus(
+            reference,
+            test,
+            old_epicenters=[],
+            global_box_info={"w": 307, "h": 519},
+        )
+
+        self.assertEqual(epicenters, [])
+        self.assertEqual(focus_reference.size, 0)
+        self.assertEqual(focus_test.size, 0)
+
     def test_legacy_fallback_is_preserved_when_green_radar_finds_nothing(self):
         reference = np.full((180, 240, 3), BACKGROUND, dtype=np.uint8)
         test = reference.copy()
