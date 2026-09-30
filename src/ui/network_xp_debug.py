@@ -237,11 +237,30 @@ def sync_network_debug_controls(panel) -> None:
 
     if state_label is not None:
         try:
-            if debug_available and image_available:
+            validation = record.get("validation", {}) if isinstance(record, dict) else {}
+            reason = str(validation.get("reason", "") or "")
+            valid = validation.get("valid", None) if isinstance(validation, dict) else None
+            source_ip = str(record.get("source_ip", "") or "") if isinstance(record, dict) else ""
+
+            if debug_available and image_available and valid is False:
+                suffix = f" • {reason}" if reason else ""
+                ip_text = f" • {source_ip}" if source_ip else ""
                 state_label.setText(
-                    "Último frame XP disponível • relatório e imagem vinculados"
+                    f"Último frame XP REJEITADO{suffix}{ip_text} • imagem preservada"
+                )
+                state_label.setProperty("state", "rejected")
+            elif debug_available and image_available and valid is True:
+                ip_text = f" • {source_ip}" if source_ip else ""
+                state_label.setText(
+                    f"Último frame XP validado{ip_text} • relatório + imagem"
                 )
                 state_label.setProperty("state", "ready")
+            elif debug_available and image_available:
+                ip_text = f" • {source_ip}" if source_ip else ""
+                state_label.setText(
+                    f"Frame XP recebido{ip_text} • aguardando validação"
+                )
+                state_label.setProperty("state", "partial")
             elif debug_available:
                 state_label.setText(
                     "Relatório disponível • imagem do evento não está preservada"
