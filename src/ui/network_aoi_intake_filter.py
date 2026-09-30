@@ -12,6 +12,7 @@ altera os critérios de aceitação, o EpicenterExtractor ou a decisão produtiv
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import uuid4
 from typing import Any
 
 import cv2
@@ -467,10 +468,11 @@ def _mode(panel) -> str:
         return ""
 
 
-def _transport_record(panel, image: Any, ip: str) -> dict:
+def _transport_record(panel, image: Any, ip: str, event_id: str) -> dict:
     receiver = getattr(panel, "network_receiver", None)
     return {
         "schema": DEBUG_SCHEMA,
+        "event_id": str(event_id),
         "timestamp": datetime.now().isoformat(timespec="milliseconds"),
         "source": "windows_xp",
         "source_ip": str(ip or ""),
@@ -515,8 +517,15 @@ def _enrich_validation_record(
         else ""
     ) or str(getattr(panel, "last_xp_ip", "") or "")
 
+    event_id = (
+        str(previous.get("event_id", ""))
+        if isinstance(previous, dict)
+        else ""
+    )
+
     return {
         "schema": DEBUG_SCHEMA,
+        "event_id": event_id,
         "timestamp": timestamp,
         "source": "windows_xp",
         "source_ip": source_ip,
@@ -620,10 +629,18 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
     original_process_aoi_images = control_panel_cls.process_aoi_images
 
     def handle_network_image(self, img_bgr, ip: str):
+        event_id = uuid4().hex
+        self.network_intake_last_image = (
+            img_bgr.copy()
+            if isinstance(img_bgr, np.ndarray) and img_bgr.size > 0
+            else None
+        )
+        self.network_intake_last_image_event_id = event_id
         self.network_intake_last_validation = _transport_record(
             self,
             img_bgr,
             ip,
+            event_id,
         )
         set_network_debug_available(self, True)
         return original_handle_network_image(self, img_bgr, ip)
