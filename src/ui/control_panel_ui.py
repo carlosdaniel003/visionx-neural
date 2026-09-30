@@ -103,6 +103,7 @@ class ControlPanelUI:
         self._build_main_stage(window, window.content_layout)
         self._build_footer(window, window.content_layout)
         self._build_action_buttons(window, window.content_layout)
+        self._build_ng_archive_bar(window, window.content_layout)
         self._build_network_debug_bar(window, window.content_layout)
         self._build_status_bar(window, window.content_layout)
 
@@ -530,6 +531,117 @@ class ControlPanelUI:
         window.combo_mode.currentTextChanged.connect(apply_mode_visibility)
         apply_mode_visibility(window.combo_mode.currentText())
 
+    def _build_ng_archive_bar(self, window, parent_layout):
+        window.ng_archive_frame = QFrame()
+        window.ng_archive_frame.setObjectName("ngArchiveFrame")
+        window.ng_archive_frame.setMinimumWidth(0)
+        window.ng_archive_frame.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        window.ng_archive_frame.setStyleSheet(
+            "QFrame#ngArchiveFrame {"
+            "background: #101010; border: 1px solid #303030; border-radius: 8px;"
+            "}"
+            "QLabel#ngArchiveTitle {"
+            "color: #f5c518; font-size: 10px; font-weight: 900; letter-spacing: 1px;"
+            "}"
+            "QLabel#ngArchiveStatus {"
+            "color: #8b949e; font-size: 11px; font-weight: 700;"
+            "}"
+            "QLabel#ngArchiveStatus[archiveEnabled='true'] { color: #4ade80; }"
+            "QPushButton#ngArchiveToggleButton {"
+            "min-height: 40px; padding: 7px 14px; border-radius: 6px; "
+            "font-size: 11px; font-weight: 800; color: #b8b8b8; "
+            "background: #181818; border: 1px solid #505050;"
+            "}"
+            "QPushButton#ngArchiveToggleButton:hover,"
+            "QPushButton#ngArchiveToggleButton:focus {"
+            "color: #f5c518; border-color: #f5c518; background: #242424;"
+            "}"
+            "QPushButton#ngArchiveToggleButton:checked {"
+            "color: #07120b; background: #4ade80; border: 1px solid #4ade80;"
+            "}"
+            "QPushButton#ngArchiveToggleButton:checked:hover {"
+            "background: #6ee79a; border-color: #b7f7cb;"
+            "}"
+        )
+
+        self.ng_archive_grid = QGridLayout(window.ng_archive_frame)
+        self.ng_archive_grid.setContentsMargins(12, 8, 12, 8)
+        self.ng_archive_grid.setHorizontalSpacing(10)
+        self.ng_archive_grid.setVerticalSpacing(6)
+
+        window.lbl_ng_archive_title = QLabel("ARQUIVO VISUAL NG")
+        window.lbl_ng_archive_title.setObjectName("ngArchiveTitle")
+
+        window.lbl_ng_archive_status = QLabel(
+            "Desativado • fluxo atual mantido"
+        )
+        window.lbl_ng_archive_status.setObjectName("ngArchiveStatus")
+        window.lbl_ng_archive_status.setProperty("archiveEnabled", False)
+        window.lbl_ng_archive_status.setWordWrap(True)
+        window.lbl_ng_archive_status.setMinimumWidth(0)
+        window.lbl_ng_archive_status.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+
+        window.btn_toggle_ng_archive = QPushButton(
+            "Salvar imagens NG • DESATIVADO"
+        )
+        window.btn_toggle_ng_archive.setObjectName("ngArchiveToggleButton")
+        window.btn_toggle_ng_archive.setCheckable(True)
+        window.btn_toggle_ng_archive.setChecked(False)
+        window.btn_toggle_ng_archive.setProperty("archiveEnabled", False)
+        window.btn_toggle_ng_archive.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+        window.btn_toggle_ng_archive.setFocusPolicy(
+            Qt.FocusPolicy.StrongFocus
+        )
+        window.btn_toggle_ng_archive.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        window.btn_toggle_ng_archive.setToolTip(
+            "Quando ativado, salva em public/ng_archive uma cópia bruta da "
+            "imagem de teste de toda decisão final NG. Não altera o dataset."
+        )
+        window.btn_toggle_ng_archive.toggled.connect(
+            lambda checked: window.set_ng_archive_enabled(checked)
+        )
+
+        self.ng_archive_widgets = [
+            window.lbl_ng_archive_title,
+            window.lbl_ng_archive_status,
+            window.btn_toggle_ng_archive,
+        ]
+
+        parent_layout.addWidget(window.ng_archive_frame)
+
+    def _layout_ng_archive(self, window, compact: bool) -> None:
+        grid = self.ng_archive_grid
+        for widget in self.ng_archive_widgets:
+            grid.removeWidget(widget)
+
+        if compact:
+            grid.addWidget(window.lbl_ng_archive_title, 0, 0)
+            grid.addWidget(window.lbl_ng_archive_status, 1, 0)
+            grid.addWidget(window.btn_toggle_ng_archive, 2, 0)
+            grid.setColumnStretch(0, 1)
+            grid.setColumnStretch(1, 0)
+            grid.setColumnStretch(2, 0)
+        else:
+            grid.addWidget(window.lbl_ng_archive_title, 0, 0)
+            grid.addWidget(window.lbl_ng_archive_status, 0, 1)
+            grid.addWidget(window.btn_toggle_ng_archive, 0, 2)
+            grid.setColumnStretch(0, 0)
+            grid.setColumnStretch(1, 1)
+            grid.setColumnStretch(2, 0)
+
+        window.btn_toggle_ng_archive.setMinimumWidth(0 if compact else 250)
+
     def _build_network_debug_bar(self, window, parent_layout):
         window.network_debug_frame = QFrame()
         window.network_debug_frame.setObjectName("networkDebugFrame")
@@ -828,6 +940,7 @@ class ControlPanelUI:
                 self.action_buttons,
                 profile.action_columns,
             )
+            self._layout_ng_archive(window, compact=compact)
             self._layout_network_debug(window, compact=compact)
             self._layout_status_bar(window, compact=compact)
 
