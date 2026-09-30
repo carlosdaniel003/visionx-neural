@@ -231,9 +231,21 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         self.assertIsNone(panel.current_ng)
         self.assertTrue(panel.status_messages)
 
-    def test_local_capture_cannot_replace_pending_image(self):
+    def test_local_capture_can_take_over_incomplete_network_cycle(self):
         panel = FakePanel()
         panel.handle_network_image(object(), "192.168.0.10")
+        panel.start_monitoring()
+
+        self.assertEqual(panel.started_captures, 1)
+        self.assertTrue(panel.capture_cycle_active)
+        self.assertEqual(panel.capture_cycle_source, "local")
+
+    def test_local_capture_cannot_replace_completed_pending_network_image(self):
+        panel = FakePanel()
+        panel.handle_network_image(object(), "192.168.0.10")
+        panel.current_analysis = {"confidence": 0.80}
+        panel.current_sample = object()
+        panel.current_ng = object()
         panel.start_monitoring()
 
         self.assertEqual(panel.started_captures, 0)
