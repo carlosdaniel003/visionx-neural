@@ -1,8 +1,18 @@
+import os
 import unittest
+
+import numpy as np
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PyQt6.QtWidgets import QApplication, QPushButton
 
 from src.ui.network_xp_debug import (
     DEBUG_SCHEMA,
+    copy_network_image_to_clipboard,
     format_network_debug_report,
+    network_debug_image_available,
+    sync_network_debug_controls,
 )
 
 
@@ -10,6 +20,7 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
     def test_report_contains_rejection_context_and_full_json(self):
         record = {
             "schema": DEBUG_SCHEMA,
+            "event_id": "evt-001",
             "timestamp": "2026-09-30T07:55:00.000",
             "source_ip": "169.254.95.200",
             "stage": "aoi_intake_validation",
@@ -44,6 +55,7 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
         report = format_network_debug_report(record)
 
         self.assertIn("VISIONX - DEBUG DE ENTRADA WINDOWS XP", report)
+        self.assertIn("Evento: evt-001", report)
         self.assertIn("169.254.95.200", report)
         self.assertIn("tela sem epicentro de anomalia", report)
         self.assertIn("missing_epicenter", report)
@@ -54,6 +66,61 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
     def test_empty_record_has_safe_message(self):
         report = format_network_debug_report({})
         self.assertIn("Nenhuma imagem recebida", report)
+
+
+class NetworkXPImageClipboardTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _panel(event_id="evt-001"):
+        class Panel:
+            pass
+
+        panel = Panel()
+        panel.network_intake_last_validation = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": event_id,
+        }
+        panel.network_intake_last_image_event_id = event_id
+        panel.network_intake_last_image = np.zeros((12, 18, 3), dtype=np.uint8)
+        panel.network_intake_last_image[:, :] = (10, 20, 230)  # BGR
+        panel.btn_copy_network_debug = QPushButton("Copiar debug")
+        panel.btn_copy_network_image = QPushButton("Copiar imagem")
+        return panel
+
+    def test_same_event_enables_both_copy_actions(self):
+        panel = self._panel()
+        sync_network_debug_controls(panel)
+
+        self.assertTrue(panel.btn_copy_network_debug.isEnabled())
+        self.assertTrue(panel.btn_copy_network_image.isEnabled())
+        self.assertTrue(network_debug_image_available(panel))
+
+    def test_different_event_blocks_image_copy(self):
+        panel = self._panel()
+        panel.network_intake_last_image_event_id = "evt-other"
+        sync_network_debug_controls(panel)
+
+        self.assertTrue(panel.btn_copy_network_debug.isEnabled())
+        self.assertFalse(panel.btn_copy_network_image.isEnabled())
+        self.assertFalse(network_debug_image_available(panel))
+        self.assertFalse(copy_network_image_to_clipboard(panel))
+
+    def test_copy_image_places_exact_frame_on_clipboard(self):
+        panel = self._panel()
+
+        self.assertTrue(copy_network_image_to_clipboard(panel))
+        copied = QApplication.clipboard().image()
+        self.assertFalse(copied.isNull())
+        self.assertEqual(copied.width(), 18)
+        self.assertEqual(copied.height(), 12)
+
+        pixel = copied.pixelColor(0, 0)
+        self.assertEqual(pixel.red(), 230)
+        self.assertEqual(pixel.green(), 20)
+        self.assertEqual(pixel.blue(), 10)
 
 
 if __name__ == "__main__":
