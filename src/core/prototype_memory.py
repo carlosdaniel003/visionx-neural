@@ -459,21 +459,39 @@ def install_prototype_memory(
 
     def load_all_with_prototypes(self):
         original_load_all(self)
-        raw_ok = list(self.signatures_ok)
-        raw_ng = list(self.signatures_ng)
-        self.signatures_ok = condense_ok_records(raw_ok, comparator)
-        self.signatures_ng = protect_ng_records(raw_ng)
-        self.memory_prototype_stats = {
+
+        memory_lock = getattr(self, "_memory_lock", None)
+        if memory_lock is not None:
+            with memory_lock:
+                raw_ok = list(self.signatures_ok)
+                raw_ng = list(self.signatures_ng)
+        else:
+            raw_ok = list(self.signatures_ok)
+            raw_ng = list(self.signatures_ng)
+
+        condensed_ok = condense_ok_records(raw_ok, comparator)
+        protected_ng = protect_ng_records(raw_ng)
+        stats = {
             "schema": PROTOTYPE_SCHEMA,
             "raw_ok_jsons": int(len(raw_ok)),
-            "ok_prototypes": int(len(self.signatures_ok)),
+            "ok_prototypes": int(len(condensed_ok)),
             "raw_ng_jsons": int(len(raw_ng)),
-            "protected_ng_prototypes": int(len(self.signatures_ng)),
+            "protected_ng_prototypes": int(len(protected_ng)),
             "ok_observations": int(
-                sum(_record_occurrences(item) for item in self.signatures_ok)
+                sum(_record_occurrences(item) for item in condensed_ok)
             ),
             "quantity_influence": False,
         }
+
+        if memory_lock is not None:
+            with memory_lock:
+                self.signatures_ok = condensed_ok
+                self.signatures_ng = protected_ng
+                self.memory_prototype_stats = stats
+        else:
+            self.signatures_ok = condensed_ok
+            self.signatures_ng = protected_ng
+            self.memory_prototype_stats = stats
 
     def analyze_with_prototype_stats(self, *args, **kwargs):
         result = original_analyze(self, *args, **kwargs)
