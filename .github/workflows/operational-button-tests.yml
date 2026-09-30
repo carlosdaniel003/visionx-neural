@@ -14,6 +14,9 @@ on:
       - "src/ui/operational_controls.py"
       - "src/ui/operational_controls_model.py"
       - "src/ui/test_mode_dataset_controls.py"
+      - "src/ui/control_panel_ui.py"
+      - "src/services/ng_image_archive.py"
+      - "src/config/settings.py"
       - "src/services/network_receiver.py"
       - "src/services/image_cycle_gate.py"
       - "main.py"
@@ -22,6 +25,7 @@ on:
       - "tests/test_qt_button_signal_adapter.py"
       - "tests/test_image_cycle_gate.py"
       - "tests/test_production_confidence_gate.py"
+      - "tests/test_ng_image_archive.py"
       - ".github/workflows/operational-button-tests.yml"
   workflow_dispatch:
 
@@ -56,6 +60,8 @@ jobs:
             src/ui/operational_controls.py `
             src/ui/operational_controls_model.py `
             src/ui/test_mode_dataset_controls.py `
+            src/ui/control_panel_ui.py `
+            src/services/ng_image_archive.py `
             src/services/network_receiver.py `
             src/services/image_cycle_gate.py `
             main.py
@@ -68,4 +74,5 @@ jobs:
             tests.test_qt_button_signal_adapter `
             tests.test_image_cycle_gate `
             tests.test_production_confidence_gate `
+            tests.test_ng_image_archive `
             -v
