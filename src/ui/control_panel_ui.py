@@ -501,6 +501,33 @@ class ControlPanelUI:
 
         window.lbl_status_network = QLabel("Ouvindo AOI (Porta 5001)")
         window.lbl_status_network.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        window.btn_copy_network_debug = QPushButton("Copiar debug XP")
+        window.btn_copy_network_debug.setObjectName("networkDebugButton")
+        window.btn_copy_network_debug.setCursor(Qt.CursorShape.PointingHandCursor)
+        window.btn_copy_network_debug.setEnabled(False)
+        window.btn_copy_network_debug.setToolTip(
+            "Copia o diagnóstico técnico da última imagem recebida do Windows XP, "
+            "inclusive imagens rejeitadas antes do julgamento."
+        )
+        window.btn_copy_network_debug.setMinimumHeight(26)
+        window.btn_copy_network_debug.setMaximumWidth(132)
+        window.btn_copy_network_debug.setStyleSheet(
+            "QPushButton#networkDebugButton {"
+            "color: #d0d7de; background: #171717; border: 1px solid #444444; "
+            "border-radius: 5px; padding: 4px 9px; font-size: 10px; font-weight: 700;"
+            "}"
+            "QPushButton#networkDebugButton:hover {"
+            "color: #f5c518; border-color: #f5c518; background: #222222;"
+            "}"
+            "QPushButton#networkDebugButton:disabled {"
+            "color: #565656; border-color: #292929; background: #0b0b0b;"
+            "}"
+        )
+        window.btn_copy_network_debug.clicked.connect(
+            lambda _checked=False: copy_network_debug_to_clipboard(window)
+        )
+
         window.lbl_status_brain = QLabel("Sistema Ocioso")
         window.lbl_status_brain.setAlignment(Qt.AlignmentFlag.AlignCenter)
         window.lbl_status_history = QLabel("Última Peça: Nenhuma")
@@ -511,6 +538,7 @@ class ControlPanelUI:
         self.lbl_status_history = window.lbl_status_history
 
         status_layout.addWidget(window.lbl_status_network, stretch=1)
+        status_layout.addWidget(window.btn_copy_network_debug)
         status_layout.addWidget(window.lbl_status_brain, stretch=1)
         status_layout.addWidget(window.lbl_status_history, stretch=1)
         parent_layout.addWidget(window.status_frame)
