@@ -53,6 +53,7 @@ class KNNSpectrumWidget(QWidget):
         self.is_active = bool(self.model["active"])
         self.has_memory = bool(self.model["has_memory"])
         self.memory_available = bool(self.model["memory_available"])
+        self.stored_memory_available = bool(self.model["stored_memory_available"])
         self.memory_conflict = bool(self.model["conflict"])
         self.best_label = self.model["leading_hypothesis"] or "-"
         self.best_sim = float(self.model["combined_similarity"])
@@ -113,17 +114,35 @@ class KNNSpectrumWidget(QWidget):
         model = self.model
         if model["conflict"]:
             color = QColor("#ffb454")
-            title = "CONFLITO DE MEMÓRIA • REVISÃO HUMANA OBRIGATÓRIA"
+            title = (
+                "CONFLITO DE MEMÓRIA • "
+                f"MATCH {self._pct(model['combined_similarity'])} • "
+                "REVISÃO HUMANA"
+            )
         elif model["has_memory"]:
             label = model["leading_hypothesis"] or "-"
             color = QColor("#ff6262") if label == "NG" else QColor("#4ade80")
-            title = f"HIPÓTESE {label} • MEMÓRIA VISUAL"
-        elif model["memory_available"]:
+            title = (
+                f"JÁ VISTO • HIPÓTESE {label} • "
+                f"MATCH {self._pct(model['combined_similarity'])}"
+            )
+        elif model["memory_available"] or model["visual_match_available"]:
             color = QColor("#f5c518")
-            title = "MEMÓRIA DISPONÍVEL • CORRESPONDÊNCIA INSUFICIENTE"
+            title = (
+                "MEMÓRIA ENCONTRADA • "
+                f"MATCH {self._pct(model['combined_similarity'])} • "
+                "ABAIXO DO LIMIAR"
+            )
+        elif model["stored_memory_available"]:
+            color = QColor("#f5c518")
+            count = model["category_candidate_count"]
+            title = (
+                f"MEMÓRIA CARREGADA • {count} REGISTRO(S) • "
+                "SEM MATCH VISUAL VÁLIDO"
+            )
         else:
             color = QColor("#6e7681")
-            title = "SEM MEMÓRIA COMPATÍVEL"
+            title = "PRIMEIRA OCORRÊNCIA • SEM MEMÓRIA DA CATEGORIA"
 
         painter.setPen(QPen(color, 1))
         painter.setBrush(QColor(color.red(), color.green(), color.blue(), 24))
@@ -151,7 +170,7 @@ class KNNSpectrumWidget(QWidget):
         rows = [
             ("Epicentro", model["epicenter_similarity"], QColor("#58a6ff")),
             ("Contexto", model["context_similarity"], QColor("#bc8cff")),
-            ("Combinado", model["combined_similarity"], QColor("#f5c518")),
+            ("Melhor match", model["combined_similarity"], QColor("#f5c518")),
         ]
         y = rect.y() + 31
         for label, value, color in rows:
@@ -247,14 +266,23 @@ class KNNSpectrumWidget(QWidget):
         painter.setPen(QColor("#a6a6a6"))
         painter.drawText(int(x), int(rect.y() + 15), "PERSISTÊNCIA DA MEMÓRIA")
 
+        if model["category_candidate_count"] > 0:
+            prefix = (
+                f"Categoria: {model['category_candidate_count']} registro(s) em memória"
+            )
+        elif model["stored_memory_available"]:
+            prefix = "Categoria: memória carregada"
+        else:
+            prefix = "Categoria: nenhuma memória armazenada"
+
         if model["prototype_stats_available"]:
             stats = (
-                f"OK: {model['ok_prototypes']} protótipo(s) / "
+                f"{prefix}  •  OK: {model['ok_prototypes']} protótipo(s) / "
                 f"{model['ok_observations']} ocorrência(s)  •  "
                 f"NG: {model['protected_ng']} protegido(s)"
             )
         else:
-            stats = "Protótipos: telemetria ainda não disponível para este registro"
+            stats = f"{prefix}  •  protótipos sem telemetria"
 
         painter.setFont(QFont("Consolas", 7))
         painter.setPen(QColor("#d0d7de"))
