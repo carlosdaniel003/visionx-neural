@@ -134,6 +134,13 @@ class FakeReceiver:
         self.released += 1
         self.events.append("release")
 
+    def image_gate_snapshot(self):
+        class Snapshot:
+            accepting_images = False
+            generation = 3
+            ignored_images = 0
+        return Snapshot()
+
 
 class FakePanel:
     def __init__(self):
@@ -154,6 +161,13 @@ class FakePanel:
         self.btn_save_ok = FakeButton()
         self.btn_save_ng = FakeButton()
         self.btn_skip = FakeButton()
+        self.btn_copy_network_debug = FakeButton()
+        self.last_xp_ip = "169.254.95.200"
+
+    def handle_network_image(self, _image, ip):
+        self.last_xp_ip = str(ip)
+        self.events.append("network_original")
+        return True
 
     def process_aoi_images(self, sample_crop, ng_crop, aoi_info):
         self.events.append("original")
@@ -186,6 +200,18 @@ class NetworkIntakeIntegrationTests(unittest.TestCase):
         self.test = self.sample.copy()
         self.test[30:70, 40:80] = 190
 
+    def test_transport_debug_is_recorded_before_aoi_validation(self):
+        panel = FakePanel()
+        image = np.full((840, 1165, 3), 75, dtype=np.uint8)
+        result = panel.handle_network_image(image, "169.254.95.200")
+
+        self.assertTrue(result)
+        debug = panel.network_intake_last_validation
+        self.assertEqual(debug["source_ip"], "169.254.95.200")
+        self.assertEqual(debug["stage"], "network_image_received")
+        self.assertEqual(debug["transport"]["image"]["shape"], [840, 1165, 3])
+        self.assertTrue(panel.btn_copy_network_debug.enabled)
+
     def test_invalid_network_screen_never_reaches_analysis(self):
         panel = FakePanel()
         with patch.object(
@@ -207,6 +233,10 @@ class NetworkIntakeIntegrationTests(unittest.TestCase):
         self.assertIsNone(panel.capture_cycle_source)
         self.assertFalse(panel.is_locked)
         self.assertTrue(panel.status)
+        self.assertTrue(panel.btn_copy_network_debug.enabled)
+        debug = panel.network_intake_last_validation
+        self.assertEqual(debug["stage"], "aoi_intake_validation")
+        self.assertEqual(debug["validation_message"], "tela sem epicentro de anomalia")
 
     def test_valid_network_screen_is_confirmed_and_processed(self):
         panel = FakePanel()
@@ -282,6 +312,12 @@ class NetworkInspectionValidationTests(unittest.TestCase):
         self.assertFalse(valid)
         self.assertIn("sem epicentro", reason)
         self.assertEqual(audit["reason"], "missing_epicenter")
+        self.assertIn("green_detection", audit)
+        self.assertIn("sample_crop", audit)
+        self.assertIn("test_crop", audit)
+        self.assertIn("old_epicenters", audit)
+        self.assertIn("real_epicenters", audit)
+        self.assertTrue(audit["diagnostic_hints"])
 
     @patch.object(intake_module.EpicenterExtractor, "extract_focus")
     @patch.object(intake_module, "detect_anomalies")
