@@ -162,6 +162,7 @@ class FakePanel:
         self.btn_save_ng = FakeButton()
         self.btn_skip = FakeButton()
         self.btn_copy_network_debug = FakeButton()
+        self.btn_copy_network_image = FakeButton()
         self.last_xp_ip = "169.254.95.200"
 
     def handle_network_image(self, _image, ip):
@@ -210,7 +211,14 @@ class NetworkIntakeIntegrationTests(unittest.TestCase):
         self.assertEqual(debug["source_ip"], "169.254.95.200")
         self.assertEqual(debug["stage"], "network_image_received")
         self.assertEqual(debug["transport"]["image"]["shape"], [840, 1165, 3])
+        self.assertTrue(debug["event_id"])
+        self.assertEqual(
+            debug["event_id"],
+            panel.network_intake_last_image_event_id,
+        )
+        self.assertTrue(np.array_equal(panel.network_intake_last_image, image))
         self.assertTrue(panel.btn_copy_network_debug.enabled)
+        self.assertTrue(panel.btn_copy_network_image.enabled)
 
     def test_invalid_network_screen_never_reaches_analysis(self):
         panel = FakePanel()
@@ -237,6 +245,7 @@ class NetworkIntakeIntegrationTests(unittest.TestCase):
         debug = panel.network_intake_last_validation
         self.assertEqual(debug["stage"], "aoi_intake_validation")
         self.assertEqual(debug["validation_message"], "tela sem epicentro de anomalia")
+        self.assertTrue(panel.btn_copy_network_image.enabled)
 
     def test_valid_network_screen_is_confirmed_and_processed(self):
         panel = FakePanel()
