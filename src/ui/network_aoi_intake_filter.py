@@ -154,10 +154,23 @@ def _green_diagnostics(
             x, y, box_width, box_height = box
             if box_width <= min_width or box_height <= min_height:
                 continue
-            if max_width_ratio is not None and box_width >= width * max_width_ratio:
+            oversized_width = bool(
+                max_width_ratio is not None
+                and box_width >= width * max_width_ratio
+            )
+            oversized_height = bool(
+                max_height_ratio is not None
+                and box_height >= height * max_height_ratio
+            )
+
+            if max_width_ratio is not None and max_height_ratio is not None:
+                # Espelha o Radar real: a moldura só é descartada por tamanho
+                # quando é gigante simultaneamente nos dois eixos.
+                if oversized_width and oversized_height:
+                    continue
+            elif oversized_width or oversized_height:
                 continue
-            if max_height_ratio is not None and box_height >= height * max_height_ratio:
-                continue
+
             valid_boxes.append((x, y, box_width, box_height))
 
         green_pixels = int(cv2.countNonZero(mask))
@@ -217,6 +230,15 @@ def _radar_green_diagnostics(sample_crop: Any) -> dict:
                 {
                     "box": [x, y, box_width, box_height],
                     "distance_to_center": round(distance, 3),
+                    "width_ratio": round(float(box_width / max(width, 1)), 6),
+                    "height_ratio": round(float(box_height / max(height, 1)), 6),
+                    "area_ratio": round(
+                        float(
+                            (box_width * box_height)
+                            / max(width * height, 1)
+                        ),
+                        6,
+                    ),
                 }
             )
         ranked.sort(key=lambda item: item["distance_to_center"])
@@ -257,8 +279,9 @@ def _diagnostic_hints(
         )
     elif int(sample_radar_green.get("valid_box_count", 0) or 0) == 0:
         hints.append(
-            "O GABARITO contém verde, mas nenhuma caixa passou pelos filtros do "
-            "Radar: largura/altura >15 px e menores que 85% do recorte."
+            "O GABARITO contém verde, mas nenhuma caixa passou pelo Radar: "
+            "é necessário ter mais de 15 px por lado e não ocupar 85% ou mais "
+            "da largura E da altura simultaneamente."
         )
 
     if not old_epicenters and int(test_green.get("valid_box_count", 0) or 0) > 0:
