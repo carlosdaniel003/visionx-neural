@@ -63,9 +63,16 @@ class DecisionInfluenceWidget(QWidget):
         if row.get("id") == "knn":
             effect = float(row.get("effect_vs_physical", 0.0))
             effect_text = f"{effect * 100:+.0f} pp"
+            match = float(row.get("evidence_score", 0.0))
+            if score < 0.5:
+                vote_label = "OK"
+            elif score > 0.5:
+                vote_label = "NG"
+            else:
+                vote_label = "INCONCLUSIVO"
             return (
-                f"voto {score:.0%} NG • peso {weight:.0%} • "
-                f"efeito {effect_text}"
+                f"match {match:.0%} • voto {vote_label} • "
+                f"peso {weight:.0%} • efeito {effect_text}"
             )
 
         if weight > 0.0:
@@ -121,7 +128,7 @@ class DecisionInfluenceWidget(QWidget):
                 label,
             )
 
-            # Barra principal: evidência do motor ou voto NG do KNN.
+            # Barra principal: evidência física; no KNN, similaridade visual.
             bar_h = min(11.0, max(7.0, row_height * 0.27))
             bar_y = center_y - bar_h / 2
             painter.setPen(Qt.PenStyle.NoPen)
@@ -133,15 +140,35 @@ class DecisionInfluenceWidget(QWidget):
             )
 
             score = max(0.0, min(1.0, row["raw_score"]))
-            if score > 0.0:
+            evidence_score = max(
+                0.0,
+                min(1.0, float(row.get("evidence_score", score))),
+            )
+            if evidence_score > 0.0:
                 painter.setBrush(color)
                 painter.drawRoundedRect(
-                    QRectF(bar_x, bar_y, bar_width * score, bar_h),
+                    QRectF(
+                        bar_x,
+                        bar_y,
+                        bar_width * evidence_score,
+                        bar_h,
+                    ),
                     3,
                     3,
                 )
 
-            threshold = max(0.0, min(1.0, row["threshold"]))
+            threshold = max(
+                0.0,
+                min(
+                    1.0,
+                    float(
+                        row.get(
+                            "evidence_threshold",
+                            row["threshold"],
+                        )
+                    ),
+                ),
+            )
             threshold_x = bar_x + bar_width * threshold
             painter.setPen(QPen(QColor("#f5f5f5"), 1))
             painter.drawLine(
@@ -207,7 +234,7 @@ class DecisionInfluenceWidget(QWidget):
         painter.setPen(QColor("#f5c518"))
         footer_2 = (
             f"Corte {cutoff:.0%} • regra {self.trace.get('fusion_rule', 'physical_only')} • "
-            "barra maior = evidência; barra amarela fina = peso"
+            "barra maior = evidência (KNN = match); barra amarela fina = peso"
         )
         painter.drawText(
             padding,
