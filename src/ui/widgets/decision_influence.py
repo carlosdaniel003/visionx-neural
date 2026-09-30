@@ -218,12 +218,20 @@ class DecisionInfluenceWidget(QWidget):
         knn_weight = float(weights.get("knn", 0.0))
         memory = self.trace.get("memory", {})
         knn_vote = float(memory.get("vote_defect", 0.5))
+        knn_match = float(memory.get("best_similarity", 0.0) or 0.0)
+        if knn_vote < 0.5:
+            knn_vote_label = "OK"
+        elif knn_vote > 0.5:
+            knn_vote_label = "NG"
+        else:
+            knn_vote_label = "INCONCLUSIVO"
 
         footer_y = height - footer_height + 2
         painter.setPen(QColor("#d0d0d0"))
         formula = (
             f"Fusão: físico {physical:.0%}×{physical_weight:.0%} + "
-            f"KNN {knn_vote:.0%}×{knn_weight:.0%} = {final_score:.0%}"
+            f"KNN {knn_vote_label} ({knn_vote:.0%} NG)×{knn_weight:.0%} "
+            f"= {final_score:.0%} • match {knn_match:.0%}"
         )
         painter.drawText(
             padding,
