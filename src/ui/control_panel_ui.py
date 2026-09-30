@@ -42,8 +42,15 @@ class _ResponsiveEventFilter(QObject):
         self.window = window
 
     def eventFilter(self, watched, event):
-        if watched is self.window and event.type() == QEvent.Type.Resize:
-            self.builder.apply_layout_profile(self.window, event.size().width())
+        if event.type() == QEvent.Type.Resize:
+            viewport = getattr(getattr(self.window, "root_scroll", None), "viewport", lambda: None)()
+            if watched is viewport:
+                width = event.size().width()
+                self.builder.apply_layout_profile(self.window, width)
+            elif watched is self.window:
+                viewport_width = viewport.width() if viewport is not None else 0
+                width = viewport_width if viewport_width > 100 else event.size().width()
+                self.builder.apply_layout_profile(self.window, width)
         return super().eventFilter(watched, event)
 
 
@@ -74,6 +81,7 @@ class ControlPanelUI:
 
         window.root_scroll = QScrollArea()
         window.root_scroll.setWidgetResizable(True)
+        window.root_scroll.setMinimumWidth(0)
         window.root_scroll.setFrameShape(QFrame.Shape.NoFrame)
         window.root_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         window.root_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -81,6 +89,11 @@ class ControlPanelUI:
 
         window.root_content = QWidget()
         window.root_content.setObjectName("rootContent")
+        window.root_content.setMinimumWidth(0)
+        window.root_content.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         window.content_layout = QVBoxLayout(window.root_content)
         window.content_layout.setContentsMargins(14, 12, 14, 12)
         window.content_layout.setSpacing(12)
@@ -98,7 +111,10 @@ class ControlPanelUI:
 
         window._responsive_event_filter = _ResponsiveEventFilter(self, window)
         window.installEventFilter(window._responsive_event_filter)
-        self.apply_layout_profile(window, available.width(), force=True)
+        window.root_scroll.viewport().installEventFilter(window._responsive_event_filter)
+        viewport_width = window.root_scroll.viewport().width()
+        initial_width = viewport_width if viewport_width > 100 else available.width()
+        self.apply_layout_profile(window, initial_width, force=True)
         window.setWindowState(Qt.WindowState.WindowMaximized)
 
     @staticmethod
@@ -122,11 +138,18 @@ class ControlPanelUI:
     def _build_header(self, window, parent_layout):
         header = QFrame()
         header.setObjectName("headerFrame")
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(18, 12, 18, 12)
-        header_layout.setSpacing(14)
+        header.setMinimumWidth(0)
+        self.header_layout = QGridLayout(header)
+        self.header_layout.setContentsMargins(18, 12, 18, 12)
+        self.header_layout.setHorizontalSpacing(14)
+        self.header_layout.setVerticalSpacing(8)
 
         title_block = QWidget()
+        title_block.setMinimumWidth(0)
+        title_block.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         title_layout = QVBoxLayout(title_block)
         title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(1)
@@ -145,6 +168,7 @@ class ControlPanelUI:
 
         mode_card = QFrame()
         mode_card.setObjectName("modeCard")
+        mode_card.setMinimumWidth(0)
         mode_layout = QVBoxLayout(mode_card)
         mode_layout.setContentsMargins(12, 7, 12, 7)
         mode_layout.setSpacing(3)
@@ -160,6 +184,7 @@ class ControlPanelUI:
 
         latency_card = QFrame()
         latency_card.setObjectName("latencyCard")
+        latency_card.setMinimumWidth(0)
         latency_layout = QVBoxLayout(latency_card)
         latency_layout.setContentsMargins(12, 7, 12, 7)
         latency_layout.setSpacing(3)
@@ -171,9 +196,13 @@ class ControlPanelUI:
         latency_layout.addWidget(latency_title)
         latency_layout.addWidget(window.lbl_timer)
 
-        header_layout.addWidget(title_block, stretch=1)
-        header_layout.addWidget(mode_card)
-        header_layout.addWidget(latency_card)
+        self.header_widgets = [title_block, mode_card, latency_card]
+        self.header_layout.addWidget(title_block, 0, 0)
+        self.header_layout.addWidget(mode_card, 0, 1)
+        self.header_layout.addWidget(latency_card, 0, 2)
+        self.header_layout.setColumnStretch(0, 1)
+        self.header_layout.setColumnStretch(1, 0)
+        self.header_layout.setColumnStretch(2, 0)
         parent_layout.addWidget(header)
 
     def _create_info_card(self, title: str, value_label: QLabel, accent: bool = False) -> QFrame:
@@ -258,11 +287,13 @@ class ControlPanelUI:
 
     def _build_main_stage(self, window, parent_layout):
         window.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        window.main_splitter.setMinimumWidth(0)
         window.main_splitter.setChildrenCollapsible(False)
         window.main_splitter.setHandleWidth(6)
 
         window.images_section = QFrame()
         window.images_section.setObjectName("sectionPanel")
+        window.images_section.setMinimumWidth(0)
         images_layout = QVBoxLayout(window.images_section)
         images_layout.setContentsMargins(10, 10, 10, 10)
         images_layout.setSpacing(8)
@@ -296,6 +327,7 @@ class ControlPanelUI:
 
         window.telemetry_section = QFrame()
         window.telemetry_section.setObjectName("sectionPanel")
+        window.telemetry_section.setMinimumWidth(0)
         telemetry_layout = QVBoxLayout(window.telemetry_section)
         telemetry_layout.setContentsMargins(10, 10, 10, 10)
         telemetry_layout.setSpacing(8)
@@ -308,6 +340,7 @@ class ControlPanelUI:
 
         window.scroll_area = QScrollArea()
         window.scroll_area.setWidgetResizable(True)
+        window.scroll_area.setMinimumWidth(0)
         window.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         window.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
@@ -655,30 +688,86 @@ class ControlPanelUI:
     def _build_status_bar(self, window, parent_layout):
         window.status_frame = QFrame()
         window.status_frame.setObjectName("statusBar")
+        window.status_frame.setMinimumWidth(0)
         window.status_frame.setMinimumHeight(34)
-        status_layout = QHBoxLayout(window.status_frame)
-        status_layout.setContentsMargins(12, 5, 12, 5)
-        status_layout.setSpacing(10)
+        self.status_layout = QGridLayout(window.status_frame)
+        self.status_layout.setContentsMargins(12, 5, 12, 5)
+        self.status_layout.setHorizontalSpacing(10)
+        self.status_layout.setVerticalSpacing(4)
 
         window.lbl_status_network = QLabel("Ouvindo AOI (Porta 5001)")
-        window.lbl_status_network.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        )
         window.lbl_status_brain = QLabel("Sistema Ocioso")
-        window.lbl_status_brain.setAlignment(Qt.AlignmentFlag.AlignCenter)
         window.lbl_status_history = QLabel("Última Peça: Nenhuma")
-        window.lbl_status_history.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
+
+        self.status_widgets = [
+            window.lbl_status_network,
+            window.lbl_status_brain,
+            window.lbl_status_history,
+        ]
+        for label in self.status_widgets:
+            label.setMinimumWidth(0)
+            label.setWordWrap(True)
+            label.setSizePolicy(
+                QSizePolicy.Policy.Ignored,
+                QSizePolicy.Policy.Preferred,
+            )
 
         self.lbl_status_network = window.lbl_status_network
         self.lbl_status_brain = window.lbl_status_brain
         self.lbl_status_history = window.lbl_status_history
 
-        status_layout.addWidget(window.lbl_status_network, stretch=1)
-        status_layout.addWidget(window.lbl_status_brain, stretch=1)
-        status_layout.addWidget(window.lbl_status_history, stretch=1)
+        self.status_layout.addWidget(window.lbl_status_network, 0, 0)
+        self.status_layout.addWidget(window.lbl_status_brain, 0, 1)
+        self.status_layout.addWidget(window.lbl_status_history, 0, 2)
         parent_layout.addWidget(window.status_frame)
+
+    def _layout_header(self, window, compact: bool) -> None:
+        for widget in self.header_widgets:
+            self.header_layout.removeWidget(widget)
+            widget.setMinimumWidth(0)
+
+        if compact:
+            self.header_layout.addWidget(self.header_widgets[0], 0, 0, 1, 2)
+            self.header_layout.addWidget(self.header_widgets[1], 1, 0)
+            self.header_layout.addWidget(self.header_widgets[2], 1, 1)
+            self.header_layout.setColumnStretch(0, 1)
+            self.header_layout.setColumnStretch(1, 1)
+            self.header_layout.setColumnStretch(2, 0)
+        else:
+            self.header_layout.addWidget(self.header_widgets[0], 0, 0)
+            self.header_layout.addWidget(self.header_widgets[1], 0, 1)
+            self.header_layout.addWidget(self.header_widgets[2], 0, 2)
+            self.header_layout.setColumnStretch(0, 1)
+            self.header_layout.setColumnStretch(1, 0)
+            self.header_layout.setColumnStretch(2, 0)
+
+    def _layout_status_bar(self, window, compact: bool) -> None:
+        for widget in self.status_widgets:
+            self.status_layout.removeWidget(widget)
+
+        if compact:
+            for row, widget in enumerate(self.status_widgets):
+                widget.setAlignment(
+                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                )
+                self.status_layout.addWidget(widget, row, 0)
+            self.status_layout.setColumnStretch(0, 1)
+            self.status_layout.setColumnStretch(1, 0)
+            self.status_layout.setColumnStretch(2, 0)
+            window.status_frame.setMinimumHeight(72)
+        else:
+            alignments = (
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                Qt.AlignmentFlag.AlignCenter,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            )
+            for column, (widget, alignment) in enumerate(
+                zip(self.status_widgets, alignments)
+            ):
+                widget.setAlignment(alignment)
+                self.status_layout.addWidget(widget, 0, column)
+                self.status_layout.setColumnStretch(column, 1)
+            window.status_frame.setMinimumHeight(34)
 
     @staticmethod
     def _reflow_grid(grid: QGridLayout, widgets: list[QWidget], columns: int) -> None:
@@ -690,10 +779,11 @@ class ControlPanelUI:
             grid.setColumnStretch(column, 1)
 
     def apply_layout_profile(self, window, width: int, force: bool = False) -> None:
-        profile = profile_for_width(max(width, 1))
-        if not force and profile.name == self._active_profile_name:
-            return
+        width = max(int(width), 1)
+        profile = profile_for_width(width)
+        profile_changed = force or profile.name != self._active_profile_name
         self._active_profile_name = profile.name
+        compact = profile.name == "compact"
 
         window.content_layout.setContentsMargins(
             profile.outer_margin,
@@ -703,16 +793,34 @@ class ControlPanelUI:
         )
         window.content_layout.setSpacing(profile.section_spacing)
 
-        self._reflow_grid(self.info_grid, self.info_cards, profile.info_columns)
-        self._reflow_grid(self.footer_grid, self.footer_cards, profile.footer_columns)
-        self._reflow_grid(self.light_grid, self.light_buttons, min(3, profile.action_columns))
-        self._reflow_grid(self.action_grid, self.action_buttons, profile.action_columns)
-        self._layout_network_debug(window, compact=profile.name == "compact")
+        if profile_changed:
+            self._layout_header(window, compact=compact)
+            self._reflow_grid(self.info_grid, self.info_cards, profile.info_columns)
+            self._reflow_grid(self.footer_grid, self.footer_cards, profile.footer_columns)
+            self._reflow_grid(
+                self.light_grid,
+                self.light_buttons,
+                min(3, profile.action_columns),
+            )
+            self._reflow_grid(
+                self.action_grid,
+                self.action_buttons,
+                profile.action_columns,
+            )
+            self._layout_network_debug(window, compact=compact)
+            self._layout_status_bar(window, compact=compact)
 
         orientation = (
-            Qt.Orientation.Vertical if profile.splitter_vertical else Qt.Orientation.Horizontal
+            Qt.Orientation.Vertical
+            if profile.splitter_vertical
+            else Qt.Orientation.Horizontal
         )
         window.main_splitter.setOrientation(orientation)
+        window.main_splitter.setMinimumWidth(0)
+        window.images_section.setMinimumWidth(0)
+        window.telemetry_section.setMinimumWidth(0)
+        window.telemetry_section.setMaximumWidth(16777215)
+        window.scroll_area.setMinimumWidth(0)
 
         for viewport in self.image_viewports:
             viewport.setMinimumHeight(profile.image_min_height)
@@ -720,21 +828,23 @@ class ControlPanelUI:
         for wrapper in self.debug_wrappers:
             wrapper.setMinimumWidth(profile.debugger_min_width)
             wrapper.setMaximumWidth(profile.debugger_max_width)
-            wrapper.setMinimumHeight(265 if profile.name == "compact" else 300)
+            wrapper.setMinimumHeight(265 if compact else 300)
 
         if profile.splitter_vertical:
-            window.images_section.setMinimumWidth(0)
             window.images_section.setMaximumWidth(16777215)
             window.images_section.setMinimumHeight(320)
             window.telemetry_section.setMinimumHeight(330)
             window.main_splitter.setSizes([340, 430])
         else:
-            image_width = 420 if profile.name == "wide" else 360
-            window.images_section.setMinimumWidth(300)
+            image_width = 400 if profile.name == "wide" else 340
             window.images_section.setMaximumWidth(image_width)
             window.images_section.setMinimumHeight(0)
             window.telemetry_section.setMinimumHeight(360)
-            window.main_splitter.setSizes([image_width, max(700, width - image_width)])
+            available_for_telemetry = max(1, width - image_width)
+            window.main_splitter.setSizes(
+                [image_width, available_for_telemetry]
+            )
 
+        window.root_content.setMinimumWidth(0)
         window.root_content.updateGeometry()
         window.updateGeometry()
