@@ -39,7 +39,8 @@ class SemanticMemoryUIContractTests(unittest.TestCase):
         source = (
             ROOT / "src" / "ui" / "strict_category_memory_ui.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("Sem JSON de anomalia para", source)
+        self.assertIn("PRIMEIRA OCORRÊNCIA", source)
+        self.assertIn("memory_candidate_count", source)
         self.assertIn("memory_category", source)
         self.assertIn("MUITO ADESIVO", source)
         main_source = (ROOT / "main.py").read_text(encoding="utf-8")
