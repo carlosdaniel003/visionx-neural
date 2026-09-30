@@ -11,6 +11,7 @@ class Config:
     DATASET_DIR = PUBLIC_DIR / "dataset"
     ANOMALY_DIR = DATASET_DIR / "anomalia"
     NORMAL_DIR = DATASET_DIR / "nao_anomalia"
+    NG_ARCHIVE_DIR = PUBLIC_DIR / "ng_archive"
     TEMPLATE_IMAGE_PATH = BASE_DIR / "public" / "template_padrao.png"
 
     SCREEN_CAPTURE_FPS = 15
@@ -45,3 +46,4 @@ class Config:
 settings = Config()
 settings.ANOMALY_DIR.mkdir(parents=True, exist_ok=True)
 settings.NORMAL_DIR.mkdir(parents=True, exist_ok=True)
+settings.NG_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
