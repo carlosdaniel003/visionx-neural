@@ -517,26 +517,35 @@ class ControlPanelUI:
             "QLabel#networkDebugState[state='ready'] { color: #4ade80; }"
             "QLabel#networkDebugState[state='partial'] { color: #f5c518; }"
             "QLabel#networkDebugState[state='rejected'] { color: #ff7777; }"
+            "QWidget#networkDebugActions {"
+            "background: transparent; border: none;"
+            "}"
             "QPushButton#networkDebugTextButton,"
             "QPushButton#networkDebugImageButton {"
-            "min-height: 36px; min-width: 132px; padding: 6px 12px; "
-            "border-radius: 7px; font-size: 11px; font-weight: 800;"
+            "min-height: 40px; min-width: 128px; padding: 7px 14px; "
+            "border-radius: 6px; font-size: 11px; font-weight: 800;"
             "}"
             "QPushButton#networkDebugTextButton {"
             "color: #e2e2e2; background: #181818; border: 1px solid #505050;"
             "}"
-            "QPushButton#networkDebugTextButton:hover {"
+            "QPushButton#networkDebugTextButton:hover,"
+            "QPushButton#networkDebugTextButton:focus {"
             "color: #f5c518; border-color: #f5c518; background: #242424;"
             "}"
             "QPushButton#networkDebugImageButton {"
-            "color: #f5c518; background: #2b2406; border: 1px solid #f5c518;"
+            "color: #f5c518; background: #211d0d; border: 1px solid #8f7a18;"
             "}"
-            "QPushButton#networkDebugImageButton:hover {"
-            "color: #0a0a0a; background: #f5c518; border-color: #ffd84d;"
+            "QPushButton#networkDebugImageButton:hover,"
+            "QPushButton#networkDebugImageButton:focus {"
+            "color: #101010; background: #f5c518; border-color: #ffd84d;"
+            "}"
+            "QPushButton#networkDebugTextButton:pressed,"
+            "QPushButton#networkDebugImageButton:pressed {"
+            "padding-top: 8px; padding-bottom: 6px;"
             "}"
             "QPushButton#networkDebugTextButton:disabled,"
             "QPushButton#networkDebugImageButton:disabled {"
-            "color: #565656; background: #0b0b0b; border: 1px dashed #292929;"
+            "color: #666666; background: #111111; border: 1px solid #292929;"
             "}"
         )
 
@@ -562,9 +571,24 @@ class ControlPanelUI:
             QSizePolicy.Policy.Preferred,
         )
 
+        window.network_debug_actions = QWidget(window.network_debug_frame)
+        window.network_debug_actions.setObjectName("networkDebugActions")
+        window.network_debug_actions.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        self.network_debug_actions_layout = QHBoxLayout(window.network_debug_actions)
+        self.network_debug_actions_layout.setContentsMargins(0, 0, 0, 0)
+        self.network_debug_actions_layout.setSpacing(8)
+
         window.btn_copy_network_debug = QPushButton("Copiar debug")
         window.btn_copy_network_debug.setObjectName("networkDebugTextButton")
         window.btn_copy_network_debug.setCursor(Qt.CursorShape.PointingHandCursor)
+        window.btn_copy_network_debug.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        window.btn_copy_network_debug.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         window.btn_copy_network_debug.setToolTip(
             "Copia o relatório técnico da última imagem recebida do Windows XP."
         )
@@ -572,21 +596,35 @@ class ControlPanelUI:
             lambda _checked=False: copy_network_debug_to_clipboard(window)
         )
 
-        window.btn_copy_network_image = QPushButton("Copiar imagem")
+        window.btn_copy_network_image = QPushButton("Copiar imagem XP")
         window.btn_copy_network_image.setObjectName("networkDebugImageButton")
         window.btn_copy_network_image.setCursor(Qt.CursorShape.PointingHandCursor)
+        window.btn_copy_network_image.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        window.btn_copy_network_image.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         window.btn_copy_network_image.setToolTip(
-            "Copia exatamente o frame do Windows XP vinculado ao relatório atual."
+            "Copia exatamente o frame enviado pelo Windows XP que está vinculado "
+            "ao diagnóstico atual."
         )
         window.btn_copy_network_image.clicked.connect(
             lambda _checked=False: copy_network_image_to_clipboard(window)
         )
 
+        self.network_debug_actions_layout.addWidget(
+            window.btn_copy_network_debug,
+            stretch=1,
+        )
+        self.network_debug_actions_layout.addWidget(
+            window.btn_copy_network_image,
+            stretch=1,
+        )
+
         self.network_debug_widgets = [
             window.lbl_network_debug_title,
             window.lbl_network_debug_state,
-            window.btn_copy_network_debug,
-            window.btn_copy_network_image,
+            window.network_debug_actions,
         ]
 
         parent_layout.addWidget(window.network_debug_frame)
@@ -600,20 +638,19 @@ class ControlPanelUI:
         if compact:
             grid.addWidget(window.lbl_network_debug_title, 0, 0)
             grid.addWidget(window.lbl_network_debug_state, 1, 0)
-            grid.addWidget(window.btn_copy_network_debug, 2, 0)
-            grid.addWidget(window.btn_copy_network_image, 3, 0)
+            grid.addWidget(window.network_debug_actions, 2, 0)
             grid.setColumnStretch(0, 1)
-            window.network_debug_frame.setMinimumHeight(160)
+            window.network_debug_frame.setMinimumHeight(138)
         else:
             grid.addWidget(window.lbl_network_debug_title, 0, 0)
             grid.addWidget(window.lbl_network_debug_state, 0, 1)
-            grid.addWidget(window.btn_copy_network_debug, 0, 2)
-            grid.addWidget(window.btn_copy_network_image, 0, 3)
+            grid.addWidget(window.network_debug_actions, 0, 2)
             grid.setColumnStretch(0, 0)
             grid.setColumnStretch(1, 1)
             grid.setColumnStretch(2, 0)
-            grid.setColumnStretch(3, 0)
-            window.network_debug_frame.setMinimumHeight(54)
+            window.network_debug_frame.setMinimumHeight(62)
+
+        window.network_debug_actions.setMinimumWidth(0 if compact else 300)
 
     def _build_status_bar(self, window, parent_layout):
         window.status_frame = QFrame()
