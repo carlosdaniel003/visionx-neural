@@ -143,20 +143,56 @@ class NetworkXPDebugUILayoutTests(unittest.TestCase):
             source,
         )
 
-    def test_compact_layout_stacks_copy_actions(self):
+    def test_copy_actions_share_one_responsive_action_group(self):
         source = open(
             "src/ui/control_panel_ui.py",
             encoding="utf-8",
         ).read()
 
-        compact = source[source.index("if compact:"):source.index("else:", source.index("if compact:"))]
         self.assertIn(
-            "grid.addWidget(window.btn_copy_network_debug, 2, 0)",
-            compact,
+            "self.network_debug_actions_layout.addWidget(\n"
+            "            window.btn_copy_network_debug,",
+            source,
         )
         self.assertIn(
-            "grid.addWidget(window.btn_copy_network_image, 3, 0)",
+            "self.network_debug_actions_layout.addWidget(\n"
+            "            window.btn_copy_network_image,",
+            source,
+        )
+        self.assertIn(
+            'window.btn_copy_network_image = QPushButton("Copiar imagem XP")',
+            source,
+        )
+
+        compact = source[
+            source.index("if compact:"):
+            source.index("else:", source.index("if compact:"))
+        ]
+        self.assertIn(
+            "grid.addWidget(window.network_debug_actions, 2, 0)",
             compact,
+        )
+        self.assertNotIn("btn_copy_network_debug", compact)
+        self.assertNotIn("btn_copy_network_image", compact)
+
+    def test_network_debug_buttons_have_clickable_responsive_policy(self):
+        source = open(
+            "src/ui/control_panel_ui.py",
+            encoding="utf-8",
+        ).read()
+
+        self.assertIn("min-height: 40px", source)
+        self.assertIn(
+            "window.btn_copy_network_debug.setFocusPolicy(Qt.FocusPolicy.StrongFocus)",
+            source,
+        )
+        self.assertIn(
+            "window.btn_copy_network_image.setFocusPolicy(Qt.FocusPolicy.StrongFocus)",
+            source,
+        )
+        self.assertIn(
+            "window.network_debug_actions.setMinimumWidth(0 if compact else 300)",
+            source,
         )
 
 
