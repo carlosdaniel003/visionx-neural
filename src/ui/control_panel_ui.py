@@ -704,6 +704,7 @@ class ControlPanelUI:
             window.lbl_status_brain,
             window.lbl_status_history,
         ]
+        window.status_layout_items = list(self.status_widgets)
         for label in self.status_widgets:
             label.setMinimumWidth(0)
             label.setWordWrap(True)
@@ -742,30 +743,50 @@ class ControlPanelUI:
             self.header_layout.setColumnStretch(2, 0)
 
     def _layout_status_bar(self, window, compact: bool) -> None:
-        for widget in self.status_widgets:
-            self.status_layout.removeWidget(widget)
+        while self.status_layout.count():
+            self.status_layout.takeAt(0)
+
+        layout_items = list(
+            getattr(window, "status_layout_items", self.status_widgets)
+        )
+        alignments = (
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignmentFlag.AlignCenter,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
 
         if compact:
-            for row, widget in enumerate(self.status_widgets):
-                widget.setAlignment(
+            for row, (item, label) in enumerate(
+                zip(layout_items, self.status_widgets)
+            ):
+                label.setAlignment(
                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
                 )
-                self.status_layout.addWidget(widget, row, 0)
+                self.status_layout.addWidget(
+                    item,
+                    row,
+                    0,
+                    1,
+                    1,
+                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                )
             self.status_layout.setColumnStretch(0, 1)
             self.status_layout.setColumnStretch(1, 0)
             self.status_layout.setColumnStretch(2, 0)
             window.status_frame.setMinimumHeight(72)
         else:
-            alignments = (
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                Qt.AlignmentFlag.AlignCenter,
-                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            )
-            for column, (widget, alignment) in enumerate(
-                zip(self.status_widgets, alignments)
+            for column, (item, label, alignment) in enumerate(
+                zip(layout_items, self.status_widgets, alignments)
             ):
-                widget.setAlignment(alignment)
-                self.status_layout.addWidget(widget, 0, column)
+                label.setAlignment(alignment)
+                self.status_layout.addWidget(
+                    item,
+                    0,
+                    column,
+                    1,
+                    1,
+                    alignment,
+                )
                 self.status_layout.setColumnStretch(column, 1)
             window.status_frame.setMinimumHeight(34)
 
