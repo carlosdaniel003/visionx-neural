@@ -86,6 +86,57 @@ class DecisionModelTests(unittest.TestCase):
         self.assertEqual(knn["fusion_weight"], 1.0)
         self.assertAlmostEqual(knn["score_contribution"], 0.18)
         self.assertAlmostEqual(knn["effect_vs_physical"], -0.58)
+        self.assertAlmostEqual(knn["evidence_score"], 0.96)
+        self.assertAlmostEqual(knn["evidence_threshold"], 0.75)
+
+    def test_strong_ok_memory_has_full_visual_evidence_despite_zero_ng_vote(self):
+        trace = {
+            "final_score": 0.0,
+            "physical_score": 0.85,
+            "cutoff": 0.45,
+            "dominant_engine": "knn",
+            "fusion_rule": "best_match_strong",
+            "weights": {"physical": 0.0, "knn": 1.0},
+            "memory": {
+                "has_memory": True,
+                "memory_available": True,
+                "vote_defect": 0.0,
+                "memory_score": 0.0,
+                "best_similarity": 0.97,
+                "best_match_label": "OK",
+                "n_neighbors": 1,
+                "role": "MELHOR CORRESPONDÊNCIA DECISIVA",
+            },
+            "engines": [
+                {
+                    "id": "structural",
+                    "label": "Comparador estrutural",
+                    "active": True,
+                    "triggered": True,
+                    "raw_score": 0.27,
+                    "effective_score": 0.85,
+                    "threshold": 0.08,
+                },
+                {
+                    "id": "knn",
+                    "label": "Memória local KNN",
+                    "active": True,
+                    "triggered": False,
+                    "raw_score": 0.0,
+                    "effective_score": 0.0,
+                    "threshold": 0.45,
+                },
+            ],
+        }
+
+        rows = {row["id"]: row for row in influence_rows(trace)}
+        knn = rows["knn"]
+
+        self.assertEqual(knn["raw_score"], 0.0)
+        self.assertAlmostEqual(knn["evidence_score"], 0.97)
+        self.assertAlmostEqual(knn["evidence_threshold"], 0.75)
+        self.assertEqual(knn["fusion_weight"], 1.0)
+        self.assertAlmostEqual(knn["effect_vs_physical"], -0.85)
 
     def test_zero_ng_vote_can_still_have_thirty_percent_fusion_weight(self):
         trace = {
@@ -150,6 +201,8 @@ class DecisionModelTests(unittest.TestCase):
         self.assertAlmostEqual(knn["fusion_weight"], 0.30)
         self.assertAlmostEqual(knn["score_contribution"], 0.0)
         self.assertAlmostEqual(knn["effect_vs_physical"], -0.294)
+        self.assertAlmostEqual(knn["evidence_score"], 0.68)
+        self.assertAlmostEqual(knn["evidence_threshold"], 0.75)
 
 
 if __name__ == "__main__":
