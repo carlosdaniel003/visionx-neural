@@ -9,6 +9,7 @@ on:
       - "src/ui/control_panel_ui.py"
       - "tests/test_network_aoi_intake_filter.py"
       - "tests/test_network_xp_debug.py"
+      - "tests/test_image_cycle_gate.py"
       - ".github/workflows/network-xp-debug-tests.yml"
   workflow_dispatch:
 
