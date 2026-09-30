@@ -84,16 +84,25 @@ def install_strict_category_memory(knn_expert_cls) -> None:
             )
             return result
 
+        memory_lock = getattr(self, "_memory_lock", None)
+        if memory_lock is not None:
+            with memory_lock:
+                signatures_ok = list(self.signatures_ok)
+                signatures_ng = list(self.signatures_ng)
+        else:
+            signatures_ok = list(self.signatures_ok)
+            signatures_ng = list(self.signatures_ng)
+
         all_ok = [
             record
-            for record in self.signatures_ok
+            for record in signatures_ok
             if record.get("mode") == "anomaly"
             and canonical_memory_category(record.get("category", ""))
             == target_category
         ]
         all_ng = [
             record
-            for record in self.signatures_ng
+            for record in signatures_ng
             if record.get("mode") == "anomaly"
             and canonical_memory_category(record.get("category", ""))
             == target_category
