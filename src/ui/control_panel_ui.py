@@ -18,7 +18,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.ui.network_xp_debug import copy_network_debug_to_clipboard
+from src.ui.network_xp_debug import (
+    copy_network_debug_to_clipboard,
+    copy_network_image_to_clipboard,
+    sync_network_debug_controls,
+)
 from src.ui.responsive_layout import profile_for_width
 from src.ui.theme import APP_STYLESHEET
 from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
@@ -86,6 +90,7 @@ class ControlPanelUI:
         self._build_main_stage(window, window.content_layout)
         self._build_footer(window, window.content_layout)
         self._build_action_buttons(window, window.content_layout)
+        self._build_network_debug_bar(window, window.content_layout)
         self._build_status_bar(window, window.content_layout)
 
         window.root_scroll.setWidget(window.root_content)
@@ -492,6 +497,124 @@ class ControlPanelUI:
         window.combo_mode.currentTextChanged.connect(apply_mode_visibility)
         apply_mode_visibility(window.combo_mode.currentText())
 
+    def _build_network_debug_bar(self, window, parent_layout):
+        window.network_debug_frame = QFrame()
+        window.network_debug_frame.setObjectName("networkDebugFrame")
+        window.network_debug_frame.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        window.network_debug_frame.setStyleSheet(
+            "QFrame#networkDebugFrame {"
+            "background: #101010; border: 1px solid #303030; border-radius: 8px;"
+            "}"
+            "QLabel#networkDebugTitle {"
+            "color: #f5c518; font-size: 10px; font-weight: 900; letter-spacing: 1px;"
+            "}"
+            "QLabel#networkDebugState {"
+            "color: #9a9a9a; font-size: 11px; font-weight: 700;"
+            "}"
+            "QLabel#networkDebugState[state='ready'] { color: #4ade80; }"
+            "QLabel#networkDebugState[state='partial'] { color: #f5c518; }"
+            "QPushButton#networkDebugTextButton,"
+            "QPushButton#networkDebugImageButton {"
+            "min-height: 36px; min-width: 132px; padding: 6px 12px; "
+            "border-radius: 7px; font-size: 11px; font-weight: 800;"
+            "}"
+            "QPushButton#networkDebugTextButton {"
+            "color: #e2e2e2; background: #181818; border: 1px solid #505050;"
+            "}"
+            "QPushButton#networkDebugTextButton:hover {"
+            "color: #f5c518; border-color: #f5c518; background: #242424;"
+            "}"
+            "QPushButton#networkDebugImageButton {"
+            "color: #f5c518; background: #2b2406; border: 1px solid #f5c518;"
+            "}"
+            "QPushButton#networkDebugImageButton:hover {"
+            "color: #0a0a0a; background: #f5c518; border-color: #ffd84d;"
+            "}"
+            "QPushButton#networkDebugTextButton:disabled,"
+            "QPushButton#networkDebugImageButton:disabled {"
+            "color: #565656; background: #0b0b0b; border: 1px dashed #292929;"
+            "}"
+        )
+
+        self.network_debug_grid = QGridLayout(window.network_debug_frame)
+        self.network_debug_grid.setContentsMargins(12, 8, 12, 8)
+        self.network_debug_grid.setHorizontalSpacing(10)
+        self.network_debug_grid.setVerticalSpacing(6)
+
+        window.lbl_network_debug_title = QLabel("DIAGNÓSTICO XP")
+        window.lbl_network_debug_title.setObjectName("networkDebugTitle")
+        window.lbl_network_debug_title.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+
+        window.lbl_network_debug_state = QLabel(
+            "Aguardando a primeira imagem do Windows XP"
+        )
+        window.lbl_network_debug_state.setObjectName("networkDebugState")
+        window.lbl_network_debug_state.setProperty("state", "idle")
+        window.lbl_network_debug_state.setWordWrap(True)
+        window.lbl_network_debug_state.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+
+        window.btn_copy_network_debug = QPushButton("Copiar debug")
+        window.btn_copy_network_debug.setObjectName("networkDebugTextButton")
+        window.btn_copy_network_debug.setCursor(Qt.CursorShape.PointingHandCursor)
+        window.btn_copy_network_debug.setToolTip(
+            "Copia o relatório técnico da última imagem recebida do Windows XP."
+        )
+        window.btn_copy_network_debug.clicked.connect(
+            lambda _checked=False: copy_network_debug_to_clipboard(window)
+        )
+
+        window.btn_copy_network_image = QPushButton("Copiar imagem")
+        window.btn_copy_network_image.setObjectName("networkDebugImageButton")
+        window.btn_copy_network_image.setCursor(Qt.CursorShape.PointingHandCursor)
+        window.btn_copy_network_image.setToolTip(
+            "Copia exatamente o frame do Windows XP vinculado ao relatório atual."
+        )
+        window.btn_copy_network_image.clicked.connect(
+            lambda _checked=False: copy_network_image_to_clipboard(window)
+        )
+
+        self.network_debug_widgets = [
+            window.lbl_network_debug_title,
+            window.lbl_network_debug_state,
+            window.btn_copy_network_debug,
+            window.btn_copy_network_image,
+        ]
+
+        parent_layout.addWidget(window.network_debug_frame)
+        sync_network_debug_controls(window)
+
+    def _layout_network_debug(self, window, compact: bool) -> None:
+        grid = self.network_debug_grid
+        for widget in self.network_debug_widgets:
+            grid.removeWidget(widget)
+
+        if compact:
+            grid.addWidget(window.lbl_network_debug_title, 0, 0, 1, 2)
+            grid.addWidget(window.lbl_network_debug_state, 1, 0, 1, 2)
+            grid.addWidget(window.btn_copy_network_debug, 2, 0)
+            grid.addWidget(window.btn_copy_network_image, 2, 1)
+            grid.setColumnStretch(0, 1)
+            grid.setColumnStretch(1, 1)
+            window.network_debug_frame.setMinimumHeight(112)
+        else:
+            grid.addWidget(window.lbl_network_debug_title, 0, 0)
+            grid.addWidget(window.lbl_network_debug_state, 0, 1)
+            grid.addWidget(window.btn_copy_network_debug, 0, 2)
+            grid.addWidget(window.btn_copy_network_image, 0, 3)
+            grid.setColumnStretch(0, 0)
+            grid.setColumnStretch(1, 1)
+            grid.setColumnStretch(2, 0)
+            grid.setColumnStretch(3, 0)
+            window.network_debug_frame.setMinimumHeight(54)
+
     def _build_status_bar(self, window, parent_layout):
         window.status_frame = QFrame()
         window.status_frame.setObjectName("statusBar")
@@ -501,47 +624,21 @@ class ControlPanelUI:
         status_layout.setSpacing(10)
 
         window.lbl_status_network = QLabel("Ouvindo AOI (Porta 5001)")
-        window.lbl_status_network.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-
-        window.btn_copy_network_debug = QPushButton("Copiar debug XP")
-        window.btn_copy_network_debug.setObjectName("networkDebugButton")
-        window.btn_copy_network_debug.setCursor(Qt.CursorShape.PointingHandCursor)
-        window.btn_copy_network_debug.setEnabled(
-            bool(getattr(window, "network_intake_last_validation", {}))
+        window.lbl_status_network.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
-        window.btn_copy_network_debug.setToolTip(
-            "Copia o diagnóstico técnico da última imagem recebida do Windows XP, "
-            "inclusive imagens rejeitadas antes do julgamento."
-        )
-        window.btn_copy_network_debug.setMinimumHeight(26)
-        window.btn_copy_network_debug.setMaximumWidth(132)
-        window.btn_copy_network_debug.setStyleSheet(
-            "QPushButton#networkDebugButton {"
-            "color: #d0d7de; background: #171717; border: 1px solid #444444; "
-            "border-radius: 5px; padding: 4px 9px; font-size: 10px; font-weight: 700;"
-            "}"
-            "QPushButton#networkDebugButton:hover {"
-            "color: #f5c518; border-color: #f5c518; background: #222222;"
-            "}"
-            "QPushButton#networkDebugButton:disabled {"
-            "color: #565656; border-color: #292929; background: #0b0b0b;"
-            "}"
-        )
-        window.btn_copy_network_debug.clicked.connect(
-            lambda _checked=False: copy_network_debug_to_clipboard(window)
-        )
-
         window.lbl_status_brain = QLabel("Sistema Ocioso")
         window.lbl_status_brain.setAlignment(Qt.AlignmentFlag.AlignCenter)
         window.lbl_status_history = QLabel("Última Peça: Nenhuma")
-        window.lbl_status_history.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        window.lbl_status_history.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
 
         self.lbl_status_network = window.lbl_status_network
         self.lbl_status_brain = window.lbl_status_brain
         self.lbl_status_history = window.lbl_status_history
 
         status_layout.addWidget(window.lbl_status_network, stretch=1)
-        status_layout.addWidget(window.btn_copy_network_debug)
         status_layout.addWidget(window.lbl_status_brain, stretch=1)
         status_layout.addWidget(window.lbl_status_history, stretch=1)
         parent_layout.addWidget(window.status_frame)
@@ -573,6 +670,7 @@ class ControlPanelUI:
         self._reflow_grid(self.footer_grid, self.footer_cards, profile.footer_columns)
         self._reflow_grid(self.light_grid, self.light_buttons, min(3, profile.action_columns))
         self._reflow_grid(self.action_grid, self.action_buttons, profile.action_columns)
+        self._layout_network_debug(window, compact=profile.name == "compact")
 
         orientation = (
             Qt.Orientation.Vertical if profile.splitter_vertical else Qt.Orientation.Horizontal
