@@ -189,6 +189,70 @@ Essa função é implementada no computador novo. O agente XP V5.1 já entende
 `PRESS_0` e `PRESS_1`, portanto essa correção de atalhos não exige alterar o
 arquivo operacional do agente no Windows XP.
 
+## Regra do ciclo rápido após julgamento
+
+Quando o operador julga uma imagem recebida pela rede com `0 = OK` ou
+`1 = NG`, a decisão produtiva deve terminar antes das tarefas de persistência.
+
+Fluxo obrigatório no VisionX:
+
+```text
+imagem A analisada
+    ↓
+operador pressiona 0 ou 1
+    ↓
+VisionX envia PRESS_0 / PRESS_1 quando a decisão veio do computador novo
+    ↓
+VisionX registra a decisão em memória de trabalho
+    ↓
+VisionX limpa imediatamente a imagem e os painéis da captura A
+    ↓
+VisionX libera o gate para a próxima imagem da AOI
+    ↓
+VisionX mostra "Aguardando próxima imagem da AOI"
+    ↓
+persistência JSON/auditoria + atualização KNN continuam em background
+```
+
+### Regra de arquitetura
+
+Não reintroduzir `DatasetManager.save_sample()` nem
+`orchestrator.reload_memory()` no caminho crítico anterior à liberação do
+gate. Gravação em disco, auditoria e recarga da memória são tarefas de
+background e não podem manter uma peça já julgada ocupando a interface.
+
+A fila de persistência é serial, preservando a ordem das decisões humanas. A
+recarga do KNN usa troca atômica das listas de memória para que uma nova análise
+não observe uma memória parcialmente recarregada.
+
+### Estado visual esperado
+
+Após `0` ou `1` em uma captura de rede já analisada:
+
+- a captura anterior deve desaparecer da área de inspeção;
+- OK/NG e descarte ficam indisponíveis até a próxima análise;
+- o status deve indicar que o VisionX está aguardando a próxima imagem da AOI;
+- o receptor de rede deve ficar livre para receber a próxima peça sem esperar
+  gravação JSON, imagens de auditoria ou varredura KNN.
+
+### Gargalo ainda existente no agente XP V5.1
+
+O agente operacional documentado ainda contém:
+
+```python
+print("-> Imagem enviada com sucesso. Pausa de 3s...")
+time.sleep(3)
+```
+
+O VisionX mantém `STABLE_REQUIRED_FRAMES = 2` como proteção contra telas em
+transição. Portanto a pausa fixa de 3 segundos do agente pode continuar
+adicionando latência entre os dois frames necessários para confirmar uma nova
+captura.
+
+**Esta etapa de otimização não altera o agente XP.** A remoção ou redução dessa
+pausa deve ser tratada separadamente, medida na AOI real e exigirá atualizar
+manualmente o arquivo operacional no Windows XP.
+
 ---
 
 # Regra de manutenção
