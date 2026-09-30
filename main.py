@@ -57,6 +57,7 @@ from src.ui.strict_category_memory_ui import install_strict_category_memory_ui
 from src.ui.test_mode_dataset_controls import install_test_mode_dataset_controls
 from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
 from src.ui.widgets.semantic_dna import SemanticDNAWidget
+from src.ui.xp_decision_shortcuts import install_xp_decision_shortcuts
 
 
 def main():
@@ -137,6 +138,7 @@ def main():
     install_test_mode_dataset_controls(panel)
     install_operational_controls(panel)
     install_svg_iconography(panel)
+    install_xp_decision_shortcuts(panel)
     panel.show()
 
     sys.exit(app.exec())
