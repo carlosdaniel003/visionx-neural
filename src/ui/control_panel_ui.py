@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.ui.network_xp_debug import copy_network_debug_to_clipboard
 from src.ui.responsive_layout import profile_for_width
 from src.ui.theme import APP_STYLESHEET
 from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
@@ -505,7 +506,9 @@ class ControlPanelUI:
         window.btn_copy_network_debug = QPushButton("Copiar debug XP")
         window.btn_copy_network_debug.setObjectName("networkDebugButton")
         window.btn_copy_network_debug.setCursor(Qt.CursorShape.PointingHandCursor)
-        window.btn_copy_network_debug.setEnabled(False)
+        window.btn_copy_network_debug.setEnabled(
+            bool(getattr(window, "network_intake_last_validation", {}))
+        )
         window.btn_copy_network_debug.setToolTip(
             "Copia o diagnóstico técnico da última imagem recebida do Windows XP, "
             "inclusive imagens rejeitadas antes do julgamento."
