@@ -34,6 +34,7 @@ jobs:
     runs-on: windows-latest
     env:
       QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,7 +47,7 @@ jobs:
       - name: Dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install PyQt6 mss numpy opencv-python-headless pillow
+          python -m pip install PyQt6 mss numpy opencv-python-headless pillow pytesseract
 
       - name: Compile operational modules
         run: |
