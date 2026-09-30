@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+import cv2
 import numpy as np
 
 from src.services.network_receiver import NetworkReceiver
@@ -305,6 +306,42 @@ class NetworkInspectionValidationTests(unittest.TestCase):
         self.sample = np.full((100, 120, 3), 60, dtype=np.uint8)
         self.test = self.sample.copy()
         self.test[30:70, 40:80] = 190
+
+
+    def test_tall_narrow_real_aoi_geometry_is_accepted(self):
+        sample = np.full((540, 345, 3), (28, 30, 34), dtype=np.uint8)
+        test = sample.copy()
+        green = (0, 255, 0)
+
+        cv2.rectangle(sample, (21, 21), (326, 539), green, 2)
+        cv2.rectangle(test, (21, 21), (326, 539), green, 2)
+        cv2.rectangle(sample, (133, 48), (213, 539), green, 2)
+        cv2.rectangle(test, (134, 49), (214, 539), green, 2)
+
+        valid, reason, audit = validate_network_inspection(sample, test)
+
+        self.assertTrue(valid, msg=f"{reason}: {audit}")
+        self.assertEqual(reason, "epicentro válido")
+        self.assertEqual(audit["real_epicenter_count"], 1)
+
+        radar = audit["green_detection"]["epicenter_radar_sample"]
+        self.assertIsNotNone(radar["candidate_selected_by_radar"])
+        selected = radar["ranked_center_candidates"][0]
+        self.assertGreater(selected["height_ratio"], 0.85)
+        self.assertLess(selected["width_ratio"], 0.50)
+
+    def test_only_global_frame_is_still_rejected(self):
+        sample = np.full((540, 345, 3), (28, 30, 34), dtype=np.uint8)
+        test = sample.copy()
+        green = (0, 255, 0)
+        cv2.rectangle(sample, (21, 21), (326, 539), green, 2)
+        cv2.rectangle(test, (21, 21), (326, 539), green, 2)
+
+        valid, reason, audit = validate_network_inspection(sample, test)
+
+        self.assertFalse(valid)
+        self.assertIn("sem epicentro", reason)
+        self.assertEqual(audit["reason"], "missing_epicenter")
 
     @patch.object(intake_module.EpicenterExtractor, "extract_focus")
     @patch.object(intake_module, "detect_anomalies")
