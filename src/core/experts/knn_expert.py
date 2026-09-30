@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import urllib.request
 from pathlib import Path
 
@@ -25,6 +26,7 @@ class KNNExpert:
     def __init__(self):
         print("Inicializando K-NN de anomalias...")
         self.net = None
+        self._memory_lock = threading.RLock()
         self.signatures_ok: list[dict] = []
         self.signatures_ng: list[dict] = []
         self._load_all()
@@ -104,6 +106,8 @@ class KNNExpert:
     def _load_all(self):
         print("Varredura da memória de anomalias...")
         loaded_paths: set[str] = set()
+        loaded_ok: list[dict] = []
+        loaded_ng: list[dict] = []
 
         sources = (
             (settings.NORMAL_DIR, "OK"),
@@ -169,16 +173,20 @@ class KNNExpert:
                     }
 
                     if resolved_label == "NG":
-                        self.signatures_ng.append(record)
+                        loaded_ng.append(record)
                     else:
-                        self.signatures_ok.append(record)
+                        loaded_ok.append(record)
                     loaded_paths.add(canonical_path)
                 except Exception as exc:
                     print(f"KNN ignorou JSON inválido {json_path}: {exc}")
 
+        # O scan acontece fora do lock. A troca dos dois conjuntos é
+        # atômica, então uma análise concorrente nunca observa memória parcial.
+        with self._memory_lock:
+            self.signatures_ok = loaded_ok
+            self.signatures_ng = loaded_ng
+
     def reload_memory(self):
-        self.signatures_ok = []
-        self.signatures_ng = []
         self._load_all()
 
     def _compute_embedding(self, image: np.ndarray) -> np.ndarray | None:
@@ -227,8 +235,12 @@ class KNNExpert:
         target_part: str,
         target_category: str,
     ) -> tuple[list[dict], list[dict], str]:
-        ok_records = self._filter_by_mode(self.signatures_ok, mode)
-        ng_records = self._filter_by_mode(self.signatures_ng, mode)
+        with self._memory_lock:
+            signatures_ok = list(self.signatures_ok)
+            signatures_ng = list(self.signatures_ng)
+
+        ok_records = self._filter_by_mode(signatures_ok, mode)
+        ng_records = self._filter_by_mode(signatures_ng, mode)
 
         def select(predicate):
             return (
