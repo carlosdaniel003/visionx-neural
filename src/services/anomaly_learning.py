@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
-
 import numpy as np
 
 from src.services.decision_persistence import DecisionPersistenceQueue
@@ -20,8 +18,8 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
         "ng_image": _image_snapshot(getattr(panel, "current_ng", None)),
         "label": normalized,
         "sample_image": _image_snapshot(getattr(panel, "current_sample", None)),
-        "aoi_info": deepcopy(getattr(panel, "current_aoi_info", {}) or {}),
-        "analysis": deepcopy(getattr(panel, "current_analysis", None) or {}),
+        "aoi_info": dict(getattr(panel, "current_aoi_info", {}) or {}),
+        "analysis": getattr(panel, "current_analysis", None) or {},
         "save_images": bool(ai_decision != normalized),
         "source": source,
         "ai_decision": ai_decision,
