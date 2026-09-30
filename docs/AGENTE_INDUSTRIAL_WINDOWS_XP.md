@@ -235,6 +235,53 @@ Após `0` ou `1` em uma captura de rede já analisada:
 - o receptor de rede deve ficar livre para receber a próxima peça sem esperar
   gravação JSON, imagens de auditoria ou varredura KNN.
 
+## Arquivo visual NG opcional no VisionX
+
+O computador novo possui um toggle chamado:
+
+```text
+Salvar imagens NG
+```
+
+Estado padrão:
+
+```text
+DESATIVADO
+```
+
+Quando desativado, o comportamento permanece igual ao fluxo normal já
+documentado e nenhuma cópia visual adicional é criada.
+
+Quando ativado, toda **decisão final NG** — humana ou automática já autorizada
+pelas regras de produção — gera uma cópia da imagem bruta de teste em:
+
+```text
+public/ng_archive/
+```
+
+Formato do nome:
+
+```text
+AAAA-MM-DD_HH-MM-SS-ms_CATEGORIA.png
+```
+
+Exemplo:
+
+```text
+2026-09-30_13-53-27-245_DESLOCADO.png
+```
+
+Esse arquivo é somente evidência visual. Ele é independente de
+`public/dataset/`, não alimenta o KNN, não altera protótipos e não muda o
+julgamento da IA.
+
+A gravação é feita em fila de background. Portanto, salvar a evidência NG não
+deve bloquear o comando `PRESS_1`, a limpeza da captura julgada nem a
+liberação do gate para a próxima imagem da AOI.
+
+Essa função existe apenas no VisionX do computador novo e **não exige alteração
+do agente industrial no Windows XP**.
+
 ### Gargalo ainda existente no agente XP V5.1
 
 O agente operacional documentado ainda contém:
