@@ -2,21 +2,34 @@
 
 O Windows XP pode enviar a tela da central durante a transição entre peças. O
 receptor confirma estabilidade temporal; este módulo confirma o conteúdo da
-inspeção antes que ``ControlPanel.process_aoi_images`` substitua a peça atual.
+inspeção antes que ControlPanel.process_aoi_images substitua a peça atual.
 Capturas MSS locais não passam por este filtro.
+
+A telemetria de diagnóstico registrada aqui é somente observabilidade: ela não
+altera os critérios de aceitação, o EpicenterExtractor ou a decisão produtiva.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
+import cv2
 import numpy as np
 
+from src.config.settings import settings
 from src.core.epicenter_extractor import EpicenterExtractor
 from src.core.inspection import detect_anomalies
+from src.ui.network_xp_debug import (
+    DEBUG_SCHEMA,
+    set_network_debug_available,
+)
 
 
 MIN_FOCUS_SIDE = 4
+DEBUG_BOX_LIMIT = 20
+RADAR_GREEN_LOWER = np.array([50, 150, 100], dtype=np.uint8)
+RADAR_GREEN_UPPER = np.array([75, 255, 255], dtype=np.uint8)
 
 
 def _valid_image(value: Any) -> bool:
@@ -29,16 +42,287 @@ def _valid_image(value: Any) -> bool:
     )
 
 
+def _json_safe(value: Any):
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _box_list(values: Any) -> list[list[int]]:
+    output = []
+    if not isinstance(values, (list, tuple)):
+        return output
+    for item in values[:DEBUG_BOX_LIMIT]:
+        try:
+            if len(item) < 4:
+                continue
+            output.append([int(round(float(value))) for value in item[:4]])
+        except Exception:
+            continue
+    return output
+
+
+def _image_summary(image: Any) -> dict:
+    if not isinstance(image, np.ndarray) or image.size == 0:
+        return {
+            "valid": False,
+            "shape": [],
+            "dtype": "",
+            "min": None,
+            "max": None,
+            "mean": None,
+        }
+
+    summary = {
+        "valid": True,
+        "shape": [int(value) for value in image.shape],
+        "dtype": str(image.dtype),
+        "min": float(np.min(image)),
+        "max": float(np.max(image)),
+        "mean": round(float(np.mean(image)), 3),
+    }
+    if image.ndim == 3 and image.shape[2] >= 3:
+        means = np.mean(image[:, :, :3], axis=(0, 1))
+        summary["mean_bgr"] = [round(float(value), 3) for value in means]
+    return summary
+
+
+def _as_bgr(image: np.ndarray) -> np.ndarray:
+    if image.ndim == 2:
+        return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    if image.ndim == 3 and image.shape[2] == 4:
+        return cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+    return image[:, :, :3].copy()
+
+
+def _green_diagnostics(
+    image: Any,
+    lower: Any,
+    upper: Any,
+    *,
+    min_width: int = 10,
+    min_height: int = 10,
+    max_width_ratio: float | None = None,
+    max_height_ratio: float | None = None,
+    morphology_close: bool = False,
+) -> dict:
+    if not _valid_image(image):
+        return {
+            "valid": False,
+            "hsv_lower": _json_safe(lower),
+            "hsv_upper": _json_safe(upper),
+            "green_pixels": 0,
+            "green_ratio": 0.0,
+            "contour_count": 0,
+            "valid_box_count": 0,
+            "boxes": [],
+            "valid_boxes": [],
+        }
+
+    try:
+        bgr = _as_bgr(image)
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        lower_array = np.asarray(lower, dtype=np.uint8).reshape(3)
+        upper_array = np.asarray(upper, dtype=np.uint8).reshape(3)
+        mask = cv2.inRange(hsv, lower_array, upper_array)
+        if morphology_close:
+            mask = cv2.morphologyEx(
+                mask,
+                cv2.MORPH_CLOSE,
+                cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),
+            )
+        contours, _ = cv2.findContours(
+            mask,
+            cv2.RETR_LIST,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        boxes = [cv2.boundingRect(contour) for contour in contours]
+        boxes.sort(key=lambda box: box[2] * box[3], reverse=True)
+
+        height, width = bgr.shape[:2]
+        valid_boxes = []
+        for box in boxes:
+            x, y, box_width, box_height = box
+            if box_width <= min_width or box_height <= min_height:
+                continue
+            if max_width_ratio is not None and box_width >= width * max_width_ratio:
+                continue
+            if max_height_ratio is not None and box_height >= height * max_height_ratio:
+                continue
+            valid_boxes.append((x, y, box_width, box_height))
+
+        green_pixels = int(cv2.countNonZero(mask))
+        total_pixels = max(1, int(mask.shape[0] * mask.shape[1]))
+        return {
+            "valid": True,
+            "hsv_lower": [int(value) for value in lower_array],
+            "hsv_upper": [int(value) for value in upper_array],
+            "green_pixels": green_pixels,
+            "green_ratio": round(float(green_pixels / total_pixels), 8),
+            "contour_count": int(len(contours)),
+            "valid_box_count": int(len(valid_boxes)),
+            "boxes": _box_list(boxes),
+            "valid_boxes": _box_list(valid_boxes),
+        }
+    except Exception as exc:
+        return {
+            "valid": False,
+            "error": str(exc),
+            "hsv_lower": _json_safe(lower),
+            "hsv_upper": _json_safe(upper),
+            "green_pixels": 0,
+            "green_ratio": 0.0,
+            "contour_count": 0,
+            "valid_box_count": 0,
+            "boxes": [],
+            "valid_boxes": [],
+        }
+
+
+def _radar_green_diagnostics(sample_crop: Any) -> dict:
+    diagnostics = _green_diagnostics(
+        sample_crop,
+        RADAR_GREEN_LOWER,
+        RADAR_GREEN_UPPER,
+        min_width=15,
+        min_height=15,
+        max_width_ratio=0.85,
+        max_height_ratio=0.85,
+        morphology_close=True,
+    )
+    if not diagnostics.get("valid"):
+        return diagnostics
+
+    try:
+        height, width = sample_crop.shape[:2]
+        center_x, center_y = width / 2.0, height / 2.0
+        ranked = []
+        for box in diagnostics.get("valid_boxes", []):
+            x, y, box_width, box_height = box
+            box_center_x = x + box_width / 2.0
+            box_center_y = y + box_height / 2.0
+            distance = float(
+                np.hypot(center_x - box_center_x, center_y - box_center_y)
+            )
+            ranked.append(
+                {
+                    "box": [x, y, box_width, box_height],
+                    "distance_to_center": round(distance, 3),
+                }
+            )
+        ranked.sort(key=lambda item: item["distance_to_center"])
+        diagnostics["ranked_center_candidates"] = ranked[:DEBUG_BOX_LIMIT]
+        diagnostics["candidate_selected_by_radar"] = (
+            ranked[0]["box"] if ranked else None
+        )
+    except Exception as exc:
+        diagnostics["ranking_error"] = str(exc)
+    return diagnostics
+
+
+def _diagnostic_hints(
+    old_epicenters: list,
+    real_epicenters: list,
+    test_green: dict,
+    sample_radar_green: dict,
+) -> list[str]:
+    hints: list[str] = []
+    if real_epicenters:
+        return hints
+
+    if int(test_green.get("green_pixels", 0) or 0) == 0:
+        hints.append(
+            "O recorte TESTE não contém pixels verdes dentro do HSV configurado "
+            "para a hierarquia de caixas da AOI."
+        )
+    elif int(test_green.get("valid_box_count", 0) or 0) == 0:
+        hints.append(
+            "Há pixels verdes no TESTE, mas nenhum contorno verde passou pelo "
+            "filtro mínimo de tamanho usado na detecção inicial."
+        )
+
+    if int(sample_radar_green.get("green_pixels", 0) or 0) == 0:
+        hints.append(
+            "O GABARITO não contém pixels verdes dentro da faixa fixa usada pelo "
+            "Radar Euclidiano do EpicenterExtractor."
+        )
+    elif int(sample_radar_green.get("valid_box_count", 0) or 0) == 0:
+        hints.append(
+            "O GABARITO contém verde, mas nenhuma caixa passou pelos filtros do "
+            "Radar: largura/altura >15 px e menores que 85% do recorte."
+        )
+
+    if not old_epicenters and int(test_green.get("valid_box_count", 0) or 0) > 0:
+        hints.append(
+            "Foram encontradas caixas verdes no TESTE, porém detect_anomalies não "
+            "produziu uma caixa menor de epicentro; pode ter restado apenas a "
+            "caixa global ou caixas fora da hierarquia esperada."
+        )
+
+    if (
+        int(test_green.get("valid_box_count", 0) or 0) > 0
+        and int(sample_radar_green.get("valid_box_count", 0) or 0) == 0
+    ):
+        hints.append(
+            "A marcação verde aparece no TESTE, mas o Radar que escolhe o "
+            "epicentro procura candidatos no GABARITO e não encontrou um válido."
+        )
+
+    if not hints:
+        hints.append(
+            "A imagem chegou utilizável, mas nenhum dos caminhos de fallback "
+            "resultou em epicentro válido; compare as caixas registradas no JSON."
+        )
+    return hints
+
+
+def _base_validation_audit(
+    sample_crop: Any,
+    ng_crop: Any,
+) -> dict:
+    return {
+        "sample_crop": _image_summary(sample_crop),
+        "test_crop": _image_summary(ng_crop),
+        "green_detection": {
+            "inspection_test_settings": _green_diagnostics(
+                ng_crop,
+                settings.COLOR_GREEN_LOWER,
+                settings.COLOR_GREEN_UPPER,
+                min_width=10,
+                min_height=10,
+            ),
+            "epicenter_radar_sample": _radar_green_diagnostics(sample_crop),
+        },
+    }
+
+
 def validate_network_inspection(
     sample_crop: np.ndarray,
     ng_crop: np.ndarray,
 ) -> tuple[bool, str, dict]:
     """Exige recortes utilizáveis e o epicentro menor escolhido pelo sistema."""
+    audit = _base_validation_audit(sample_crop, ng_crop)
+
     if not _valid_image(sample_crop) or not _valid_image(ng_crop):
-        return False, "gabarito ou teste vazio/inválido", {
-            "valid": False,
-            "reason": "invalid_crops",
-        }
+        audit.update(
+            {
+                "valid": False,
+                "reason": "invalid_crops",
+                "diagnostic_hints": [
+                    "O par gabarito/teste produzido a partir da imagem de rede "
+                    "está vazio ou possui dimensão abaixo do mínimo operacional."
+                ],
+            }
+        )
+        return False, "gabarito ou teste vazio/inválido", audit
 
     try:
         (
@@ -55,53 +339,194 @@ def validate_network_inspection(
             global_box_info,
         )
     except Exception as exc:
-        return False, f"falha ao validar epicentro: {exc}", {
-            "valid": False,
-            "reason": "validation_exception",
-            "error": str(exc),
+        audit.update(
+            {
+                "valid": False,
+                "reason": "validation_exception",
+                "error": str(exc),
+                "diagnostic_hints": [
+                    "A validação lançou uma exceção antes de concluir a seleção "
+                    "do epicentro."
+                ],
+            }
+        )
+        return False, f"falha ao validar epicentro: {exc}", audit
+
+    raw_boxes = _box_list(raw_anomalies or [])
+    old_boxes = _box_list(old_epicenters or [])
+    real_boxes = _box_list(real_epicenters or [])
+    audit.update(
+        {
+            "raw_anomaly_count": int(len(raw_anomalies or [])),
+            "raw_anomalies": raw_boxes,
+            "old_epicenter_count": int(len(old_epicenters or [])),
+            "old_epicenters": old_boxes,
+            "global_box_info": _json_safe(global_box_info or {}),
+            "real_epicenter_count": int(len(real_epicenters or [])),
+            "real_epicenters": real_boxes,
         }
+    )
 
     if not real_epicenters:
-        return False, "tela sem epicentro de anomalia", {
-            "valid": False,
-            "reason": "missing_epicenter",
-            "raw_anomaly_count": int(len(raw_anomalies or [])),
-        }
+        audit.update(
+            {
+                "valid": False,
+                "reason": "missing_epicenter",
+                "epicenter_count": 0,
+                "diagnostic_hints": _diagnostic_hints(
+                    old_epicenters or [],
+                    real_epicenters or [],
+                    audit["green_detection"]["inspection_test_settings"],
+                    audit["green_detection"]["epicenter_radar_sample"],
+                ),
+            }
+        )
+        return False, "tela sem epicentro de anomalia", audit
 
     try:
         x, y, width, height = (
             int(round(float(value))) for value in real_epicenters[0][:4]
         )
     except Exception:
-        return False, "coordenadas do epicentro inválidas", {
-            "valid": False,
-            "reason": "invalid_epicenter_box",
-        }
+        audit.update(
+            {
+                "valid": False,
+                "reason": "invalid_epicenter_box",
+                "diagnostic_hints": [
+                    "O EpicenterExtractor retornou uma caixa, mas suas "
+                    "coordenadas não puderam ser convertidas em números inteiros."
+                ],
+            }
+        )
+        return False, "coordenadas do epicentro inválidas", audit
+
+    audit["focus_box"] = [x, y, width, height]
 
     if width < MIN_FOCUS_SIDE or height < MIN_FOCUS_SIDE:
-        return False, "epicentro menor que o mínimo operacional", {
-            "valid": False,
-            "reason": "epicenter_too_small",
-            "focus_box": [x, y, width, height],
-        }
+        audit.update(
+            {
+                "valid": False,
+                "reason": "epicenter_too_small",
+                "diagnostic_hints": [
+                    "O epicentro existe, porém ficou abaixo do mínimo operacional "
+                    f"de {MIN_FOCUS_SIDE}px por lado."
+                ],
+            }
+        )
+        return False, "epicentro menor que o mínimo operacional", audit
 
     if not _valid_image(focus_gab) or not _valid_image(focus_ng):
-        return False, "epicentro não gerou o par gabarito/teste", {
-            "valid": False,
-            "reason": "empty_focus_pair",
-            "focus_box": [x, y, width, height],
-        }
+        audit.update(
+            {
+                "valid": False,
+                "reason": "empty_focus_pair",
+                "focus_reference": _image_summary(focus_gab),
+                "focus_test": _image_summary(focus_ng),
+                "diagnostic_hints": [
+                    "A caixa do epicentro foi encontrada, mas o recorte não gerou "
+                    "um par gabarito/teste utilizável."
+                ],
+            }
+        )
+        return False, "epicentro não gerou o par gabarito/teste", audit
 
-    return True, "epicentro válido", {
-        "valid": True,
-        "reason": "valid_epicenter",
-        "focus_box": [x, y, width, height],
-        "focus_shape": [
-            int(focus_ng.shape[1]),
-            int(focus_ng.shape[0]),
-        ],
-        "raw_anomaly_count": int(len(raw_anomalies or [])),
-        "epicenter_count": int(len(real_epicenters)),
+    audit.update(
+        {
+            "valid": True,
+            "reason": "valid_epicenter",
+            "focus_shape": [
+                int(focus_ng.shape[1]),
+                int(focus_ng.shape[0]),
+            ],
+            "epicenter_count": int(len(real_epicenters)),
+            "diagnostic_hints": [],
+        }
+    )
+    return True, "epicentro válido", audit
+
+
+def _gate_snapshot(panel) -> dict:
+    receiver = getattr(panel, "network_receiver", None)
+    if receiver is None or not hasattr(receiver, "image_gate_snapshot"):
+        return {}
+    try:
+        snapshot = receiver.image_gate_snapshot()
+        return {
+            "accepting_images": bool(snapshot.accepting_images),
+            "generation": int(snapshot.generation),
+            "ignored_images": int(snapshot.ignored_images),
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _mode(panel) -> str:
+    try:
+        return str(panel.combo_mode.currentText()).strip()
+    except Exception:
+        return ""
+
+
+def _transport_record(panel, image: Any, ip: str) -> dict:
+    receiver = getattr(panel, "network_receiver", None)
+    return {
+        "schema": DEBUG_SCHEMA,
+        "timestamp": datetime.now().isoformat(timespec="milliseconds"),
+        "source": "windows_xp",
+        "source_ip": str(ip or ""),
+        "stage": "network_image_received",
+        "mode": _mode(panel),
+        "transport": {
+            "image": _image_summary(image),
+            "stable_required_frames": int(
+                getattr(receiver, "STABLE_REQUIRED_FRAMES", 0) or 0
+            ),
+        },
+        "cycle": _gate_snapshot(panel),
+        "validation_message": "Imagem recebida; aguardando extração da AOI.",
+        "validation": {
+            "valid": None,
+            "reason": "pending_aoi_validation",
+            "diagnostic_hints": [],
+        },
+    }
+
+
+def _enrich_validation_record(
+    panel,
+    reason: str,
+    audit: dict,
+    aoi_info: dict | None,
+) -> dict:
+    previous = getattr(panel, "network_intake_last_validation", {})
+    transport = (
+        dict(previous.get("transport", {}))
+        if isinstance(previous, dict)
+        else {}
+    )
+    timestamp = (
+        str(previous.get("timestamp", ""))
+        if isinstance(previous, dict)
+        else ""
+    ) or datetime.now().isoformat(timespec="milliseconds")
+    source_ip = (
+        str(previous.get("source_ip", ""))
+        if isinstance(previous, dict)
+        else ""
+    ) or str(getattr(panel, "last_xp_ip", "") or "")
+
+    return {
+        "schema": DEBUG_SCHEMA,
+        "timestamp": timestamp,
+        "source": "windows_xp",
+        "source_ip": source_ip,
+        "stage": "aoi_intake_validation",
+        "mode": _mode(panel),
+        "transport": transport,
+        "cycle": _gate_snapshot(panel),
+        "aoi_info": _json_safe(aoi_info or {}),
+        "validation_message": str(reason or ""),
+        "validation": _json_safe(audit or {}),
     }
 
 
@@ -126,7 +551,6 @@ def reject_invalid_network_capture(panel, reason: str, audit: dict | None = None
         except Exception as exc:
             print(f"Falha não fatal ao registrar tela rejeitada: {exc}")
 
-    # Invalida o watchdog criado pelo wrapper de recepção atual.
     panel.capture_cycle_network_generation = int(
         getattr(panel, "capture_cycle_network_generation", 0)
     ) + 1
@@ -139,6 +563,7 @@ def reject_invalid_network_capture(panel, reason: str, audit: dict | None = None
     panel.current_aoi_info = {}
     panel.is_locked = False
     panel.network_intake_last_validation = dict(audit or {})
+    set_network_debug_available(panel, bool(audit))
 
     if hasattr(panel, "production_review_pending"):
         panel.production_review_pending = False
@@ -178,8 +603,8 @@ def reject_invalid_network_capture(panel, reason: str, audit: dict | None = None
 
     try:
         panel.update_brain_status(
-            "Tela da central/transição ignorada. "
-            "Aguardando a próxima anomalia AOI válida.",
+            "Imagem XP ignorada antes do julgamento. "
+            f"Motivo: {reason}. Use 'Copiar debug XP' para o diagnóstico completo.",
             False,
         )
     except Exception:
@@ -191,7 +616,17 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
     if getattr(control_panel_cls, "_network_aoi_intake_filter_installed", False):
         return
 
+    original_handle_network_image = control_panel_cls.handle_network_image
     original_process_aoi_images = control_panel_cls.process_aoi_images
+
+    def handle_network_image(self, img_bgr, ip: str):
+        self.network_intake_last_validation = _transport_record(
+            self,
+            img_bgr,
+            ip,
+        )
+        set_network_debug_available(self, True)
+        return original_handle_network_image(self, img_bgr, ip)
 
     def process_aoi_images(self, sample_crop, ng_crop, aoi_info):
         if getattr(self, "capture_cycle_source", None) != "network":
@@ -206,20 +641,22 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
             sample_crop,
             ng_crop,
         )
-        self.network_intake_last_validation = dict(audit)
+        record = _enrich_validation_record(
+            self,
+            reason,
+            audit,
+            aoi_info,
+        )
+        self.network_intake_last_validation = record
+        set_network_debug_available(self, True)
+
         if not valid:
-            reject_invalid_network_capture(self, reason, audit)
+            reject_invalid_network_capture(self, reason, record)
             return False
 
         receiver = getattr(self, "network_receiver", None)
-        mode = ""
-        try:
-            mode = str(self.combo_mode.currentText()).strip()
-        except Exception:
-            pass
+        mode = _mode(self)
 
-        # Em Produção, o método original pode concluir automaticamente a peça
-        # antes de retornar; por isso a reserva precisa ser confirmada antes.
         if mode == "Modo Produção" and receiver is not None and hasattr(
             receiver,
             "confirm_reserved_image",
@@ -243,11 +680,13 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
         if isinstance(analysis, dict):
             detail = analysis.setdefault("detail", {})
             detail["network_intake_validation"] = dict(audit)
+            detail["network_intake_debug"] = dict(record)
             detail["network_intake_stable_required"] = 2
             detail["network_intake_source"] = "windows_xp"
 
         return result
 
+    control_panel_cls.handle_network_image = handle_network_image
     control_panel_cls.process_aoi_images = process_aoi_images
     control_panel_cls._network_aoi_intake_filter_installed = True
 
