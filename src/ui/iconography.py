@@ -188,12 +188,19 @@ class SvgIconographyPresenter:
         icon_label = self._make_icon_label(group)
         self.status_icons[slot] = icon_label
 
-        if alignment in {"center", "right"}:
-            group_layout.addStretch()
+        group.setMinimumWidth(0)
+        group.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Preferred,
+        )
+        text_label.setMinimumWidth(0)
+        text_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
+
         group_layout.addWidget(icon_label)
         group_layout.addWidget(text_label)
-        if alignment in {"left", "center"}:
-            group_layout.addStretch()
 
         self.status_groups.append(group)
         return group
@@ -213,18 +220,30 @@ class SvgIconographyPresenter:
         brain_label = self.panel.lbl_status_brain
         history_label = self.panel.lbl_status_history
 
-        layout.addWidget(
+        groups = [
             self._make_status_group("network", network_label, "left"),
-            stretch=1,
-        )
-        layout.addWidget(
             self._make_status_group("brain", brain_label, "center"),
-            stretch=1,
-        )
-        layout.addWidget(
             self._make_status_group("history", history_label, "right"),
-            stretch=1,
-        )
+        ]
+        self.panel.status_layout_items = groups
+
+        builder = getattr(self.panel, "ui_builder", None)
+        apply_status_layout = getattr(builder, "_layout_status_bar", None)
+        if callable(apply_status_layout):
+            compact = getattr(builder, "_active_profile_name", "") == "compact"
+            apply_status_layout(self.panel, compact=compact)
+            return
+
+        # Compatibilidade defensiva caso a iconografia seja usada sem o
+        # ControlPanelUI responsivo.
+        try:
+            for column, group in enumerate(groups):
+                layout.addWidget(group, 0, column)
+                if hasattr(layout, "setColumnStretch"):
+                    layout.setColumnStretch(column, 1)
+        except TypeError:
+            for group in groups:
+                layout.addWidget(group, 1)
 
     def _sanitize_existing_texts(self) -> None:
         for attribute in (
