@@ -36,6 +36,7 @@ from src.core.semantic_roi_extension import (
 from src.core.strict_category_memory import install_strict_category_memory
 from src.services.anomaly_learning import install_anomaly_learning
 from src.services.dataset_manager import DatasetManager
+from src.services.ng_image_archive import install_ng_image_archive
 from src.ui.capture_button_copy import install_capture_button_copy
 from src.ui.control_panel import ControlPanel
 from src.ui.decision_panel import install_decision_panel
@@ -113,13 +114,15 @@ def main():
 
     # Ordem dos wrappers operacionais:
     # 1. aprendizado humano;
-    # 2. confiança mínima de produção;
-    # 3. trava geral de uma única imagem ativa;
-    # 4. filtro de rede: dois frames estáveis + epicentro válido;
-    # 5. supervisão externa do MSS e recuperação de exceções;
-    # 6. adaptador final que consome o checked(bool) dos QPushButtons;
-    # 7. seletor de modo bloqueado durante o ciclo ativo.
+    # 2. arquivo visual NG opcional, ainda interno à trava de confiança;
+    # 3. confiança mínima de produção;
+    # 4. trava geral de uma única imagem ativa;
+    # 5. filtro de rede: dois frames estáveis + epicentro válido;
+    # 6. supervisão externa do MSS e recuperação de exceções;
+    # 7. adaptador final que consome o checked(bool) dos QPushButtons;
+    # 8. seletor de modo bloqueado durante o ciclo ativo.
     install_anomaly_learning(ControlPanel)
+    install_ng_image_archive(ControlPanel)
     install_production_confidence_gate(ControlPanel, OperationalControlsPresenter)
     install_network_image_cycle_gate(ControlPanel, OperationalControlsPresenter)
     install_network_aoi_intake_filter(ControlPanel)
