@@ -1,4 +1,4 @@
-"""Formatação e cópia do diagnóstico da entrada recebida do Windows XP.
+"""Diagnóstico copiável da última entrada recebida do Windows XP.
 
 Este módulo é exclusivamente de observabilidade. Não participa da validação,
 classificação, memória, confiança ou controle do ciclo de produção.
@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import numpy as np
+
 
 DEBUG_SCHEMA = "visionx.network_xp_debug.v1"
 
@@ -18,15 +20,10 @@ def _json_safe(value: Any):
         return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
-    try:
-        import numpy as np
-
-        if isinstance(value, np.ndarray):
-            return value.tolist()
-        if isinstance(value, np.generic):
-            return value.item()
-    except Exception:
-        pass
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
@@ -49,6 +46,7 @@ def format_network_debug_report(record: dict | None) -> str:
         "VISIONX - DEBUG DE ENTRADA WINDOWS XP",
         "=" * 72,
         f"Schema: {data.get('schema', DEBUG_SCHEMA)}",
+        f"Evento: {data.get('event_id', '-')}",
         f"Data/hora: {data.get('timestamp', '-')}",
         f"IP de origem: {data.get('source_ip', '-')}",
         f"Etapa: {data.get('stage', '-')}",
@@ -90,47 +88,195 @@ def format_network_debug_report(record: dict | None) -> str:
     return "\n".join(lines)
 
 
+def _record_event_id(panel) -> str:
+    record = getattr(panel, "network_intake_last_validation", None)
+    if not isinstance(record, dict):
+        return ""
+    return str(record.get("event_id", "") or "")
+
+
+def network_debug_image_available(panel) -> bool:
+    image = getattr(panel, "network_intake_last_image", None)
+    if not isinstance(image, np.ndarray) or image.size == 0:
+        return False
+
+    record_event = _record_event_id(panel)
+    image_event = str(
+        getattr(panel, "network_intake_last_image_event_id", "") or ""
+    )
+    return bool(record_event and image_event and record_event == image_event)
+
+
+def _set_button_feedback(button, copied_text: str, idle_text: str) -> None:
+    if button is None:
+        return
+
+    from PyQt6.QtCore import QTimer
+
+    try:
+        button.setText(copied_text)
+        button.setEnabled(True)
+
+        def restore():
+            try:
+                button.setText(idle_text)
+            except Exception:
+                pass
+
+        QTimer.singleShot(1600, restore)
+    except Exception:
+        pass
+
+
 def copy_network_debug_to_clipboard(panel) -> bool:
     record = getattr(panel, "network_intake_last_validation", None)
     if not isinstance(record, dict) or not record:
         return False
 
-    from PyQt6.QtCore import QTimer
     from PyQt6.QtWidgets import QApplication
 
     QApplication.clipboard().setText(format_network_debug_report(record))
-
-    button = getattr(panel, "btn_copy_network_debug", None)
-    if button is not None:
-        try:
-            button.setText("Debug XP copiado")
-            button.setEnabled(True)
-
-            def restore():
-                try:
-                    button.setText("Copiar debug XP")
-                except Exception:
-                    pass
-
-            QTimer.singleShot(1600, restore)
-        except Exception:
-            pass
+    _set_button_feedback(
+        getattr(panel, "btn_copy_network_debug", None),
+        "Debug copiado",
+        "Copiar debug",
+    )
     return True
 
 
+def _qimage_from_bgr(image: np.ndarray):
+    from PyQt6.QtGui import QImage
+
+    if not isinstance(image, np.ndarray) or image.size == 0:
+        return None
+
+    array = np.ascontiguousarray(image)
+    if array.dtype != np.uint8:
+        array = np.clip(array, 0, 255).astype(np.uint8)
+
+    if array.ndim == 2:
+        height, width = array.shape
+        qimage = QImage(
+            array.data,
+            width,
+            height,
+            int(array.strides[0]),
+            QImage.Format.Format_Grayscale8,
+        )
+        return qimage.copy()
+
+    if array.ndim != 3:
+        return None
+
+    height, width, channels = array.shape
+    if channels == 3:
+        qimage = QImage(
+            array.data,
+            width,
+            height,
+            int(array.strides[0]),
+            QImage.Format.Format_BGR888,
+        )
+        return qimage.copy()
+
+    if channels == 4:
+        bgra = np.ascontiguousarray(array[:, :, :4])
+        rgba = bgra[:, :, [2, 1, 0, 3]].copy()
+        qimage = QImage(
+            rgba.data,
+            width,
+            height,
+            int(rgba.strides[0]),
+            QImage.Format.Format_RGBA8888,
+        )
+        return qimage.copy()
+
+    return None
+
+
+def copy_network_image_to_clipboard(panel) -> bool:
+    if not network_debug_image_available(panel):
+        return False
+
+    image = getattr(panel, "network_intake_last_image", None)
+    qimage = _qimage_from_bgr(image)
+    if qimage is None or qimage.isNull():
+        return False
+
+    from PyQt6.QtWidgets import QApplication
+
+    QApplication.clipboard().setImage(qimage)
+    _set_button_feedback(
+        getattr(panel, "btn_copy_network_image", None),
+        "Imagem copiada",
+        "Copiar imagem",
+    )
+    return True
+
+
+def sync_network_debug_controls(panel) -> None:
+    record = getattr(panel, "network_intake_last_validation", None)
+    debug_available = bool(isinstance(record, dict) and record)
+    image_available = network_debug_image_available(panel)
+
+    debug_button = getattr(panel, "btn_copy_network_debug", None)
+    image_button = getattr(panel, "btn_copy_network_image", None)
+    state_label = getattr(panel, "lbl_network_debug_state", None)
+
+    if debug_button is not None:
+        try:
+            debug_button.setEnabled(debug_available)
+        except Exception:
+            pass
+
+    if image_button is not None:
+        try:
+            image_button.setEnabled(image_available)
+        except Exception:
+            pass
+
+    if state_label is not None:
+        try:
+            if debug_available and image_available:
+                state_label.setText(
+                    "Último frame XP disponível • relatório e imagem vinculados"
+                )
+                state_label.setProperty("state", "ready")
+            elif debug_available:
+                state_label.setText(
+                    "Relatório disponível • imagem do evento não está preservada"
+                )
+                state_label.setProperty("state", "partial")
+            else:
+                state_label.setText("Aguardando a primeira imagem do Windows XP")
+                state_label.setProperty("state", "idle")
+
+            style = state_label.style()
+            style.unpolish(state_label)
+            style.polish(state_label)
+            state_label.update()
+        except Exception:
+            pass
+
+
 def set_network_debug_available(panel, available: bool = True) -> None:
-    button = getattr(panel, "btn_copy_network_debug", None)
-    if button is None:
-        return
-    try:
-        button.setEnabled(bool(available))
-    except Exception:
-        pass
+    """Compatibilidade com o filtro anterior; a UI deriva o estado real."""
+    if not available:
+        button = getattr(panel, "btn_copy_network_debug", None)
+        if button is not None:
+            try:
+                button.setEnabled(False)
+            except Exception:
+                pass
+    sync_network_debug_controls(panel)
 
 
 __all__ = [
     "DEBUG_SCHEMA",
     "copy_network_debug_to_clipboard",
+    "copy_network_image_to_clipboard",
     "format_network_debug_report",
+    "network_debug_image_available",
     "set_network_debug_available",
+    "sync_network_debug_controls",
 ]
