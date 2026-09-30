@@ -22,3 +22,12 @@
 - Nome: `AAAA-MM-DD_HH-MM-SS-ms_CATEGORIA.png`.
 - O arquivo é evidência/auditoria e não participa de treinamento, protótipos ou votação KNN.
 - A gravação é assíncrona para não bloquear o julgamento, o gate de rede nem a próxima imagem da AOI.
+
+
+**Regra visual do painel KNN:**
+- A existência de memória e a força do match são conceitos diferentes na interface.
+- `PRIMEIRA OCORRÊNCIA` só pode ser exibido quando não existir nenhum registro da categoria consultada.
+- Se existirem JSONs da categoria, mas não houver assinatura visual válida/comparável, mostrar `MEMÓRIA CARREGADA` e a quantidade de registros; não representar como primeira ocorrência.
+- Se houver comparação visual, a barra amarela `Melhor match` deve usar a melhor similaridade realmente calculada. Caso `best_similarity` não tenha sido propagado por uma camada de telemetria, a UI pode recuperar o mesmo valor a partir da melhor hipótese OK/NG já calculada, sem alterar a decisão.
+- Match abaixo do limiar continua visível como `MEMÓRIA ENCONTRADA • abaixo do limiar`; isso não concede influência ao KNN.
+- Essa regra é exclusivamente de apresentação. Limiares, classificação, pesos, conflito OK/NG e regra de melhor correspondência permanecem no núcleo.
