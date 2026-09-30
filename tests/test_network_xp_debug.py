@@ -123,5 +123,42 @@ class NetworkXPImageClipboardTests(unittest.TestCase):
         self.assertEqual(pixel.blue(), 10)
 
 
+class NetworkXPDebugUILayoutTests(unittest.TestCase):
+    def test_debug_actions_live_outside_global_status_bar(self):
+        source = open(
+            "src/ui/control_panel_ui.py",
+            encoding="utf-8",
+        ).read()
+
+        self.assertIn("def _build_network_debug_bar", source)
+        self.assertIn('QFrame#networkDebugFrame', source)
+        self.assertIn('btn_copy_network_image', source)
+        self.assertIn('copy_network_image_to_clipboard', source)
+        self.assertNotIn(
+            "status_layout.addWidget(window.btn_copy_network_debug)",
+            source,
+        )
+        self.assertNotIn(
+            "status_layout.addWidget(window.btn_copy_network_image)",
+            source,
+        )
+
+    def test_compact_layout_stacks_copy_actions(self):
+        source = open(
+            "src/ui/control_panel_ui.py",
+            encoding="utf-8",
+        ).read()
+
+        compact = source[source.index("if compact:"):source.index("else:", source.index("if compact:"))]
+        self.assertIn(
+            "grid.addWidget(window.btn_copy_network_debug, 2, 0)",
+            compact,
+        )
+        self.assertIn(
+            "grid.addWidget(window.btn_copy_network_image, 3, 0)",
+            compact,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
