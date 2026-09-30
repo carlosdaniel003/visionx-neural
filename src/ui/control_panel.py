@@ -198,14 +198,31 @@ class ControlPanel(QWidget):
             self.change_lighting(comando_xp, source="network")
 
     def send_command_to_xp(self, tecla: str):
-        if not self.last_xp_ip: return
+        command = f"PRESS_{str(tecla).strip().upper()}"
+        if not self.last_xp_ip:
+            self.update_network_status(
+                f"Falha ao enviar {command}: AOI Windows XP ainda não identificada."
+            )
+            return False
+
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(1.0)
-            s.connect((self.last_xp_ip, 5000)) 
-            s.send(f"PRESS_{tecla}".encode('utf-8'))
-            s.close()
-        except: pass
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1.0)
+                s.connect((self.last_xp_ip, 5000))
+                s.sendall(command.encode("utf-8"))
+            self.update_network_status(
+                f"{command} enviado para AOI XP ({self.last_xp_ip}:5000)."
+            )
+            return True
+        except Exception as exc:
+            self.update_network_status(
+                f"Falha ao enviar {command} para AOI XP: {exc}"
+            )
+            print(
+                f"Falha ao enviar {command} para "
+                f"{self.last_xp_ip}:5000: {exc}"
+            )
+            return False
 
     def closeEvent(self, event):
         self.network_receiver.stop()
