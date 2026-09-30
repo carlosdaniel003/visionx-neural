@@ -305,6 +305,7 @@ class ButtonStateMatrixTests(unittest.TestCase):
 
 class OperationalSequenceTests(unittest.TestCase):
     def _start_local_and_emit_analysis(self, panel):
+        previous_process_calls = panel.process_calls
         self.assertTrue(panel.start_monitoring())
         self.assertTrue(panel.minimized)
         self.assertTrue(panel.local_capture_pending)
@@ -316,7 +317,7 @@ class OperationalSequenceTests(unittest.TestCase):
         self.assertTrue(monitor.running)
         monitor.emit_layout()
 
-        self.assertEqual(panel.process_calls, 1)
+        self.assertEqual(panel.process_calls, previous_process_calls + 1)
         self.assertFalse(panel.local_capture_pending)
         self.assertFalse(panel.minimized)
         self.assertIsNotNone(panel.current_analysis)
