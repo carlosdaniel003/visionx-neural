@@ -46,7 +46,7 @@ class NGArchiveNamingTests(unittest.TestCase):
     def test_category_is_safe_for_windows_filename(self):
         self.assertEqual(
             safe_archive_category("Muito Adesivo / Peça Nº 3"),
-            "MUITO_ADESIVO_PECA_N_3",
+            "MUITO_ADESIVO_PECA_NO_3",
         )
 
     def test_filename_contains_date_time_and_category(self):
