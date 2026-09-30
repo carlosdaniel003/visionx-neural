@@ -39,7 +39,7 @@ def memory_status_from_detail(detail: dict | None) -> dict:
     trace = _dict(payload.get("decision_trace"))
     memory = _dict(trace.get("memory"))
     prototype_stats = _dict(payload.get("memory_prototype_stats"))
-    breakdown = _dict(payload.get("similarity_breakdown"))
+    hypotheses = _dict(payload.get("hypotheses"))
 
     conflict = bool(
         _pick(memory, "memory_conflict", payload.get("memory_conflict", False))
@@ -71,9 +71,15 @@ def memory_status_from_detail(detail: dict | None) -> dict:
     best_ng = _float(
         _pick(memory, "best_ng_similarity", payload.get("best_ng_similarity", 0.0))
     )
-    combined = _float(
+    reported_combined = _float(
         _pick(memory, "best_similarity", payload.get("best_similarity", 0.0))
     )
+
+    # A melhor hipótese OK/NG já é calculada pelo mesmo comparador visual que
+    # produz best_similarity. Algumas camadas antigas de telemetria não
+    # propagavam best_similarity até a UI, embora as hipóteses estivessem
+    # presentes. Para apresentação, nunca esconda um match real já calculado.
+    combined = max(reported_combined, best_ok, best_ng)
 
     margin_raw = _pick(
         memory,
@@ -90,6 +96,14 @@ def memory_status_from_detail(detail: dict | None) -> dict:
         )
         or ""
     ).strip().upper()
+
+    breakdown = _dict(payload.get("similarity_breakdown"))
+    if not breakdown and leading in {"OK", "NG"}:
+        breakdown = _dict(_dict(hypotheses.get(leading)).get("similarity_breakdown"))
+    if not breakdown:
+        neighbors = payload.get("neighbor_details")
+        if isinstance(neighbors, list) and neighbors:
+            breakdown = _dict(_dict(neighbors[0]).get("similarity_breakdown"))
 
     epicenter = breakdown.get("epicenter_similarity")
     context = breakdown.get("context_similarity")
@@ -124,10 +138,46 @@ def memory_status_from_detail(detail: dict | None) -> dict:
         )
     )
 
+    category_candidate_count = _int(
+        payload.get(
+            "memory_candidate_count",
+            memory.get("memory_candidate_count", 0),
+        )
+    )
+    compared_candidate_count = _int(
+        payload.get(
+            "memory_candidate_count_compared",
+            memory.get("memory_candidate_count_compared", 0),
+        )
+    )
+    stored_memory_available = bool(
+        category_candidate_count > 0
+        or memory_available
+        or has_memory
+        or conflict
+    )
+    visual_match_available = bool(
+        combined > 0.0
+        or compared_candidate_count > 0
+        or memory_available
+        or has_memory
+        or conflict
+    )
+    first_occurrence = bool(
+        payload
+        and not stored_memory_available
+        and category_candidate_count == 0
+    )
+
     return {
         "active": bool(payload),
         "has_memory": has_memory,
         "memory_available": memory_available,
+        "stored_memory_available": stored_memory_available,
+        "visual_match_available": visual_match_available,
+        "first_occurrence": first_occurrence,
+        "category_candidate_count": category_candidate_count,
+        "compared_candidate_count": compared_candidate_count,
         "conflict": conflict,
         "review_required": review_required,
         "role": str(memory.get("role", payload.get("memory_reason", "MEMÓRIA"))),
@@ -185,7 +235,9 @@ def memory_summary_text(detail: dict | None) -> str:
     if model["has_memory"]:
         leader = model["leading_hypothesis"] or "-"
         parts = [
+            "JÁ VISTO NA MEMÓRIA",
             f"Hipótese {leader}",
+            f"match {_pct(model['combined_similarity'])}",
             f"NG {_pct(model['best_ng_similarity'])} × OK {_pct(model['best_ok_similarity'])}",
         ]
         if model["hypothesis_margin"] is not None:
@@ -195,13 +247,23 @@ def memory_summary_text(detail: dict | None) -> str:
                 f"epicentro {_pct(model['epicenter_similarity'])} / "
                 f"contexto {_pct(model['context_similarity'])}"
             )
-        else:
-            parts.append(f"similaridade {_pct(model['combined_similarity'])}")
         return " • ".join(parts)
 
-    if model["memory_available"]:
-        return "Memória disponível, mas sem correspondência visual confiável."
-    return "Sem memória compatível para esta inspeção."
+    if model["memory_available"] or model["visual_match_available"]:
+        return (
+            "MEMÓRIA ENCONTRADA • melhor match "
+            f"{_pct(model['combined_similarity'])} • abaixo do limiar confiável"
+        )
+
+    if model["stored_memory_available"]:
+        count = model["category_candidate_count"]
+        suffix = f"{count} registro(s)" if count else "registros existentes"
+        return (
+            f"MEMÓRIA CARREGADA • {suffix} • sem comparação visual válida; "
+            "não é primeira ocorrência"
+        )
+
+    return "PRIMEIRA OCORRÊNCIA • sem memória desta categoria."
 
 
 __all__ = ["memory_status_from_detail", "memory_summary_text"]
