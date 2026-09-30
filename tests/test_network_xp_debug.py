@@ -164,9 +164,13 @@ class NetworkXPDebugUILayoutTests(unittest.TestCase):
             source,
         )
 
-        compact = source[
-            source.index("if compact:"):
-            source.index("else:", source.index("if compact:"))
+        layout_start = source.index("def _layout_network_debug")
+        layout_end = source.index("def _build_status_bar", layout_start)
+        layout_source = source[layout_start:layout_end]
+        compact_start = layout_source.index("if compact:")
+        compact = layout_source[
+            compact_start:
+            layout_source.index("else:", compact_start)
         ]
         self.assertIn(
             "grid.addWidget(window.network_debug_actions, 2, 0)",
@@ -192,6 +196,38 @@ class NetworkXPDebugUILayoutTests(unittest.TestCase):
         )
         self.assertIn(
             "window.network_debug_actions.setMinimumWidth(0 if compact else 300)",
+            source,
+        )
+
+
+    def test_full_page_uses_viewport_width_and_compact_reflow(self):
+        source = open(
+            "src/ui/control_panel_ui.py",
+            encoding="utf-8",
+        ).read()
+
+        self.assertIn(
+            "window.root_scroll.viewport().installEventFilter",
+            source,
+        )
+        self.assertIn(
+            "self._layout_header(window, compact=compact)",
+            source,
+        )
+        self.assertIn(
+            "self._layout_status_bar(window, compact=compact)",
+            source,
+        )
+        self.assertIn(
+            "window.main_splitter.setMinimumWidth(0)",
+            source,
+        )
+        self.assertIn(
+            "window.telemetry_section.setMinimumWidth(0)",
+            source,
+        )
+        self.assertNotIn(
+            "max(700, width - image_width)",
             source,
         )
 
