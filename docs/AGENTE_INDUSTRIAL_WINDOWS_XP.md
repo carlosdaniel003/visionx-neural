@@ -172,6 +172,23 @@ OK → PRESS_0 → tecla 0
 NG → PRESS_1 → tecla 1
 ```
 
+## Atalhos locais no VisionX
+
+Quando uma decisão humana estiver disponível no próprio VisionX:
+
+```text
+0 / Numpad 0 → botão OK → PRESS_0 → tecla 0 na AOI → próxima imagem
+1 / Numpad 1 → botão NG → PRESS_1 → tecla 1 na AOI → próxima imagem
+```
+
+Os atalhos do VisionX reutilizam exatamente os mesmos botões e travas da interface.
+Eles não ignoram estados de segurança: se OK/NG estiver indisponível para o ciclo
+atual, pressionar 0/1 não força uma decisão.
+
+Essa função é implementada no computador novo. O agente XP V5.1 já entende
+`PRESS_0` e `PRESS_1`, portanto essa correção de atalhos não exige alterar o
+arquivo operacional do agente no Windows XP.
+
 ---
 
 # Regra de manutenção
