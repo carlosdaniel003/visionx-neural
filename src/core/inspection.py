@@ -81,7 +81,9 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
                     if (ix >= gx - 20) and (iy >= gy - 20) and ((ix + iw) <= (gx + gw + 20)) and ((iy + ih) <= (gy + gh + 20)):
                         # Guarda as coordenadas ABSOLUTAS do epicentro
                         inner_boxes.append((ix, iy, iw, ih))
-                        print(f"🎯 Epicentro AOI detectado em: X:{ix}, Y:{iy}, W:{iw}, H:{ih}")
+                        print(
+                            f"[EPICENTRO AOI] X:{ix}, Y:{iy}, W:{iw}, H:{ih}"
+                        )
 
     # Recorta a Zona de Foco (Exportaremos isso no final!)
     gab_focus = img_gabarito[fy1:fy2, fx1:fx2]
