@@ -112,7 +112,7 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
         self.assertIn("#f5c518", source)
         self.assertIn("#4ade80", source)
         self.assertIn("#ff6262", source)
-        self.assertIn("_position_bottom_right", source)
+        self.assertIn("_bottom_right_position", source)
 
     def test_ng_feedback_is_red_one(self):
         panel = self._panel()
