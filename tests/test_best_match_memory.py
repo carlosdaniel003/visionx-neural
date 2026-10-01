@@ -240,6 +240,53 @@ class FusionTests(unittest.TestCase):
         )
         self.assertIn("AUSÊNCIA FÍSICA FORTE", reason)
 
+    def test_real_deslocado_false_positive_returns_ok_when_hard_missing_is_blocked(self):
+        knn = {
+            "has_memory": True,
+            "memory_available": True,
+            "match_reliable": True,
+            "best_match_label": "OK",
+            "best_similarity": 0.9818174609877168,
+            "best_ok_similarity": 0.9818174609877168,
+            "best_ng_similarity": 0.8975629261136057,
+            "vote_defect": 0.0,
+            "n_neighbors": 5,
+            "memory_mode": "anomaly",
+            "memory_scope": "categoria",
+        }
+        guard = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_score": 0.9885001177301624,
+            "missing_tolerance": 0.36,
+            "missing_cross_category_guard": True,
+            "missing_guard_source_category": "DESLOCADO",
+            "missing_hard_absence": False,
+            "missing_context_hard_absence": False,
+            "missing_hard_absence_reason": (
+                "colapso visual extremo sem confirmação física independente"
+            ),
+        }
+
+        score, defect, confidence, _reason, trace = self.fusion(
+            self.orchestrator,
+            {
+                "silk_error_pct": 0.4867366921844401,
+                "semantic_loss": 0.3013883389284213,
+            },
+            "DESLOCADO",
+            guard,
+            knn,
+        )
+
+        self.assertEqual(score, 0.0)
+        self.assertFalse(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(trace["fusion_rule"], "best_match_strong")
+        self.assertEqual(trace["dominant_engine"], "knn")
+        self.assertFalse(trace["hard_missing_evidence"])
+        self.assertFalse(trace["memory"]["suppressed_by_hard_missing"])
+
     def test_intermediate_uses_best_label_with_partial_weight(self):
         score, defect, confidence, _reason, trace = self.run_fusion("NG", 0.80, 0.01)
         self.assertTrue(defect)
