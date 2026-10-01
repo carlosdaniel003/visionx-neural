@@ -9,11 +9,25 @@ from __future__ import annotations
 import time
 from functools import wraps
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout
+from PyQt6.QtCore import (
+    QEasingCurve,
+    QPoint,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+)
+from PyQt6.QtWidgets import (
+    QFrame,
+    QGraphicsOpacityEffect,
+    QLabel,
+    QVBoxLayout,
+)
 
 
 FEEDBACK_DURATION_MS = 800
+FEEDBACK_FADE_IN_MS = 120
+FEEDBACK_FADE_OUT_MS = 160
+FEEDBACK_SLIDE_PX = 8
 DUPLICATE_SUPPRESSION_SECONDS = 1.5
 FEEDBACK_SIZE = 180
 FEEDBACK_MARGIN = 24
@@ -116,9 +130,37 @@ class DecisionKeyFeedbackOverlay(QFrame):
         layout.addWidget(self.source_label)
         layout.addStretch(1)
 
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self._opacity_effect.setOpacity(0.0)
+        self.setGraphicsEffect(self._opacity_effect)
+
+        self._fade_in = QPropertyAnimation(
+            self._opacity_effect,
+            b"opacity",
+            self,
+        )
+        self._fade_in.setDuration(FEEDBACK_FADE_IN_MS)
+        self._fade_in.setStartValue(0.0)
+        self._fade_in.setEndValue(1.0)
+        self._fade_in.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self._slide_in = QPropertyAnimation(self, b"pos", self)
+        self._slide_in.setDuration(FEEDBACK_FADE_IN_MS)
+        self._slide_in.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self._fade_out = QPropertyAnimation(
+            self._opacity_effect,
+            b"opacity",
+            self,
+        )
+        self._fade_out.setDuration(FEEDBACK_FADE_OUT_MS)
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._fade_out.finished.connect(self._finish_hide)
+
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
-        self._hide_timer.timeout.connect(self.hide)
+        self._hide_timer.timeout.connect(self._start_fade_out)
         self.hide()
 
     @staticmethod
@@ -142,12 +184,28 @@ class DecisionKeyFeedbackOverlay(QFrame):
         style.polish(widget)
         widget.update()
 
-    def _position_bottom_right(self) -> None:
+    def _bottom_right_position(self) -> QPoint:
         width = self.width()
         height = self.height()
         x = max(0, self.panel.width() - width - FEEDBACK_MARGIN)
         y = max(0, self.panel.height() - height - FEEDBACK_MARGIN)
-        self.move(x, y)
+        return QPoint(x, y)
+
+    def _stop_motion(self) -> None:
+        self._hide_timer.stop()
+        self._fade_in.stop()
+        self._slide_in.stop()
+        self._fade_out.stop()
+
+    def _start_fade_out(self) -> None:
+        self._fade_out.stop()
+        self._fade_out.setStartValue(self._opacity_effect.opacity())
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.start()
+
+    def _finish_hide(self) -> None:
+        self.hide()
+        self._opacity_effect.setOpacity(0.0)
 
     def show_decision(self, decision: str, source: str = "") -> bool:
         normalized = self._normalize(decision)
@@ -175,10 +233,30 @@ class DecisionKeyFeedbackOverlay(QFrame):
             widget.setProperty("tone", tone)
             self._refresh_style(widget)
 
-        self._position_bottom_right()
+        self._stop_motion()
+
+        target = self._bottom_right_position()
+        max_y = max(0, self.panel.height() - self.height())
+        start = QPoint(
+            target.x(),
+            min(max_y, target.y() + FEEDBACK_SLIDE_PX),
+        )
+
+        self._opacity_effect.setOpacity(0.0)
+        self.move(start)
+        self._slide_in.setStartValue(start)
+        self._slide_in.setEndValue(target)
+
         self.raise_()
         self.show()
-        self._hide_timer.start(FEEDBACK_DURATION_MS)
+        self._fade_in.start()
+        self._slide_in.start()
+
+        hold_before_fade = max(
+            0,
+            FEEDBACK_DURATION_MS - FEEDBACK_FADE_OUT_MS,
+        )
+        self._hide_timer.start(hold_before_fade)
         return True
 
 
@@ -224,6 +302,9 @@ def install_decision_key_feedback(panel) -> None:
 __all__ = [
     "DUPLICATE_SUPPRESSION_SECONDS",
     "FEEDBACK_DURATION_MS",
+    "FEEDBACK_FADE_IN_MS",
+    "FEEDBACK_FADE_OUT_MS",
+    "FEEDBACK_SLIDE_PX",
     "FEEDBACK_SIZE",
     "FEEDBACK_MARGIN",
     "DecisionKeyFeedbackOverlay",
