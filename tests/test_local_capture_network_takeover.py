@@ -1,5 +1,11 @@
 import unittest
 
+import numpy as np
+
+from src.services.capture_evidence import (
+    capture_image_available,
+    capture_image_snapshot,
+)
 from src.ui.local_capture_safety import install_local_capture_safety
 from src.ui.network_image_cycle_gate import install_network_image_cycle_gate
 
@@ -34,6 +40,11 @@ class FakeMonitor:
         self.finished = FakeSignal()
         self.running = False
         self.start_count = 0
+        self.last_capture_frame = np.full(
+            (80, 120, 3),
+            (12, 34, 210),
+            dtype=np.uint8,
+        )
 
     def start(self):
         self.running = True
@@ -213,6 +224,42 @@ class LocalCaptureNetworkTakeoverTests(unittest.TestCase):
         self.assertTrue(panel._start_radar())
         self.assertEqual(len(panel.created_monitors), 1)
         self.assertEqual(panel.created_monitors[0].start_count, 1)
+
+    def test_local_mss_analysis_publishes_exact_capture_debug_evidence(self):
+        panel = FakePanel()
+
+        self.assertTrue(panel.start_monitoring())
+        self.assertTrue(panel._start_radar())
+        monitor = panel.created_monitors[0]
+
+        sample = np.full((20, 30, 3), 50, dtype=np.uint8)
+        test = np.full((20, 30, 3), 80, dtype=np.uint8)
+        aoi_info = {
+            "category": "DESLOCADO",
+            "board": "P22",
+            "parts": "R14",
+        }
+
+        callback = monitor.layout_detected.callbacks[0]
+        callback(sample, test, aoi_info)
+
+        self.assertTrue(capture_image_available(panel))
+        copied = capture_image_snapshot(panel)
+        self.assertTrue(
+            np.array_equal(copied, monitor.last_capture_frame)
+        )
+        self.assertEqual(
+            panel.capture_debug_last_record["source"],
+            "local_mss",
+        )
+        self.assertEqual(
+            panel.capture_debug_last_record["decision"]["category"],
+            "DESLOCADO",
+        )
+        self.assertEqual(
+            panel.capture_debug_last_record["event_id"],
+            panel.capture_debug_last_image_event_id,
+        )
 
     def test_network_watchdog_releases_invalid_frame(self):
         panel = FakePanel()
