@@ -38,7 +38,7 @@ A aplicação foi pensada para cenários onde uma máquina, câmera ou estação
 - Análise visual com métricas de similaridade e diferença estrutural.
 - Painel de depuração para investigação da decisão da IA.
 - Classificação assistida entre imagem **OK** e possível defeito **NG**.
-- Proteção específica para `FALTANDO`: ausência física forte e inequívoca do componente não pode ser anulada por uma memória KNN antiga rotulada como OK; a memória permanece disponível para auditoria.
+- Proteção específica para `FALTANDO`: ausência física forte e inequívoca — inclusive quando resta apenas footprint/base escura — não pode ser anulada por memória KNN antiga; a memória permanece disponível para auditoria.
 - Salvamento de amostras para formação de dataset local.
 - Arquivo visual NG opcional: quando ativado para capturas do Windows XP, salva em `public/ng_archive/` exatamente o mesmo frame completo disponível em **Copiar imagem XP**, com data, hora e categoria no nome do arquivo, sem alterar o dataset/KNN.
 - Suporte a fluxo de **active learning**, permitindo melhorar a base de exemplos com validação humana.
