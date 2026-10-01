@@ -252,12 +252,23 @@ DESATIVADO
 Quando desativado, o comportamento permanece igual ao fluxo normal já
 documentado e nenhuma cópia visual adicional é criada.
 
-Quando ativado, toda **decisão final NG** — humana ou automática já autorizada
-pelas regras de produção — gera uma cópia da imagem bruta de teste em:
+Quando ativado, toda **decisão final NG** de uma captura recebida do Windows XP
+— humana ou automática já autorizada pelas regras de produção — gera uma cópia
+em:
 
 ```text
 public/ng_archive/
 ```
+
+A imagem arquivada deve ser **exatamente o mesmo frame completo do Windows XP**
+que o botão `Copiar imagem XP` disponibiliza naquele evento. Os dois recursos
+usam a mesma fonte interna e a mesma validação de `event_id`.
+
+Não usar `current_ng`, ROI, recorte de teste ou qualquer outra imagem como
+fallback. Se o frame XP do evento atual não estiver preservado ou se o
+`event_id` não coincidir com o diagnóstico atual, a evidência NG não é salva.
+Isso evita associar ao julgamento uma imagem diferente da que o operador pode
+copiar para auditoria.
 
 Formato do nome:
 
@@ -273,7 +284,8 @@ Exemplo:
 
 Esse arquivo é somente evidência visual. Ele é independente de
 `public/dataset/`, não alimenta o KNN, não altera protótipos e não muda o
-julgamento da IA.
+julgamento da IA. A fonte compartilhada fica em
+`src/services/network_xp_frame.py`.
 
 A gravação é feita em fila de background. Portanto, salvar a evidência NG não
 deve bloquear o comando `PRESS_1`, a limpeza da captura julgada nem a
