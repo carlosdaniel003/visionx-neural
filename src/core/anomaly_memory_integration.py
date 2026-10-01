@@ -204,6 +204,36 @@ def _dynamic_fusion(
             if triggered and summary:
                 physical_reasons.append(summary)
 
+    if normalize_category_name(category) == "INVERTIDO" and (
+        "inverted_active" in detail or "inverted_score" in detail
+    ):
+        active = bool(detail.get("inverted_active", False))
+        raw = float(detail.get("inverted_score", 0.0))
+        threshold = float(detail.get("inverted_tolerance", 0.43))
+        triggered = bool(
+            active
+            and detail.get(
+                "inverted_is_defect",
+                raw > threshold,
+            )
+        )
+        effective = max(0.90, min(1.0, raw)) if triggered else 0.0
+        summary = str(detail.get("inverted_reason", ""))
+        _append_engine(
+            orchestrator,
+            engines,
+            "inverted",
+            "Assinatura da face",
+            active,
+            triggered,
+            raw,
+            effective,
+            threshold,
+            summary,
+        )
+        if triggered and summary:
+            physical_reasons.append(summary)
+
     if "silk_error_pct" in detail:
         raw = float(detail.get("silk_error_pct", 0.0))
         threshold = 0.08
