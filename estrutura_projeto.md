@@ -18,8 +18,10 @@
 
 **Arquivo visual NG opcional:**
 - Toggle desligado por padrão; desativado mantém o fluxo atual sem criar cópias extras.
-- Ativado: toda decisão final `NG` salva a imagem bruta de teste em `public/ng_archive/`.
+- Ativado: toda decisão final `NG` de uma captura do Windows XP salva em `public/ng_archive/` exatamente o mesmo frame completo disponibilizado pelo botão `Copiar imagem XP`.
 - Nome: `AAAA-MM-DD_HH-MM-SS-ms_CATEGORIA.png`.
+- A fonte é única: `src/services/network_xp_frame.py` valida que o `event_id` do frame preservado é o mesmo do diagnóstico atual. O botão `Copiar imagem XP` e o arquivo visual NG usam essa mesma função.
+- Não existe fallback para `current_ng` ou outro recorte. Se o frame XP do evento atual não estiver disponível, nenhuma imagem substituta é arquivada.
 - O arquivo é evidência/auditoria e não participa de treinamento, protótipos ou votação KNN.
 - A gravação é assíncrona para não bloquear o julgamento, o gate de rede nem a próxima imagem da AOI.
 
