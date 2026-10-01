@@ -20,6 +20,16 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
     HARD_ABSENCE_MIN_BACKGROUND_EXPOSURE = 0.28
     HARD_ABSENCE_MAX_NEARBY_SIMILARITY = 0.60
 
+    # Terceiro padrão real de ausência: o componente desaparece, mas deixa
+    # footprint/base escura ou material subjacente semelhante à sua região.
+    # Nessa situação background_exposure e structure_loss podem ficar baixos
+    # apesar de a aparência original ter desaparecido quase por completo.
+    HARD_FOOTPRINT_MIN_SCORE = 0.90
+    HARD_FOOTPRINT_MIN_COVERAGE = 0.45
+    HARD_FOOTPRINT_MIN_RESIDUAL = 0.60
+    HARD_FOOTPRINT_MIN_APPEARANCE_LOSS = 0.55
+    HARD_FOOTPRINT_MAX_NEARBY_SIMILARITY = 0.35
+
     @staticmethod
     def _palette_residual(reference: np.ndarray, test: np.ndarray) -> np.ndarray:
         """Mede se o teste ainda pertence à paleta cromática do patch.
@@ -55,6 +65,12 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
         coverage = float(result.get("missing_changed_coverage", 0.0) or 0.0)
         residual = float(result.get("missing_residual_mean", 0.0) or 0.0)
         structure_loss = float(result.get("missing_structure_loss", 0.0) or 0.0)
+        appearance_loss = float(
+            result.get("missing_appearance_loss", 0.0) or 0.0
+        )
+        direct_similarity = float(
+            result.get("missing_direct_similarity", 1.0) or 0.0
+        )
         background = float(
             result.get("missing_background_exposure", 0.0) or 0.0
         )
@@ -76,6 +92,17 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             and nearby_similarity < cls.HARD_ABSENCE_MAX_NEARBY_SIMILARITY
         )
 
+        footprint_absence = bool(
+            score >= cls.HARD_FOOTPRINT_MIN_SCORE
+            and coverage >= cls.HARD_FOOTPRINT_MIN_COVERAGE
+            and residual >= cls.HARD_FOOTPRINT_MIN_RESIDUAL
+            and appearance_loss >= cls.HARD_FOOTPRINT_MIN_APPEARANCE_LOSS
+            and direct_similarity <= (
+                1.0 - cls.HARD_FOOTPRINT_MIN_APPEARANCE_LOSS
+            )
+            and nearby_similarity < cls.HARD_FOOTPRINT_MAX_NEARBY_SIMILARITY
+        )
+
         if background_absence:
             return (
                 True,
@@ -85,6 +112,11 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             return (
                 True,
                 "estrutura esperada colapsou sem correspondência próxima válida",
+            )
+        if footprint_absence:
+            return (
+                True,
+                "aparência esperada desapareceu e restou apenas footprint/base sem correspondência válida",
             )
         return False, "divergência presente, mas sem prova forte de ausência"
 
@@ -114,6 +146,13 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             "structure_loss": self.HARD_ABSENCE_MIN_STRUCTURE_LOSS,
             "background_exposure": self.HARD_ABSENCE_MIN_BACKGROUND_EXPOSURE,
             "nearby_similarity_max": self.HARD_ABSENCE_MAX_NEARBY_SIMILARITY,
+            "footprint_score": self.HARD_FOOTPRINT_MIN_SCORE,
+            "footprint_coverage": self.HARD_FOOTPRINT_MIN_COVERAGE,
+            "footprint_residual_mean": self.HARD_FOOTPRINT_MIN_RESIDUAL,
+            "footprint_appearance_loss": self.HARD_FOOTPRINT_MIN_APPEARANCE_LOSS,
+            "footprint_nearby_similarity_max": (
+                self.HARD_FOOTPRINT_MAX_NEARBY_SIMILARITY
+            ),
         }
 
         if hard_absence:
