@@ -19,7 +19,7 @@ class PhysicalAbsenceGuard(ROIPatchExpectationExpert):
 
     CATEGORIES = frozenset({"EMBORCADO", "DESLOCADO", "INVERTIDO"})
 
-    POLICY = "cross_category_physical_absence_guard_v2"
+    POLICY = "cross_category_physical_absence_guard_v3"
 
     MIN_SCORE = 0.82
     MIN_COVERAGE = 0.45
@@ -195,6 +195,7 @@ class PhysicalAbsenceGuard(ROIPatchExpectationExpert):
                 result,
                 global_box_info=global_box_info,
                 physical_detail=physical_detail,
+                require_physical_support_for_extreme=True,
             )
             result.update(dual_scale)
             if dual_scale.get("missing_context_hard_absence", False):
