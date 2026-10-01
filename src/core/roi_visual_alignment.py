@@ -369,6 +369,7 @@ def install_roi_visual_alignment(silk_expert_cls, missing_expert_cls) -> None:
         global_box_info=None,
         aoi_info=None,
         aoi_epicenters=None,
+        physical_detail=None,
     ):
         result = original_missing_analyze(
             self,
@@ -377,6 +378,7 @@ def install_roi_visual_alignment(silk_expert_cls, missing_expert_cls) -> None:
             global_box_info,
             aoi_info,
             aoi_epicenters,
+            physical_detail=physical_detail,
         )
         if not isinstance(result, dict) or not result.get("missing_active", False):
             return result
