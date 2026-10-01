@@ -3,13 +3,16 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEasingCurve, Qt
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from src.ui.decision_key_feedback import (
     FEEDBACK_DURATION_MS,
+    FEEDBACK_FADE_IN_MS,
+    FEEDBACK_FADE_OUT_MS,
     FEEDBACK_MARGIN,
     FEEDBACK_SIZE,
+    FEEDBACK_SLIDE_PX,
     install_decision_key_feedback,
     install_decision_key_feedback_hooks,
 )
@@ -48,16 +51,51 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
             )
         )
         self.assertEqual(overlay.focusPolicy(), Qt.FocusPolicy.NoFocus)
+        target = overlay._bottom_right_position()
         self.assertEqual(
-            overlay.x(),
+            target.x(),
             panel.width() - FEEDBACK_SIZE - FEEDBACK_MARGIN,
         )
         self.assertEqual(
-            overlay.y(),
+            target.y(),
             panel.height() - FEEDBACK_SIZE - FEEDBACK_MARGIN,
         )
+        self.assertEqual(overlay._slide_in.endValue(), target)
+        self.assertEqual(
+            overlay._slide_in.startValue().y(),
+            target.y() + FEEDBACK_SLIDE_PX,
+        )
         self.assertTrue(overlay._hide_timer.isActive())
-        self.assertEqual(overlay._hide_timer.interval(), FEEDBACK_DURATION_MS)
+        self.assertEqual(
+            overlay._hide_timer.interval(),
+            FEEDBACK_DURATION_MS - FEEDBACK_FADE_OUT_MS,
+        )
+
+    def test_overlay_animation_is_short_non_looping_and_lightweight(self):
+        panel = self._panel()
+        overlay = panel.decision_key_feedback
+
+        panel.show_decision_key_feedback(
+            "OK",
+            source="odin_keyboard",
+        )
+
+        self.assertEqual(overlay._fade_in.duration(), FEEDBACK_FADE_IN_MS)
+        self.assertEqual(overlay._slide_in.duration(), FEEDBACK_FADE_IN_MS)
+        self.assertEqual(overlay._fade_out.duration(), FEEDBACK_FADE_OUT_MS)
+        self.assertEqual(
+            overlay._fade_in.easingCurve().type(),
+            QEasingCurve.Type.OutCubic,
+        )
+        self.assertEqual(
+            overlay._fade_out.easingCurve().type(),
+            QEasingCurve.Type.InOutQuad,
+        )
+        self.assertFalse(overlay._hide_timer.isSingleShot() is False)
+        self.assertLessEqual(
+            FEEDBACK_FADE_IN_MS + FEEDBACK_FADE_OUT_MS,
+            300,
+        )
 
     def test_overlay_uses_odin_visual_language(self):
         panel = self._panel()
