@@ -127,6 +127,55 @@ class FusionTests(unittest.TestCase):
         self.assertEqual(confidence, 0.99)
         self.assertEqual(trace["memory"]["memory_score"], 0.0)
 
+    def test_hard_missing_cannot_be_vetoed_by_strong_ok_memory(self):
+        knn = {
+            "has_memory": True,
+            "memory_available": True,
+            "match_reliable": True,
+            "best_match_label": "OK",
+            "best_similarity": 0.99,
+            "vote_defect": 0.0,
+            "n_neighbors": 5,
+            "memory_mode": "anomaly",
+            "memory_scope": "categoria",
+        }
+        missing = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_score": 0.93,
+            "missing_tolerance": 0.36,
+            "missing_reason": "Componente desapareceu da ROI",
+            "missing_hard_absence": True,
+            "missing_hard_absence_reason": (
+                "conteúdo do gabarito foi substituído pelo fundo da região"
+            ),
+        }
+
+        score, defect, confidence, reason, trace = self.fusion(
+            self.orchestrator,
+            {},
+            "FALTANDO",
+            missing,
+            knn,
+        )
+
+        self.assertEqual(score, 1.0)
+        self.assertTrue(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(trace["fusion_rule"], "missing_hard_absence")
+        self.assertEqual(trace["dominant_engine"], "missing")
+        self.assertEqual(trace["weights"], {"physical": 1.0, "knn": 0.0})
+        self.assertFalse(trace["operator_review_required"])
+        self.assertTrue(trace["hard_missing_evidence"])
+        self.assertTrue(
+            trace["memory"]["suppressed_by_hard_missing"]
+        )
+        self.assertEqual(
+            trace["memory"]["role"],
+            "AUDITORIA — SEM VETO SOBRE AUSÊNCIA FÍSICA",
+        )
+        self.assertIn("AUSÊNCIA FÍSICA FORTE", reason)
+
     def test_intermediate_uses_best_label_with_partial_weight(self):
         score, defect, confidence, _reason, trace = self.run_fusion("NG", 0.80, 0.01)
         self.assertTrue(defect)
