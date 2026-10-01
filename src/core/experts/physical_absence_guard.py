@@ -18,7 +18,7 @@ class PhysicalAbsenceGuard(ROIPatchExpectationExpert):
 
     CATEGORIES = frozenset({"EMBORCADO", "DESLOCADO", "INVERTIDO"})
 
-    POLICY = "cross_category_physical_absence_guard_v1"
+    POLICY = "cross_category_physical_absence_guard_v2"
 
     MIN_SCORE = 0.82
     MIN_COVERAGE = 0.45
@@ -30,6 +30,20 @@ class PhysicalAbsenceGuard(ROIPatchExpectationExpert):
 
     MIN_STRUCTURAL_SUPPORT = 0.35
     MIN_SEMANTIC_SUPPORT = 0.60
+
+    # Rota alternativa para desaparecimento visual extremo. Ela existe para
+    # epicentros estreitos onde bordas/semântica ficam ligeiramente abaixo da
+    # rota primária, mas quase todo o conteúdo esperado desapareceu.
+    EXTREME_MIN_SCORE = 0.92
+    EXTREME_MIN_COVERAGE = 0.70
+    EXTREME_MIN_RESIDUAL_MEAN = 0.55
+    EXTREME_MIN_APPEARANCE_LOSS = 0.60
+    EXTREME_MAX_DIRECT_SIMILARITY = 0.40
+    EXTREME_MIN_EDGE_MISMATCH = 0.30
+    EXTREME_MAX_NEARBY_SIMILARITY = 0.20
+    EXTREME_MIN_STRUCTURAL_SUPPORT = 0.40
+    EXTREME_MIN_SEMANTIC_SUPPORT = 0.55
+    EXTREME_MIN_PHYSICAL_SCORE = 0.85
 
     @staticmethod
     def _float(value: Any, default: float = 0.0) -> float:
@@ -45,13 +59,20 @@ class PhysicalAbsenceGuard(ROIPatchExpectationExpert):
         semantic = cls._float(detail.get("semantic_loss", 0.0))
         physical_score = cls._float(detail.get("physical_score", 0.0))
 
-        supported = bool(
+        primary_supported = bool(
             structural >= cls.MIN_STRUCTURAL_SUPPORT
             and semantic >= cls.MIN_SEMANTIC_SUPPORT
             and physical_score >= 0.85
         )
+        extreme_supported = bool(
+            structural >= cls.EXTREME_MIN_STRUCTURAL_SUPPORT
+            and semantic >= cls.EXTREME_MIN_SEMANTIC_SUPPORT
+            and physical_score >= cls.EXTREME_MIN_PHYSICAL_SCORE
+        )
         return {
-            "supported": supported,
+            "supported": bool(primary_supported or extreme_supported),
+            "primary_supported": primary_supported,
+            "extreme_supported": extreme_supported,
             "structural": structural,
             "semantic": semantic,
             "physical_score": physical_score,
@@ -100,8 +121,9 @@ class PhysicalAbsenceGuard(ROIPatchExpectationExpert):
             result.get("missing_best_similarity", 0.0)
         )
 
-        confirmed = bool(
-            score >= cls.MIN_SCORE
+        primary_confirmed = bool(
+            support.get("primary_supported", False)
+            and score >= cls.MIN_SCORE
             and coverage >= cls.MIN_COVERAGE
             and residual >= cls.MIN_RESIDUAL_MEAN
             and appearance_loss >= cls.MIN_APPEARANCE_LOSS
@@ -109,12 +131,29 @@ class PhysicalAbsenceGuard(ROIPatchExpectationExpert):
             and edge_mismatch >= cls.MIN_EDGE_MISMATCH
             and nearby_similarity < cls.MAX_NEARBY_SIMILARITY
         )
+        extreme_confirmed = bool(
+            support.get("extreme_supported", False)
+            and score >= cls.EXTREME_MIN_SCORE
+            and coverage >= cls.EXTREME_MIN_COVERAGE
+            and residual >= cls.EXTREME_MIN_RESIDUAL_MEAN
+            and appearance_loss >= cls.EXTREME_MIN_APPEARANCE_LOSS
+            and direct_similarity <= cls.EXTREME_MAX_DIRECT_SIMILARITY
+            and edge_mismatch >= cls.EXTREME_MIN_EDGE_MISMATCH
+            and nearby_similarity < cls.EXTREME_MAX_NEARBY_SIMILARITY
+        )
 
-        if confirmed:
+        if primary_confirmed:
             return (
                 True,
                 "aparência do componente desapareceu sem correspondência "
                 "próxima, confirmada pelos motores estrutural e semântico",
+                support,
+            )
+        if extreme_confirmed:
+            return (
+                True,
+                "colapso visual extremo: quase todo o conteúdo esperado "
+                "desapareceu apesar do epicentro estreito",
                 support,
             )
         return (
@@ -165,6 +204,16 @@ class PhysicalAbsenceGuard(ROIPatchExpectationExpert):
                     "nearby_similarity_max": self.MAX_NEARBY_SIMILARITY,
                     "structural_support": self.MIN_STRUCTURAL_SUPPORT,
                     "semantic_support": self.MIN_SEMANTIC_SUPPORT,
+                    "extreme_score": self.EXTREME_MIN_SCORE,
+                    "extreme_coverage": self.EXTREME_MIN_COVERAGE,
+                    "extreme_residual_mean": self.EXTREME_MIN_RESIDUAL_MEAN,
+                    "extreme_appearance_loss": self.EXTREME_MIN_APPEARANCE_LOSS,
+                    "extreme_direct_similarity_max": self.EXTREME_MAX_DIRECT_SIMILARITY,
+                    "extreme_edge_mismatch": self.EXTREME_MIN_EDGE_MISMATCH,
+                    "extreme_nearby_similarity_max": self.EXTREME_MAX_NEARBY_SIMILARITY,
+                    "extreme_structural_support": self.EXTREME_MIN_STRUCTURAL_SUPPORT,
+                    "extreme_semantic_support": self.EXTREME_MIN_SEMANTIC_SUPPORT,
+                    "extreme_physical_score": self.EXTREME_MIN_PHYSICAL_SCORE,
                 },
             }
         )
