@@ -40,7 +40,7 @@ A aplicação foi pensada para cenários onde uma máquina, câmera ou estação
 - Classificação assistida entre imagem **OK** e possível defeito **NG**.
 - Proteção de ausência física dual-scale: o epicentro local é combinado, quando necessário, com uma ROI contextual maior para detectar componentes ausentes que ainda parecem semelhantes em um patch pequeno; `FALTANDO` e a guarda transversal de `EMBORCADO/DESLOCADO/INVERTIDO` terminam na mesma fusão central, mantendo categoria e memória isoladas.
 - Salvamento de amostras para formação de dataset local.
-- Arquivo visual NG opcional: quando ativado para capturas do Windows XP, salva em `public/ng_archive/` no máximo uma evidência por `event_id`, usando exatamente o mesmo frame completo disponível em **Copiar imagem XP**, com data, hora e categoria no nome do arquivo; eventos duplicados e capturas sem categoria não geram `SEM_CATEGORIA`.
+- Arquivo visual NG opcional: quando ativado para capturas do Windows XP, salva em `public/ng_archive/` no máximo uma evidência por `event_id`, usando exatamente o mesmo frame completo disponível em **Copiar imagem XP**. O nome segue o formato legível `01d10m2026_10h22min21s943ms_FALTANDO.png`; eventos duplicados e capturas sem categoria não geram `SEM_CATEGORIA`.
 - Suporte a fluxo de **active learning**, permitindo melhorar a base de exemplos com validação humana.
 - Organização modular em camadas de configuração, núcleo, serviços, interface e utilitários.
 
