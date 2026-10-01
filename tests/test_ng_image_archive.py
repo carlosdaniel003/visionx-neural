@@ -19,7 +19,9 @@ class FakePanel:
 
     def __init__(self):
         self.current_ng = np.full((12, 16, 3), 90, dtype=np.uint8)
+        self.current_analysis = {"is_defect": True, "detail": {}}
         self.current_aoi_info = {"category": "Muito Adesivo"}
+        self.capture_cycle_source = "network"
         self.network_intake_last_validation = {"event_id": "evt-001"}
         self.network_intake_last_image_event_id = "evt-001"
         self.network_intake_last_image = np.full(
@@ -103,6 +105,69 @@ class NGArchiveDecisionTests(unittest.TestCase):
         self.assertEqual(panel.saved, [("NG", "auto")])
         self.assertEqual(len(panel.archived), 1)
 
+
+    def test_same_xp_event_is_archived_only_once(self):
+        panel = FakePanel()
+        panel.set_ng_archive_enabled(True)
+        exact_xp_frame = panel.network_intake_last_image.copy()
+
+        panel.save_label("NG", source="button")
+        # Simula o eco do PRESS_1 retornando do hook do XP como CMD_NG depois
+        # que a primeira decisão já limpou a interface.
+        panel.save_label("NG", source="xp_keyboard")
+
+        self.assertEqual(len(panel.archived), 1)
+        image, category = panel.archived[0]
+        self.assertTrue(np.array_equal(image, exact_xp_frame))
+        self.assertEqual(category, "Muito Adesivo")
+
+    def test_missing_category_never_creates_sem_categoria_archive(self):
+        panel = FakePanel()
+        panel.set_ng_archive_enabled(True)
+        panel.current_aoi_info = {}
+
+        panel.save_label("NG", source="button")
+
+        self.assertEqual(panel.archived, [])
+        self.assertTrue(
+            any(
+                "Nenhum arquivo SEM_CATEGORIA foi criado" in message
+                for message in panel.status
+            )
+        )
+
+    def test_new_xp_event_can_be_archived_after_previous_event(self):
+        panel = FakePanel()
+        panel.set_ng_archive_enabled(True)
+
+        panel.save_label("NG", source="button")
+        self.assertEqual(len(panel.archived), 1)
+
+        panel.current_ng = np.full((12, 16, 3), 120, dtype=np.uint8)
+        panel.current_analysis = {"is_defect": True, "detail": {}}
+        panel.current_aoi_info = {"category": "Invertido"}
+        panel.capture_cycle_source = "network"
+        panel.network_intake_last_validation = {"event_id": "evt-002"}
+        panel.network_intake_last_image_event_id = "evt-002"
+        panel.network_intake_last_image = np.full(
+            (20, 30, 3),
+            (30, 40, 210),
+            dtype=np.uint8,
+        )
+
+        panel.save_label("NG", source="button")
+
+        self.assertEqual(len(panel.archived), 2)
+        self.assertEqual(panel.archived[1][1], "Invertido")
+
+    def test_local_capture_never_archives_previous_xp_frame(self):
+        panel = FakePanel()
+        panel.set_ng_archive_enabled(True)
+        panel.capture_cycle_source = "local"
+
+        panel.save_label("NG", source="button")
+
+        self.assertEqual(panel.archived, [])
 
     def test_mismatched_event_never_falls_back_to_current_ng(self):
         panel = FakePanel()
