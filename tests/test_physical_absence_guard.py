@@ -74,6 +74,41 @@ class PhysicalAbsenceGuardEvidenceTests(unittest.TestCase):
         self.assertTrue(support["extreme_supported"])
         self.assertIn("colapso visual extremo", reason)
 
+    def test_cross_category_guard_requests_strict_dual_scale_support(self):
+        reference = np.full((160, 240, 3), 40, dtype=np.uint8)
+        test = reference.copy()
+
+        with patch(
+            "src.core.experts.physical_absence_guard."
+            "DualScalePresenceAnalyzer.analyze",
+            return_value={
+                "missing_dual_scale_policy": "dual_scale_presence_v1",
+                "missing_dual_scale_active": True,
+                "missing_dual_scale_triggered": True,
+                "missing_context_hard_absence": False,
+                "missing_context_hard_reason": (
+                    "colapso visual extremo sem confirmação física independente"
+                ),
+            },
+        ) as mocked:
+            result = self.guard.analyze(
+                reference,
+                test,
+                global_box_info={"w": 220, "h": 140},
+                aoi_info={"category": "DESLOCADO"},
+                aoi_epicenters=[(90, 55, 40, 35)],
+                physical_detail={
+                    "silk_error_pct": 0.4867,
+                    "semantic_loss": 0.3014,
+                    "physical_score": 0.8780,
+                },
+            )
+
+        self.assertFalse(result["missing_hard_absence"])
+        self.assertTrue(
+            mocked.call_args.kwargs["require_physical_support_for_extreme"]
+        )
+
     def test_dual_scale_context_can_promote_cross_category_guard(self):
         reference = np.full((160, 240, 3), 40, dtype=np.uint8)
         test = reference.copy()
