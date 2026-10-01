@@ -449,3 +449,123 @@ Manter testes que garantam:
 - `DESLOCAMENTO PROVÁVEL` nunca é convertido pela guarda;
 - `MUITO ADESIVO` e `FALTANDO` não usam essa guarda;
 - máscara da guarda transversal não altera assinatura KNN da categoria original.
+
+
+## INVERTIDO — fusão única, conflito de memória e colapso visual extremo
+
+### Caso real de 01/10/2026
+
+Evento: `299285f21c8448b0bff8a9757fa382af`.
+
+A AOI classificou a ocorrência como `INVERTIDO`, mas visualmente o corpo do
+componente presente no gabarito desapareceu no teste. O debug mostrou:
+
+- score físico ≈ 85,7%;
+- `missing_score ≈ 94,5%`;
+- cobertura alterada ≈ 75,6%;
+- residual médio ≈ 59,6%;
+- perda de aparência ≈ 66,2%;
+- similaridade direta ≈ 33,8%;
+- melhor correspondência próxima ≈ 14,6%;
+- estrutural ≈ 45,7%;
+- semântico ≈ 57,1%;
+- match KNN OK ≈ 87,7%.
+
+A guarda transversal executou, mas a rota primária de hard missing não passou
+porque o semântico ficou abaixo de 60% e a incompatibilidade de bordas ficou
+abaixo de 40%. Esse padrão é típico de um epicentro estreito: quase todo o
+conteúdo esperado desaparece, porém parte das bordas locais permanece.
+
+### Rota de colapso visual extremo
+
+A `PhysicalAbsenceGuard` possui uma segunda rota para esse caso. Ela exige
+simultaneamente:
+
+- score >= 92%;
+- cobertura alterada >= 70%;
+- residual médio >= 55%;
+- perda de aparência >= 60%;
+- similaridade direta <= 40%;
+- incompatibilidade de bordas >= 30%;
+- melhor correspondência próxima < 20%;
+- estrutural >= 40%;
+- semântico >= 55%;
+- score físico agregado >= 85%;
+- classificação diferente de `DESLOCAMENTO PROVÁVEL`.
+
+Essa rota não substitui a rota primária. Ela existe somente para colapso visual
+extremo, onde a quantidade de evidências independentes compensa um epicentro
+local estreito.
+
+### Causa arquitetural descoberta no INVERTIDO
+
+O módulo `inverted_face_integration.py` mantinha uma segunda implementação de
+fusão e importava `_dynamic_fusion` diretamente no carregamento do módulo.
+Depois, `best_match_memory` e `memory_hypothesis_contrast` substituíam a
+função de fusão no módulo central, mas o módulo INVERTIDO continuava apontando
+para a referência antiga.
+
+Isso permitia este fluxo incorreto:
+
+```text
+fusão central atualizada
+        ↓
+hard missing / best-match / conflito OK×NG tratados
+        ↓
+INVERTIDO executa uma segunda fusão privada antiga
+        ↓
+resultado e telemetria podem divergir
+```
+
+Essa duplicação foi removida.
+
+### Regra obrigatória de arquitetura
+
+Nenhum especialista de categoria pode possuir uma segunda implementação de
+pesos KNN/físico.
+
+`INVERTIDO`, `EMBORCADO`, `DESLOCADO`, `FALTANDO` e futuras categorias
+devem terminar na mesma função de fusão central.
+
+O módulo INVERTIDO agora:
+
+1. calcula a assinatura específica da face;
+2. adiciona suas métricas ao `detail`;
+3. consulta a memória da categoria INVERTIDO;
+4. chama dinamicamente `anomaly_memory_module._dynamic_fusion`;
+5. herda automaticamente best-match, contraste OK×NG, hard missing e futuras
+   extensões da fusão.
+
+Não importar `_dynamic_fusion` por valor para manter uma referência antiga.
+
+### Conflito bruto x conflito efetivo no debug
+
+Foi identificada outra divergência: a UI podia ler `detail.memory_conflict`
+enquanto o debug lia apenas `decision_trace.memory.memory_conflict`. Quando o
+trace não continha a chave, o debug mostrava `False` por padrão mesmo que a UI
+estivesse mostrando `CONFLITO DE MEMÓRIA • REVISÃO OBRIGATÓRIA`.
+
+O debug deve agora registrar separadamente:
+
+- `raw_memory_conflict`: conflito produzido pela comparação de memórias;
+- `memory_conflict`: conflito efetivo depois das regras de autoridade física;
+- `raw_operator_review_required`: revisão pedida pela memória;
+- `operator_review_required`: revisão efetiva;
+- `suppressed_by_hard_missing`: indica que a ausência física retirou o poder
+  de veto/revisão do KNN.
+
+O debug e a UI devem sempre concordar sobre o estado efetivo.
+
+### Regressões obrigatórias
+
+Manter testes que garantam:
+
+- vetor real INVERTIDO de colapso extremo → hard missing verdadeiro;
+- `INVERTIDO` usa a fusão central atual, nunca uma cópia privada antiga;
+- hard missing continua ativo depois do especialista INVERTIDO;
+- memória OK forte não veta ausência física;
+- conflito bruto pode permanecer na auditoria, mas não cria revisão efetiva sob
+  hard missing;
+- debug não pode reportar `memory_conflict=False` quando a UI estiver usando
+  um conflito bruto verdadeiro sem supressão;
+- assinatura e memória continuam isoladas pela categoria original.
