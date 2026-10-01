@@ -7,6 +7,7 @@ import numpy as np
 from src.services.network_receiver import NetworkReceiver
 import src.ui.network_aoi_intake_filter as intake_module
 from src.ui.network_aoi_intake_filter import (
+    _decision_record,
     install_network_aoi_intake_filter,
     validate_network_inspection,
 )
@@ -299,6 +300,73 @@ class NetworkIntakeIntegrationTests(unittest.TestCase):
         self.assertEqual(result, "processed")
         self.assertEqual(panel.network_receiver.confirmed, 0)
         self.assertEqual(panel.network_receiver.released, 0)
+
+
+class NetworkDecisionDebugConsistencyTests(unittest.TestCase):
+    def test_detail_level_conflict_is_not_lost_when_trace_memory_omits_key(self):
+        analysis = {
+            "is_defect": True,
+            "verdict": "DEFEITO REAL",
+            "confidence": 0.86,
+            "detail": {
+                "final_score": 0.85,
+                "physical_score": 0.85,
+                "fusion_rule": "physical_only",
+                "memory_conflict": True,
+                "operator_review_required": True,
+                "best_ok_similarity": 0.91,
+                "best_ng_similarity": 0.905,
+                "decision_trace": {
+                    "operator_review_required": False,
+                    "memory": {
+                        "has_memory": False,
+                        "best_similarity": 0.91,
+                    },
+                },
+            },
+        }
+
+        record = _decision_record(analysis, {"category": "INVERTIDO"})
+
+        self.assertTrue(record["memory"]["raw_memory_conflict"])
+        self.assertTrue(record["memory"]["memory_conflict"])
+        self.assertTrue(record["memory"]["raw_operator_review_required"])
+        self.assertTrue(record["memory"]["operator_review_required"])
+        self.assertTrue(record["operator_review_required"])
+        self.assertAlmostEqual(record["memory"]["best_ok_similarity"], 0.91)
+        self.assertAlmostEqual(record["memory"]["best_ng_similarity"], 0.905)
+
+    def test_hard_missing_keeps_raw_conflict_for_audit_but_effective_review_false(self):
+        analysis = {
+            "is_defect": True,
+            "verdict": "DEFEITO REAL",
+            "confidence": 0.99,
+            "detail": {
+                "final_score": 1.0,
+                "physical_score": 1.0,
+                "fusion_rule": "missing_hard_absence",
+                "missing_hard_absence": True,
+                "memory_conflict": True,
+                "operator_review_required": True,
+                "decision_trace": {
+                    "hard_missing_evidence": True,
+                    "operator_review_required": False,
+                    "memory": {
+                        "has_memory": False,
+                        "suppressed_by_hard_missing": True,
+                    },
+                },
+            },
+        }
+
+        record = _decision_record(analysis, {"category": "INVERTIDO"})
+
+        self.assertTrue(record["memory"]["raw_memory_conflict"])
+        self.assertFalse(record["memory"]["memory_conflict"])
+        self.assertTrue(record["memory"]["raw_operator_review_required"])
+        self.assertFalse(record["memory"]["operator_review_required"])
+        self.assertFalse(record["operator_review_required"])
+        self.assertTrue(record["memory"]["suppressed_by_hard_missing"])
 
 
 class NetworkInspectionValidationTests(unittest.TestCase):
