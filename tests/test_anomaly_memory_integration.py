@@ -61,6 +61,30 @@ class _FakeOrchestrator:
             },
         }
 
+    @staticmethod
+    def _engine_entry(
+        engine_id,
+        label,
+        active,
+        triggered,
+        raw_score,
+        effective_score,
+        threshold,
+        summary,
+    ):
+        return {
+            "id": engine_id,
+            "label": label,
+            "active": bool(active),
+            "triggered": bool(triggered),
+            "raw_score": float(raw_score),
+            "effective_score": float(effective_score),
+            "threshold": float(threshold),
+            "selected": False,
+            "final_influence": 0.0,
+            "summary": str(summary),
+        }
+
     def _master_fusion_score(self, shift, silk, semantic, ssim, knn):
         self.fusion_knn = knn
         trace = {
