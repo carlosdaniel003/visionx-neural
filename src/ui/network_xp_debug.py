@@ -77,6 +77,40 @@ def format_network_debug_report(record: dict | None) -> str:
         f"Imagens ignoradas no gate: {cycle.get('ignored_images', '-')}",
     ]
 
+    decision = data.get("decision", {})
+    if isinstance(decision, dict) and decision:
+        missing = decision.get("missing", {})
+        memory = decision.get("memory", {})
+        missing = missing if isinstance(missing, dict) else {}
+        memory = memory if isinstance(memory, dict) else {}
+        lines.extend(
+            [
+                "",
+                "DECISÃO VISIONX",
+                "-" * 72,
+                f"Categoria: {decision.get('category', '-')}",
+                f"Veredito: {decision.get('verdict', '-')}",
+                f"Defeito: {decision.get('is_defect', '-')}",
+                f"Confiança: {decision.get('confidence', '-')}",
+                f"Score final: {decision.get('final_score', '-')}",
+                f"Score físico: {decision.get('physical_score', '-')}",
+                f"Regra de fusão: {decision.get('fusion_rule', '-')}",
+                f"Motor dominante: {decision.get('dominant_engine', '-')}",
+                f"Revisão obrigatória: {decision.get('operator_review_required', '-')}",
+                f"Ausência física forte: {decision.get('hard_missing_evidence', '-')}",
+                f"Missing score: {missing.get('missing_score', '-')}",
+                f"Missing classe: {missing.get('missing_classification', '-')}",
+                f"Missing cobertura: {missing.get('missing_changed_coverage', '-')}",
+                f"Missing fundo exposto: {missing.get('missing_background_exposure', '-')}",
+                f"Missing hard reason: {missing.get('missing_hard_absence_reason', '-')}",
+                f"KNN melhor rótulo: {memory.get('best_match_label', '-')}",
+                f"KNN similaridade: {memory.get('best_similarity', '-')}",
+                f"KNN conflito: {memory.get('memory_conflict', '-')}",
+                f"KNN suprimido por ausência física: {memory.get('suppressed_by_hard_missing', '-')}",
+                f"Motivo final: {decision.get('reason', '-')}",
+            ]
+        )
+
     if hints:
         lines.extend(["", "INDÍCIOS DIAGNÓSTICOS", "-" * 72])
         for hint in hints:
