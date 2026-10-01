@@ -41,10 +41,10 @@ def memory_status_from_detail(detail: dict | None) -> dict:
     prototype_stats = _dict(payload.get("memory_prototype_stats"))
     hypotheses = _dict(payload.get("hypotheses"))
 
-    conflict = bool(
+    raw_conflict = bool(
         _pick(memory, "memory_conflict", payload.get("memory_conflict", False))
     )
-    review_required = bool(
+    raw_review_required = bool(
         _pick(
             memory,
             "operator_review_required",
@@ -54,6 +54,18 @@ def memory_status_from_detail(detail: dict | None) -> dict:
             ),
         )
     )
+    hard_missing_override = bool(
+        trace.get("hard_missing_evidence", False)
+        or memory.get("suppressed_by_hard_missing", False)
+        or payload.get("missing_hard_absence", False)
+        or str(trace.get("fusion_rule", "")) == "missing_hard_absence"
+    )
+
+    # A memória pode continuar reportando um conflito bruto para auditoria,
+    # mas esse conflito não representa revisão quando a ausência física forte
+    # já assumiu autoridade sobre a decisão.
+    conflict = bool(raw_conflict and not hard_missing_override)
+    review_required = bool(raw_review_required and not hard_missing_override)
     has_memory = bool(
         _pick(memory, "has_memory", payload.get("has_memory", False))
     )
@@ -179,7 +191,13 @@ def memory_status_from_detail(detail: dict | None) -> dict:
         "category_candidate_count": category_candidate_count,
         "compared_candidate_count": compared_candidate_count,
         "conflict": conflict,
+        "raw_conflict": raw_conflict,
         "review_required": review_required,
+        "raw_review_required": raw_review_required,
+        "hard_missing_override": hard_missing_override,
+        "memory_suppressed_by_hard_missing": bool(
+            memory.get("suppressed_by_hard_missing", False)
+        ),
         "role": str(memory.get("role", payload.get("memory_reason", "MEMÓRIA"))),
         "policy": str(memory.get("policy", payload.get("memory_policy", ""))),
         "scope": str(memory.get("memory_scope", payload.get("memory_scope", "none"))),
@@ -223,6 +241,13 @@ def memory_summary_text(detail: dict | None) -> str:
     model = memory_status_from_detail(detail)
     if not model["active"]:
         return "Sem dados no momento."
+
+    if model["hard_missing_override"]:
+        leader = model["leading_hypothesis"] or "-"
+        return (
+            "AUSÊNCIA FÍSICA FORTE • KNN somente auditoria • "
+            f"hipótese {leader} • match {_pct(model['combined_similarity'])}"
+        )
 
     if model["conflict"]:
         return (
