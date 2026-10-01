@@ -19,7 +19,7 @@
 **Arquivo visual NG opcional:**
 - Toggle desligado por padrão; desativado mantém o fluxo atual sem criar cópias extras.
 - Ativado: cada evento válido do Windows XP pode gerar **no máximo uma** evidência final `NG` em `public/ng_archive/`, usando exatamente o mesmo frame completo disponibilizado pelo botão `Copiar imagem XP`.
-- Nome: `AAAA-MM-DD_HH-MM-SS-ms_CATEGORIA.png`.
+- Nome: `DDdMMmAAAA_HHhMMminSSsmmmms_CATEGORIA.png`, por exemplo `01d10m2026_10h22min21s943ms_FALTANDO.png`. O formato mantém dia, mês, ano, hora, minuto, segundo e milissegundo visualmente identificáveis sem deixar o nome excessivamente longo.
 - A fonte é única: `src/services/network_xp_frame.py` valida que o `event_id` do frame preservado é o mesmo do diagnóstico atual. O botão `Copiar imagem XP` e o arquivo visual NG usam essa mesma função.
 - Não existe fallback para `current_ng` ou outro recorte. Se o frame XP do evento atual não estiver disponível, nenhuma imagem substituta é arquivada.
 - O arquivo é evidência/auditoria e não participa de treinamento, protótipos ou votação KNN.
