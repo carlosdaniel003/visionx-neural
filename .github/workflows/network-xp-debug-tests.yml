@@ -12,6 +12,7 @@ on:
       - "src/ui/control_panel.py"
       - "src/services/anomaly_learning.py"
       - "src/services/decision_persistence.py"
+      - "src/services/network_xp_frame.py"
       - "src/core/experts/knn_expert.py"
       - "src/ui/responsive_layout.py"
       - "tests/test_network_aoi_intake_filter.py"
