@@ -572,3 +572,232 @@ Manter testes que garantam:
 - debug não pode reportar `memory_conflict=False` quando a UI estiver usando
   um conflito bruto verdadeiro sem supressão;
 - assinatura e memória continuam isoladas pela categoria original.
+
+
+## Dual-Scale Presence — epicentro local + contexto físico do componente
+
+### Motivação
+
+Foi identificado que a ROI/epicentro fornecida pela AOI pode representar apenas
+uma pequena fração do componente. Nesses casos, uma região interna escura pode
+continuar parecida mesmo depois que o corpo inteiro do componente desapareceu.
+
+Evento real de referência: `912c92754da3433d8a2a0980052e2b78`, categoria
+`FALTANDO`, em 01/10/2026.
+
+O evento apresentava:
+
+- caixa global aproximadamente `547 × 261 px`;
+- caixa de foco aproximadamente `140 × 108 px`;
+- área local equivalente a aproximadamente 10,6% da área global;
+- `missing_score` local ≈ 34,9%;
+- cobertura local ≈ 4,1%;
+- similaridade direta local ≈ 87,5%;
+- classificação local: `ROI CONFORME`;
+- score físico agregado ≈ 85%;
+- divergência estrutural ≈ 56%;
+- evidência semântica ≈ 56%;
+- KNN encontrou memória `OK` ≈ 89,4%;
+- consequência antiga: `best_match_intermediate` com KNN dominante e
+  resultado incorreto `FALHA FALSA`.
+
+O problema não era somente calibração de thresholds. A escala local estava
+respondendo à pergunta 'este pequeno patch ainda parece parecido?', enquanto a
+decisão de presença precisava responder 'o componente como um todo ainda
+existe?'.
+
+### Arquitetura
+
+Foi criado:
+
+`src/core/experts/dual_scale_presence.py`
+
+A `DualScalePresenceAnalyzer` adiciona uma segunda escala sem remover o
+epicentro original.
+
+```text
+imagem AOI
+    ↓
+epicentro / ROI local
+    ├── escala local: precisão do defeito
+    │
+    └── quando necessário
+         ↓
+       ROI contextual expandida
+         ↓
+       presença física do componente
+         ↓
+       hard missing?
+         ├── SIM → KNN somente auditoria
+         └── NÃO → fluxo normal de fusão/memória
+```
+
+Essa funcionalidade deve ser chamada de **Dual-Scale Presence** para não ser
+confundida com `dual_scale_memory.py`, que trata da representação/memória KNN.
+
+### Quando a segunda escala é executada
+
+A análise contextual não roda indiscriminadamente em toda inspeção.
+
+Ela é ativada quando:
+
+1. a área do epicentro representa <= 25% da área global do componente; ou
+2. a escala local diz que não há defeito, mas os motores estrutural/semântico
+   apresentam suporte físico independente suficiente.
+
+O estado de contradição é registrado como `missing_scale_disagreement`.
+
+Para suporte físico contextual, a política atual exige:
+
+- estrutural >= 45% E semântico >= 45%; ou
+- um dos dois >= 65%.
+
+### Construção da ROI contextual
+
+A ROI contextual é centrada no epicentro e cresce sem sair da imagem:
+
+- expansão mínima em torno do foco: 2,5× por eixo;
+- referência mínima adicional: 55% das dimensões da caixa global;
+- largura/altura finais limitadas ao recorte real recebido.
+
+No evento de referência:
+
+```text
+local:    140 × 108
+contexto: 350 × 270
+```
+
+Essa expansão mantém o epicentro como âncora, mas passa a incluir o corpo do
+componente e sua relação com pads/footprint ao redor.
+
+### Métricas contextuais
+
+A segunda escala reutiliza o mesmo pipeline determinístico de visão, porém em
+uma caixa maior. Ela registra:
+
+- `missing_context_score`;
+- `missing_context_coverage`;
+- `missing_context_residual_mean`;
+- `missing_context_residual_p90`;
+- `missing_context_structure_loss`;
+- `missing_context_edge_mismatch`;
+- `missing_context_direct_similarity`;
+- `missing_context_appearance_loss`;
+- `missing_context_best_similarity`;
+- `missing_context_box`;
+- `missing_local_global_area_ratio`;
+- `missing_context_hard_absence`;
+- `missing_context_hard_reason`.
+
+### Contrato para ausência contextual forte
+
+A rota contextual normal exige simultaneamente:
+
+- score contextual >= 72%;
+- cobertura contextual >= 30%;
+- residual médio contextual >= 50%;
+- perda de aparência contextual >= 35%;
+- melhor correspondência próxima < 35%;
+- perda estrutural >= 20% OU incompatibilidade de bordas >= 30%;
+- suporte físico independente estrutural/semântico conforme regra acima.
+
+Existe também uma rota contextual extrema, reservada para desaparecimento
+inequívoco mesmo quando o suporte global não estiver disponível:
+
+- score >= 85%;
+- cobertura >= 45%;
+- residual médio >= 60%;
+- perda de aparência >= 50%;
+- melhor correspondência próxima < 25%.
+
+A rota extrema não deve ser usada para simples diferença parcial ou
+deslocamento.
+
+### Reprodução do evento real
+
+Com o mesmo frame e a mesma geometria do evento
+`912c92754da3433d8a2a0980052e2b78`, a análise contextual produz
+aproximadamente:
+
+- score contextual ≈ 79,5%;
+- cobertura ≈ 38,8%;
+- residual médio ≈ 68,8%;
+- P90 ≈ 84,0%;
+- perda estrutural ≈ 32,7%;
+- incompatibilidade de bordas ≈ 39,2%;
+- similaridade direta ≈ 56,2%;
+- perda de aparência ≈ 43,8%;
+- melhor correspondência próxima ≈ 19,8%.
+
+Com estrutural ≈ 56% e semântico ≈ 56%, esse vetor confirma ausência física
+contextual, apesar de a pequena ROI local ter sido classificada como conforme.
+
+### Autoridade sobre memória
+
+Quando `missing_context_hard_absence == True`, o resultado é promovido para:
+
+```text
+missing_hard_absence = True
+fusion_rule = missing_hard_absence
+motor dominante = missing
+peso físico = 100%
+peso KNN = 0%
+confidence = 0.99
+```
+
+A memória continua sendo consultada e exibida para auditoria, mas não pode
+anular uma ausência física contextual confirmada.
+
+Isso vale tanto para o especialista dedicado de `FALTANDO` quanto para a
+`PhysicalAbsenceGuard` transversal de `EMBORCADO`, `DESLOCADO` e `INVERTIDO`.
+
+### Isolamento e segurança
+
+A Dual-Scale Presence:
+
+- não altera a categoria recebida da AOI;
+- não mistura memórias entre categorias;
+- não injeta máscara contextual na assinatura KNN transversal;
+- não muda regras de adesivo;
+- não substitui o epicentro local;
+- não transforma automaticamente todo `FALTANDO` em NG;
+- somente ganha autoridade quando o contrato contextual de ausência física é
+  satisfeito.
+
+Se o contexto não confirmar ausência, a decisão continua no fluxo normal com
+motores físicos, KNN, contraste OK×NG e revisão humana quando aplicável.
+
+### Debug obrigatório
+
+`Copiar debug XP` deve registrar:
+
+- política dual-scale;
+- se a análise contextual foi ativada/executada;
+- razão área local/global;
+- desacordo entre escalas;
+- caixa contextual;
+- score/cobertura/residual contextual;
+- perda estrutural e incompatibilidade de bordas contextual;
+- similaridade/perda de aparência contextual;
+- melhor match próximo contextual;
+- resultado de hard absence contextual;
+- suporte físico independente e motivo final.
+
+O debugger visual de presença deve mostrar explicitamente `LOCAL + CONTEXTO` e
+as principais métricas contextuais quando a segunda escala tiver sido
+executada.
+
+### Regressões obrigatórias
+
+Manter testes que garantam:
+
+- geometria real 140×108 dentro de 547×261 dispara a segunda escala;
+- evento real reproduzido possui razão local/global ≈ 10,6%;
+- contexto do evento real confirma hard missing;
+- contexto sem suporte físico suficiente não promove ausência, exceto pela
+  rota extrema;
+- match próximo plausível bloqueia hard missing contextual;
+- FALTANDO localmente conforme pode ser promovido por contexto confirmado;
+- guarda transversal pode ser promovida pelo contexto;
+- hard missing contextual continua zerando o peso KNN na fusão;
+- debug e UI expõem claramente as duas escalas.
