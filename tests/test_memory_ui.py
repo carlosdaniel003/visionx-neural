@@ -68,6 +68,36 @@ def strong_ng_detail():
     }
 
 
+def hard_missing_conflict_detail():
+    detail = conflict_detail()
+    detail.update(
+        {
+            "missing_hard_absence": True,
+            "missing_hard_absence_reason": (
+                "estrutura esperada colapsou sem correspondência próxima válida"
+            ),
+        }
+    )
+    detail["decision_trace"].update(
+        {
+            "hard_missing_evidence": True,
+            "fusion_rule": "missing_hard_absence",
+            "operator_review_required": False,
+            "dominant_engine": "missing",
+            "final_score": 1.0,
+            "confidence": 0.99,
+            "weights": {"physical": 1.0, "knn": 0.0},
+        }
+    )
+    detail["decision_trace"]["memory"].update(
+        {
+            "suppressed_by_hard_missing": True,
+            "role": "AUDITORIA — SEM VETO SOBRE AUSÊNCIA FÍSICA",
+        }
+    )
+    return detail
+
+
 def conflict_detail():
     detail = strong_ng_detail()
     detail.update(
@@ -138,6 +168,20 @@ class MemoryStatusModelTests(unittest.TestCase):
         self.assertAlmostEqual(model["hypothesis_margin"], 0.003)
         self.assertIn("CONFLITO DE MEMÓRIA", memory_summary_text(conflict_detail()))
         self.assertIn("revisão obrigatória", memory_summary_text(conflict_detail()))
+
+    def test_hard_missing_suppresses_raw_memory_conflict_in_ui_model(self):
+        detail = hard_missing_conflict_detail()
+        model = memory_status_from_detail(detail)
+        summary = memory_summary_text(detail)
+
+        self.assertTrue(model["raw_conflict"])
+        self.assertTrue(model["hard_missing_override"])
+        self.assertTrue(model["memory_suppressed_by_hard_missing"])
+        self.assertFalse(model["conflict"])
+        self.assertFalse(model["review_required"])
+        self.assertIn("AUSÊNCIA FÍSICA FORTE", summary)
+        self.assertIn("KNN somente auditoria", summary)
+        self.assertNotIn("revisão obrigatória", summary)
 
     def test_legacy_epicenter_only_is_presented_without_fake_context(self):
         detail = {
@@ -275,6 +319,21 @@ class MemoryStatusUiWrapperTests(unittest.TestCase):
         self.assertIn("REVISÃO OBRIGATÓRIA", panel.lbl_verdict.text)
         self.assertIn("#ffb454", panel.lbl_verdict.style)
 
+    def test_hard_missing_conflict_does_not_overwrite_ng_verdict_with_review(self):
+        panel = FakePanel()
+        analysis = {
+            "verdict": "DEFEITO REAL",
+            "confidence": 0.99,
+            "detail": hard_missing_conflict_detail(),
+        }
+
+        panel._update_confidence_panel(analysis)
+
+        self.assertEqual(panel.lbl_verdict.text, "DEFEITO REAL")
+        self.assertNotIn("REVISÃO OBRIGATÓRIA", panel.lbl_verdict.text)
+        self.assertIn("AUSÊNCIA FÍSICA FORTE", panel.lbl_db_info.text)
+        self.assertIn("KNN somente auditoria", panel.lbl_db_info.text)
+
     def test_normal_summary_preserves_original_verdict(self):
         panel = FakePanel()
         analysis = {
@@ -315,6 +374,16 @@ class MemoryWidgetTests(unittest.TestCase):
         self.assertFalse(widget.has_memory)
         self.assertTrue(widget.memory_available)
         self.assertTrue(widget.memory_conflict)
+
+    def test_hard_missing_widget_does_not_expose_memory_conflict_as_review(self):
+        widget = KNNSpectrumWidget()
+        widget.update_data(hard_missing_conflict_detail())
+
+        self.assertTrue(widget.model["raw_conflict"])
+        self.assertTrue(widget.model["hard_missing_override"])
+        self.assertFalse(widget.memory_conflict)
+        self.assertFalse(widget.model["review_required"])
+        self.assertAlmostEqual(widget.best_sim, 0.975)
 
     def test_widget_uses_best_hypothesis_for_yellow_match_bar(self):
         widget = KNNSpectrumWidget()
