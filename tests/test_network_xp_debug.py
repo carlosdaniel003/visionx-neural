@@ -114,7 +114,10 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
 
         report = format_network_debug_report(record)
 
-        self.assertIn("DECISÃO ODIN", report)
+        self.assertIn(
+            "DECISÃO ODIN - Observador Digital Inteligente",
+            report,
+        )
         self.assertIn("Categoria: FALTANDO", report)
         self.assertIn("Regra de fusão: missing_hard_absence", report)
         self.assertIn("Ausência física forte: True", report)
