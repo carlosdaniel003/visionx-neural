@@ -590,6 +590,10 @@ def _decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         "missing_residual_p90",
         "missing_hard_absence",
         "missing_hard_absence_reason",
+        "missing_cross_category_guard",
+        "missing_guard_policy",
+        "missing_guard_source_category",
+        "missing_guard_physical_support",
     )
     missing = {
         key: _json_safe(detail.get(key))
