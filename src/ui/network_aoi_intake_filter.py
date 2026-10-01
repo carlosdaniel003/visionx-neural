@@ -601,6 +601,31 @@ def _decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         if key in detail
     }
 
+    raw_memory_conflict = bool(
+        memory.get(
+            "memory_conflict",
+            detail.get("memory_conflict", False),
+        )
+    )
+    raw_memory_review = bool(
+        memory.get(
+            "operator_review_required",
+            detail.get("operator_review_required", False),
+        )
+    )
+    hard_missing = bool(
+        trace.get("hard_missing_evidence", False)
+        or memory.get("suppressed_by_hard_missing", False)
+        or detail.get("missing_hard_absence", False)
+        or str(trace.get("fusion_rule", "")) == "missing_hard_absence"
+    )
+    effective_memory_conflict = bool(
+        raw_memory_conflict and not hard_missing
+    )
+    effective_memory_review = bool(
+        raw_memory_review and not hard_missing
+    )
+
     return {
         "category": str((aoi_info or {}).get("category", "") or ""),
         "is_defect": bool(analysis.get("is_defect", False)),
@@ -614,6 +639,7 @@ def _decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         "operator_review_required": bool(
             analysis.get("production_review_required", False)
             or trace.get("operator_review_required", False)
+            or effective_memory_review
         ),
         "hard_missing_evidence": bool(
             trace.get("hard_missing_evidence", False)
@@ -621,17 +647,48 @@ def _decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         ),
         "missing": missing,
         "memory": {
-            "has_memory": bool(memory.get("has_memory", False)),
-            "memory_available": bool(memory.get("memory_available", False)),
-            "best_match_label": str(memory.get("best_match_label", "") or ""),
-            "best_similarity": _json_safe(memory.get("best_similarity")),
-            "best_ok_similarity": _json_safe(memory.get("best_ok_similarity")),
-            "best_ng_similarity": _json_safe(memory.get("best_ng_similarity")),
-            "memory_conflict": bool(memory.get("memory_conflict", False)),
-            "role": str(memory.get("role", "") or ""),
-            "suppressed_by_hard_missing": bool(
-                memory.get("suppressed_by_hard_missing", False)
+            "has_memory": bool(
+                memory.get("has_memory", detail.get("has_memory", False))
             ),
+            "memory_available": bool(
+                memory.get(
+                    "memory_available",
+                    detail.get("memory_available", False),
+                )
+            ),
+            "best_match_label": str(
+                memory.get(
+                    "best_match_label",
+                    detail.get("best_match_label", ""),
+                )
+                or ""
+            ),
+            "best_similarity": _json_safe(
+                memory.get(
+                    "best_similarity",
+                    detail.get("best_similarity"),
+                )
+            ),
+            "best_ok_similarity": _json_safe(
+                memory.get(
+                    "best_ok_similarity",
+                    detail.get("best_ok_similarity"),
+                )
+            ),
+            "best_ng_similarity": _json_safe(
+                memory.get(
+                    "best_ng_similarity",
+                    detail.get("best_ng_similarity"),
+                )
+            ),
+            "memory_conflict": effective_memory_conflict,
+            "raw_memory_conflict": raw_memory_conflict,
+            "operator_review_required": effective_memory_review,
+            "raw_operator_review_required": raw_memory_review,
+            "role": str(
+                memory.get("role", detail.get("memory_reason", "")) or ""
+            ),
+            "suppressed_by_hard_missing": hard_missing,
         },
     }
 
