@@ -18,6 +18,7 @@ on:
       - "src/services/ng_image_archive.py"
       - "src/services/network_xp_frame.py"
       - "src/services/capture_evidence.py"
+      - "src/services/capture_debug_payload.py"
       - "src/services/screen_monitor.py"
       - "src/ui/network_xp_debug.py"
       - "src/ui/network_aoi_intake_filter.py"
@@ -70,6 +71,7 @@ jobs:
             src/services/ng_image_archive.py `
             src/services/network_xp_frame.py `
             src/services/capture_evidence.py `
+            src/services/capture_debug_payload.py `
             src/services/screen_monitor.py `
             src/ui/network_xp_debug.py `
             src/ui/network_aoi_intake_filter.py `
