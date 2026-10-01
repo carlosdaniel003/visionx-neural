@@ -191,3 +191,57 @@ Manter testes que garantam:
 - hard missing alcança 99% de confiança e pode passar pela trava existente de
   Produção sem reduzir globalmente o limiar de confiança;
 - casos ambíguos continuam seguindo a política normal.
+
+
+### Regra de consistência visual — hard missing não pode reaparecer como revisão
+
+Foi identificado um segundo ponto após a proteção de hard missing: a camada de
+decisão podia corretamente concluir `missing_hard_absence`, zerar o peso do
+KNN e remover a revisão, enquanto a camada visual de memória ainda lia o
+`memory_conflict` bruto do KNN e sobrescrevia o texto do veredito com
+`CONFLITO DE MEMÓRIA • REVISÃO OBRIGATÓRIA`.
+
+Essa divergência entre núcleo e interface é proibida.
+
+Quando qualquer um dos sinais abaixo estiver presente:
+
+- `decision_trace.hard_missing_evidence == True`;
+- `decision_trace.fusion_rule == "missing_hard_absence"`;
+- `decision_trace.memory.suppressed_by_hard_missing == True`;
+- `detail.missing_hard_absence == True`;
+
+a UI deve considerar:
+
+```text
+conflito bruto KNN = somente auditoria
+revisão visual = False
+veredito exibido = o veredito final do núcleo
+```
+
+O conflito bruto continua preservado na telemetria para investigação, mas deve
+ser distinguido do conflito efetivo que possui autoridade para exigir operador.
+
+O painel KNN deve mostrar nesse estado algo equivalente a:
+
+```text
+AUSÊNCIA FÍSICA FORTE
+KNN SOMENTE AUDITORIA
+```
+
+e nunca `REVISÃO OBRIGATÓRIA`.
+
+A camada `memory_status_model.py` é responsável por separar:
+
+- `raw_conflict`: conflito bruto calculado pela memória;
+- `conflict`: conflito efetivo para apresentação;
+- `raw_review_required`: pedido bruto de revisão da memória;
+- `review_required`: revisão efetiva;
+- `hard_missing_override`: autoridade física que suprimiu a memória.
+
+A telemetria do hard missing deve preservar também `best_ok_similarity`,
+`best_ng_similarity`, `hypothesis_margin` e `memory_conflict`, mesmo quando
+o KNN recebe peso zero, para que o debug continue auditável.
+
+Regressão obrigatória: hard missing + conflito KNN bruto deve manter
+`DEFEITO REAL`, confiança 99%, zero peso KNN e nenhuma mensagem visual de
+revisão obrigatória.
