@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 
+from src.ui.branding import DECISION_DEBUG_TITLE, XP_DEBUG_TITLE
 from src.services.network_xp_frame import (
     network_xp_frame_available,
     network_xp_frame_snapshot,
@@ -38,7 +39,7 @@ def format_network_debug_report(record: dict | None) -> str:
     data = _json_safe(record if isinstance(record, dict) else {})
     if not data:
         return (
-            "VISIONX - DEBUG DE ENTRADA WINDOWS XP\n"
+            f"{XP_DEBUG_TITLE}\n"
             "Nenhuma imagem recebida do XP possui diagnóstico registrado."
         )
 
@@ -48,7 +49,7 @@ def format_network_debug_report(record: dict | None) -> str:
     hints = validation.get("diagnostic_hints", []) or []
 
     lines = [
-        "VISIONX - DEBUG DE ENTRADA WINDOWS XP",
+        XP_DEBUG_TITLE,
         "=" * 72,
         f"Schema: {data.get('schema', DEBUG_SCHEMA)}",
         f"Evento: {data.get('event_id', '-')}",
@@ -86,7 +87,7 @@ def format_network_debug_report(record: dict | None) -> str:
         lines.extend(
             [
                 "",
-                "DECISÃO VISIONX",
+                DECISION_DEBUG_TITLE,
                 "-" * 72,
                 f"Categoria: {decision.get('category', '-')}",
                 f"Veredito: {decision.get('verdict', '-')}",
