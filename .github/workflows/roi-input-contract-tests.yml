@@ -19,6 +19,7 @@ on:
       - "tests/test_roi_input_contract.py"
       - "tests/test_roi_visual_alignment.py"
       - "tests/test_debugger_canonical_roi_contract.py"
+      - "tests/test_missing_component_expert.py"
       - ".github/workflows/roi-input-contract-tests.yml"
   workflow_dispatch:
 
@@ -54,7 +55,7 @@ jobs:
             src/ui/widgets/missing_debugger.py \
             tests/test_roi_input_contract.py \
             tests/test_roi_visual_alignment.py \
-            tests/test_debugger_canonical_roi_contract.py
+            tests/test_debugger_canonical_roi_contract.py             tests/test_missing_component_expert.py
 
       - name: Unit tests
         run: |
