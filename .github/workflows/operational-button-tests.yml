@@ -17,6 +17,10 @@ on:
       - "src/ui/control_panel_ui.py"
       - "src/services/ng_image_archive.py"
       - "src/services/network_xp_frame.py"
+      - "src/services/capture_evidence.py"
+      - "src/services/screen_monitor.py"
+      - "src/ui/network_xp_debug.py"
+      - "src/ui/network_aoi_intake_filter.py"
       - "src/config/settings.py"
       - "src/services/network_receiver.py"
       - "src/services/image_cycle_gate.py"
@@ -65,6 +69,10 @@ jobs:
             src/ui/control_panel_ui.py `
             src/services/ng_image_archive.py `
             src/services/network_xp_frame.py `
+            src/services/capture_evidence.py `
+            src/services/screen_monitor.py `
+            src/ui/network_xp_debug.py `
+            src/ui/network_aoi_intake_filter.py `
             src/services/network_receiver.py `
             src/services/image_cycle_gate.py `
             main.py
