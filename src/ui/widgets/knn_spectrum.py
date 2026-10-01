@@ -112,7 +112,13 @@ class KNNSpectrumWidget(QWidget):
 
     def _draw_header(self, painter: QPainter, rect: QRectF) -> None:
         model = self.model
-        if model["conflict"]:
+        if model["hard_missing_override"]:
+            color = QColor("#ff6262")
+            title = (
+                "AUSÊNCIA FÍSICA FORTE • "
+                f"KNN AUDITORIA • MATCH {self._pct(model['combined_similarity'])}"
+            )
+        elif model["conflict"]:
             color = QColor("#ffb454")
             title = (
                 "CONFLITO DE MEMÓRIA • "
@@ -245,11 +251,14 @@ class KNNSpectrumWidget(QWidget):
             self._elide(painter, margin_text, width),
         )
 
-        result = (
-            "CONFLITO • operador 0=OK / 1=NG"
-            if model["conflict"]
-            else f"Resultado da memória: {model['leading_hypothesis'] or '-'}"
-        )
+        if model["hard_missing_override"]:
+            result = (
+                "KNN somente auditoria • ausência física tem prioridade"
+            )
+        elif model["conflict"]:
+            result = "CONFLITO • operador 0=OK / 1=NG"
+        else:
+            result = f"Resultado da memória: {model['leading_hypothesis'] or '-'}"
         painter.drawText(
             QRectF(x, rect.bottom() - 12, width, 11),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
