@@ -33,6 +33,8 @@ class MissingDebuggerWidget(QWidget):
         self.displacement_dy = 0.0
         self.displacement_pixels = 0.0
         self.background_signal = 0.0
+        self.hard_absence = False
+        self.hard_absence_reason = ""
         self.roi_width = 0
         self.roi_height = 0
         self.reason = ""
@@ -175,6 +177,12 @@ class MissingDebuggerWidget(QWidget):
         )
         self.background_signal = float(
             detail.get("missing_background_exposure", 0.0)
+        )
+        self.hard_absence = bool(
+            detail.get("missing_hard_absence", False)
+        )
+        self.hard_absence_reason = str(
+            detail.get("missing_hard_absence_reason", "")
         )
         self.reason = str(detail.get("missing_reason", ""))
 
@@ -332,12 +340,18 @@ class MissingDebuggerWidget(QWidget):
         status_color = QColor("#ff6262") if self.is_defect else QColor("#4ade80")
         painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
         painter.setPen(status_color)
+        status_text = (
+            "AUSÊNCIA FÍSICA FORTE • "
+            if self.hard_absence
+            else ""
+        )
         painter.drawText(
             padding,
             height - 94,
             self._elide(
                 painter,
-                f"Expectativa: {self._patch_label()} • Resultado: {self.classification}",
+                f"{status_text}Expectativa: {self._patch_label()} • "
+                f"Resultado: {self.classification}",
                 width - padding * 2,
             ),
         )
@@ -392,6 +406,11 @@ class MissingDebuggerWidget(QWidget):
             f"{self.best_similarity:.0%} • possível deslocamento X:{self.displacement_dx:+.1f}px "
             f"Y:{self.displacement_dy:+.1f}px ({self.displacement_pixels:.1f}px) • "
             f"sinal de fundo {self.background_signal:.0%}"
+            + (
+                f" • hard-missing: {self.hard_absence_reason}"
+                if self.hard_absence
+                else ""
+            )
         )
         painter.drawText(
             padding,
