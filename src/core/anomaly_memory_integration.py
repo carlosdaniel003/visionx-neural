@@ -301,13 +301,25 @@ def _dynamic_fusion(
     memory_similarity = float(knn.get("best_similarity", 0.0)) if knn else 0.0
     neighbors = int(knn.get("n_neighbors", 0)) if knn else 0
 
+    hard_absence = bool(
+        isinstance(missing_result, dict)
+        and missing_result.get("missing_hard_absence", False)
+    )
+
     physical_weight = 1.0
     memory_weight = 0.0
     fusion_rule = "physical_only"
     memory_role = "SEM MEMÓRIA"
     final_score = physical_score
 
-    if has_memory:
+    if hard_absence:
+        physical_score = 1.0
+        final_score = 1.0
+        physical_weight = 1.0
+        memory_weight = 0.0
+        fusion_rule = "missing_hard_absence"
+        memory_role = "AUDITORIA — SEM VETO SOBRE AUSÊNCIA FÍSICA"
+    elif has_memory:
         if physical_defect:
             if memory_similarity >= 0.85:
                 physical_weight, memory_weight = 0.0, 1.0
@@ -359,11 +371,18 @@ def _dynamic_fusion(
         )
     )
 
-    for engine in engines:
-        if engine["selected"]:
-            engine["final_influence"] = float(
-                engine["effective_score"] * physical_weight
+    if hard_absence:
+        for engine in engines:
+            engine["selected"] = engine.get("id") == "missing"
+            engine["final_influence"] = (
+                1.0 if engine.get("id") == "missing" else 0.0
             )
+    else:
+        for engine in engines:
+            if engine["selected"]:
+                engine["final_influence"] = float(
+                    engine["effective_score"] * physical_weight
+                )
 
     memory_entry = orchestrator._engine_entry(
         "knn",
@@ -382,9 +401,17 @@ def _dynamic_fusion(
     )
     memory_entry["selected"] = bool(memory_weight > 0.0)
     memory_entry["final_influence"] = float(memory_vote * memory_weight)
+    if hard_absence:
+        memory_entry["triggered"] = False
+        memory_entry["summary"] = (
+            "Memória preservada somente para auditoria; ausência física "
+            "forte tem prioridade"
+        )
     engines.append(memory_entry)
 
-    if memory_weight >= physical_weight and memory_weight > 0:
+    if hard_absence:
+        dominant_engine = "missing"
+    elif memory_weight >= physical_weight and memory_weight > 0:
         dominant_engine = "knn"
     elif physical_dominant:
         dominant_engine = physical_dominant["id"]
@@ -410,6 +437,8 @@ def _dynamic_fusion(
         "physical_defect": bool(physical_defect),
         "dominant_engine": dominant_engine,
         "fusion_rule": fusion_rule,
+        "hard_missing_evidence": bool(hard_absence),
+        "operator_review_required": False,
         "weights": {
             "physical": float(physical_weight),
             "knn": float(memory_weight),
@@ -420,6 +449,10 @@ def _dynamic_fusion(
             "best_similarity": float(memory_similarity),
             "n_neighbors": neighbors,
             "role": memory_role,
+            "suppressed_by_hard_missing": bool(hard_absence),
+            "operator_review_required": False if hard_absence else bool(
+                (knn or {}).get("operator_review_required", False)
+            ),
             "best_match_label": str(
                 (knn or {}).get("best_match_label", "")
             ),
