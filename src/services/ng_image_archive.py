@@ -38,7 +38,9 @@ def build_ng_archive_filename(
 ) -> str:
     moment = timestamp or datetime.now()
     return (
-        f"{moment:%Y-%m-%d_%H-%M-%S}-{moment.microsecond // 1000:03d}_"
+        f"{moment:%d}d{moment:%m}m{moment:%Y}_"
+        f"{moment:%H}h{moment:%M}min{moment:%S}s"
+        f"{moment.microsecond // 1000:03d}ms_"
         f"{safe_archive_category(category)}.png"
     )
 
