@@ -283,3 +283,169 @@ o KNN recebe peso zero, para que o debug continue auditável.
 Regressão obrigatória: hard missing + conflito KNN bruto deve manter
 `DEFEITO REAL`, confiança 99%, zero peso KNN e nenhuma mensagem visual de
 revisão obrigatória.
+
+
+## Guarda transversal de ausência física — categoria AOI não define a realidade visual
+
+### Problema observado em 01/10/2026 — EMBORCADO com componente ausente
+
+Foi registrado o evento `1ef8605d905e4fac998cee708c89cbf6`.
+A AOI classificou a ocorrência como `EMBORCADO`, mas visualmente o componente
+do gabarito estava presente e a imagem de teste mostrava somente a região/footprint
+onde o componente deveria existir.
+
+Antes desta correção:
+
+```text
+Categoria AOI = EMBORCADO
+        ↓
+MissingComponentExpert não executava
+        ↓
+motores físicos = defeito forte
+        ↓
+KNN encontra OK parecido com ~90,6%
+        ↓
+best_match_strong
+        ↓
+peso KNN = 100%
+        ↓
+FALHA FALSA
+```
+
+O debug desse caso mostrava:
+
+- `physical_score = 1.0`;
+- divergência estrutural ≈ 54%;
+- evidência semântica ≈ 71%;
+- memória OK ≈ 90,6%;
+- `fusion_rule = best_match_strong`;
+- `dominant_engine = knn`;
+- resultado incorreto: `FALHA FALSA`.
+
+A causa arquitetural era assumir que ausência física só poderia existir quando
+o texto da AOI fosse `FALTANDO`. A categoria da AOI é um rótulo do equipamento,
+não uma prova de que o componente está presente.
+
+### Solução
+
+Foi criado `src/core/experts/physical_absence_guard.py`.
+
+A `PhysicalAbsenceGuard` é uma guarda visual independente da categoria
+`FALTANDO`. Ela atua somente nas categorias:
+
+- `EMBORCADO`;
+- `DESLOCADO`;
+- `INVERTIDO`.
+
+`MUITO ADESIVO` fica explicitamente fora desta guarda porque possui física e
+região de interesse próprias. `FALTANDO` continua usando seu especialista
+dedicado e não passa pela guarda transversal.
+
+A guarda não renomeia a categoria. Um evento `EMBORCADO` continua sendo
+persistido, consultado e auditado como `EMBORCADO`.
+
+### Contrato mais restritivo
+
+Fora de `FALTANDO`, a ausência física só é aceita quando todas as condições
+abaixo são satisfeitas:
+
+- score da guarda >= 82%;
+- cobertura alterada >= 45%;
+- residual médio >= 38%;
+- perda de aparência >= 40%;
+- similaridade direta <= 60%;
+- incompatibilidade de bordas >= 40%;
+- melhor correspondência próxima < 25%;
+- classificação não pode ser `DESLOCAMENTO PROVÁVEL`;
+- comparador estrutural >= 35%;
+- motor semântico >= 60%;
+- score físico agregado >= 85%.
+
+A concordância entre a guarda visual, o comparador estrutural e o motor
+semântico é obrigatória. Assim um exemplo OK da memória não é ignorado apenas
+porque uma única métrica visual subiu.
+
+### Reprodução do caso real
+
+Usando o mesmo frame e a mesma ROI do evento EMBORCADO, a guarda transversal
+produziu aproximadamente:
+
+- score da guarda: 84,9%;
+- cobertura: 52,4%;
+- residual médio: 40,8%;
+- perda de aparência: 46,2%;
+- similaridade direta: 53,8%;
+- incompatibilidade de bordas: 51,0%;
+- melhor correspondência próxima: 9,3%;
+- estrutural da decisão original: 54%;
+- semântico da decisão original: 71%;
+- score físico agregado: 100%.
+
+Esse vetor satisfaz o contrato transversal e caracteriza desaparecimento físico
+mesmo que a AOI tenha usado o rótulo `EMBORCADO`.
+
+### Hierarquia da decisão
+
+Quando a guarda transversal confirma `missing_hard_absence=True`:
+
+```text
+categoria original permanece EMBORCADO/DESLOCADO/INVERTIDO
+        ↓
+ausência física forte confirmada
+        ↓
+fusion_rule = missing_hard_absence
+        ↓
+motor dominante = missing
+        ↓
+peso físico = 100%
+peso KNN = 0%
+        ↓
+KNN continua visível somente para auditoria
+        ↓
+DEFEITO REAL / NG
+confiança = 99%
+```
+
+Essa regra agora também existe na fusão base, antes da ponderação da memória.
+Portanto a proteção não depende da ordem de instalação de wrappers de KNN.
+
+### Memória continua isolada por categoria
+
+A guarda transversal não pode:
+
+- mudar `EMBORCADO` para `FALTANDO`;
+- consultar memória de outra categoria;
+- adicionar `missing_mask` à assinatura KNN de EMBORCADO/DESLOCADO/INVERTIDO;
+- treinar o KNN como se o evento pertencesse a FALTANDO.
+
+A memória continua usando a categoria AOI original. A guarda é somente uma
+trava física de segurança contra veto incorreto de um desaparecimento
+inequívoco.
+
+### Debug obrigatório
+
+Quando a guarda transversal for avaliada, `Copiar debug XP` deve registrar:
+
+- `missing_cross_category_guard`;
+- `missing_guard_policy`;
+- `missing_guard_source_category`;
+- `missing_guard_physical_support`;
+- todas as métricas de ausência física;
+- se o KNN foi suprimido por hard missing.
+
+O debug deve permitir distinguir um `EMBORCADO` aprendido normalmente pela
+memória de um evento rotulado como `EMBORCADO` pela AOI, mas com componente
+fisicamente ausente.
+
+### Regressões obrigatórias
+
+Manter testes que garantam:
+
+- vetor real do evento EMBORCADO ausente → guarda transversal confirma ausência;
+- memória OK ~90,6% não veta ausência transversal;
+- fusão base aplica `missing_hard_absence` antes do peso KNN;
+- match próximo plausível bloqueia o override;
+- suporte semântico/estrutural fraco bloqueia o override;
+- `DESLOCAMENTO PROVÁVEL` nunca é convertido pela guarda;
+- `MUITO ADESIVO` e `FALTANDO` não usam essa guarda;
+- máscara da guarda transversal não altera assinatura KNN da categoria original.
