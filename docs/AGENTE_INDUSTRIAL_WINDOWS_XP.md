@@ -243,14 +243,14 @@ O computador novo possui um toggle chamado:
 Salvar imagens NG
 ```
 
-Estado padrão:
+Estado padrão ao iniciar o ODIN:
 
 ```text
-DESATIVADO
+ATIVADO
 ```
 
-Quando desativado, o comportamento permanece igual ao fluxo normal já
-documentado e nenhuma cópia visual adicional é criada.
+O operador pode desativar o toggle manualmente durante a sessão. Quando
+desativado, nenhuma cópia visual adicional é criada.
 
 Quando ativado, toda **decisão final NG** de uma captura recebida do Windows XP
 — humana ou automática já autorizada pelas regras de produção — gera uma cópia
@@ -261,7 +261,7 @@ public/ng_archive/
 ```
 
 A imagem arquivada deve ser **exatamente o mesmo frame completo do Windows XP**
-que o botão `Copiar imagem XP` disponibiliza naquele evento. Os dois recursos
+que o botão `Copiar imagem` disponibiliza naquele evento. Os dois recursos
 usam a mesma fonte interna e a mesma validação de `event_id`.
 
 Não usar `current_ng`, ROI, recorte de teste ou qualquer outra imagem como
@@ -273,13 +273,13 @@ copiar para auditoria.
 Formato do nome:
 
 ```text
-AAAA-MM-DD_HH-MM-SS-ms_CATEGORIA.png
+DDdMMmAAAA_HHhMMminSSsmmmms_CATEGORIA.png
 ```
 
 Exemplo:
 
 ```text
-2026-09-30_13-53-27-245_DESLOCADO.png
+01d10m2026_10h22min21s943ms_DESLOCADO.png
 ```
 
 Esse arquivo é somente evidência visual. Ele é independente de
@@ -293,6 +293,23 @@ liberação do gate para a próxima imagem da AOI.
 
 Essa função existe apenas no VisionX do computador novo e **não exige alteração
 do agente industrial no Windows XP**.
+
+
+
+### Copiar debug / Copiar imagem e captura local MSS
+
+Os botões de diagnóstico do ODIN não são mais exclusivos da origem XP.
+
+Quando a captura vem do Windows XP, eles continuam associados ao frame recebido
+pela rede. Quando o operador usa **Capturar nova peça (descarta a atual)** e o
+MSS encontra a AOI localmente, o ODIN preserva o frame completo MSS utilizado
+naquela análise e disponibiliza:
+
+- `Copiar debug`;
+- `Copiar imagem`.
+
+A origem fica identificada no relatório. Essa ampliação é implementada somente
+no computador novo e **não exige qualquer alteração no agente Windows XP**.
 
 ### Gargalo ainda existente no agente XP V5.1
 
