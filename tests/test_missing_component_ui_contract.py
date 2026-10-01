@@ -29,6 +29,10 @@ class MissingComponentUIContractTests(unittest.TestCase):
         self.assertIn("missing_edge_mismatch", source)
         self.assertIn("missing_direct_similarity", source)
         self.assertIn("missing_best_similarity", source)
+        self.assertIn("missing_dual_scale_triggered", source)
+        self.assertIn("missing_context_score", source)
+        self.assertIn("missing_local_global_area_ratio", source)
+        self.assertIn("PRESENÇA FÍSICA LOCAL + CONTEXTO", source)
 
     def test_panel_visibility_follows_active_engine(self):
         source = (
