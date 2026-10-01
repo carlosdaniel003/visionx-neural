@@ -216,6 +216,60 @@ class ConflictFusionTests(unittest.TestCase):
         self.assertEqual(trace["engines"][0]["final_influence"], 0.0)
         self.assertIn("Decisão automática bloqueada", reason)
 
+    def test_memory_conflict_does_not_force_review_over_hard_missing(self):
+        def hard_missing_base(_orchestrator, _detail, _category, _missing, _knn):
+            return (
+                1.0,
+                True,
+                0.99,
+                "AUSÊNCIA FÍSICA FORTE",
+                {
+                    "final_score": 1.0,
+                    "confidence": 0.99,
+                    "physical_score": 0.93,
+                    "dominant_engine": "missing",
+                    "fusion_rule": "missing_hard_absence",
+                    "weights": {"physical": 1.0, "knn": 0.0},
+                    "memory": {"suppressed_by_hard_missing": True},
+                    "operator_review_required": False,
+                    "engines": [],
+                },
+            )
+
+        wrapped = _fusion_wrapper_factory(hard_missing_base)
+        result = wrapped(
+            object(),
+            {},
+            "FALTANDO",
+            {"missing_hard_absence": True},
+            {
+                "memory_conflict": True,
+                "best_ok_similarity": 0.975,
+                "best_ng_similarity": 0.972,
+                "hypothesis_margin": 0.003,
+            },
+        )
+
+        score, defect, confidence, reason, trace = result
+        self.assertEqual(score, 1.0)
+        self.assertTrue(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(trace["fusion_rule"], "missing_hard_absence")
+        self.assertFalse(trace["operator_review_required"])
+        self.assertNotIn("operator_review_reason", trace)
+        self.assertIn("AUSÊNCIA FÍSICA FORTE", reason)
+
+        policy = production_decision_policy(
+            {
+                "is_defect": defect,
+                "confidence": confidence,
+                "detail": {"decision_trace": trace},
+            }
+        )
+        self.assertTrue(policy["auto_allowed"])
+        self.assertFalse(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "NG")
+
     def test_no_conflict_keeps_original_fusion_unchanged(self):
         wrapped = _fusion_wrapper_factory(self.base_fusion)
         result = wrapped(
