@@ -17,10 +17,10 @@
 - PyQt6 (Criação do HUD transparente)
 
 **Arquivo visual NG opcional:**
-- Toggle desligado por padrão; desativado mantém o fluxo atual sem criar cópias extras.
-- Ativado: cada evento válido do Windows XP pode gerar **no máximo uma** evidência final `NG` em `public/ng_archive/`, usando exatamente o mesmo frame completo disponibilizado pelo botão `Copiar imagem XP`.
+- Toggle **ativado por padrão** em toda inicialização do ODIN. O operador pode desativá-lo manualmente durante a sessão.
+- Ativado: cada evento válido do Windows XP pode gerar **no máximo uma** evidência final `NG` em `public/ng_archive/`, usando exatamente o mesmo frame completo disponibilizado pelo botão `Copiar imagem`.
 - Nome: `DDdMMmAAAA_HHhMMminSSsmmmms_CATEGORIA.png`, por exemplo `01d10m2026_10h22min21s943ms_FALTANDO.png`. O formato mantém dia, mês, ano, hora, minuto, segundo e milissegundo visualmente identificáveis sem deixar o nome excessivamente longo.
-- A fonte é única: `src/services/network_xp_frame.py` valida que o `event_id` do frame preservado é o mesmo do diagnóstico atual. O botão `Copiar imagem XP` e o arquivo visual NG usam essa mesma função.
+- Para o arquivamento XP, a fonte continua sendo `src/services/network_xp_frame.py`, que valida que o `event_id` do frame preservado é o mesmo do diagnóstico atual. O botão genérico `Copiar imagem` usa essa mesma evidência quando a origem é XP.
 - Não existe fallback para `current_ng` ou outro recorte. Se o frame XP do evento atual não estiver disponível, nenhuma imagem substituta é arquivada.
 - O arquivo é evidência/auditoria e não participa de treinamento, protótipos ou votação KNN.
 - A gravação é assíncrona para não bloquear o julgamento, o gate de rede nem a próxima imagem da AOI.
@@ -1033,3 +1033,85 @@ Manter testes que garantam:
 Em 01/10/2026, o feedback visual `0 = OK` / `1 = NG` foi validado em operação e o comportamento esperado foi confirmado.
 
 Após essa validação, a posição visual foi refinada do centro da tela para o canto inferior direito para reduzir interferência visual sobre a inspeção principal. Essa posição passa a fazer parte do contrato da interface.
+
+
+## Diagnóstico e cópia de evidência por origem
+
+Os controles visuais:
+
+- `Copiar debug`;
+- `Copiar imagem`;
+
+não são exclusivos do Windows XP.
+
+Eles devem ficar disponíveis para a **última captura analisada**, independentemente
+da origem:
+
+```text
+Windows XP / rede
+        ou
+Captura local MSS
+```
+
+A fonte genérica da evidência fica em:
+
+```text
+src/services/capture_evidence.py
+```
+
+Contrato:
+
+- cada captura possui um `event_id` próprio;
+- o relatório e a imagem copiada devem pertencer ao mesmo `event_id`;
+- uma captura local nunca pode reutilizar silenciosamente o último frame XP;
+- uma captura XP nunca pode reutilizar silenciosamente um frame MSS;
+- para rede, `Copiar imagem` continua usando exatamente o frame completo recebido do XP;
+- para captura local, `ScreenMonitor` preserva exatamente o frame completo MSS que originou os recortes analisados;
+- o relatório identifica a origem como `Windows XP` ou `Captura local MSS`;
+- a interface usa o título genérico `DIAGNÓSTICO DA CAPTURA`.
+
+Para captura local, o relatório usa o schema de observabilidade
+`visionx.capture_debug.v1` e registra, quando disponíveis:
+
+- frame MSS completo;
+- recorte gabarito;
+- recorte teste;
+- informações AOI;
+- decisão final;
+- categoria;
+- confiança;
+- memória/KNN e métricas de ausência física já expostas pelo debug.
+
+Essa camada é somente de observabilidade e não altera classificação, memória,
+dataset, gate, confiança ou decisão.
+
+### Estado padrão do arquivo visual NG
+
+O controle `Salvar imagens NG` inicia em:
+
+```text
+ATIVADO
+```
+
+em toda abertura do ODIN.
+
+A mudança é somente do estado inicial do toggle. O operador continua podendo
+desativá-lo a qualquer momento durante a sessão. O arquivo permanece assíncrono
+e independente do dataset/KNN.
+
+A regra de arquivamento automático continua restrita às evidências de captura
+recebidas do Windows XP, conforme o contrato existente. Tornar o arquivamento
+NG local/MSS automático exige uma decisão de produto separada e não deve ser
+introduzido implicitamente.
+
+### Regressões obrigatórias
+
+Manter testes que garantam:
+
+- captura XP habilita `Copiar debug` e `Copiar imagem`;
+- captura local MSS analisada também habilita os dois controles;
+- `Copiar imagem` local copia o frame MSS completo preservado, não o último frame XP;
+- relatório local identifica `Captura local MSS`;
+- `event_id` da imagem e do relatório sempre coincide;
+- o toggle `Salvar imagens NG` inicia marcado/ativado;
+- o operador ainda pode desativar o arquivamento durante a sessão.
