@@ -550,6 +550,7 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
                 global_box_info,
                 aoi_info,
                 aoi_epicenters,
+                physical_detail=detail,
             )
         elif normalized_category in CROSS_CATEGORY_ABSENCE_GUARD_CATEGORIES:
             if "physical_absence_guard" not in self.experts:
