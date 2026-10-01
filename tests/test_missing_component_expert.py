@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -213,6 +214,44 @@ class MissingComponentExpertTests(unittest.TestCase):
 
         self.assertFalse(hard)
         self.assertIn("deslocado", reason)
+
+    def test_dual_scale_context_can_promote_local_conforming_roi_to_hard_missing(self):
+        reference = self.dark_reference.copy()
+        test = self.dark_reference.copy()
+
+        with patch(
+            "src.core.experts.missing_component_expert."
+            "DualScalePresenceAnalyzer.analyze",
+            return_value={
+                "missing_dual_scale_policy": "dual_scale_presence_v1",
+                "missing_dual_scale_active": True,
+                "missing_dual_scale_triggered": True,
+                "missing_scale_disagreement": True,
+                "missing_context_hard_absence": True,
+                "missing_context_hard_reason": (
+                    "contexto maior confirma desaparecimento físico"
+                ),
+            },
+        ):
+            result = self.expert.analyze(
+                reference,
+                test,
+                global_box_info={"w": 180, "h": 120},
+                aoi_info={"category": "FALTANDO"},
+                aoi_epicenters=self.dark_roi,
+                physical_detail={
+                    "silk_error_pct": 0.56,
+                    "semantic_loss": 0.56,
+                },
+            )
+
+        self.assertTrue(result["missing_hard_absence"])
+        self.assertTrue(result["missing_context_hard_absence"])
+        self.assertEqual(
+            result["missing_classification"],
+            "COMPONENTE FISICAMENTE AUSENTE — DUAL-SCALE",
+        )
+        self.assertIn("contexto maior", result["missing_hard_absence_reason"])
 
     def test_global_illumination_change_is_normalized_by_external_context(self):
         result = self.expert.analyze(
