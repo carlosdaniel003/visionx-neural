@@ -175,6 +175,7 @@ class DualScalePresenceAnalyzer:
         cls,
         metrics: dict,
         physical_support: dict,
+        require_physical_support_for_extreme: bool = False,
     ) -> tuple[bool, str]:
         score = cls._float(metrics.get("score"))
         coverage = cls._float(metrics.get("coverage"))
@@ -210,6 +211,15 @@ class DualScalePresenceAnalyzer:
                 "local não representa",
             )
         if extreme:
+            if (
+                require_physical_support_for_extreme
+                and not bool(physical_support.get("supported", False))
+            ):
+                return (
+                    False,
+                    "colapso visual extremo sem confirmação física independente; "
+                    "guarda transversal não pode promover ausência",
+                )
             return (
                 True,
                 "contexto maior apresenta colapso visual extremo independente "
@@ -226,6 +236,7 @@ class DualScalePresenceAnalyzer:
         local_result: dict,
         global_box_info: dict | None = None,
         physical_detail: dict | None = None,
+        require_physical_support_for_extreme: bool = False,
     ) -> dict:
         output = {
             "missing_dual_scale_policy": cls.POLICY,
@@ -388,7 +399,13 @@ class DualScalePresenceAnalyzer:
             "appearance_loss": float(1.0 - direct_similarity),
             "best_similarity": float(best_similarity),
         }
-        hard, reason = cls._context_hard_absence(metrics, support)
+        hard, reason = cls._context_hard_absence(
+            metrics,
+            support,
+            require_physical_support_for_extreme=(
+                require_physical_support_for_extreme
+            ),
+        )
 
         output.update(
             {
