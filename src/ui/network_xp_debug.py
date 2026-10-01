@@ -11,7 +11,16 @@ from typing import Any
 
 import numpy as np
 
-from src.ui.branding import DECISION_DEBUG_TITLE, XP_DEBUG_TITLE
+from src.services.capture_evidence import (
+    capture_debug_record,
+    capture_image_available,
+    capture_image_snapshot,
+)
+from src.ui.branding import (
+    DECISION_DEBUG_TITLE,
+    LOCAL_CAPTURE_DEBUG_TITLE,
+    XP_DEBUG_TITLE,
+)
 from src.services.network_xp_frame import (
     network_xp_frame_available,
     network_xp_frame_snapshot,
@@ -37,10 +46,16 @@ def _json_safe(value: Any):
 
 def format_network_debug_report(record: dict | None) -> str:
     data = _json_safe(record if isinstance(record, dict) else {})
+    source = str(data.get("source", "") or "").strip().lower()
+    report_title = (
+        LOCAL_CAPTURE_DEBUG_TITLE
+        if source == "local_mss"
+        else XP_DEBUG_TITLE
+    )
     if not data:
         return (
             f"{XP_DEBUG_TITLE}\n"
-            "Nenhuma imagem recebida do XP possui diagnóstico registrado."
+            "Nenhuma captura possui diagnóstico registrado."
         )
 
     validation = data.get("validation", {})
@@ -49,11 +64,12 @@ def format_network_debug_report(record: dict | None) -> str:
     hints = validation.get("diagnostic_hints", []) or []
 
     lines = [
-        XP_DEBUG_TITLE,
+        report_title,
         "=" * 72,
         f"Schema: {data.get('schema', DEBUG_SCHEMA)}",
         f"Evento: {data.get('event_id', '-')}",
         f"Data/hora: {data.get('timestamp', '-')}",
+        f"Origem: {'Captura local MSS' if source == 'local_mss' else 'Windows XP'}",
         f"IP de origem: {data.get('source_ip', '-')}",
         f"Etapa: {data.get('stage', '-')}",
         f"Modo: {data.get('mode', '-')}",
@@ -158,9 +174,20 @@ def format_network_debug_report(record: dict | None) -> str:
     return "\n".join(lines)
 
 
+def _debug_record(panel) -> dict:
+    record = capture_debug_record(panel)
+    if record:
+        return record
+    legacy = getattr(panel, "network_intake_last_validation", None)
+    return dict(legacy) if isinstance(legacy, dict) else {}
+
+
 def network_debug_image_available(panel) -> bool:
-    """Compatibilidade pública; usa a fonte única do frame XP."""
-    return network_xp_frame_available(panel)
+    """Compatibilidade pública; aceita evidência XP ou captura local MSS."""
+    return bool(
+        capture_image_available(panel)
+        or network_xp_frame_available(panel)
+    )
 
 
 def _set_button_feedback(button, copied_text: str, idle_text: str) -> None:
@@ -185,7 +212,7 @@ def _set_button_feedback(button, copied_text: str, idle_text: str) -> None:
 
 
 def copy_network_debug_to_clipboard(panel) -> bool:
-    record = getattr(panel, "network_intake_last_validation", None)
+    record = _debug_record(panel)
     if not isinstance(record, dict) or not record:
         return False
 
@@ -251,7 +278,9 @@ def _qimage_from_bgr(image: np.ndarray):
 
 
 def copy_network_image_to_clipboard(panel) -> bool:
-    image = network_xp_frame_snapshot(panel)
+    image = capture_image_snapshot(panel)
+    if image is None:
+        image = network_xp_frame_snapshot(panel)
     if image is None:
         return False
 
@@ -271,7 +300,7 @@ def copy_network_image_to_clipboard(panel) -> bool:
 
 
 def sync_network_debug_controls(panel) -> None:
-    record = getattr(panel, "network_intake_last_validation", None)
+    record = _debug_record(panel)
     debug_available = bool(isinstance(record, dict) and record)
     image_available = network_debug_image_available(panel)
 
@@ -297,8 +326,18 @@ def sync_network_debug_controls(panel) -> None:
             reason = str(validation.get("reason", "") or "")
             valid = validation.get("valid", None) if isinstance(validation, dict) else None
             source_ip = str(record.get("source_ip", "") or "") if isinstance(record, dict) else ""
+            source = str(record.get("source", "") or "").strip().lower() if isinstance(record, dict) else ""
 
-            if debug_available and image_available and valid is False:
+            if (
+                debug_available
+                and image_available
+                and source == "local_mss"
+            ):
+                state_label.setText(
+                    "Captura local MSS analisada • relatório + imagem"
+                )
+                state_label.setProperty("state", "ready")
+            elif debug_available and image_available and valid is False:
                 suffix = f" • {reason}" if reason else ""
                 ip_text = f" • {source_ip}" if source_ip else ""
                 state_label.setText(
@@ -323,7 +362,7 @@ def sync_network_debug_controls(panel) -> None:
                 )
                 state_label.setProperty("state", "partial")
             else:
-                state_label.setText("Aguardando a primeira imagem do Windows XP")
+                state_label.setText("Aguardando a primeira captura analisada")
                 state_label.setProperty("state", "idle")
 
             style = state_label.style()
