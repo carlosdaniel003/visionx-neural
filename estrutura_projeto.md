@@ -882,3 +882,74 @@ A troca para ODIN não pode quebrar integração, persistência ou histórico.
 Como `ODIN - Observador Digital Inteligente` é maior que o nome anterior, o
 título principal deve aceitar quebra de linha e largura mínima zero para
 continuar responsivo em notebooks e monitores menores.
+
+
+## Feedback visual temporário de julgamento 0/1
+
+O ODIN possui um overlay exclusivamente visual para confirmar imediatamente ao operador quando uma tecla de julgamento foi recebida.
+
+Comportamento:
+
+```text
+0 → OK
+1 → NG
+```
+
+Fontes cobertas:
+
+- teclado do próprio ODIN: `0`, `Num+0`, `1` e `Num+1`;
+- teclado físico do Windows XP recebido pela rede como `CMD_OK` ou `CMD_NG`.
+
+A apresentação é um quadrado temporário de aproximadamente `180 × 180 px`, centralizado sobre a interface e acima dos demais componentes:
+
+- `0 / OK`: destaque verde;
+- `1 / NG`: destaque vermelho;
+- origem exibida como `TECLADO ODIN` ou `TECLADO WINDOWS XP`;
+- duração aproximada: `800 ms`;
+- desaparece automaticamente.
+
+Implementação:
+
+```text
+src/ui/decision_key_feedback.py
+```
+
+### Regra crítica de arquitetura
+
+Esse recurso é **somente apresentação**. Ele não pode:
+
+- alterar `save_label()`;
+- enviar comandos ao XP;
+- decidir OK/NG;
+- modificar confiança, score ou memória KNN;
+- bloquear o gate de imagens;
+- gravar dataset ou evidências;
+- capturar foco ou cliques do mouse;
+- criar espera ativa, `sleep` ou animação pesada no caminho produtivo.
+
+O overlay reutiliza um único widget e um único `QTimer` single-shot. Ele possui `WA_TransparentForMouseEvents` e `NoFocus`, portanto pode aparecer sobre outros componentes sem impedir interação.
+
+### Ordem de acionamento
+
+No teclado local, o feedback aparece imediatamente **antes** do caminho normal do botão OK/NG. Assim a confirmação visual não espera o envio TCP `PRESS_0/PRESS_1`.
+
+No teclado XP, o feedback é exibido somente quando existe uma captura ativa e o ODIN recebe `CMD_OK` ou `CMD_NG`.
+
+### Supressão de eco visual
+
+O agente XP pode devolver pelo hook global a mesma tecla que o ODIN acabou de enviar por `PRESS_0/PRESS_1`. Para não mostrar dois alertas para uma única decisão, repetições do mesmo julgamento dentro de aproximadamente `1,5 s` são suprimidas **somente na camada visual**.
+
+Essa deduplicação não altera nem descarta comandos produtivos; ela apenas impede um segundo flash do overlay.
+
+### Regressões obrigatórias
+
+Manter testes que garantam:
+
+- tecla local `0` aciona `0 / OK`;
+- tecla local `1` aciona `1 / NG`;
+- `CMD_OK` e `CMD_NG` do XP acionam o mesmo overlay com origem XP;
+- botões desabilitados não são burlados pelos atalhos;
+- comando XP sem captura ativa não produz confirmação visual de julgamento;
+- o eco da mesma decisão não gera um segundo alerta imediato;
+- o overlay permanece click-through e sem foco;
+- o recurso não altera nenhuma regra de negócio do ciclo.
