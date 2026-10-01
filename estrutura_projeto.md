@@ -827,3 +827,58 @@ Regra de manutenção:
   ausente, registrar o debug completo e verificar primeiro se o dual-scale foi
   ativado, qual caixa contextual foi usada e qual métrica bloqueou o
   `missing_context_hard_absence`.
+
+
+## Identidade visual da interface — ODIN
+
+A identidade exibida ao operador foi padronizada para:
+
+```text
+ODIN - Observador Digital Inteligente
+```
+
+Essa é uma alteração **visual/de apresentação**. Ela não renomeia o repositório,
+schemas, módulos Python, arquivos de pesos, caminhos, protocolos de rede nem
+identificadores persistidos que já usam o nome técnico `visionx`.
+
+Superfícies visuais obrigatórias:
+
+- título da janela principal:
+  `ODIN - Observador Digital Inteligente - Monitoramento IA`;
+- título principal do cabeçalho:
+  `ODIN - Observador Digital Inteligente`;
+- HUD inicial:
+  `ODIN - Observador Digital Inteligente: Inicializando...`;
+- janela de calibração:
+  `ODIN - Observador Digital Inteligente - Calibrar Zona de Interesse Avançado`;
+- relatório técnico copiado pela interface:
+  `ODIN - Observador Digital Inteligente - DEBUG DE ENTRADA WINDOWS XP`;
+- seção de decisão do relatório:
+  `DECISÃO ODIN`.
+
+A fonte única da identidade visual fica em:
+
+```text
+src/ui/branding.py
+```
+
+Não espalhar novamente strings de marca diretamente pelos widgets. Novas telas
+devem reutilizar as constantes de `branding.py`.
+
+### Regra de compatibilidade
+
+Manter inalterados, salvo migração específica e planejada:
+
+- `visionx.network_xp_debug.v1`;
+- nome do repositório `visionx-neural`;
+- nomes de arquivos/pesos como `visionx_neural_weights.pth`;
+- nomes de classes, módulos e APIs já existentes;
+- protocolos TCP e comandos usados pelo agente Windows XP.
+
+A troca para ODIN não pode quebrar integração, persistência ou histórico.
+
+### Responsividade da marca
+
+Como `ODIN - Observador Digital Inteligente` é maior que o nome anterior, o
+título principal deve aceitar quebra de linha e largura mínima zero para
+continuar responsivo em notebooks e monitores menores.
