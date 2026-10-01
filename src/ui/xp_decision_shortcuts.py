@@ -21,6 +21,10 @@ def _activate_decision(panel, decision: str) -> bool:
         return False
 
     button.click()
+
+    show_feedback = getattr(panel, "show_decision_key_feedback", None)
+    if callable(show_feedback):
+        show_feedback(normalized, source="odin_keyboard")
     return True
 
 
