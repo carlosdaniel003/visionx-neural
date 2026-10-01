@@ -1,4 +1,4 @@
-"""Construção da interface responsiva do painel principal do VisionX Neural."""
+"""Construção da interface responsiva do painel principal do ODIN - Observador Digital Inteligente."""
 
 from __future__ import annotations
 
