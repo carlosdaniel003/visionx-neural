@@ -854,7 +854,7 @@ Superfícies visuais obrigatórias:
 - relatório técnico copiado pela interface:
   `ODIN - Observador Digital Inteligente - DEBUG DE ENTRADA WINDOWS XP`;
 - seção de decisão do relatório:
-  `DECISÃO ODIN`.
+  `DECISÃO ODIN - Observador Digital Inteligente`.
 
 A fonte única da identidade visual fica em:
 
