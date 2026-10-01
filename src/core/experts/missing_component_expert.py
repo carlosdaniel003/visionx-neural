@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 
+from src.core.experts.dual_scale_presence import DualScalePresenceAnalyzer
 from src.core.experts.roi_patch_expert import ROIPatchExpectationExpert
 
 
@@ -127,6 +128,7 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
         global_box_info: dict | None = None,
         aoi_info: dict | None = None,
         aoi_epicenters: list | None = None,
+        physical_detail: dict | None = None,
     ) -> dict:
         result = super().analyze(
             full_reference,
@@ -137,6 +139,41 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
         )
 
         hard_absence, hard_reason = self._hard_absence_evidence(result)
+
+        if not hard_absence:
+            dual_scale = DualScalePresenceAnalyzer.analyze(
+                self,
+                full_reference,
+                full_test,
+                result,
+                global_box_info=global_box_info,
+                physical_detail=physical_detail,
+            )
+            result.update(dual_scale)
+            if dual_scale.get("missing_context_hard_absence", False):
+                hard_absence = True
+                hard_reason = str(
+                    dual_scale.get(
+                        "missing_context_hard_reason",
+                        "contexto maior confirmou ausência física",
+                    )
+                )
+        else:
+            result.update(
+                {
+                    "missing_dual_scale_policy": (
+                        DualScalePresenceAnalyzer.POLICY
+                    ),
+                    "missing_dual_scale_active": False,
+                    "missing_dual_scale_triggered": False,
+                    "missing_scale_disagreement": False,
+                    "missing_context_hard_absence": False,
+                    "missing_context_hard_reason": (
+                        "escala local já confirmou ausência física"
+                    ),
+                }
+            )
+
         result["missing_hard_absence"] = bool(hard_absence)
         result["missing_hard_absence_reason"] = hard_reason
         result["missing_hard_absence_thresholds"] = {
@@ -153,10 +190,24 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             "footprint_nearby_similarity_max": (
                 self.HARD_FOOTPRINT_MAX_NEARBY_SIMILARITY
             ),
+            "dual_scale_policy": DualScalePresenceAnalyzer.POLICY,
+            "dual_scale_local_global_ratio_max": (
+                DualScalePresenceAnalyzer.MAX_LOCAL_GLOBAL_AREA_RATIO
+            ),
+            "dual_scale_context_score": (
+                DualScalePresenceAnalyzer.MIN_CONTEXT_SCORE
+            ),
+            "dual_scale_context_coverage": (
+                DualScalePresenceAnalyzer.MIN_CONTEXT_COVERAGE
+            ),
         }
 
         if hard_absence:
-            result["missing_classification"] = "COMPONENTE FISICAMENTE AUSENTE"
+            result["missing_classification"] = (
+                "COMPONENTE FISICAMENTE AUSENTE — DUAL-SCALE"
+                if result.get("missing_context_hard_absence", False)
+                else "COMPONENTE FISICAMENTE AUSENTE"
+            )
             base_reason = str(result.get("missing_reason", "") or "")
             result["missing_reason"] = (
                 f"{base_reason} • AUSÊNCIA FÍSICA FORTE: {hard_reason}"
