@@ -10,6 +10,7 @@ on:
       - "src/core/dual_scale_memory.py"
       - "src/core/anomaly_signature.py"
       - "src/core/best_match_memory.py"
+      - "src/core/experts/missing_component_expert.py"
       - "src/core/strict_category_memory.py"
       - "src/core/anomaly_memory_integration.py"
       - "src/core/experts/knn_expert.py"
@@ -21,6 +22,7 @@ on:
       - "tests/test_prototype_memory.py"
       - "tests/test_dual_scale_memory.py"
       - "tests/test_best_match_memory.py"
+      - "tests/test_missing_component_expert.py"
       - "tests/test_production_confidence_gate.py"
       - ".github/workflows/memory-hypothesis-contrast-tests.yml"
   workflow_dispatch:
@@ -51,6 +53,7 @@ jobs:
             src/core/dual_scale_memory.py `
             src/core/anomaly_signature.py `
             src/core/best_match_memory.py `
+            src/core/experts/missing_component_expert.py `
             src/core/strict_category_memory.py `
             src/core/anomaly_memory_integration.py `
             src/ui/production_confidence_gate.py `
@@ -64,5 +67,6 @@ jobs:
             tests.test_prototype_memory `
             tests.test_dual_scale_memory `
             tests.test_best_match_memory `
+            tests.test_missing_component_expert `
             tests.test_production_confidence_gate `
             -v
