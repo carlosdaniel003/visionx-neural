@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QLabel,
 from PyQt6.QtCore import Qt, QRect, QPoint, QSize
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QCursor
 from src.config.settings import settings
+from src.ui.branding import CALIBRATION_WINDOW_TITLE
 
 class ROILabel(QLabel):
     """Componente avançado com Lupa, redimensionamento por bordas e arraste."""
@@ -178,7 +179,7 @@ class CalibrationWindow(QWidget):
         self.load_current_template() # Carrega o alvo atual ao abrir
 
     def _setup_ui(self):
-        self.setWindowTitle("VisionX Neural - Calibrar Zona de Interesse Avançado")
+        self.setWindowTitle(CALIBRATION_WINDOW_TITLE)
         self.resize(1200, 750) # Janela um pouco mais larga para o painel lateral
         
         main_layout = QHBoxLayout(self) # O layout principal agora é Horizontal (Lado a Lado)
