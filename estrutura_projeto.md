@@ -900,10 +900,15 @@ Fontes cobertas:
 - teclado do próprio ODIN: `0`, `Num+0`, `1` e `Num+1`;
 - teclado físico do Windows XP recebido pela rede como `CMD_OK` ou `CMD_NG`.
 
-A apresentação é um quadrado temporário de aproximadamente `180 × 180 px`, centralizado sobre a interface e acima dos demais componentes:
+A apresentação é um quadrado temporário de aproximadamente `180 × 180 px`, posicionado no **canto inferior direito** da interface, com margem aproximada de `24 px` das bordas e acima dos demais componentes.
 
-- `0 / OK`: destaque verde;
-- `1 / NG`: destaque vermelho;
+O visual segue a identidade industrial do ODIN:
+
+- fundo escuro `#101010`;
+- borda-base discreta `#303030`;
+- cabeçalho `DECISÃO RECEBIDA` em amarelo ODIN `#f5c518`;
+- `0 / OK`: detalhe, borda e tipografia de estado em verde `#4ade80`;
+- `1 / NG`: detalhe, borda e tipografia de estado em vermelho `#ff6262`;
 - origem exibida como `TECLADO ODIN` ou `TECLADO WINDOWS XP`;
 - duração aproximada: `800 ms`;
 - desaparece automaticamente.
@@ -952,4 +957,11 @@ Manter testes que garantam:
 - comando XP sem captura ativa não produz confirmação visual de julgamento;
 - o eco da mesma decisão não gera um segundo alerta imediato;
 - o overlay permanece click-through e sem foco;
+- o overlay permanece ancorado no canto inferior direito em telas de tamanhos diferentes;
 - o recurso não altera nenhuma regra de negócio do ciclo.
+
+### Validação operacional
+
+Em 01/10/2026, o feedback visual `0 = OK` / `1 = NG` foi validado em operação e o comportamento esperado foi confirmado.
+
+Após essa validação, a posição visual foi refinada do centro da tela para o canto inferior direito para reduzir interferência visual sobre a inspeção principal. Essa posição passa a fazer parte do contrato da interface.
