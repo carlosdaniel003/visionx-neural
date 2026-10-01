@@ -18,12 +18,15 @@
 
 **Arquivo visual NG opcional:**
 - Toggle desligado por padrão; desativado mantém o fluxo atual sem criar cópias extras.
-- Ativado: toda decisão final `NG` de uma captura do Windows XP salva em `public/ng_archive/` exatamente o mesmo frame completo disponibilizado pelo botão `Copiar imagem XP`.
+- Ativado: cada evento válido do Windows XP pode gerar **no máximo uma** evidência final `NG` em `public/ng_archive/`, usando exatamente o mesmo frame completo disponibilizado pelo botão `Copiar imagem XP`.
 - Nome: `AAAA-MM-DD_HH-MM-SS-ms_CATEGORIA.png`.
 - A fonte é única: `src/services/network_xp_frame.py` valida que o `event_id` do frame preservado é o mesmo do diagnóstico atual. O botão `Copiar imagem XP` e o arquivo visual NG usam essa mesma função.
 - Não existe fallback para `current_ng` ou outro recorte. Se o frame XP do evento atual não estiver disponível, nenhuma imagem substituta é arquivada.
 - O arquivo é evidência/auditoria e não participa de treinamento, protótipos ou votação KNN.
 - A gravação é assíncrona para não bloquear o julgamento, o gate de rede nem a próxima imagem da AOI.
+- Deduplicação obrigatória por `event_id`: o mesmo evento XP nunca pode gerar duas imagens de arquivo, mesmo se o `PRESS_1` enviado pelo VisionX reaparecer pelo hook global do XP como `CMD_NG`.
+- O arquivamento só é permitido enquanto existe uma captura de rede ativa, com análise ativa e categoria AOI não vazia.
+- `SEM_CATEGORIA` não é um nome de arquivo válido para o fluxo automático de evidências NG. Se a categoria já tiver sido limpa, o evento não deve ser salvo novamente.
 
 
 **Regra visual do painel KNN:**
