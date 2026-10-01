@@ -91,7 +91,7 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
             overlay._fade_out.easingCurve().type(),
             QEasingCurve.Type.InOutQuad,
         )
-        self.assertFalse(overlay._hide_timer.isSingleShot() is False)
+        self.assertTrue(overlay._hide_timer.isSingleShot())
         self.assertLessEqual(
             FEEDBACK_FADE_IN_MS + FEEDBACK_FADE_OUT_MS,
             300,
