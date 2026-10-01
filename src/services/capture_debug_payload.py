@@ -1,0 +1,203 @@
+"""Payload comum de observabilidade para capturas XP e MSS.
+
+Não importa motores de visão, PyQt ou serviços de captura. Serve apenas para
+serializar a decisão já calculada e resumos de imagens.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import numpy as np
+
+
+def json_safe(value: Any):
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def image_summary(image: Any) -> dict:
+    if not isinstance(image, np.ndarray) or image.size == 0:
+        return {"valid": False}
+
+    array = np.asarray(image)
+    summary = {
+        "valid": True,
+        "shape": [int(v) for v in array.shape],
+        "dtype": str(array.dtype),
+        "min": round(float(np.min(array)), 3),
+        "max": round(float(np.max(array)), 3),
+        "mean": round(float(np.mean(array)), 3),
+    }
+    if array.ndim == 3 and array.shape[2] >= 3:
+        summary["mean_bgr"] = [
+            round(float(np.mean(array[:, :, index])), 3)
+            for index in range(3)
+        ]
+    return summary
+
+
+def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
+    if not isinstance(analysis, dict):
+        return {}
+
+    detail = analysis.get("detail", {})
+    detail = detail if isinstance(detail, dict) else {}
+    trace = detail.get("decision_trace", {})
+    trace = trace if isinstance(trace, dict) else {}
+    memory = trace.get("memory", {})
+    memory = memory if isinstance(memory, dict) else {}
+
+    missing_fields = (
+        "missing_active",
+        "missing_is_defect",
+        "missing_score",
+        "missing_tolerance",
+        "missing_classification",
+        "missing_changed_coverage",
+        "missing_residual_mean",
+        "missing_structure_loss",
+        "missing_background_exposure",
+        "missing_best_similarity",
+        "missing_direct_similarity",
+        "missing_appearance_loss",
+        "missing_edge_mismatch",
+        "missing_residual_p90",
+        "missing_hard_absence",
+        "missing_hard_absence_reason",
+        "missing_cross_category_guard",
+        "missing_guard_policy",
+        "missing_guard_source_category",
+        "missing_guard_physical_support",
+        "missing_dual_scale_policy",
+        "missing_dual_scale_active",
+        "missing_dual_scale_triggered",
+        "missing_scale_disagreement",
+        "missing_local_global_area_ratio",
+        "missing_context_box",
+        "missing_context_area_ratio",
+        "missing_context_score",
+        "missing_context_coverage",
+        "missing_context_residual_mean",
+        "missing_context_residual_p90",
+        "missing_context_structure_loss",
+        "missing_context_edge_mismatch",
+        "missing_context_direct_similarity",
+        "missing_context_appearance_loss",
+        "missing_context_best_similarity",
+        "missing_context_hard_absence",
+        "missing_context_hard_reason",
+        "missing_context_physical_support",
+    )
+    missing = {
+        key: json_safe(detail.get(key))
+        for key in missing_fields
+        if key in detail
+    }
+
+    raw_memory_conflict = bool(
+        memory.get(
+            "memory_conflict",
+            detail.get("memory_conflict", False),
+        )
+    )
+    raw_memory_review = bool(
+        memory.get(
+            "operator_review_required",
+            detail.get("operator_review_required", False),
+        )
+    )
+    hard_missing = bool(
+        trace.get("hard_missing_evidence", False)
+        or memory.get("suppressed_by_hard_missing", False)
+        or detail.get("missing_hard_absence", False)
+        or str(trace.get("fusion_rule", "")) == "missing_hard_absence"
+    )
+    effective_memory_conflict = bool(
+        raw_memory_conflict and not hard_missing
+    )
+    effective_memory_review = bool(
+        raw_memory_review and not hard_missing
+    )
+
+    return {
+        "category": str((aoi_info or {}).get("category", "") or ""),
+        "is_defect": bool(analysis.get("is_defect", False)),
+        "verdict": str(analysis.get("verdict", "") or ""),
+        "confidence": json_safe(analysis.get("confidence")),
+        "reason": str(analysis.get("reason", "") or ""),
+        "final_score": json_safe(detail.get("final_score")),
+        "physical_score": json_safe(detail.get("physical_score")),
+        "fusion_rule": str(detail.get("fusion_rule", "") or ""),
+        "dominant_engine": str(detail.get("dominant_engine", "") or ""),
+        "operator_review_required": bool(
+            analysis.get("production_review_required", False)
+            or trace.get("operator_review_required", False)
+            or effective_memory_review
+        ),
+        "hard_missing_evidence": bool(
+            trace.get("hard_missing_evidence", False)
+            or detail.get("missing_hard_absence", False)
+        ),
+        "missing": missing,
+        "memory": {
+            "has_memory": bool(
+                memory.get("has_memory", detail.get("has_memory", False))
+            ),
+            "memory_available": bool(
+                memory.get(
+                    "memory_available",
+                    detail.get("memory_available", False),
+                )
+            ),
+            "best_match_label": str(
+                memory.get(
+                    "best_match_label",
+                    detail.get("best_match_label", ""),
+                )
+                or ""
+            ),
+            "best_similarity": json_safe(
+                memory.get(
+                    "best_similarity",
+                    detail.get("best_similarity"),
+                )
+            ),
+            "best_ok_similarity": json_safe(
+                memory.get(
+                    "best_ok_similarity",
+                    detail.get("best_ok_similarity"),
+                )
+            ),
+            "best_ng_similarity": json_safe(
+                memory.get(
+                    "best_ng_similarity",
+                    detail.get("best_ng_similarity"),
+                )
+            ),
+            "memory_conflict": effective_memory_conflict,
+            "raw_memory_conflict": raw_memory_conflict,
+            "operator_review_required": effective_memory_review,
+            "raw_operator_review_required": raw_memory_review,
+            "role": str(
+                memory.get("role", detail.get("memory_reason", "")) or ""
+            ),
+            "suppressed_by_hard_missing": hard_missing,
+        },
+    }
+
+
+__all__ = [
+    "decision_record",
+    "image_summary",
+    "json_safe",
+]
