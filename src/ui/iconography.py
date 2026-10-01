@@ -1,4 +1,4 @@
-"""Aplica iconografia SVG aos componentes visuais do VisionX Neural."""
+"""Aplica iconografia SVG aos componentes visuais do ODIN - Observador Digital Inteligente."""
 
 from __future__ import annotations
 
