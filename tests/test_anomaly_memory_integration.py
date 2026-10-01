@@ -138,6 +138,16 @@ class CrossCategoryAbsenceFusionTests(unittest.TestCase):
             frozenset({"EMBORCADO", "DESLOCADO", "INVERTIDO"}),
         )
 
+    def test_cross_category_guard_never_injects_missing_mask_into_knn_signature(self):
+        source = open(
+            "src/core/anomaly_memory_integration.py",
+            encoding="utf-8",
+        ).read()
+        self.assertIn(
+            'not missing_result.get("missing_cross_category_guard", False)',
+            source,
+        )
+
     def test_base_fusion_never_allows_knn_veto_after_hard_absence(self):
         score, defect, confidence, _reason, trace = _dynamic_fusion(
             _FusionOrchestrator(),
