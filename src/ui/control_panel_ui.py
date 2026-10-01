@@ -605,8 +605,9 @@ class ControlPanelUI:
             QSizePolicy.Policy.Fixed,
         )
         window.btn_toggle_ng_archive.setToolTip(
-            "Quando ativado, salva em public/ng_archive uma cópia bruta da "
-            "imagem de teste de toda decisão final NG. Não altera o dataset."
+            "Quando ativado, salva em public/ng_archive exatamente o mesmo "
+            "frame completo do Windows XP disponível em 'Copiar imagem XP' "
+            "para toda decisão final NG. Não altera o dataset."
         )
         window.btn_toggle_ng_archive.toggled.connect(
             lambda checked: window.set_ng_archive_enabled(checked)
