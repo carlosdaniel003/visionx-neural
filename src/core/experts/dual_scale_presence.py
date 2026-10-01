@@ -278,6 +278,17 @@ class DualScalePresenceAnalyzer:
         output["missing_local_global_area_ratio"] = local_ratio
 
         support = output["missing_context_physical_support"]
+        local_classification = str(
+            local_result.get("missing_classification", "")
+        ).strip().upper()
+        if local_classification == "DESLOCAMENTO PROVÁVEL":
+            output["missing_dual_scale_active"] = False
+            output["missing_context_hard_reason"] = (
+                "escala local encontrou conteúdo compatível deslocado; "
+                "dual-scale não pode converter deslocamento em ausência"
+            )
+            return output
+
         local_is_defect = bool(local_result.get("missing_is_defect", False))
         scale_disagreement = bool(
             not local_is_defect and support.get("supported", False)
