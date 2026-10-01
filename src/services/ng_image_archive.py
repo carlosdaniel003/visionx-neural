@@ -145,7 +145,7 @@ def install_ng_image_archive(control_panel_cls) -> None:
     original_save_label = control_panel_cls.save_label
 
     def wrapped_init(self, *args, **kwargs):
-        self.ng_archive_enabled = False
+        self.ng_archive_enabled = True
         self._ng_archive_queue = None
         self._ng_archive_last_event_id = ""
         original_init(self, *args, **kwargs)
