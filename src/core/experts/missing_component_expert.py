@@ -7,7 +7,18 @@ from src.core.experts.roi_patch_expert import ROIPatchExpectationExpert
 
 
 class MissingComponentExpert(ROIPatchExpectationExpert):
-    """Nome histórico preservado para o orquestrador e a interface."""
+    """Especialista FALTANDO com confirmação de ausência física forte.
+
+    A memória KNN pode reconhecer padrões antigos, mas não deve anular uma
+    ausência física comprovada pelo comparador gabarito × teste.
+    """
+
+    HARD_ABSENCE_MIN_SCORE = 0.85
+    HARD_ABSENCE_MIN_COVERAGE = 0.30
+    HARD_ABSENCE_MIN_RESIDUAL = 0.45
+    HARD_ABSENCE_MIN_STRUCTURE_LOSS = 0.30
+    HARD_ABSENCE_MIN_BACKGROUND_EXPOSURE = 0.28
+    HARD_ABSENCE_MAX_NEARBY_SIMILARITY = 0.60
 
     @staticmethod
     def _palette_residual(reference: np.ndarray, test: np.ndarray) -> np.ndarray:
@@ -25,6 +36,96 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
         normalized = (test_lab - center.reshape(1, 1, 3)) / scale.reshape(1, 1, 3)
         distance = np.sqrt(np.mean(normalized * normalized, axis=2))
         return np.clip((distance - 0.75) / 3.2, 0.0, 1.0).astype(np.float32)
+
+    @classmethod
+    def _hard_absence_evidence(cls, result: dict) -> tuple[bool, str]:
+        """Confirma desaparecimento físico sem confundir deslocamento com falta."""
+        if not bool(result.get("missing_active", False)):
+            return False, "motor inativo"
+        if not bool(result.get("missing_is_defect", False)):
+            return False, "ROI sem divergência física suficiente"
+
+        classification = str(
+            result.get("missing_classification", "")
+        ).strip().upper()
+        if classification == "DESLOCAMENTO PROVÁVEL":
+            return False, "conteúdo compatível encontrado deslocado"
+
+        score = float(result.get("missing_score", 0.0) or 0.0)
+        coverage = float(result.get("missing_changed_coverage", 0.0) or 0.0)
+        residual = float(result.get("missing_residual_mean", 0.0) or 0.0)
+        structure_loss = float(result.get("missing_structure_loss", 0.0) or 0.0)
+        background = float(
+            result.get("missing_background_exposure", 0.0) or 0.0
+        )
+        nearby_similarity = float(
+            result.get("missing_best_similarity", 0.0) or 0.0
+        )
+
+        background_absence = bool(
+            score >= 0.72
+            and coverage >= 0.25
+            and background >= cls.HARD_ABSENCE_MIN_BACKGROUND_EXPOSURE
+            and nearby_similarity < cls.HARD_ABSENCE_MAX_NEARBY_SIMILARITY
+        )
+        structural_collapse = bool(
+            score >= cls.HARD_ABSENCE_MIN_SCORE
+            and coverage >= cls.HARD_ABSENCE_MIN_COVERAGE
+            and residual >= cls.HARD_ABSENCE_MIN_RESIDUAL
+            and structure_loss >= cls.HARD_ABSENCE_MIN_STRUCTURE_LOSS
+            and nearby_similarity < cls.HARD_ABSENCE_MAX_NEARBY_SIMILARITY
+        )
+
+        if background_absence:
+            return (
+                True,
+                "conteúdo do gabarito foi substituído pelo fundo da região",
+            )
+        if structural_collapse:
+            return (
+                True,
+                "estrutura esperada colapsou sem correspondência próxima válida",
+            )
+        return False, "divergência presente, mas sem prova forte de ausência"
+
+    def analyze(
+        self,
+        full_reference: np.ndarray,
+        full_test: np.ndarray,
+        global_box_info: dict | None = None,
+        aoi_info: dict | None = None,
+        aoi_epicenters: list | None = None,
+    ) -> dict:
+        result = super().analyze(
+            full_reference,
+            full_test,
+            global_box_info,
+            aoi_info,
+            aoi_epicenters,
+        )
+
+        hard_absence, hard_reason = self._hard_absence_evidence(result)
+        result["missing_hard_absence"] = bool(hard_absence)
+        result["missing_hard_absence_reason"] = hard_reason
+        result["missing_hard_absence_thresholds"] = {
+            "score": self.HARD_ABSENCE_MIN_SCORE,
+            "coverage": self.HARD_ABSENCE_MIN_COVERAGE,
+            "residual_mean": self.HARD_ABSENCE_MIN_RESIDUAL,
+            "structure_loss": self.HARD_ABSENCE_MIN_STRUCTURE_LOSS,
+            "background_exposure": self.HARD_ABSENCE_MIN_BACKGROUND_EXPOSURE,
+            "nearby_similarity_max": self.HARD_ABSENCE_MAX_NEARBY_SIMILARITY,
+        }
+
+        if hard_absence:
+            result["missing_classification"] = "COMPONENTE FISICAMENTE AUSENTE"
+            base_reason = str(result.get("missing_reason", "") or "")
+            result["missing_reason"] = (
+                f"{base_reason} • AUSÊNCIA FÍSICA FORTE: {hard_reason}"
+                if base_reason
+                else f"AUSÊNCIA FÍSICA FORTE: {hard_reason}"
+            )
+
+        return result
 
     @classmethod
     def _residual_and_mask(cls, reference: np.ndarray, test: np.ndarray):
