@@ -1,4 +1,4 @@
-"""Integra o debugger do motor FALTANDO sem alterar a grade responsiva."""
+"""Integra o debugger de presença física sem alterar a grade responsiva."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def install_missing_component_panel(panel) -> None:
             layout.takeAt(layout.count() - 1)
 
     wrapped = panel.ui_builder._wrap_debug_widget(
-        "EXPECTATIVA DO PATCH • MOTOR FALTANDO",
+        "EXPECTATIVA DO PATCH • PRESENÇA FÍSICA",
         panel.frame_missing,
     )
     layout.addWidget(wrapped)
@@ -35,9 +35,12 @@ def install_missing_component_panel(panel) -> None:
         result = original_reference_update(analysis)
         detail = (analysis or {}).get("detail", {})
         active_engines = (analysis or {}).get("active_engines", [])
-        active = (
-            "missing_expert.py" in active_engines
-            and bool(detail.get("missing_active", False))
+        active = bool(
+            detail.get("missing_active", False)
+            and (
+                "missing_expert.py" in active_engines
+                or "physical_absence_guard.py" in active_engines
+            )
         )
         self.frame_missing.setVisible(active)
         if active:
