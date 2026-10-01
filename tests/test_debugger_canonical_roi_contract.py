@@ -35,6 +35,15 @@ class DebuggerCanonicalROIContractTests(unittest.TestCase):
         )
         self.assertIn("def _first_array", source)
 
+    def test_missing_widget_exposes_hard_absence_evidence(self):
+        source = (
+            ROOT / "src" / "ui" / "widgets" / "missing_debugger.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("missing_hard_absence", source)
+        self.assertIn("missing_hard_absence_reason", source)
+        self.assertIn("AUSÊNCIA FÍSICA FORTE", source)
+
     def test_missing_widget_uses_same_ssim_roi_for_test_and_reconstruction(self):
         source = (
             ROOT / "src" / "ui" / "widgets" / "missing_debugger.py"
