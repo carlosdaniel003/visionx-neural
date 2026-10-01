@@ -16,6 +16,7 @@ on:
       - "src/ui/test_mode_dataset_controls.py"
       - "src/ui/control_panel_ui.py"
       - "src/services/ng_image_archive.py"
+      - "src/services/network_xp_frame.py"
       - "src/config/settings.py"
       - "src/services/network_receiver.py"
       - "src/services/image_cycle_gate.py"
@@ -63,6 +64,7 @@ jobs:
             src/ui/test_mode_dataset_controls.py `
             src/ui/control_panel_ui.py `
             src/services/ng_image_archive.py `
+            src/services/network_xp_frame.py `
             src/services/network_receiver.py `
             src/services/image_cycle_gate.py `
             main.py
