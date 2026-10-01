@@ -11,6 +11,11 @@ from typing import Any
 
 import numpy as np
 
+from src.services.network_xp_frame import (
+    network_xp_frame_available,
+    network_xp_frame_snapshot,
+)
+
 
 DEBUG_SCHEMA = "visionx.network_xp_debug.v1"
 
@@ -88,23 +93,9 @@ def format_network_debug_report(record: dict | None) -> str:
     return "\n".join(lines)
 
 
-def _record_event_id(panel) -> str:
-    record = getattr(panel, "network_intake_last_validation", None)
-    if not isinstance(record, dict):
-        return ""
-    return str(record.get("event_id", "") or "")
-
-
 def network_debug_image_available(panel) -> bool:
-    image = getattr(panel, "network_intake_last_image", None)
-    if not isinstance(image, np.ndarray) or image.size == 0:
-        return False
-
-    record_event = _record_event_id(panel)
-    image_event = str(
-        getattr(panel, "network_intake_last_image_event_id", "") or ""
-    )
-    return bool(record_event and image_event and record_event == image_event)
+    """Compatibilidade pública; usa a fonte única do frame XP."""
+    return network_xp_frame_available(panel)
 
 
 def _set_button_feedback(button, copied_text: str, idle_text: str) -> None:
@@ -195,10 +186,10 @@ def _qimage_from_bgr(image: np.ndarray):
 
 
 def copy_network_image_to_clipboard(panel) -> bool:
-    if not network_debug_image_available(panel):
+    image = network_xp_frame_snapshot(panel)
+    if image is None:
         return False
 
-    image = getattr(panel, "network_intake_last_image", None)
     qimage = _qimage_from_bgr(image)
     if qimage is None or qimage.isNull():
         return False
