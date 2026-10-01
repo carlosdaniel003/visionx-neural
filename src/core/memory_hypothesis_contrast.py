@@ -327,6 +327,17 @@ def _fusion_wrapper_factory(original_dynamic_fusion):
         )
         final_score, is_defect, confidence, reason, trace = result
         memory = knn if isinstance(knn, dict) else {}
+
+        # Um conflito entre memórias não pode transformar em revisão humana uma
+        # ausência física já confirmada pelo especialista FALTANDO.
+        if bool(
+            isinstance(missing_result, dict)
+            and missing_result.get("missing_hard_absence", False)
+        ):
+            trace["operator_review_required"] = False
+            trace.pop("operator_review_reason", None)
+            return result
+
         if not bool(memory.get("memory_conflict", False)):
             return result
 
