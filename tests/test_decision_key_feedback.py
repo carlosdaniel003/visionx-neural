@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QApplication, QWidget
 
 from src.ui.decision_key_feedback import (
     FEEDBACK_DURATION_MS,
+    FEEDBACK_MARGIN,
     FEEDBACK_SIZE,
     install_decision_key_feedback,
     install_decision_key_feedback_hooks,
@@ -47,10 +48,33 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
             )
         )
         self.assertEqual(overlay.focusPolicy(), Qt.FocusPolicy.NoFocus)
-        self.assertEqual(overlay.x(), 410)
-        self.assertEqual(overlay.y(), 260)
+        self.assertEqual(
+            overlay.x(),
+            panel.width() - FEEDBACK_SIZE - FEEDBACK_MARGIN,
+        )
+        self.assertEqual(
+            overlay.y(),
+            panel.height() - FEEDBACK_SIZE - FEEDBACK_MARGIN,
+        )
         self.assertTrue(overlay._hide_timer.isActive())
         self.assertEqual(overlay._hide_timer.interval(), FEEDBACK_DURATION_MS)
+
+    def test_overlay_uses_odin_visual_language(self):
+        panel = self._panel()
+        overlay = panel.decision_key_feedback
+
+        source = open(
+            "src/ui/decision_key_feedback.py",
+            encoding="utf-8",
+        ).read()
+
+        self.assertEqual(overlay.header_label.text(), "DECISÃO RECEBIDA")
+        self.assertIn("#101010", source)
+        self.assertIn("#303030", source)
+        self.assertIn("#f5c518", source)
+        self.assertIn("#4ade80", source)
+        self.assertIn("#ff6262", source)
+        self.assertIn("_position_bottom_right", source)
 
     def test_ng_feedback_is_red_one(self):
         panel = self._panel()
