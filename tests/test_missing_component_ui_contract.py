@@ -19,9 +19,9 @@ class MissingComponentUIContractTests(unittest.TestCase):
             ROOT / "src" / "ui" / "widgets" / "missing_debugger.py"
         ).read_text(encoding="utf-8")
         self.assertIn("EXPECTATIVA DO PATCH", source)
-        self.assertIn("PATCH ESPERADO", source)
-        self.assertIn("PATCH RECEBIDO", source)
-        self.assertIn("SOMENTE PIXELS INCOMPATÍVEIS", source)
+        self.assertIn("GABARITO • MESMA ROI DO LABORATÓRIO", source)
+        self.assertIn("TESTE • MESMA ROI DO LABORATÓRIO", source)
+        self.assertIn("DIVERGÊNCIA SOBRE A MESMA ROI", source)
         self.assertIn("roi_patch_expectation", source)
         self.assertIn("missing_patch_type", source)
         self.assertIn("missing_residual_mean", source)
