@@ -2,7 +2,11 @@ import unittest
 
 import numpy as np
 
-from src.core.anomaly_memory_integration import install_anomaly_memory_integration
+from src.core.anomaly_memory_integration import (
+    CROSS_CATEGORY_ABSENCE_GUARD_CATEGORIES,
+    _dynamic_fusion,
+    install_anomaly_memory_integration,
+)
 from src.core.anomaly_signature import valid_anomaly_signature
 
 
@@ -94,6 +98,81 @@ class AnomalyMemoryIntegrationTests(unittest.TestCase):
         self.assertEqual(result["detail"]["best_match_label"], "NG")
         self.assertIn("knn_expert.py", result["active_engines"])
         self.assertIn("anomaly_signature", result["detail"])
+
+
+
+
+class _FusionOrchestrator:
+    DECISION_CUTOFF = 0.45
+    DECISION_SCHEMA = "test"
+
+    @staticmethod
+    def _engine_entry(
+        engine_id,
+        label,
+        active,
+        triggered,
+        raw_score,
+        effective_score,
+        threshold,
+        summary,
+    ):
+        return {
+            "id": engine_id,
+            "label": label,
+            "active": bool(active),
+            "triggered": bool(triggered),
+            "raw_score": float(raw_score),
+            "effective_score": float(effective_score),
+            "threshold": float(threshold),
+            "selected": False,
+            "final_influence": 0.0,
+            "summary": str(summary),
+        }
+
+
+class CrossCategoryAbsenceFusionTests(unittest.TestCase):
+    def test_guard_categories_are_explicit_and_do_not_include_adhesive(self):
+        self.assertEqual(
+            CROSS_CATEGORY_ABSENCE_GUARD_CATEGORIES,
+            frozenset({"EMBORCADO", "DESLOCADO", "INVERTIDO"}),
+        )
+
+    def test_base_fusion_never_allows_knn_veto_after_hard_absence(self):
+        score, defect, confidence, _reason, trace = _dynamic_fusion(
+            _FusionOrchestrator(),
+            {
+                "silk_error_pct": 0.54,
+                "semantic_loss": 0.71,
+            },
+            "EMBORCADO",
+            {
+                "missing_active": True,
+                "missing_is_defect": True,
+                "missing_score": 0.85,
+                "missing_tolerance": 0.36,
+                "missing_reason": "ausência transversal confirmada",
+                "missing_hard_absence": True,
+                "missing_cross_category_guard": True,
+            },
+            {
+                "has_memory": True,
+                "vote_defect": 0.0,
+                "best_similarity": 0.906,
+                "n_neighbors": 1,
+                "best_match_label": "OK",
+                "operator_review_required": False,
+            },
+        )
+
+        self.assertEqual(score, 1.0)
+        self.assertTrue(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(trace["fusion_rule"], "missing_hard_absence")
+        self.assertEqual(trace["dominant_engine"], "missing")
+        self.assertEqual(trace["weights"], {"physical": 1.0, "knn": 0.0})
+        self.assertTrue(trace["hard_missing_evidence"])
+        self.assertTrue(trace["memory"]["suppressed_by_hard_missing"])
 
 
 if __name__ == "__main__":
