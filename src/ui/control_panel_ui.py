@@ -160,6 +160,8 @@ class ControlPanelUI:
         eyebrow.setObjectName("eyebrowLabel")
         title = QLabel(DISPLAY_NAME)
         title.setObjectName("pageTitle")
+        title.setWordWrap(True)
+        title.setMinimumWidth(0)
         subtitle = QLabel("Monitoramento, diagnóstico e memória visual em tempo real")
         subtitle.setObjectName("pageSubtitle")
         subtitle.setWordWrap(True)
