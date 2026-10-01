@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.ui.branding import DISPLAY_NAME, MONITOR_WINDOW_TITLE
 from src.ui.network_xp_debug import (
     copy_network_debug_to_clipboard,
     copy_network_image_to_clipboard,
@@ -67,7 +68,7 @@ class ControlPanelUI:
         self.action_buttons: list[QPushButton] = []
 
     def setup_ui(self, window):
-        window.setWindowTitle("VisionX Neural - Monitoramento IA")
+        window.setWindowTitle(MONITOR_WINDOW_TITLE)
         window.setObjectName("rootWindow")
         window.setStyleSheet(APP_STYLESHEET)
 
@@ -157,7 +158,7 @@ class ControlPanelUI:
 
         eyebrow = QLabel("INSPEÇÃO VISUAL INDUSTRIAL")
         eyebrow.setObjectName("eyebrowLabel")
-        title = QLabel("VisionX Neural")
+        title = QLabel(DISPLAY_NAME)
         title.setObjectName("pageTitle")
         subtitle = QLabel("Monitoramento, diagnóstico e memória visual em tempo real")
         subtitle.setObjectName("pageSubtitle")
