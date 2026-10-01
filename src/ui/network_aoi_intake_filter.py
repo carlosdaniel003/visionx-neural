@@ -584,6 +584,10 @@ def _decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         "missing_structure_loss",
         "missing_background_exposure",
         "missing_best_similarity",
+        "missing_direct_similarity",
+        "missing_appearance_loss",
+        "missing_edge_mismatch",
+        "missing_residual_p90",
         "missing_hard_absence",
         "missing_hard_absence_reason",
     )
