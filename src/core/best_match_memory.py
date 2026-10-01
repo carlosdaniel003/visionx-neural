@@ -408,6 +408,22 @@ def _best_match_dynamic_fusion_factory(original_dynamic_fusion):
                     ),
                     "best_match_label": best_label,
                     "best_similarity": similarity,
+                    "best_ok_similarity": memory.get(
+                        "best_ok_similarity"
+                    ),
+                    "best_ng_similarity": memory.get(
+                        "best_ng_similarity"
+                    ),
+                    "hypothesis_margin": memory.get(
+                        "hypothesis_margin"
+                    ),
+                    "memory_conflict": bool(
+                        memory.get("memory_conflict", False)
+                    ),
+                    "raw_operator_review_required": bool(
+                        memory.get("operator_review_required", False)
+                    ),
+                    "operator_review_required": False,
                     "memory_score": (
                         float(_label_score(best_label))
                         if reliable
