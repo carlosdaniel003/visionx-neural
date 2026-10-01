@@ -801,3 +801,29 @@ Manter testes que garantam:
 - guarda transversal pode ser promovida pelo contexto;
 - hard missing contextual continua zerando o peso KNN na fusão;
 - debug e UI expõem claramente as duas escalas.
+
+### Validação operacional em AOI real
+
+Em 01/10/2026, após a implementação da **Dual-Scale Presence**, o fluxo foi
+retestado na AOI real e o operador confirmou que o comportamento esperado
+funcionou corretamente.
+
+Essa validação operacional complementa as regressões automatizadas e deve ser
+preservada como referência de engenharia para futuras alterações no motor de
+presença.
+
+Regra de manutenção:
+
+- não remover a análise contextual apenas porque a ROI local apresenta alta
+  similaridade;
+- não retornar ao modelo de decisão baseado exclusivamente no epicentro para
+  presença/ausência física;
+- qualquer refatoração futura deve preservar a hierarquia:
+  `ROI local → contexto quando necessário → hard missing → KNN somente
+  auditoria`;
+- alterações de thresholds devem manter as travas contra
+  `DESLOCAMENTO PROVÁVEL`, match próximo plausível e ausência de suporte físico;
+- se um caso futuro voltar a produzir `FALHA FALSA` com componente fisicamente
+  ausente, registrar o debug completo e verificar primeiro se o dual-scale foi
+  ativado, qual caixa contextual foi usada e qual métrica bloqueou o
+  `missing_context_hard_absence`.
