@@ -10,6 +10,7 @@ on:
       - "src/core/experts/ssim_texture_expert.py"
       - "src/core/experts/silk_structural_expert.py"
       - "src/core/experts/missing_component_expert.py"
+      - "src/core/experts/physical_absence_guard.py"
       - "src/core/experts/roi_patch_expert.py"
       - "src/core/semantic_roi_extension.py"
       - "src/core/anomaly_memory_integration.py"
@@ -20,6 +21,7 @@ on:
       - "tests/test_roi_visual_alignment.py"
       - "tests/test_debugger_canonical_roi_contract.py"
       - "tests/test_missing_component_expert.py"
+      - "tests/test_physical_absence_guard.py"
       - ".github/workflows/roi-input-contract-tests.yml"
   workflow_dispatch:
 
@@ -48,6 +50,7 @@ jobs:
             src/core/experts/ssim_texture_expert.py \
             src/core/experts/silk_structural_expert.py \
             src/core/experts/missing_component_expert.py \
+            src/core/experts/physical_absence_guard.py \
             src/core/experts/roi_patch_expert.py \
             src/core/semantic_roi_extension.py \
             src/core/anomaly_memory_integration.py \
@@ -55,7 +58,9 @@ jobs:
             src/ui/widgets/missing_debugger.py \
             tests/test_roi_input_contract.py \
             tests/test_roi_visual_alignment.py \
-            tests/test_debugger_canonical_roi_contract.py             tests/test_missing_component_expert.py
+            tests/test_debugger_canonical_roi_contract.py \
+            tests/test_missing_component_expert.py \
+            tests/test_physical_absence_guard.py
 
       - name: Unit tests
         run: |
@@ -63,4 +68,6 @@ jobs:
             tests.test_roi_input_contract \
             tests.test_roi_visual_alignment \
             tests.test_debugger_canonical_roi_contract \
+            tests.test_missing_component_expert \
+            tests.test_physical_absence_guard \
             -v
