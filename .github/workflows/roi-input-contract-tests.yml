@@ -11,6 +11,7 @@ on:
       - "src/core/experts/silk_structural_expert.py"
       - "src/core/experts/missing_component_expert.py"
       - "src/core/experts/physical_absence_guard.py"
+      - "src/core/experts/dual_scale_presence.py"
       - "src/core/experts/roi_patch_expert.py"
       - "src/core/semantic_roi_extension.py"
       - "src/core/anomaly_memory_integration.py"
@@ -23,6 +24,7 @@ on:
       - "tests/test_debugger_canonical_roi_contract.py"
       - "tests/test_missing_component_expert.py"
       - "tests/test_physical_absence_guard.py"
+      - "tests/test_dual_scale_presence.py"
       - "tests/test_missing_component_ui_contract.py"
       - ".github/workflows/roi-input-contract-tests.yml"
   workflow_dispatch:
@@ -53,6 +55,7 @@ jobs:
             src/core/experts/silk_structural_expert.py \
             src/core/experts/missing_component_expert.py \
             src/core/experts/physical_absence_guard.py \
+            src/core/experts/dual_scale_presence.py \
             src/core/experts/roi_patch_expert.py \
             src/core/semantic_roi_extension.py \
             src/core/anomaly_memory_integration.py \
@@ -64,6 +67,7 @@ jobs:
             tests/test_debugger_canonical_roi_contract.py \
             tests/test_missing_component_expert.py \
             tests/test_physical_absence_guard.py \
+            tests/test_dual_scale_presence.py \
             tests/test_missing_component_ui_contract.py
 
       - name: Unit tests
@@ -74,5 +78,6 @@ jobs:
             tests.test_debugger_canonical_roi_contract \
             tests.test_missing_component_expert \
             tests.test_physical_absence_guard \
+            tests.test_dual_scale_presence \
             tests.test_missing_component_ui_contract \
             -v
