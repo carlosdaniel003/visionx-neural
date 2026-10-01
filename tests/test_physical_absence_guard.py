@@ -1,0 +1,90 @@
+import unittest
+
+from src.core.experts.physical_absence_guard import PhysicalAbsenceGuard
+
+
+class PhysicalAbsenceGuardEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.guard = PhysicalAbsenceGuard()
+
+    @staticmethod
+    def real_emborcado_vector():
+        # Métricas reproduzidas a partir do evento
+        # 1ef8605d905e4fac998cee708c89cbf6 usando o mesmo ROI do VisionX.
+        return {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "CONTEÚDO INESPERADO NA ROI",
+            "missing_score": 0.8487753587129022,
+            "missing_changed_coverage": 0.5243551587301587,
+            "missing_residual_mean": 0.40792080760002136,
+            "missing_appearance_loss": 0.46180088711708467,
+            "missing_direct_similarity": 0.5381991128829153,
+            "missing_edge_mismatch": 0.5096905814348861,
+            "missing_best_similarity": 0.09315446019172668,
+        }
+
+    @staticmethod
+    def physical_detail():
+        return {
+            "silk_error_pct": 0.54,
+            "semantic_loss": 0.71,
+            "physical_score": 1.0,
+        }
+
+    def test_real_emborcado_missing_vector_is_confirmed(self):
+        hard, reason, support = self.guard.hard_absence_evidence(
+            self.real_emborcado_vector(),
+            self.physical_detail(),
+        )
+
+        self.assertTrue(hard)
+        self.assertTrue(support["supported"])
+        self.assertIn("desapareceu", reason)
+
+    def test_nearby_component_match_blocks_cross_category_override(self):
+        result = self.real_emborcado_vector()
+        result["missing_best_similarity"] = 0.52
+
+        hard, _reason, _support = self.guard.hard_absence_evidence(
+            result,
+            self.physical_detail(),
+        )
+
+        self.assertFalse(hard)
+
+    def test_weak_independent_physical_support_blocks_override(self):
+        detail = self.physical_detail()
+        detail["semantic_loss"] = 0.41
+
+        hard, reason, support = self.guard.hard_absence_evidence(
+            self.real_emborcado_vector(),
+            detail,
+        )
+
+        self.assertFalse(hard)
+        self.assertFalse(support["supported"])
+        self.assertIn("motores físicos independentes", reason)
+
+    def test_probable_displacement_is_never_reclassified_as_missing(self):
+        result = self.real_emborcado_vector()
+        result["missing_classification"] = "DESLOCAMENTO PROVÁVEL"
+
+        hard, reason, _support = self.guard.hard_absence_evidence(
+            result,
+            self.physical_detail(),
+        )
+
+        self.assertFalse(hard)
+        self.assertIn("deslocado", reason)
+
+    def test_guard_categories_do_not_include_adhesive_or_missing(self):
+        self.assertIn("EMBORCADO", self.guard.CATEGORIES)
+        self.assertIn("DESLOCADO", self.guard.CATEGORIES)
+        self.assertIn("INVERTIDO", self.guard.CATEGORIES)
+        self.assertNotIn("MUITO ADESIVO", self.guard.CATEGORIES)
+        self.assertNotIn("FALTANDO", self.guard.CATEGORIES)
+
+
+if __name__ == "__main__":
+    unittest.main()
