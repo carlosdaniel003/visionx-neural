@@ -16,24 +16,33 @@ from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout
 FEEDBACK_DURATION_MS = 800
 DUPLICATE_SUPPRESSION_SECONDS = 1.5
 FEEDBACK_SIZE = 180
+FEEDBACK_MARGIN = 24
 
 
 FEEDBACK_STYLESHEET = """
 QFrame#decisionKeyFeedback {
-    background-color: rgba(8, 8, 8, 238);
-    border: 3px solid #5a5a5a;
+    background-color: rgba(16, 16, 16, 244);
+    border: 1px solid #303030;
     border-radius: 8px;
 }
 QFrame#decisionKeyFeedback[tone="ok"] {
-    border-color: #4ade80;
+    border: 2px solid #4ade80;
 }
 QFrame#decisionKeyFeedback[tone="ng"] {
-    border-color: #ff6262;
+    border: 2px solid #ff6262;
+}
+QLabel#decisionKeyHeader {
+    color: #f5c518;
+    background: transparent;
+    border: none;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 1px;
 }
 QLabel#decisionKeyDigit {
     background: transparent;
     border: none;
-    font-size: 58px;
+    font-size: 54px;
     font-weight: 900;
 }
 QLabel#decisionKeyDigit[tone="ok"],
@@ -47,7 +56,7 @@ QLabel#decisionKeyLabel[tone="ng"] {
 QLabel#decisionKeyLabel {
     background: transparent;
     border: none;
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 900;
     letter-spacing: 1px;
 }
@@ -81,8 +90,12 @@ class DecisionKeyFeedbackOverlay(QFrame):
         self.setStyleSheet(FEEDBACK_STYLESHEET)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 14, 14, 12)
+        layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(2)
+
+        self.header_label = QLabel("DECISÃO RECEBIDA")
+        self.header_label.setObjectName("decisionKeyHeader")
+        self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.digit_label = QLabel("-")
         self.digit_label.setObjectName("decisionKeyDigit")
@@ -96,6 +109,7 @@ class DecisionKeyFeedbackOverlay(QFrame):
         self.source_label.setObjectName("decisionKeySource")
         self.source_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        layout.addWidget(self.header_label)
         layout.addStretch(1)
         layout.addWidget(self.digit_label)
         layout.addWidget(self.decision_label)
@@ -128,11 +142,11 @@ class DecisionKeyFeedbackOverlay(QFrame):
         style.polish(widget)
         widget.update()
 
-    def _center_over_panel(self) -> None:
+    def _position_bottom_right(self) -> None:
         width = self.width()
         height = self.height()
-        x = max(0, (self.panel.width() - width) // 2)
-        y = max(0, (self.panel.height() - height) // 2)
+        x = max(0, self.panel.width() - width - FEEDBACK_MARGIN)
+        y = max(0, self.panel.height() - height - FEEDBACK_MARGIN)
         self.move(x, y)
 
     def show_decision(self, decision: str, source: str = "") -> bool:
@@ -161,7 +175,7 @@ class DecisionKeyFeedbackOverlay(QFrame):
             widget.setProperty("tone", tone)
             self._refresh_style(widget)
 
-        self._center_over_panel()
+        self._position_bottom_right()
         self.raise_()
         self.show()
         self._hide_timer.start(FEEDBACK_DURATION_MS)
@@ -211,6 +225,7 @@ __all__ = [
     "DUPLICATE_SUPPRESSION_SECONDS",
     "FEEDBACK_DURATION_MS",
     "FEEDBACK_SIZE",
+    "FEEDBACK_MARGIN",
     "DecisionKeyFeedbackOverlay",
     "install_decision_key_feedback",
     "install_decision_key_feedback_hooks",
