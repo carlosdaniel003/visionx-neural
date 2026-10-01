@@ -35,6 +35,15 @@ class MissingDebuggerWidget(QWidget):
         self.background_signal = 0.0
         self.hard_absence = False
         self.hard_absence_reason = ""
+        self.dual_scale_active = False
+        self.dual_scale_triggered = False
+        self.scale_disagreement = False
+        self.local_global_ratio = 1.0
+        self.context_score = 0.0
+        self.context_coverage = 0.0
+        self.context_similarity = 1.0
+        self.context_nearby_similarity = 0.0
+        self.context_hard_absence = False
         self.roi_width = 0
         self.roi_height = 0
         self.reason = ""
@@ -184,6 +193,33 @@ class MissingDebuggerWidget(QWidget):
         self.hard_absence_reason = str(
             detail.get("missing_hard_absence_reason", "")
         )
+        self.dual_scale_active = bool(
+            detail.get("missing_dual_scale_active", False)
+        )
+        self.dual_scale_triggered = bool(
+            detail.get("missing_dual_scale_triggered", False)
+        )
+        self.scale_disagreement = bool(
+            detail.get("missing_scale_disagreement", False)
+        )
+        self.local_global_ratio = float(
+            detail.get("missing_local_global_area_ratio", 1.0)
+        )
+        self.context_score = float(
+            detail.get("missing_context_score", 0.0)
+        )
+        self.context_coverage = float(
+            detail.get("missing_context_coverage", 0.0)
+        )
+        self.context_similarity = float(
+            detail.get("missing_context_direct_similarity", 1.0)
+        )
+        self.context_nearby_similarity = float(
+            detail.get("missing_context_best_similarity", 0.0)
+        )
+        self.context_hard_absence = bool(
+            detail.get("missing_context_hard_absence", False)
+        )
         self.reason = str(detail.get("missing_reason", ""))
 
         # Mesma fonte do Laboratório de Textura: nenhuma nova extração da ROI.
@@ -285,7 +321,11 @@ class MissingDebuggerWidget(QWidget):
 
         painter.setPen(QColor("#f5f5f5"))
         painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
-        painter.drawText(8, 18, "EXPECTATIVA DO PATCH • MOTOR FALTANDO")
+        painter.drawText(
+            8,
+            18,
+            "EXPECTATIVA DO PATCH • PRESENÇA FÍSICA LOCAL + CONTEXTO",
+        )
 
         if not self.is_active:
             painter.setPen(QColor("#555555"))
@@ -340,11 +380,13 @@ class MissingDebuggerWidget(QWidget):
         status_color = QColor("#ff6262") if self.is_defect else QColor("#4ade80")
         painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
         painter.setPen(status_color)
-        status_text = (
-            "AUSÊNCIA FÍSICA FORTE • "
-            if self.hard_absence
-            else ""
-        )
+        status_text = ""
+        if self.hard_absence:
+            status_text = (
+                "AUSÊNCIA FÍSICA FORTE • DUAL-SCALE • "
+                if self.context_hard_absence
+                else "AUSÊNCIA FÍSICA FORTE • "
+            )
         painter.drawText(
             padding,
             height - 94,
@@ -402,16 +444,24 @@ class MissingDebuggerWidget(QWidget):
         )
         painter.setPen(QColor("#f5c518"))
         details = (
-            f"Similaridade na posição {self.direct_similarity:.0%} • melhor próxima "
-            f"{self.best_similarity:.0%} • possível deslocamento X:{self.displacement_dx:+.1f}px "
-            f"Y:{self.displacement_dy:+.1f}px ({self.displacement_pixels:.1f}px) • "
-            f"sinal de fundo {self.background_signal:.0%}"
-            + (
-                f" • hard-missing: {self.hard_absence_reason}"
-                if self.hard_absence
-                else ""
-            )
+            f"Similaridade local {self.direct_similarity:.0%} • melhor próxima "
+            f"{self.best_similarity:.0%} • deslocamento X:{self.displacement_dx:+.1f}px "
+            f"Y:{self.displacement_dy:+.1f}px ({self.displacement_pixels:.1f}px)"
         )
+        if self.dual_scale_triggered:
+            details += (
+                f" • dual-scale local/global {self.local_global_ratio:.0%} • "
+                f"contexto score {self.context_score:.0%} / área {self.context_coverage:.0%} • "
+                f"similaridade {self.context_similarity:.0%} • "
+                f"match próximo {self.context_nearby_similarity:.0%}"
+            )
+        elif self.dual_scale_active:
+            details += " • dual-scale aguardando contexto"
+        else:
+            details += f" • sinal de fundo {self.background_signal:.0%}"
+
+        if self.hard_absence:
+            details += f" • hard-missing: {self.hard_absence_reason}"
         painter.drawText(
             padding,
             height - 24,
