@@ -1,5 +1,7 @@
 import unittest
 
+import numpy as np
+
 from src.core.experts.dual_scale_presence import DualScalePresenceAnalyzer
 
 
@@ -25,6 +27,36 @@ class DualScalePresenceGeometryTests(unittest.TestCase):
         )
 
         self.assertEqual(box, (110, 9, 350, 270))
+
+
+class _MinimalExpert:
+    @staticmethod
+    def _safe_pair(reference, test):
+        return reference.copy(), test.copy()
+
+
+class DualScalePresenceSafetyTests(unittest.TestCase):
+    def test_probable_displacement_blocks_dual_scale_absence(self):
+        image = np.zeros((120, 180, 3), dtype=np.uint8)
+        result = DualScalePresenceAnalyzer.analyze(
+            _MinimalExpert(),
+            image,
+            image,
+            {
+                "missing_roi_box": (70, 45, 35, 30),
+                "missing_is_defect": True,
+                "missing_classification": "DESLOCAMENTO PROVÁVEL",
+            },
+            global_box_info={"w": 170, "h": 110},
+            physical_detail={
+                "silk_error_pct": 0.90,
+                "semantic_loss": 0.90,
+            },
+        )
+
+        self.assertFalse(result["missing_dual_scale_active"])
+        self.assertFalse(result["missing_context_hard_absence"])
+        self.assertIn("deslocamento", result["missing_context_hard_reason"])
 
 
 class DualScalePresenceEvidenceTests(unittest.TestCase):
