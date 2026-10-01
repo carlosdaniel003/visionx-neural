@@ -23,6 +23,12 @@ class XPDecisionShortcutTests(unittest.TestCase):
         panel.btn_save_ng = QPushButton("NG", panel)
         panel.ok_count = 0
         panel.ng_count = 0
+        panel.feedback = []
+        panel.show_decision_key_feedback = (
+            lambda decision, source="": panel.feedback.append(
+                (decision, source)
+            )
+        )
         panel.btn_save_ok.clicked.connect(
             lambda _checked=False: setattr(panel, "ok_count", panel.ok_count + 1)
         )
@@ -36,18 +42,21 @@ class XPDecisionShortcutTests(unittest.TestCase):
         self.assertTrue(_activate_decision(panel, "OK"))
         self.assertEqual(panel.ok_count, 1)
         self.assertEqual(panel.ng_count, 0)
+        self.assertEqual(panel.feedback, [("OK", "odin_keyboard")])
 
     def test_one_uses_same_ng_button_path(self):
         panel = self._panel()
         self.assertTrue(_activate_decision(panel, "NG"))
         self.assertEqual(panel.ok_count, 0)
         self.assertEqual(panel.ng_count, 1)
+        self.assertEqual(panel.feedback, [("NG", "odin_keyboard")])
 
     def test_disabled_decision_is_not_bypassed(self):
         panel = self._panel()
         panel.btn_save_ok.setEnabled(False)
         self.assertFalse(_activate_decision(panel, "OK"))
         self.assertEqual(panel.ok_count, 0)
+        self.assertEqual(panel.feedback, [])
 
     def test_window_shortcuts_include_main_and_numeric_keypad(self):
         panel = self._panel()
