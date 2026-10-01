@@ -1,8 +1,8 @@
 """Arquivo opcional de evidências visuais NG.
 
-Quando habilitado pelo operador, salva em background a imagem bruta de teste
-associada a cada decisão final NG. Este arquivo é independente do dataset/KNN:
-não participa de treinamento, votação ou classificação.
+Quando habilitado pelo operador, salva em background exatamente o mesmo frame
+completo do Windows XP que o botão "Copiar imagem XP" disponibiliza para o
+evento atual. Este arquivo é independente do dataset/KNN.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 
 from src.config.settings import settings
+from src.services.network_xp_frame import network_xp_frame_snapshot
 
 
 def safe_archive_category(value: str) -> str:
@@ -159,14 +160,15 @@ def install_ng_image_archive(control_panel_cls) -> None:
         should_archive = bool(
             normalized == "NG"
             and getattr(self, "ng_archive_enabled", False)
-            and isinstance(getattr(self, "current_ng", None), np.ndarray)
-            and self.current_ng.size > 0
         )
 
         archive_image = None
         archive_category = ""
         if should_archive:
-            archive_image = self.current_ng.copy()
+            # Mesma fonte e mesma validação de event_id do botão
+            # "Copiar imagem XP". Não usar current_ng como fallback, pois ele
+            # é apenas o recorte de teste e poderia divergir da evidência XP.
+            archive_image = network_xp_frame_snapshot(self)
             archive_category = str(
                 (getattr(self, "current_aoi_info", {}) or {}).get(
                     "category",
