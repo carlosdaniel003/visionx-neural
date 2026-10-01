@@ -19,7 +19,12 @@ def install_memory_status_ui(control_panel_cls) -> None:
 
         if hasattr(self, "lbl_db_info"):
             self.lbl_db_info.setText(memory_summary_text(detail))
-            if model["conflict"]:
+            if model["hard_missing_override"]:
+                self.lbl_db_info.setStyleSheet(
+                    "color: #ff7b72; font-size: 12px; font-weight: 800; "
+                    "border: none; background: transparent;"
+                )
+            elif model["conflict"]:
                 self.lbl_db_info.setStyleSheet(
                     "color: #ffb454; font-size: 12px; font-weight: 800; "
                     "border: none; background: transparent;"
