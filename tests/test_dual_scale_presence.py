@@ -135,6 +135,33 @@ class DualScalePresenceEvidenceTests(unittest.TestCase):
 
         self.assertFalse(hard)
 
+    def test_transversal_extreme_context_requires_independent_support(self):
+        # Regressão do evento 4128dec4a02f423fbdbcd47fca777108:
+        # componente presente, categoria DESLOCADO e KNN OK muito forte.
+        metrics = {
+            "score": 0.9779719154824863,
+            "coverage": 0.6975059269796112,
+            "residual_mean": 0.6894615888595581,
+            "appearance_loss": 0.6488654838939516,
+            "structure_loss": 0.5356633380884451,
+            "edge_mismatch": 0.5258658165483263,
+            "best_similarity": 0.22119906544685364,
+        }
+        support = {
+            "supported": False,
+            "structural": 0.4867366921844401,
+            "semantic": 0.3013883389284213,
+        }
+
+        hard, reason = DualScalePresenceAnalyzer._context_hard_absence(
+            metrics,
+            support,
+            require_physical_support_for_extreme=True,
+        )
+
+        self.assertFalse(hard)
+        self.assertIn("sem confirmação física independente", reason)
+
     def test_extreme_context_can_confirm_without_global_support(self):
         metrics = {
             "score": 0.92,
