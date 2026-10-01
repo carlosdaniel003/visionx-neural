@@ -840,6 +840,6 @@ O computador novo exibe um feedback visual temporário quando recebe uma decisã
 
 Isso vale tanto para os atalhos locais do ODIN quanto para `CMD_OK/CMD_NG` enviados pelo hook global do teclado no Windows XP.
 
-O feedback é implementado somente no computador novo em `src/ui/decision_key_feedback.py`. Ele não altera os pacotes de rede, as portas, `PRESS_0/PRESS_1`, `CMD_OK/CMD_NG` nem a lógica do agente.
+O feedback é implementado somente no computador novo em `src/ui/decision_key_feedback.py`. Ele aparece no canto inferior direito da interface, usa o mesmo visual escuro/amarelo do ODIN e acrescenta verde para OK ou vermelho para NG. Ele não altera os pacotes de rede, as portas, `PRESS_0/PRESS_1`, `CMD_OK/CMD_NG` nem a lógica do agente.
 
 Portanto, **esta funcionalidade não exige atualizar manualmente o `agente_industrial_xp.py` no Windows XP**.
