@@ -579,10 +579,10 @@ class ControlPanelUI:
         window.lbl_ng_archive_title.setObjectName("ngArchiveTitle")
 
         window.lbl_ng_archive_status = QLabel(
-            "Desativado • fluxo atual mantido"
+            "Ativado • salvamento automático de NG"
         )
         window.lbl_ng_archive_status.setObjectName("ngArchiveStatus")
-        window.lbl_ng_archive_status.setProperty("archiveEnabled", False)
+        window.lbl_ng_archive_status.setProperty("archiveEnabled", True)
         window.lbl_ng_archive_status.setWordWrap(True)
         window.lbl_ng_archive_status.setMinimumWidth(0)
         window.lbl_ng_archive_status.setSizePolicy(
@@ -591,12 +591,12 @@ class ControlPanelUI:
         )
 
         window.btn_toggle_ng_archive = QPushButton(
-            "Salvar imagens NG • DESATIVADO"
+            "Salvar imagens NG • ATIVADO"
         )
         window.btn_toggle_ng_archive.setObjectName("ngArchiveToggleButton")
         window.btn_toggle_ng_archive.setCheckable(True)
-        window.btn_toggle_ng_archive.setChecked(False)
-        window.btn_toggle_ng_archive.setProperty("archiveEnabled", False)
+        window.btn_toggle_ng_archive.setChecked(True)
+        window.btn_toggle_ng_archive.setProperty("archiveEnabled", True)
         window.btn_toggle_ng_archive.setCursor(
             Qt.CursorShape.PointingHandCursor
         )
@@ -608,9 +608,9 @@ class ControlPanelUI:
             QSizePolicy.Policy.Fixed,
         )
         window.btn_toggle_ng_archive.setToolTip(
-            "Quando ativado, salva em public/ng_archive exatamente o mesmo "
-            "frame completo do Windows XP disponível em 'Copiar imagem XP' "
-            "para toda decisão final NG. Não altera o dataset."
+            "Ativado por padrão ao iniciar o ODIN. Para capturas do Windows XP, "
+            "salva em public/ng_archive exatamente o frame completo vinculado "
+            "ao diagnóstico de toda decisão final NG. Não altera o dataset."
         )
         window.btn_toggle_ng_archive.toggled.connect(
             lambda checked: window.set_ng_archive_enabled(checked)
@@ -703,14 +703,14 @@ class ControlPanelUI:
         self.network_debug_grid.setHorizontalSpacing(10)
         self.network_debug_grid.setVerticalSpacing(6)
 
-        window.lbl_network_debug_title = QLabel("DIAGNÓSTICO XP")
+        window.lbl_network_debug_title = QLabel("DIAGNÓSTICO DA CAPTURA")
         window.lbl_network_debug_title.setObjectName("networkDebugTitle")
         window.lbl_network_debug_title.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
 
         window.lbl_network_debug_state = QLabel(
-            "Aguardando a primeira imagem do Windows XP"
+            "Aguardando a primeira captura analisada"
         )
         window.lbl_network_debug_state.setObjectName("networkDebugState")
         window.lbl_network_debug_state.setProperty("state", "idle")
@@ -739,13 +739,14 @@ class ControlPanelUI:
             QSizePolicy.Policy.Fixed,
         )
         window.btn_copy_network_debug.setToolTip(
-            "Copia o relatório técnico da última imagem recebida do Windows XP."
+            "Copia o relatório técnico da última captura analisada, seja ela "
+            "recebida do Windows XP ou feita localmente por MSS."
         )
         window.btn_copy_network_debug.clicked.connect(
             lambda _checked=False: copy_network_debug_to_clipboard(window)
         )
 
-        window.btn_copy_network_image = QPushButton("Copiar imagem XP")
+        window.btn_copy_network_image = QPushButton("Copiar imagem")
         window.btn_copy_network_image.setObjectName("networkDebugImageButton")
         window.btn_copy_network_image.setCursor(Qt.CursorShape.PointingHandCursor)
         window.btn_copy_network_image.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -754,8 +755,8 @@ class ControlPanelUI:
             QSizePolicy.Policy.Fixed,
         )
         window.btn_copy_network_image.setToolTip(
-            "Copia exatamente o frame enviado pelo Windows XP que está vinculado "
-            "ao diagnóstico atual."
+            "Copia exatamente a imagem de origem vinculada ao diagnóstico atual: "
+            "frame recebido do Windows XP ou frame completo capturado por MSS."
         )
         window.btn_copy_network_image.clicked.connect(
             lambda _checked=False: copy_network_image_to_clipboard(window)
