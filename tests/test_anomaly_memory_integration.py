@@ -27,6 +27,9 @@ class _FakeKNN:
 
 
 class _FakeOrchestrator:
+    DECISION_CUTOFF = 0.45
+    DECISION_SCHEMA = "test"
+
     def __init__(self):
         self.routing_table = {"Much Adhesive": ["shift", "semantic", "knn"]}
         self.experts = {"knn": _FakeKNN()}
