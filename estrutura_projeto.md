@@ -80,7 +80,7 @@ presença de um componente que o comparador físico confirmou que desapareceu.
 A ausência física forte só é habilitada quando o caso já é defeito físico e não
 foi classificado como `DESLOCAMENTO PROVÁVEL`.
 
-Existem duas rotas de confirmação:
+Existem três rotas de confirmação:
 
 1. **substituição pelo fundo**
    - score físico >= 72%;
@@ -94,6 +94,38 @@ Existem duas rotas de confirmação:
    - residual médio >= 45%;
    - perda estrutural >= 30%;
    - melhor correspondência próxima < 60%.
+
+3. **componente removido com footprint/base escura**
+   - score físico >= 90%;
+   - área divergente >= 45%;
+   - residual médio >= 60%;
+   - perda de aparência >= 50%;
+   - similaridade direta <= 50%;
+   - melhor correspondência próxima < 35%;
+   - não pode estar classificado como `DESLOCAMENTO PROVÁVEL`.
+
+A terceira rota cobre componentes que, ao desaparecerem, deixam uma área escura,
+footprint, cola ou base com aparência parcialmente semelhante ao corpo original.
+Nesses casos, `background_exposure` pode permanecer em 0% e
+`structure_loss` pode ficar abaixo de 30%, mesmo quando a aparência esperada
+foi destruída.
+
+Caso real registrado em 01/10/2026:
+- evento `bf6b6a2f1e844cc796ae355ae7ceb7e8`;
+- componente R375;
+- `missing_score ≈ 96.4%`;
+- cobertura ≈ 54.7%;
+- residual médio ≈ 67.2%;
+- `missing_structure_loss ≈ 24.0%`;
+- `background_exposure = 0%`;
+- melhor correspondência próxima ≈ 13.2%;
+- conflito KNN: NG 90.6% × OK 90.0%;
+- consequência antiga: revisão obrigatória.
+
+Esse padrão não deve depender de exposição do fundo vermelho nem exigir perda
+estrutural >= 30%. A combinação de score alto, grande cobertura, residual alto,
+perda da aparência original e ausência de correspondência próxima é suficiente
+para caracterizar ausência física forte.
 
 Esses limites são deliberadamente mais fortes que o limiar comum do motor. O
 objetivo é reservar o override apenas para desaparecimento inequívoco, não para
@@ -169,6 +201,10 @@ O `Copiar debug XP` deve registrar, após a análise:
 - `missing_changed_coverage`;
 - `missing_structure_loss`;
 - `missing_background_exposure`;
+- `missing_direct_similarity`;
+- `missing_appearance_loss`;
+- `missing_edge_mismatch`;
+- `missing_residual_p90`;
 - `missing_best_similarity`;
 - `missing_hard_absence`;
 - motivo do hard absence;
@@ -185,6 +221,8 @@ teve autoridade sobre ela.
 Manter testes que garantam:
 
 - componente completamente removido → `missing_hard_absence=True`;
+- componente removido deixando footprint/base escura → `missing_hard_absence=True`;
+- diferença parcial com correspondência próxima plausível → não vira hard missing;
 - componente deslocado → não vira hard missing;
 - memória OK forte não veta hard missing;
 - conflito OK × NG não força revisão sobre hard missing;
