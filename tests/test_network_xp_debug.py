@@ -63,6 +63,61 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
         self.assertIn("INDÍCIOS DIAGNÓSTICOS", report)
         self.assertIn("REGISTRO COMPLETO (JSON)", report)
 
+    def test_report_exposes_final_missing_decision_and_memory_suppression(self):
+        record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "evt-missing",
+            "timestamp": "2026-10-01T07:36:26.226",
+            "source_ip": "169.254.95.200",
+            "stage": "aoi_intake_validation",
+            "mode": "Modo Teste",
+            "transport": {"image": {"valid": True}},
+            "cycle": {},
+            "validation_message": "epicentro válido",
+            "validation": {
+                "valid": True,
+                "reason": "valid_epicenter",
+                "diagnostic_hints": [],
+            },
+            "decision": {
+                "category": "FALTANDO",
+                "verdict": "DEFEITO REAL",
+                "is_defect": True,
+                "confidence": 0.99,
+                "final_score": 1.0,
+                "physical_score": 0.93,
+                "fusion_rule": "missing_hard_absence",
+                "dominant_engine": "missing",
+                "operator_review_required": False,
+                "hard_missing_evidence": True,
+                "reason": "AUSÊNCIA FÍSICA FORTE",
+                "missing": {
+                    "missing_score": 0.93,
+                    "missing_classification": "COMPONENTE FISICAMENTE AUSENTE",
+                    "missing_changed_coverage": 0.50,
+                    "missing_background_exposure": 0.54,
+                    "missing_hard_absence_reason": (
+                        "conteúdo do gabarito foi substituído pelo fundo da região"
+                    ),
+                },
+                "memory": {
+                    "best_match_label": "OK",
+                    "best_similarity": 0.98,
+                    "memory_conflict": False,
+                    "suppressed_by_hard_missing": True,
+                },
+            },
+        }
+
+        report = format_network_debug_report(record)
+
+        self.assertIn("DECISÃO VISIONX", report)
+        self.assertIn("Categoria: FALTANDO", report)
+        self.assertIn("Regra de fusão: missing_hard_absence", report)
+        self.assertIn("Ausência física forte: True", report)
+        self.assertIn("KNN melhor rótulo: OK", report)
+        self.assertIn("KNN suprimido por ausência física: True", report)
+
     def test_empty_record_has_safe_message(self):
         report = format_network_debug_report({})
         self.assertIn("Nenhuma imagem recebida", report)
