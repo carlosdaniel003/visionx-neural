@@ -179,6 +179,80 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
             report,
         )
 
+    def test_report_exposes_dual_scale_presence_context(self):
+        record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "evt-dual-scale",
+            "timestamp": "2026-10-01T09:53:28.744",
+            "source_ip": "169.254.95.200",
+            "stage": "aoi_intake_validation",
+            "mode": "Modo Teste",
+            "transport": {"image": {"valid": True}},
+            "cycle": {},
+            "validation_message": "epicentro válido",
+            "validation": {"valid": True, "reason": "valid_epicenter"},
+            "decision": {
+                "category": "FALTANDO",
+                "verdict": "DEFEITO REAL",
+                "is_defect": True,
+                "confidence": 0.99,
+                "final_score": 1.0,
+                "physical_score": 1.0,
+                "fusion_rule": "missing_hard_absence",
+                "dominant_engine": "missing",
+                "operator_review_required": False,
+                "hard_missing_evidence": True,
+                "reason": "contexto maior confirmou ausência",
+                "missing": {
+                    "missing_hard_absence": True,
+                    "missing_dual_scale_policy": "dual_scale_presence_v1",
+                    "missing_dual_scale_active": True,
+                    "missing_dual_scale_triggered": True,
+                    "missing_scale_disagreement": True,
+                    "missing_local_global_area_ratio": 0.106,
+                    "missing_context_box": [110, 9, 350, 270],
+                    "missing_context_score": 0.795,
+                    "missing_context_coverage": 0.388,
+                    "missing_context_residual_mean": 0.688,
+                    "missing_context_structure_loss": 0.327,
+                    "missing_context_direct_similarity": 0.562,
+                    "missing_context_appearance_loss": 0.438,
+                    "missing_context_best_similarity": 0.198,
+                    "missing_context_hard_absence": True,
+                    "missing_context_hard_reason": (
+                        "contexto maior confirma desaparecimento físico"
+                    ),
+                    "missing_context_physical_support": {
+                        "supported": True,
+                        "structural": 0.56,
+                        "semantic": 0.56,
+                    },
+                },
+                "memory": {
+                    "best_match_label": "OK",
+                    "best_similarity": 0.894,
+                    "memory_conflict": False,
+                    "suppressed_by_hard_missing": True,
+                },
+            },
+        }
+
+        report = format_network_debug_report(record)
+
+        self.assertIn("Dual-scale ativo: True", report)
+        self.assertIn("Dual-scale executado: True", report)
+        self.assertIn("Dual-scale desacordo: True", report)
+        self.assertIn("Dual-scale razão local/global: 0.106", report)
+        self.assertIn(
+            "Dual-scale caixa contexto: [110, 9, 350, 270]",
+            report,
+        )
+        self.assertIn("Dual-scale hard absence: True", report)
+        self.assertIn(
+            "KNN suprimido por ausência física: True",
+            report,
+        )
+
     def test_empty_record_has_safe_message(self):
         report = format_network_debug_report({})
         self.assertIn("Nenhuma imagem recebida", report)
