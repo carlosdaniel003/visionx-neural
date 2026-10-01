@@ -152,6 +152,68 @@ class MissingComponentExpertTests(unittest.TestCase):
             "COMPONENTE FISICAMENTE AUSENTE",
         )
 
+    def test_dark_footprint_missing_case_from_real_aoi_becomes_hard_absence(self):
+        # Regressão do evento bf6b6a2f1e844cc796ae355ae7ceb7e8:
+        # componente removido deixa uma região escura, portanto o sinal de
+        # background vermelho é zero e structure_loss fica abaixo de 30%.
+        observed = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "DIVERGÊNCIA PARCIAL NA ROI",
+            "missing_score": 0.964051919402973,
+            "missing_changed_coverage": 0.5468713105076741,
+            "missing_residual_mean": 0.6723987460136414,
+            "missing_structure_loss": 0.23994452149791956,
+            "missing_background_exposure": 0.0,
+            "missing_best_similarity": 0.13180819153785706,
+            "missing_appearance_loss": 0.61,
+            "missing_direct_similarity": 0.39,
+        }
+
+        hard, reason = self.expert._hard_absence_evidence(observed)
+
+        self.assertTrue(hard)
+        self.assertIn("footprint/base", reason)
+
+    def test_dark_footprint_rule_still_rejects_ambiguous_partial_difference(self):
+        ambiguous = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "DIVERGÊNCIA PARCIAL NA ROI",
+            "missing_score": 0.91,
+            "missing_changed_coverage": 0.46,
+            "missing_residual_mean": 0.61,
+            "missing_structure_loss": 0.20,
+            "missing_background_exposure": 0.0,
+            "missing_best_similarity": 0.48,
+            "missing_appearance_loss": 0.58,
+            "missing_direct_similarity": 0.42,
+        }
+
+        hard, _reason = self.expert._hard_absence_evidence(ambiguous)
+
+        self.assertFalse(hard)
+
+    def test_dark_footprint_rule_never_overrides_probable_displacement(self):
+        displaced = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "DESLOCAMENTO PROVÁVEL",
+            "missing_score": 0.99,
+            "missing_changed_coverage": 0.80,
+            "missing_residual_mean": 0.80,
+            "missing_structure_loss": 0.10,
+            "missing_background_exposure": 0.0,
+            "missing_best_similarity": 0.10,
+            "missing_appearance_loss": 0.80,
+            "missing_direct_similarity": 0.20,
+        }
+
+        hard, reason = self.expert._hard_absence_evidence(displaced)
+
+        self.assertFalse(hard)
+        self.assertIn("deslocado", reason)
+
     def test_global_illumination_change_is_normalized_by_external_context(self):
         result = self.expert.analyze(
             self.dark_reference,
