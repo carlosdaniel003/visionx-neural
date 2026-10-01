@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.core.experts.dual_scale_presence import DualScalePresenceAnalyzer
 from src.core.experts.roi_patch_expert import ROIPatchExpectationExpert
 
 
@@ -186,6 +187,40 @@ class PhysicalAbsenceGuard(ROIPatchExpectationExpert):
             physical_detail,
         )
 
+        if not hard:
+            dual_scale = DualScalePresenceAnalyzer.analyze(
+                self,
+                full_reference,
+                full_test,
+                result,
+                global_box_info=global_box_info,
+                physical_detail=physical_detail,
+            )
+            result.update(dual_scale)
+            if dual_scale.get("missing_context_hard_absence", False):
+                hard = True
+                reason = str(
+                    dual_scale.get(
+                        "missing_context_hard_reason",
+                        "contexto maior confirmou ausência física",
+                    )
+                )
+        else:
+            result.update(
+                {
+                    "missing_dual_scale_policy": (
+                        DualScalePresenceAnalyzer.POLICY
+                    ),
+                    "missing_dual_scale_active": False,
+                    "missing_dual_scale_triggered": False,
+                    "missing_scale_disagreement": False,
+                    "missing_context_hard_absence": False,
+                    "missing_context_hard_reason": (
+                        "escala local já confirmou ausência física"
+                    ),
+                }
+            )
+
         result.update(
             {
                 "missing_cross_category_guard": True,
@@ -214,13 +249,19 @@ class PhysicalAbsenceGuard(ROIPatchExpectationExpert):
                     "extreme_structural_support": self.EXTREME_MIN_STRUCTURAL_SUPPORT,
                     "extreme_semantic_support": self.EXTREME_MIN_SEMANTIC_SUPPORT,
                     "extreme_physical_score": self.EXTREME_MIN_PHYSICAL_SCORE,
+                    "dual_scale_policy": DualScalePresenceAnalyzer.POLICY,
+                    "dual_scale_local_global_ratio_max": (
+                        DualScalePresenceAnalyzer.MAX_LOCAL_GLOBAL_AREA_RATIO
+                    ),
                 },
             }
         )
 
         if hard:
             result["missing_classification"] = (
-                "COMPONENTE FISICAMENTE AUSENTE — GUARDA TRANSVERSAL"
+                "COMPONENTE FISICAMENTE AUSENTE — DUAL-SCALE"
+                if result.get("missing_context_hard_absence", False)
+                else "COMPONENTE FISICAMENTE AUSENTE — GUARDA TRANSVERSAL"
             )
             base = str(result.get("missing_reason", "") or "")
             suffix = (
