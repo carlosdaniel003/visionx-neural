@@ -19,7 +19,6 @@ class MissingComponentUIContractTests(unittest.TestCase):
             ROOT / "src" / "ui" / "widgets" / "missing_debugger.py"
         ).read_text(encoding="utf-8")
         self.assertIn("EXPECTATIVA DO PATCH", source)
-        self.assertIn("PRESENÇA FÍSICA", source)
         self.assertIn("PATCH ESPERADO", source)
         self.assertIn("PATCH RECEBIDO", source)
         self.assertIn("SOMENTE PIXELS INCOMPATÍVEIS", source)
@@ -40,6 +39,7 @@ class MissingComponentUIContractTests(unittest.TestCase):
         self.assertIn("frame_missing.setVisible(active)", source)
         self.assertIn("frame_missing.setVisible(False)", source)
         self.assertIn("EXPECTATIVA DO PATCH", source)
+        self.assertIn("PRESENÇA FÍSICA", source)
 
     def test_decision_model_keeps_missing_engine_label(self):
         source = (
