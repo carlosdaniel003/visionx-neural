@@ -10,12 +10,15 @@ on:
       - "src/core/anomaly_memory_integration.py"
       - "src/core/anomaly_signature.py"
       - "src/core/experts/missing_component_expert.py"
+      - "src/core/experts/physical_absence_guard.py"
       - "src/core/strict_category_memory.py"
       - "src/services/dataset_manager.py"
       - "src/ui/widgets/knn_spectrum.py"
       - "main.py"
       - "tests/test_best_match_memory.py"
       - "tests/test_missing_component_expert.py"
+      - "tests/test_physical_absence_guard.py"
+      - "tests/test_anomaly_memory_integration.py"
       - "tests/test_aoi_categories.py"
       - ".github/workflows/best-match-memory-tests.yml"
   workflow_dispatch:
@@ -47,6 +50,7 @@ jobs:
             src/core/anomaly_memory_integration.py `
             src/core/anomaly_signature.py `
             src/core/experts/missing_component_expert.py `
+            src/core/experts/physical_absence_guard.py `
             src/core/strict_category_memory.py `
             src/services/dataset_manager.py `
             src/ui/widgets/knn_spectrum.py `
@@ -57,5 +61,7 @@ jobs:
           python -m unittest `
             tests.test_best_match_memory `
             tests.test_missing_component_expert `
+            tests.test_physical_absence_guard `
+            tests.test_anomaly_memory_integration `
             tests.test_aoi_categories `
             -v
