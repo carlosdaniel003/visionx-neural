@@ -54,7 +54,10 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
 
         report = format_network_debug_report(record)
 
-        self.assertIn("VISIONX - DEBUG DE ENTRADA WINDOWS XP", report)
+        self.assertIn(
+            "ODIN - Observador Digital Inteligente - DEBUG DE ENTRADA WINDOWS XP",
+            report,
+        )
         self.assertIn("Evento: evt-001", report)
         self.assertIn("169.254.95.200", report)
         self.assertIn("tela sem epicentro de anomalia", report)
@@ -111,7 +114,7 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
 
         report = format_network_debug_report(record)
 
-        self.assertIn("DECISÃO VISIONX", report)
+        self.assertIn("DECISÃO ODIN", report)
         self.assertIn("Categoria: FALTANDO", report)
         self.assertIn("Regra de fusão: missing_hard_absence", report)
         self.assertIn("Ausência física forte: True", report)
