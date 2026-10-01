@@ -134,6 +134,11 @@ class FusionTests(unittest.TestCase):
             "match_reliable": True,
             "best_match_label": "OK",
             "best_similarity": 0.99,
+            "best_ok_similarity": 0.99,
+            "best_ng_similarity": 0.985,
+            "hypothesis_margin": 0.005,
+            "memory_conflict": True,
+            "operator_review_required": True,
             "vote_defect": 0.0,
             "n_neighbors": 5,
             "memory_mode": "anomaly",
@@ -174,6 +179,11 @@ class FusionTests(unittest.TestCase):
             trace["memory"]["role"],
             "AUDITORIA — SEM VETO SOBRE AUSÊNCIA FÍSICA",
         )
+        self.assertTrue(trace["memory"]["memory_conflict"])
+        self.assertFalse(trace["memory"]["operator_review_required"])
+        self.assertTrue(trace["memory"]["raw_operator_review_required"])
+        self.assertAlmostEqual(trace["memory"]["best_ok_similarity"], 0.99)
+        self.assertAlmostEqual(trace["memory"]["best_ng_similarity"], 0.985)
         self.assertIn("AUSÊNCIA FÍSICA FORTE", reason)
 
     def test_intermediate_uses_best_label_with_partial_weight(self):
