@@ -59,6 +59,7 @@ class ScreenMonitor(QThread):
     def __init__(self):
         super().__init__()
         self.running = True
+        self.last_capture_frame = None
 
     # =================================================================
     # DETECÇÃO DE BARRAS
@@ -440,6 +441,7 @@ class ScreenMonitor(QThread):
             self.log_updated.emit("Monitor AOI: Imagem de rede inválida ou vazia.")
             return
 
+        self.last_capture_frame = frame_bgr.copy()
         frame_h, frame_w = frame_bgr.shape[:2]
         hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
 
@@ -550,6 +552,7 @@ class ScreenMonitor(QThread):
                 if crop_sample.size > 0 and crop_ng.size > 0:
                     aoi_info = self._extract_text_info(
                         frame_bgr, blue_bar, red_bar)
+                    self.last_capture_frame = frame_bgr.copy()
 
                     self.layout_detected.emit(
                         crop_sample, crop_ng, aoi_info)
