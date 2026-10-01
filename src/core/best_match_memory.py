@@ -346,6 +346,89 @@ def _best_match_dynamic_fusion_factory(original_dynamic_fusion):
             None,
         )
 
+        hard_missing = bool(
+            isinstance(missing_result, dict)
+            and missing_result.get("missing_hard_absence", False)
+        )
+        if hard_missing:
+            hard_reason = str(
+                missing_result.get(
+                    "missing_hard_absence_reason",
+                    "ausência física forte confirmada",
+                )
+            )
+            for engine in trace.get("engines", []):
+                if engine.get("id") == "missing":
+                    engine.update(
+                        {
+                            "active": True,
+                            "triggered": True,
+                            "selected": True,
+                            "final_influence": 1.0,
+                            "summary": (
+                                f"{engine.get('summary', '')} • "
+                                f"AUSÊNCIA FÍSICA FORTE: {hard_reason}"
+                            ).strip(" •"),
+                        }
+                    )
+                elif engine.get("id") == "knn":
+                    engine.update(
+                        {
+                            "active": bool(memory.get("memory_available", False)),
+                            "triggered": False,
+                            "selected": False,
+                            "final_influence": 0.0,
+                            "summary": (
+                                "Memória mantida somente para auditoria; "
+                                "não pode vetar ausência física forte"
+                            ),
+                        }
+                    )
+                elif engine.get("selected", False):
+                    engine["selected"] = False
+                    engine["final_influence"] = 0.0
+
+            trace.update(
+                {
+                    "final_score": 1.0,
+                    "confidence": 0.99,
+                    "verdict": "DEFEITO REAL",
+                    "dominant_engine": "missing",
+                    "fusion_rule": "missing_hard_absence",
+                    "weights": {"physical": 1.0, "knn": 0.0},
+                    "operator_review_required": False,
+                    "hard_missing_evidence": True,
+                }
+            )
+            memory_trace.update(
+                {
+                    "has_memory": reliable,
+                    "memory_available": bool(
+                        memory.get("memory_available", False)
+                    ),
+                    "best_match_label": best_label,
+                    "best_similarity": similarity,
+                    "memory_score": (
+                        float(_label_score(best_label))
+                        if reliable
+                        else 0.5
+                    ),
+                    "vote_defect": (
+                        float(_label_score(best_label))
+                        if reliable
+                        else 0.5
+                    ),
+                    "role": "AUDITORIA — SEM VETO SOBRE AUSÊNCIA FÍSICA",
+                    "suppressed_by_hard_missing": True,
+                }
+            )
+            reason = (
+                f"{base_reason} || AUSÊNCIA FÍSICA FORTE confirmada: "
+                f"{hard_reason}. Memória KNN preservada para auditoria, "
+                "sem poder anular o defeito físico."
+            )
+            return 1.0, True, 0.99, reason, trace
+
         if not reliable:
             if knn_engine is not None:
                 knn_engine.update(
