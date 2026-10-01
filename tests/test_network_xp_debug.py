@@ -259,9 +259,50 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
             report,
         )
 
+    def test_local_mss_report_uses_local_capture_identity(self):
+        record = {
+            "schema": "visionx.capture_debug.v1",
+            "event_id": "local-001",
+            "timestamp": "2026-10-01T16:00:00.000",
+            "source": "local_mss",
+            "source_ip": "",
+            "stage": "local_capture_analysis",
+            "mode": "Modo Teste",
+            "transport": {
+                "image": {
+                    "valid": True,
+                    "shape": [1080, 1920, 3],
+                    "dtype": "uint8",
+                },
+            },
+            "cycle": {"source": "local"},
+            "validation_message": "Captura local MSS analisada.",
+            "validation": {
+                "valid": True,
+                "reason": "local_capture_processed",
+            },
+            "decision": {
+                "category": "DESLOCADO",
+                "verdict": "FALHA FALSA",
+                "is_defect": False,
+                "confidence": 0.99,
+                "memory": {},
+                "missing": {},
+            },
+        }
+
+        report = format_network_debug_report(record)
+
+        self.assertIn(
+            "ODIN - Observador Digital Inteligente - DEBUG DA CAPTURA LOCAL MSS",
+            report,
+        )
+        self.assertIn("Origem: Captura local MSS", report)
+        self.assertIn("Categoria: DESLOCADO", report)
+
     def test_empty_record_has_safe_message(self):
         report = format_network_debug_report({})
-        self.assertIn("Nenhuma imagem recebida", report)
+        self.assertIn("Nenhuma captura", report)
 
 
 class NetworkXPImageClipboardTests(unittest.TestCase):
@@ -293,6 +334,39 @@ class NetworkXPImageClipboardTests(unittest.TestCase):
         self.assertTrue(panel.btn_copy_network_debug.isEnabled())
         self.assertTrue(panel.btn_copy_network_image.isEnabled())
         self.assertTrue(network_debug_image_available(panel))
+
+    def test_local_mss_capture_enables_debug_and_exact_image_copy(self):
+        panel = self._panel("legacy-network")
+        panel.capture_debug_last_record = {
+            "schema": "visionx.capture_debug.v1",
+            "event_id": "local-002",
+            "source": "local_mss",
+            "validation": {
+                "valid": True,
+                "reason": "local_capture_processed",
+            },
+        }
+        panel.capture_debug_last_image_event_id = "local-002"
+        panel.capture_debug_last_image = np.full(
+            (20, 30, 3),
+            (15, 60, 210),
+            dtype=np.uint8,
+        )
+
+        sync_network_debug_controls(panel)
+
+        self.assertTrue(panel.btn_copy_network_debug.isEnabled())
+        self.assertTrue(panel.btn_copy_network_image.isEnabled())
+        self.assertTrue(network_debug_image_available(panel))
+        self.assertTrue(copy_network_image_to_clipboard(panel))
+
+        copied = QApplication.clipboard().image()
+        self.assertEqual(copied.width(), 30)
+        self.assertEqual(copied.height(), 20)
+        pixel = copied.pixelColor(0, 0)
+        self.assertEqual(pixel.red(), 210)
+        self.assertEqual(pixel.green(), 60)
+        self.assertEqual(pixel.blue(), 15)
 
     def test_different_event_blocks_image_copy(self):
         panel = self._panel()
@@ -356,7 +430,7 @@ class NetworkXPDebugUILayoutTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            'window.btn_copy_network_image = QPushButton("Copiar imagem XP")',
+            'window.btn_copy_network_image = QPushButton("Copiar imagem")',
             source,
         )
 
