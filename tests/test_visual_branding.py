@@ -6,6 +6,7 @@ from src.ui.branding import (
     DECISION_DEBUG_TITLE,
     DISPLAY_NAME,
     HUD_INITIAL_TEXT,
+    LOCAL_CAPTURE_DEBUG_TITLE,
     MONITOR_WINDOW_TITLE,
     XP_DEBUG_TITLE,
 )
@@ -38,6 +39,10 @@ class VisualBrandingTests(unittest.TestCase):
                 "ODIN - Observador Digital Inteligente - "
                 "DEBUG DE ENTRADA WINDOWS XP"
             ),
+        )
+        self.assertEqual(
+            LOCAL_CAPTURE_DEBUG_TITLE,
+            "ODIN - Observador Digital Inteligente - DEBUG DA CAPTURA LOCAL MSS",
         )
         self.assertEqual(
             DECISION_DEBUG_TITLE,
