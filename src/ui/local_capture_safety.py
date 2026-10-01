@@ -17,7 +17,10 @@ from src.services.capture_debug_payload import (
     decision_record,
     image_summary,
 )
-from src.services.capture_evidence import store_capture_evidence
+from src.services.capture_evidence import (
+    store_capture_evidence,
+    update_capture_debug_record,
+)
 from src.services.screen_monitor import ScreenMonitor
 from src.ui.network_image_cycle_gate import (
     _force_discard_cleanup,
@@ -41,17 +44,14 @@ def _mode(panel) -> str:
         return ""
 
 
-def _store_local_capture_debug(
+def _begin_local_capture_debug(
     panel,
     full_frame,
     sample,
     test,
     aoi_info: dict | None,
 ) -> bool:
-    analysis = getattr(panel, "current_analysis", None)
-    if analysis is None:
-        return False
-
+    """Reserva a evidência MSS antes da análise poder limpar o ciclo."""
     event_id = uuid4().hex
     record = {
         "schema": "visionx.capture_debug.v1",
@@ -59,7 +59,7 @@ def _store_local_capture_debug(
         "timestamp": datetime.now().isoformat(timespec="milliseconds"),
         "source": "local_mss",
         "source_ip": "",
-        "stage": "local_capture_analysis",
+        "stage": "local_capture_received",
         "mode": _mode(panel),
         "transport": {
             "image": image_summary(full_frame),
@@ -74,22 +74,70 @@ def _store_local_capture_debug(
             ),
         },
         "aoi_info": dict(aoi_info or {}),
-        "validation_message": "Captura local MSS analisada.",
+        "validation_message": "Captura local MSS recebida; análise em andamento.",
         "validation": {
-            "valid": True,
-            "reason": "local_capture_processed",
+            "valid": None,
+            "reason": "pending_local_analysis",
             "diagnostic_hints": [],
             "sample_crop": image_summary(sample),
             "test_crop": image_summary(test),
         },
-        "decision": decision_record(analysis, aoi_info),
+        "decision": {},
     }
     if not store_capture_evidence(panel, full_frame, record):
         return False
 
+    panel.local_capture_debug_event_id = event_id
     sync_network_debug_controls(panel)
     return True
 
+
+def _finalize_local_capture_debug(
+    panel,
+    aoi_info: dict | None = None,
+) -> bool:
+    """Completa o mesmo evento MSS com a decisão calculada pelo ODIN."""
+    event_id = str(
+        getattr(panel, "local_capture_debug_event_id", "") or ""
+    )
+    record = getattr(panel, "capture_debug_last_record", None)
+    analysis = getattr(panel, "current_analysis", None)
+
+    if (
+        not event_id
+        or not isinstance(record, dict)
+        or str(record.get("event_id", "") or "") != event_id
+        or str(record.get("source", "") or "") != "local_mss"
+        or not isinstance(analysis, dict)
+    ):
+        return False
+
+    info = (
+        dict(aoi_info)
+        if isinstance(aoi_info, dict) and aoi_info
+        else dict(getattr(panel, "current_aoi_info", {}) or {})
+    )
+
+    updated = dict(record)
+    updated["stage"] = "local_capture_analysis"
+    updated["aoi_info"] = info
+    updated["validation_message"] = "Captura local MSS analisada."
+    validation = dict(updated.get("validation", {}) or {})
+    validation.update(
+        {
+            "valid": True,
+            "reason": "local_capture_processed",
+            "diagnostic_hints": [],
+        }
+    )
+    updated["validation"] = validation
+    updated["decision"] = decision_record(analysis, info)
+
+    if not update_capture_debug_record(panel, updated):
+        return False
+
+    sync_network_debug_controls(panel)
+    return True
 
 def _safe_status(panel, message: str, active: bool = False) -> None:
     try:
@@ -237,6 +285,7 @@ def install_local_capture_safety(control_panel_cls) -> None:
     original_init = control_panel_cls.__init__
     original_start_monitoring = control_panel_cls.start_monitoring
     original_process_aoi_images = control_panel_cls.process_aoi_images
+    original_save_label = control_panel_cls.save_label
     original_skip_image = control_panel_cls.skip_image
     original_change_lighting = control_panel_cls.change_lighting
     original_close_event = control_panel_cls.closeEvent
@@ -248,6 +297,7 @@ def install_local_capture_safety(control_panel_cls) -> None:
         self.local_capture_generation = 0
         self.local_capture_monitor_generation = -1
         self.local_capture_last_error = None
+        self.local_capture_debug_event_id = ""
 
     def wrapped_start_monitoring(self, *args, **kwargs):
         if bool(getattr(self, "local_capture_starting", False)) or bool(
@@ -366,6 +416,13 @@ def install_local_capture_safety(control_panel_cls) -> None:
         aoi_info = args[2] if len(args) > 2 else kwargs.get("aoi_info")
 
         if was_local:
+            _begin_local_capture_debug(
+                self,
+                full_frame,
+                sample,
+                test,
+                aoi_info,
+            )
             self.local_capture_pending = False
             self.local_capture_generation = int(
                 getattr(self, "local_capture_generation", 0)
@@ -374,13 +431,7 @@ def install_local_capture_safety(control_panel_cls) -> None:
         try:
             result = original_process_aoi_images(self, *args, **kwargs)
             if was_local:
-                _store_local_capture_debug(
-                    self,
-                    full_frame,
-                    sample,
-                    test,
-                    aoi_info,
-                )
+                _finalize_local_capture_debug(self, aoi_info)
             return result
         except Exception as exc:
             self.local_capture_last_error = str(exc)
@@ -392,6 +443,18 @@ def install_local_capture_safety(control_panel_cls) -> None:
                 error=exc,
             )
             return None
+
+    def wrapped_save_label(self, user_decision: str, source="button"):
+        if str(getattr(self, "capture_cycle_source", "") or "") == "local":
+            _finalize_local_capture_debug(
+                self,
+                getattr(self, "current_aoi_info", None),
+            )
+        return original_save_label(
+            self,
+            user_decision,
+            source=source,
+        )
 
     def wrapped_skip_image(self, *args, **kwargs):
         if bool(getattr(self, "local_capture_pending", False)):
@@ -447,6 +510,7 @@ def install_local_capture_safety(control_panel_cls) -> None:
     control_panel_cls.start_monitoring = wrapped_start_monitoring
     control_panel_cls._start_radar = wrapped_start_radar
     control_panel_cls.process_aoi_images = wrapped_process_aoi_images
+    control_panel_cls.save_label = wrapped_save_label
     control_panel_cls.skip_image = wrapped_skip_image
     control_panel_cls.change_lighting = wrapped_change_lighting
     control_panel_cls.closeEvent = wrapped_close_event
