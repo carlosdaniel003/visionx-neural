@@ -39,7 +39,7 @@ A aplicação foi pensada para cenários onde uma máquina, câmera ou estação
 - Painel de depuração para investigação da decisão da IA.
 - Classificação assistida entre imagem **OK** e possível defeito **NG**.
 - Salvamento de amostras para formação de dataset local.
-- Arquivo visual NG opcional: quando ativado, salva cada decisão final NG em `public/ng_archive/` com data, hora e categoria no nome do arquivo, sem alterar o dataset/KNN.
+- Arquivo visual NG opcional: quando ativado para capturas do Windows XP, salva em `public/ng_archive/` exatamente o mesmo frame completo disponível em **Copiar imagem XP**, com data, hora e categoria no nome do arquivo, sem alterar o dataset/KNN.
 - Suporte a fluxo de **active learning**, permitindo melhorar a base de exemplos com validação humana.
 - Organização modular em camadas de configuração, núcleo, serviços, interface e utilitários.
 
@@ -111,7 +111,7 @@ visionx-neural/
 | `src/utils/` | Funções utilitárias usadas pelo sistema. |
 | `public/debug_crop/` | Saídas e recortes usados para depuração visual. |
 | `public/debug_ocr/` | Arquivos de apoio e depuração relacionados a OCR. |
-| `public/ng_archive/` | Evidências visuais NG salvas somente quando o toggle "Salvar imagens NG" está ativado. Não alimenta o KNN. |
+| `public/ng_archive/` | Evidências NG do Windows XP salvas somente quando o toggle "Salvar imagens NG" está ativado. Usa exatamente o mesmo frame completo de "Copiar imagem XP"; não alimenta o KNN. |
 
 ---
 
