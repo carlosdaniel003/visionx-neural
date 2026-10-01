@@ -20,6 +20,13 @@ class FakePanel:
     def __init__(self):
         self.current_ng = np.full((12, 16, 3), 90, dtype=np.uint8)
         self.current_aoi_info = {"category": "Muito Adesivo"}
+        self.network_intake_last_validation = {"event_id": "evt-001"}
+        self.network_intake_last_image_event_id = "evt-001"
+        self.network_intake_last_image = np.full(
+            (20, 30, 3),
+            (10, 20, 230),
+            dtype=np.uint8,
+        )
         self.saved = []
         self.archived = []
         self.status = []
@@ -70,9 +77,10 @@ class NGArchiveDecisionTests(unittest.TestCase):
         panel.save_label("OK", source="button")
         self.assertEqual(panel.archived, [])
 
-    def test_final_ng_archives_snapshot_before_inner_cycle_clears_image(self):
+    def test_final_ng_archives_exact_xp_frame_not_current_ng_crop(self):
         panel = FakePanel()
-        original = panel.current_ng.copy()
+        exact_xp_frame = panel.network_intake_last_image.copy()
+        crop = panel.current_ng.copy()
         panel.set_ng_archive_enabled(True)
 
         panel.save_label("NG", source="button")
@@ -81,7 +89,9 @@ class NGArchiveDecisionTests(unittest.TestCase):
         self.assertIsNone(panel.current_ng)
         self.assertEqual(len(panel.archived), 1)
         image, category = panel.archived[0]
-        self.assertTrue(np.array_equal(image, original))
+        self.assertTrue(np.array_equal(image, exact_xp_frame))
+        self.assertEqual(image.shape, (20, 30, 3))
+        self.assertNotEqual(image.shape, crop.shape)
         self.assertEqual(category, "Muito Adesivo")
 
     def test_automatic_ng_is_archived_when_toggle_is_enabled(self):
@@ -92,6 +102,22 @@ class NGArchiveDecisionTests(unittest.TestCase):
 
         self.assertEqual(panel.saved, [("NG", "auto")])
         self.assertEqual(len(panel.archived), 1)
+
+
+    def test_mismatched_event_never_falls_back_to_current_ng(self):
+        panel = FakePanel()
+        panel.set_ng_archive_enabled(True)
+        panel.network_intake_last_image_event_id = "evt-other"
+
+        panel.save_label("NG", source="button")
+
+        self.assertEqual(panel.archived, [])
+        self.assertTrue(
+            any(
+                "Nenhum recorte alternativo foi usado" in message
+                for message in panel.status
+            )
+        )
 
 
 class NGArchiveQueueTests(unittest.TestCase):
@@ -125,6 +151,18 @@ class NGArchiveSourceContractTests(unittest.TestCase):
         )
         self.assertLess(learning, archive)
         self.assertLess(archive, production)
+
+    def test_archive_and_copy_image_share_the_same_xp_frame_source(self):
+        archive_source = Path(
+            "src/services/ng_image_archive.py"
+        ).read_text(encoding="utf-8")
+        debug_source = Path(
+            "src/ui/network_xp_debug.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("network_xp_frame_snapshot", archive_source)
+        self.assertIn("network_xp_frame_snapshot", debug_source)
+        self.assertNotIn("archive_image = self.current_ng.copy()", archive_source)
 
     def test_ui_exposes_checkable_archive_toggle(self):
         source = Path("src/ui/control_panel_ui.py").read_text(encoding="utf-8")
