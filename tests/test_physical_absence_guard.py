@@ -42,6 +42,35 @@ class PhysicalAbsenceGuardEvidenceTests(unittest.TestCase):
         self.assertTrue(support["supported"])
         self.assertIn("desapareceu", reason)
 
+    def test_real_invertido_extreme_collapse_is_confirmed(self):
+        result = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "QUEBRA DA EXPECTATIVA VISUAL",
+            "missing_score": 0.9447108065489517,
+            "missing_changed_coverage": 0.7555259146341463,
+            "missing_residual_mean": 0.5955082774162292,
+            "missing_appearance_loss": 0.6620358168598258,
+            "missing_direct_similarity": 0.3379641831401742,
+            "missing_edge_mismatch": 0.33433916716958356,
+            "missing_best_similarity": 0.14604395627975464,
+        }
+        detail = {
+            "silk_error_pct": 0.4574468085106383,
+            "semantic_loss": 0.5713105201721191,
+            "physical_score": 0.8569657802581787,
+        }
+
+        hard, reason, support = self.guard.hard_absence_evidence(
+            result,
+            detail,
+        )
+
+        self.assertTrue(hard)
+        self.assertFalse(support["primary_supported"])
+        self.assertTrue(support["extreme_supported"])
+        self.assertIn("colapso visual extremo", reason)
+
     def test_nearby_component_match_blocks_cross_category_override(self):
         result = self.real_emborcado_vector()
         result["missing_best_similarity"] = 0.52
