@@ -119,6 +119,7 @@ class InvertedFaceExpertTests(unittest.TestCase):
                 "MARCA ESPERADA AUSENTE",
                 "FACE ALTERNATIVA PROVÁVEL",
                 "ASSINATURA DA FACE DIVERGENTE",
+                "MARCA TESTEMUNHA DESLOCADA",
             },
         )
 
