@@ -7,13 +7,14 @@ from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QRect
 from PyQt6.QtGui import QPainter, QPen, QColor, QFont
 from src.config.settings import settings
+from src.ui.branding import HUD_INITIAL_TEXT
 
 class HUDWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.target_rect = None
         self.anomalies = [] # Lista para guardar as coordenadas dos defeitos
-        self.log_text = "VisionX Neural: Inicializando..."
+        self.log_text = HUD_INITIAL_TEXT
         self._setup_window()
 
     def _setup_window(self):
