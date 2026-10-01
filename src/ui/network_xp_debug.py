@@ -116,7 +116,10 @@ def format_network_debug_report(record: dict | None) -> str:
                 f"Guarda suporte físico: {missing.get('missing_guard_physical_support', '-')}",
                 f"KNN melhor rótulo: {memory.get('best_match_label', '-')}",
                 f"KNN similaridade: {memory.get('best_similarity', '-')}",
-                f"KNN conflito: {memory.get('memory_conflict', '-')}",
+                f"KNN conflito efetivo: {memory.get('memory_conflict', '-')}",
+                f"KNN conflito bruto: {memory.get('raw_memory_conflict', '-')}",
+                f"KNN revisão efetiva: {memory.get('operator_review_required', '-')}",
+                f"KNN revisão bruta: {memory.get('raw_operator_review_required', '-')}",
                 f"KNN suprimido por ausência física: {memory.get('suppressed_by_hard_missing', '-')}",
                 f"Motivo final: {decision.get('reason', '-')}",
             ]
