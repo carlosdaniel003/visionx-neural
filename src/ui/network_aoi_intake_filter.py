@@ -21,6 +21,10 @@ import numpy as np
 from src.config.settings import settings
 from src.core.epicenter_extractor import EpicenterExtractor
 from src.core.inspection import detect_anomalies
+from src.services.capture_evidence import (
+    store_capture_evidence,
+    update_capture_debug_record,
+)
 from src.ui.network_xp_debug import (
     DEBUG_SCHEMA,
     set_network_debug_available,
@@ -815,6 +819,11 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
             ip,
             event_id,
         )
+        store_capture_evidence(
+            self,
+            img_bgr,
+            self.network_intake_last_validation,
+        )
         set_network_debug_available(self, True)
         return original_handle_network_image(self, img_bgr, ip)
 
@@ -838,6 +847,7 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
             aoi_info,
         )
         self.network_intake_last_validation = record
+        update_capture_debug_record(self, record)
         set_network_debug_available(self, True)
 
         if not valid:
@@ -874,6 +884,7 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
             record["aoi_info"] = _json_safe(aoi_info or {})
             record["decision"] = _decision_record(analysis, aoi_info)
             self.network_intake_last_validation = record
+            update_capture_debug_record(self, record)
             set_network_debug_available(self, True)
 
             detail = analysis.setdefault("detail", {})
@@ -889,8 +900,23 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
     control_panel_cls._network_aoi_intake_filter_installed = True
 
 
+def image_summary_for_debug(image: Any) -> dict:
+    """Resumo público reutilizado pelo debug de captura local."""
+    return _image_summary(image)
+
+
+def decision_record_for_debug(
+    analysis: Any,
+    aoi_info: dict | None,
+) -> dict:
+    """Decisão pública reutilizada por outras origens de captura."""
+    return _decision_record(analysis, aoi_info)
+
+
 __all__ = [
     "MIN_FOCUS_SIDE",
+    "decision_record_for_debug",
+    "image_summary_for_debug",
     "install_network_aoi_intake_filter",
     "reject_invalid_network_capture",
     "validate_network_inspection",
