@@ -39,7 +39,10 @@ class VisualBrandingTests(unittest.TestCase):
                 "DEBUG DE ENTRADA WINDOWS XP"
             ),
         )
-        self.assertEqual(DECISION_DEBUG_TITLE, "DECISÃO ODIN")
+        self.assertEqual(
+            DECISION_DEBUG_TITLE,
+            "DECISÃO ODIN - Observador Digital Inteligente",
+        )
 
     def test_main_ui_uses_centralized_branding_and_responsive_title(self):
         source = Path("src/ui/control_panel_ui.py").read_text(
