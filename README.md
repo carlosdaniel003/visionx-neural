@@ -11,6 +11,12 @@ O objetivo do projeto é atuar como um módulo inteligente de análise visual, c
 
 ---
 
+## Identidade visual
+
+A interface operacional é apresentada ao usuário como **ODIN - Observador Digital Inteligente**. O nome técnico do repositório, schemas e identificadores internos `visionx` permanecem preservados por compatibilidade.
+
+---
+
 ## Visão geral
 
 O sistema foi desenvolvido em **Python** com interface em **PyQt6**, combinando técnicas de visão computacional clássica, análise de similaridade visual, extração de características e mecanismos de aprendizado incremental.
