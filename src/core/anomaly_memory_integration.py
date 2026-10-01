@@ -557,7 +557,14 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
 
         focus = _focus_box(aoi_epicenters, analysis, detail)
         signature_detail = dict(detail)
-        if missing_result and missing_result.get("component_missing_mask") is not None:
+        if (
+            missing_result
+            and not missing_result.get("missing_cross_category_guard", False)
+            and missing_result.get("component_missing_mask") is not None
+        ):
+            # A máscara específica do FALTANDO pode enriquecer a assinatura da
+            # própria categoria. A guarda transversal nunca altera a assinatura
+            # KNN de EMBORCADO/DESLOCADO/INVERTIDO.
             signature_detail["missing_mask"] = missing_result[
                 "component_missing_mask"
             ]
