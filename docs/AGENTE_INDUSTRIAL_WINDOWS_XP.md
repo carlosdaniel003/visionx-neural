@@ -827,3 +827,19 @@ PRESS_0 / PRESS_1
 ```
 
 A cópia registrada no GitHub é referência de engenharia. O arquivo em execução na AOI continua sendo o arquivo local do Windows XP e só muda após atualização manual.
+
+
+## Feedback visual no ODIN para teclas 0/1
+
+O computador novo exibe um feedback visual temporário quando recebe uma decisão manual:
+
+```text
+0 → OK
+1 → NG
+```
+
+Isso vale tanto para os atalhos locais do ODIN quanto para `CMD_OK/CMD_NG` enviados pelo hook global do teclado no Windows XP.
+
+O feedback é implementado somente no computador novo em `src/ui/decision_key_feedback.py`. Ele não altera os pacotes de rede, as portas, `PRESS_0/PRESS_1`, `CMD_OK/CMD_NG` nem a lógica do agente.
+
+Portanto, **esta funcionalidade não exige atualizar manualmente o `agente_industrial_xp.py` no Windows XP**.
