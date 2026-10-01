@@ -21,6 +21,7 @@ import numpy as np
 from src.config.settings import settings
 from src.core.epicenter_extractor import EpicenterExtractor
 from src.core.inspection import detect_anomalies
+from src.services.capture_debug_payload import decision_record
 from src.services.capture_evidence import (
     store_capture_evidence,
     update_capture_debug_record,
@@ -567,154 +568,8 @@ def _enrich_validation_record(
 
 
 def _decision_record(analysis: Any, aoi_info: dict | None) -> dict:
-    if not isinstance(analysis, dict):
-        return {}
-
-    detail = analysis.get("detail", {})
-    detail = detail if isinstance(detail, dict) else {}
-    trace = detail.get("decision_trace", {})
-    trace = trace if isinstance(trace, dict) else {}
-    memory = trace.get("memory", {})
-    memory = memory if isinstance(memory, dict) else {}
-
-    missing_fields = (
-        "missing_active",
-        "missing_is_defect",
-        "missing_score",
-        "missing_tolerance",
-        "missing_classification",
-        "missing_changed_coverage",
-        "missing_residual_mean",
-        "missing_structure_loss",
-        "missing_background_exposure",
-        "missing_best_similarity",
-        "missing_direct_similarity",
-        "missing_appearance_loss",
-        "missing_edge_mismatch",
-        "missing_residual_p90",
-        "missing_hard_absence",
-        "missing_hard_absence_reason",
-        "missing_cross_category_guard",
-        "missing_guard_policy",
-        "missing_guard_source_category",
-        "missing_guard_physical_support",
-        "missing_dual_scale_policy",
-        "missing_dual_scale_active",
-        "missing_dual_scale_triggered",
-        "missing_scale_disagreement",
-        "missing_local_global_area_ratio",
-        "missing_context_box",
-        "missing_context_area_ratio",
-        "missing_context_score",
-        "missing_context_coverage",
-        "missing_context_residual_mean",
-        "missing_context_residual_p90",
-        "missing_context_structure_loss",
-        "missing_context_edge_mismatch",
-        "missing_context_direct_similarity",
-        "missing_context_appearance_loss",
-        "missing_context_best_similarity",
-        "missing_context_hard_absence",
-        "missing_context_hard_reason",
-        "missing_context_physical_support",
-    )
-    missing = {
-        key: _json_safe(detail.get(key))
-        for key in missing_fields
-        if key in detail
-    }
-
-    raw_memory_conflict = bool(
-        memory.get(
-            "memory_conflict",
-            detail.get("memory_conflict", False),
-        )
-    )
-    raw_memory_review = bool(
-        memory.get(
-            "operator_review_required",
-            detail.get("operator_review_required", False),
-        )
-    )
-    hard_missing = bool(
-        trace.get("hard_missing_evidence", False)
-        or memory.get("suppressed_by_hard_missing", False)
-        or detail.get("missing_hard_absence", False)
-        or str(trace.get("fusion_rule", "")) == "missing_hard_absence"
-    )
-    effective_memory_conflict = bool(
-        raw_memory_conflict and not hard_missing
-    )
-    effective_memory_review = bool(
-        raw_memory_review and not hard_missing
-    )
-
-    return {
-        "category": str((aoi_info or {}).get("category", "") or ""),
-        "is_defect": bool(analysis.get("is_defect", False)),
-        "verdict": str(analysis.get("verdict", "") or ""),
-        "confidence": _json_safe(analysis.get("confidence")),
-        "reason": str(analysis.get("reason", "") or ""),
-        "final_score": _json_safe(detail.get("final_score")),
-        "physical_score": _json_safe(detail.get("physical_score")),
-        "fusion_rule": str(detail.get("fusion_rule", "") or ""),
-        "dominant_engine": str(detail.get("dominant_engine", "") or ""),
-        "operator_review_required": bool(
-            analysis.get("production_review_required", False)
-            or trace.get("operator_review_required", False)
-            or effective_memory_review
-        ),
-        "hard_missing_evidence": bool(
-            trace.get("hard_missing_evidence", False)
-            or detail.get("missing_hard_absence", False)
-        ),
-        "missing": missing,
-        "memory": {
-            "has_memory": bool(
-                memory.get("has_memory", detail.get("has_memory", False))
-            ),
-            "memory_available": bool(
-                memory.get(
-                    "memory_available",
-                    detail.get("memory_available", False),
-                )
-            ),
-            "best_match_label": str(
-                memory.get(
-                    "best_match_label",
-                    detail.get("best_match_label", ""),
-                )
-                or ""
-            ),
-            "best_similarity": _json_safe(
-                memory.get(
-                    "best_similarity",
-                    detail.get("best_similarity"),
-                )
-            ),
-            "best_ok_similarity": _json_safe(
-                memory.get(
-                    "best_ok_similarity",
-                    detail.get("best_ok_similarity"),
-                )
-            ),
-            "best_ng_similarity": _json_safe(
-                memory.get(
-                    "best_ng_similarity",
-                    detail.get("best_ng_similarity"),
-                )
-            ),
-            "memory_conflict": effective_memory_conflict,
-            "raw_memory_conflict": raw_memory_conflict,
-            "operator_review_required": effective_memory_review,
-            "raw_operator_review_required": raw_memory_review,
-            "role": str(
-                memory.get("role", detail.get("memory_reason", "")) or ""
-            ),
-            "suppressed_by_hard_missing": hard_missing,
-        },
-    }
-
+    """Compatibilidade interna delegada ao payload comum de observabilidade."""
+    return decision_record(analysis, aoi_info)
 
 def _safe_button(button, *, enabled: bool | None = None, text: str | None = None):
     if button is None:
@@ -900,23 +755,8 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
     control_panel_cls._network_aoi_intake_filter_installed = True
 
 
-def image_summary_for_debug(image: Any) -> dict:
-    """Resumo público reutilizado pelo debug de captura local."""
-    return _image_summary(image)
-
-
-def decision_record_for_debug(
-    analysis: Any,
-    aoi_info: dict | None,
-) -> dict:
-    """Decisão pública reutilizada por outras origens de captura."""
-    return _decision_record(analysis, aoi_info)
-
-
 __all__ = [
     "MIN_FOCUS_SIDE",
-    "decision_record_for_debug",
-    "image_summary_for_debug",
     "install_network_aoi_intake_filter",
     "reject_invalid_network_capture",
     "validate_network_inspection",
