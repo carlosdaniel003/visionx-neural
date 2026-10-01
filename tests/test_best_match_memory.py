@@ -186,6 +186,60 @@ class FusionTests(unittest.TestCase):
         self.assertAlmostEqual(trace["memory"]["best_ng_similarity"], 0.985)
         self.assertIn("AUSÊNCIA FÍSICA FORTE", reason)
 
+    def test_emborcado_hard_absence_cannot_be_vetoed_by_906_ok_memory(self):
+        knn = {
+            "has_memory": True,
+            "memory_available": True,
+            "match_reliable": True,
+            "best_match_label": "OK",
+            "best_similarity": 0.906379471719265,
+            "vote_defect": 0.0,
+            "n_neighbors": 5,
+            "memory_mode": "anomaly",
+            "memory_scope": "categoria",
+        }
+        guard = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_score": 0.8487753587129022,
+            "missing_tolerance": 0.36,
+            "missing_reason": (
+                "AUSÊNCIA FÍSICA FORTE FORA DA CATEGORIA FALTANDO"
+            ),
+            "missing_hard_absence": True,
+            "missing_cross_category_guard": True,
+            "missing_guard_source_category": "EMBORCADO",
+            "missing_hard_absence_reason": (
+                "aparência do componente desapareceu sem correspondência "
+                "próxima, confirmada pelos motores estrutural e semântico"
+            ),
+        }
+
+        score, defect, confidence, reason, trace = self.fusion(
+            self.orchestrator,
+            {
+                "silk_error_pct": 0.54,
+                "semantic_loss": 0.71,
+            },
+            "EMBORCADO",
+            guard,
+            knn,
+        )
+
+        self.assertEqual(score, 1.0)
+        self.assertTrue(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(trace["fusion_rule"], "missing_hard_absence")
+        self.assertEqual(trace["dominant_engine"], "missing")
+        self.assertEqual(trace["weights"], {"physical": 1.0, "knn": 0.0})
+        self.assertTrue(trace["hard_missing_evidence"])
+        self.assertTrue(trace["memory"]["suppressed_by_hard_missing"])
+        self.assertEqual(
+            trace["memory"]["role"],
+            "AUDITORIA — SEM VETO SOBRE AUSÊNCIA FÍSICA",
+        )
+        self.assertIn("AUSÊNCIA FÍSICA FORTE", reason)
+
     def test_intermediate_uses_best_label_with_partial_weight(self):
         score, defect, confidence, _reason, trace = self.run_fusion("NG", 0.80, 0.01)
         self.assertTrue(defect)
