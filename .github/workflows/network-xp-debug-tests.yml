@@ -18,6 +18,7 @@ on:
       - "src/services/decision_persistence.py"
       - "src/services/network_xp_frame.py"
       - "src/services/capture_evidence.py"
+      - "src/services/capture_debug_payload.py"
       - "src/services/screen_monitor.py"
       - "src/ui/local_capture_safety.py"
       - "src/core/experts/knn_expert.py"
@@ -52,7 +53,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy opencv-python-headless PyQt6 scikit-image scipy
+          python -m pip install numpy opencv-python-headless PyQt6 scikit-image scipy mss
 
       - name: Run XP intake and regression tests
         shell: pwsh
