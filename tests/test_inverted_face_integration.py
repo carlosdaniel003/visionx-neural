@@ -102,6 +102,46 @@ class InvertedFaceIntegrationTests(unittest.TestCase):
         self.assertTrue(rows[0]["selected"])
         self.assertTrue(rows[0]["participates"])
 
+    def test_hard_absence_survives_inverted_specialist_refusion(self):
+        detail = standard_detail()
+        detail.update(
+            {
+                "missing_active": True,
+                "missing_is_defect": True,
+                "missing_score": 0.9447,
+                "missing_tolerance": 0.36,
+                "missing_cross_category_guard": True,
+                "missing_hard_absence": True,
+                "missing_hard_absence_reason": "colapso visual extremo",
+                "missing_reason": "ausência física transversal confirmada",
+            }
+        )
+        memory = {
+            "has_memory": True,
+            "vote_defect": 0.0,
+            "best_similarity": 0.92,
+            "n_neighbors": 2,
+            "best_match_label": "OK",
+            "memory_mode": "anomaly",
+            "memory_scope": "categoria",
+        }
+
+        final_score, is_defect, confidence, _, trace = _fusion_with_inverted(
+            self.orchestrator,
+            detail,
+            self.inverted,
+            memory,
+        )
+
+        self.assertEqual(final_score, 1.0)
+        self.assertTrue(is_defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(trace["fusion_rule"], "missing_hard_absence")
+        self.assertEqual(trace["dominant_engine"], "missing")
+        self.assertEqual(trace["weights"], {"physical": 1.0, "knn": 0.0})
+        self.assertTrue(trace["hard_missing_evidence"])
+        self.assertTrue(trace["memory"]["suppressed_by_hard_missing"])
+
     def test_knn_fusion_rules_are_preserved(self):
         memory = {
             "has_memory": True,
