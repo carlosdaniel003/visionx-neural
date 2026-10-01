@@ -7,22 +7,88 @@ falha de thread ou de análise nunca deve deixar o painel minimizado e bloqueado
 
 from __future__ import annotations
 
+from datetime import datetime
 import traceback
+from uuid import uuid4
 
 from PyQt6.QtCore import QTimer
 
+from src.services.capture_evidence import store_capture_evidence
 from src.services.screen_monitor import ScreenMonitor
+from src.ui.network_aoi_intake_filter import (
+    decision_record_for_debug,
+    image_summary_for_debug,
+)
 from src.ui.network_image_cycle_gate import (
     _force_discard_cleanup,
     _lock_cycle,
     _release_cycle,
 )
+from src.ui.network_xp_debug import sync_network_debug_controls
 
 
 LOCAL_CAPTURE_TIMEOUT_MS = 20_000
 LOCAL_MONITOR_FINISH_GRACE_MS = 150
 LOCAL_MONITOR_STOP_TIMEOUT_MS = 1_500
 LOCAL_MONITOR_TERMINATE_TIMEOUT_MS = 400
+
+
+def _mode(panel) -> str:
+    combo = getattr(panel, "combo_mode", None)
+    try:
+        return str(combo.currentText()).strip() if combo is not None else ""
+    except Exception:
+        return ""
+
+
+def _store_local_capture_debug(
+    panel,
+    full_frame,
+    sample,
+    test,
+    aoi_info: dict | None,
+) -> bool:
+    analysis = getattr(panel, "current_analysis", None)
+    if analysis is None:
+        return False
+
+    event_id = uuid4().hex
+    record = {
+        "schema": "visionx.capture_debug.v1",
+        "event_id": event_id,
+        "timestamp": datetime.now().isoformat(timespec="milliseconds"),
+        "source": "local_mss",
+        "source_ip": "",
+        "stage": "local_capture_analysis",
+        "mode": _mode(panel),
+        "transport": {
+            "image": image_summary_for_debug(full_frame),
+            "sample_crop": image_summary_for_debug(sample),
+            "test_crop": image_summary_for_debug(test),
+            "stable_required_frames": 1,
+        },
+        "cycle": {
+            "source": "local",
+            "capture_active": bool(
+                getattr(panel, "capture_cycle_active", False)
+            ),
+        },
+        "aoi_info": dict(aoi_info or {}),
+        "validation_message": "Captura local MSS analisada.",
+        "validation": {
+            "valid": True,
+            "reason": "local_capture_processed",
+            "diagnostic_hints": [],
+            "sample_crop": image_summary_for_debug(sample),
+            "test_crop": image_summary_for_debug(test),
+        },
+        "decision": decision_record_for_debug(analysis, aoi_info),
+    }
+    if not store_capture_evidence(panel, full_frame, record):
+        return False
+
+    sync_network_debug_controls(panel)
+    return True
 
 
 def _safe_status(panel, message: str, active: bool = False) -> None:
@@ -289,6 +355,16 @@ def install_local_capture_safety(control_panel_cls) -> None:
 
     def wrapped_process_aoi_images(self, *args, **kwargs):
         was_local = bool(getattr(self, "local_capture_pending", False))
+        monitor = getattr(self, "monitor", None)
+        full_frame = (
+            getattr(monitor, "last_capture_frame", None)
+            if was_local
+            else None
+        )
+        sample = args[0] if len(args) > 0 else kwargs.get("sample_crop")
+        test = args[1] if len(args) > 1 else kwargs.get("ng_crop")
+        aoi_info = args[2] if len(args) > 2 else kwargs.get("aoi_info")
+
         if was_local:
             self.local_capture_pending = False
             self.local_capture_generation = int(
@@ -296,7 +372,16 @@ def install_local_capture_safety(control_panel_cls) -> None:
             ) + 1
 
         try:
-            return original_process_aoi_images(self, *args, **kwargs)
+            result = original_process_aoi_images(self, *args, **kwargs)
+            if was_local:
+                _store_local_capture_debug(
+                    self,
+                    full_frame,
+                    sample,
+                    test,
+                    aoi_info,
+                )
+            return result
         except Exception as exc:
             self.local_capture_last_error = str(exc)
             print("Falha recuperada durante análise da captura:")
