@@ -844,6 +844,25 @@ Regressões obrigatórias:
 - KNN OK forte permanece elegível quando o hard missing foi corretamente bloqueado;
 - os casos reais anteriores de ausência física em EMBORCADO/INVERTIDO continuam passando quando possuem suporte físico independente suficiente.
 
+#### Validação operacional da correção
+
+Em 01/10/2026, após o endurecimento da guarda transversal, o mesmo fluxo foi
+retestado na AOI real e o operador confirmou que o comportamento ficou correto.
+
+Esse resultado valida especificamente a regra introduzida para o evento
+`4128dec4a02f423fbdbcd47fca777108`:
+
+- componente presente em categoria `DESLOCADO`;
+- suporte físico transversal insuficiente;
+- `missing_hard_absence` não deve ser promovido;
+- memória `OK` forte continua elegível;
+- o resultado final deve permanecer `FALHA FALSA / OK`.
+
+Essa validação deve ser preservada como regressão operacional. Qualquer mudança
+futura no Dual-Scale Presence ou na `PhysicalAbsenceGuard` não pode reintroduzir
+o comportamento antigo de transformar deslocamento/variação de registro em
+ausência física forte sem confirmação independente.
+
 ### Validação operacional em AOI real
 
 Em 01/10/2026, após a implementação da **Dual-Scale Presence**, o fluxo foi
