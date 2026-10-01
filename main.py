@@ -39,6 +39,10 @@ from src.services.dataset_manager import DatasetManager
 from src.services.ng_image_archive import install_ng_image_archive
 from src.ui.capture_button_copy import install_capture_button_copy
 from src.ui.control_panel import ControlPanel
+from src.ui.decision_key_feedback import (
+    install_decision_key_feedback,
+    install_decision_key_feedback_hooks,
+)
 from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
 from src.ui.inverted_face_panel import install_inverted_face_panel
@@ -129,12 +133,15 @@ def main():
     install_local_capture_safety(ControlPanel)
     install_qt_button_signal_adapter(ControlPanel)
     install_mode_selector_gate(OperationalControlsPresenter)
+    # Hook visual leve: confirma 0/1 recebidos do XP sem alterar a decisão.
+    install_decision_key_feedback_hooks(ControlPanel)
 
     # Camada exclusivamente visual: resume dual-scale, protótipos e contraste
     # OK x NG sem modificar analysis, score, confiança ou persistência.
     install_memory_status_ui(ControlPanel)
 
     panel = ControlPanel()
+    install_decision_key_feedback(panel)
     install_missing_component_panel(panel)
     install_inverted_face_panel(panel)
     install_decision_panel(panel)
