@@ -118,6 +118,67 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
         self.assertIn("KNN melhor rótulo: OK", report)
         self.assertIn("KNN suprimido por ausência física: True", report)
 
+    def test_report_exposes_cross_category_absence_guard(self):
+        record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "evt-emborcado-missing",
+            "timestamp": "2026-10-01T08:18:19.174",
+            "source_ip": "169.254.95.200",
+            "stage": "aoi_intake_validation",
+            "mode": "Modo Teste",
+            "transport": {"image": {"valid": True}},
+            "cycle": {},
+            "validation_message": "epicentro válido",
+            "validation": {"valid": True, "reason": "valid_epicenter"},
+            "decision": {
+                "category": "EMBORCADO",
+                "verdict": "DEFEITO REAL",
+                "is_defect": True,
+                "confidence": 0.99,
+                "final_score": 1.0,
+                "physical_score": 1.0,
+                "fusion_rule": "missing_hard_absence",
+                "dominant_engine": "missing",
+                "operator_review_required": False,
+                "hard_missing_evidence": True,
+                "reason": "ausência física transversal confirmada",
+                "missing": {
+                    "missing_hard_absence": True,
+                    "missing_cross_category_guard": True,
+                    "missing_guard_policy": (
+                        "cross_category_physical_absence_guard_v1"
+                    ),
+                    "missing_guard_source_category": "EMBORCADO",
+                    "missing_guard_physical_support": {
+                        "supported": True,
+                        "structural": 0.54,
+                        "semantic": 0.71,
+                        "physical_score": 1.0,
+                    },
+                },
+                "memory": {
+                    "best_match_label": "OK",
+                    "best_similarity": 0.906,
+                    "memory_conflict": False,
+                    "suppressed_by_hard_missing": True,
+                },
+            },
+        }
+
+        report = format_network_debug_report(record)
+
+        self.assertIn("Categoria: EMBORCADO", report)
+        self.assertIn("Ausência física forte: True", report)
+        self.assertIn("Guarda transversal: True", report)
+        self.assertIn(
+            "Guarda categoria origem: EMBORCADO",
+            report,
+        )
+        self.assertIn(
+            "KNN suprimido por ausência física: True",
+            report,
+        )
+
     def test_empty_record_has_safe_message(self):
         report = format_network_debug_report({})
         self.assertIn("Nenhuma imagem recebida", report)
