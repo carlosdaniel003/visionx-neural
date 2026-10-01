@@ -62,7 +62,7 @@ class NGArchiveNamingTests(unittest.TestCase):
         stamp = datetime(2026, 9, 30, 13, 53, 27, 245000)
         self.assertEqual(
             build_ng_archive_filename("Deslocado", stamp),
-            "2026-09-30_13-53-27-245_DESLOCADO.png",
+            "30d09m2026_13h53min27s245ms_DESLOCADO.png",
         )
 
 
@@ -199,7 +199,7 @@ class NGArchiveQueueTests(unittest.TestCase):
             self.assertEqual(len(files), 1)
             self.assertEqual(
                 files[0].name,
-                "2026-09-30_13-54-01-012_DESLOCADO.png",
+                "30d09m2026_13h54min01s012ms_DESLOCADO.png",
             )
             loaded = cv2.imread(str(files[0]), cv2.IMREAD_COLOR)
             self.assertIsNotNone(loaded)
