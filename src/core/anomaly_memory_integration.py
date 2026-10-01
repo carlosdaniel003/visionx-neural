@@ -8,10 +8,14 @@ import numpy as np
 
 from src.core.anomaly_signature import build_anomaly_signature
 from src.core.experts.missing_component_expert import MissingComponentExpert
+from src.core.experts.physical_absence_guard import PhysicalAbsenceGuard
 
 
 ADHESIVE_CATEGORIES = frozenset({"MUCH ADHESIVE", "MUITO ADESIVO"})
 MISSING_CATEGORIES = frozenset({"MISSING", "FALTANDO"})
+CROSS_CATEGORY_ABSENCE_GUARD_CATEGORIES = frozenset(
+    {"EMBORCADO", "DESLOCADO", "INVERTIDO"}
+)
 STANDARD_ROUTES = ("silk", "ssim", "semantic", "knn")
 ADHESIVE_ROUTES = ("shift",) + STANDARD_ROUTES
 MISSING_ROUTES = ("missing",) + STANDARD_ROUTES
@@ -152,33 +156,53 @@ def _dynamic_fusion(
         if triggered and summary:
             physical_reasons.append(summary)
 
-    if is_missing_category(category) and missing_result:
-        active = bool(missing_result.get("missing_active", False))
-        raw = float(missing_result.get("missing_score", 0.0))
-        threshold = float(missing_result.get("missing_tolerance", 0.42))
-        triggered = bool(
-            active
-            and missing_result.get(
-                "missing_is_defect",
-                raw > threshold,
+    if missing_result:
+        cross_category_guard = bool(
+            missing_result.get("missing_cross_category_guard", False)
+        )
+        hard_absence = bool(
+            missing_result.get("missing_hard_absence", False)
+        )
+
+        # Na categoria FALTANDO o especialista participa normalmente. Fora dela,
+        # a guarda transversal só entra na fusão quando a ausência física forte
+        # já foi confirmada pelo contrato mais restritivo.
+        allowed = bool(
+            is_missing_category(category)
+            or (cross_category_guard and hard_absence)
+        )
+        if allowed:
+            active = bool(missing_result.get("missing_active", False))
+            raw = float(missing_result.get("missing_score", 0.0))
+            threshold = float(missing_result.get("missing_tolerance", 0.42))
+            triggered = bool(
+                active
+                and missing_result.get(
+                    "missing_is_defect",
+                    raw > threshold,
+                )
             )
-        )
-        effective = max(0.88, min(1.0, raw)) if triggered else 0.0
-        summary = str(missing_result.get("missing_reason", ""))
-        _append_engine(
-            orchestrator,
-            engines,
-            "missing",
-            "Presença do componente",
-            active,
-            triggered,
-            raw,
-            effective,
-            threshold,
-            summary,
-        )
-        if triggered and summary:
-            physical_reasons.append(summary)
+            effective = max(0.88, min(1.0, raw)) if triggered else 0.0
+            summary = str(missing_result.get("missing_reason", ""))
+            label = (
+                "Guarda de presença física"
+                if cross_category_guard
+                else "Presença do componente"
+            )
+            _append_engine(
+                orchestrator,
+                engines,
+                "missing",
+                label,
+                active,
+                triggered,
+                raw,
+                effective,
+                threshold,
+                summary,
+            )
+            if triggered and summary:
+                physical_reasons.append(summary)
 
     if "silk_error_pct" in detail:
         raw = float(detail.get("silk_error_pct", 0.0))
@@ -452,6 +476,8 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
         active_engines = analysis.setdefault("active_engines", [])
 
         missing_result = None
+        normalized_category = normalize_category_name(category)
+
         if is_missing_category(category):
             if "missing" not in self.experts:
                 self.experts["missing"] = MissingComponentExpert()
@@ -462,15 +488,39 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
                 aoi_info,
                 aoi_epicenters,
             )
+        elif normalized_category in CROSS_CATEGORY_ABSENCE_GUARD_CATEGORIES:
+            if "physical_absence_guard" not in self.experts:
+                self.experts["physical_absence_guard"] = PhysicalAbsenceGuard()
+            missing_result = self.experts["physical_absence_guard"].analyze(
+                full_gab,
+                full_test,
+                global_box_info,
+                aoi_info,
+                aoi_epicenters,
+                physical_detail=detail,
+            )
+
+        if missing_result:
             detail.update(missing_result)
             if missing_result.get("missing_active", False):
-                if "missing_expert.py" not in active_engines:
-                    active_engines.append("missing_expert.py")
-                if missing_result.get("missing_bounding_box"):
-                    analysis["bounding_box"] = missing_result["missing_bounding_box"]
-                    analysis.setdefault("all_boxes", {})["missing"] = missing_result[
+                engine_name = (
+                    "physical_absence_guard.py"
+                    if missing_result.get("missing_cross_category_guard", False)
+                    else "missing_expert.py"
+                )
+                if engine_name not in active_engines:
+                    active_engines.append(engine_name)
+
+                if (
+                    missing_result.get("missing_hard_absence", False)
+                    and missing_result.get("missing_bounding_box")
+                ):
+                    analysis["bounding_box"] = missing_result[
                         "missing_bounding_box"
                     ]
+                    analysis.setdefault("all_boxes", {})["missing"] = (
+                        missing_result["missing_bounding_box"]
+                    )
 
         focus = _focus_box(aoi_epicenters, analysis, detail)
         signature_detail = dict(detail)
@@ -548,4 +598,5 @@ __all__ = [
     "is_adhesive_category",
     "is_missing_category",
     "routes_for_category",
+    "CROSS_CATEGORY_ABSENCE_GUARD_CATEGORIES",
 ]
