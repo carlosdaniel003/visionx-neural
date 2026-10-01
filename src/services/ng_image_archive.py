@@ -18,7 +18,10 @@ import cv2
 import numpy as np
 
 from src.config.settings import settings
-from src.services.network_xp_frame import network_xp_frame_snapshot
+from src.services.network_xp_frame import (
+    network_xp_frame_snapshot,
+    network_xp_record_event_id,
+)
 
 
 def safe_archive_category(value: str) -> str:
@@ -142,6 +145,7 @@ def install_ng_image_archive(control_panel_cls) -> None:
     def wrapped_init(self, *args, **kwargs):
         self.ng_archive_enabled = False
         self._ng_archive_queue = None
+        self._ng_archive_last_event_id = ""
         original_init(self, *args, **kwargs)
         _sync_archive_control(self)
 
@@ -157,32 +161,73 @@ def install_ng_image_archive(control_panel_cls) -> None:
     def wrapped_save_label(self, user_decision: str, source="button"):
         normalized = str(user_decision or "").strip().upper()
 
+        current_cycle_source = str(
+            getattr(self, "capture_cycle_source", "") or ""
+        ).strip().lower()
+        current_event_id = network_xp_record_event_id(self)
+        current_category = str(
+            (getattr(self, "current_aoi_info", {}) or {}).get(
+                "category",
+                "",
+            )
+            or ""
+        ).strip()
+        has_live_analysis = bool(
+            getattr(self, "current_ng", None) is not None
+            and getattr(self, "current_analysis", None) is not None
+        )
+        duplicate_event = bool(
+            current_event_id
+            and current_event_id
+            == str(getattr(self, "_ng_archive_last_event_id", "") or "")
+        )
+
         should_archive = bool(
             normalized == "NG"
             and getattr(self, "ng_archive_enabled", False)
+            and current_cycle_source == "network"
+            and has_live_analysis
+            and current_event_id
+            and current_category
+            and not duplicate_event
         )
 
         archive_image = None
         archive_category = ""
         if should_archive:
             # Mesma fonte e mesma validação de event_id do botão
-            # "Copiar imagem XP". Não usar current_ng como fallback, pois ele
-            # é apenas o recorte de teste e poderia divergir da evidência XP.
+            # "Copiar imagem XP". Não usar current_ng como imagem: ele serve
+            # somente como prova de que ainda existe uma captura ativa.
             archive_image = network_xp_frame_snapshot(self)
-            archive_category = str(
-                (getattr(self, "current_aoi_info", {}) or {}).get(
-                    "category",
-                    "SEM_CATEGORIA",
-                )
-            )
+            archive_category = current_category
 
-        if should_archive and archive_image is None:
+            # Reserva o evento ANTES de concluir o julgamento. O comando
+            # PRESS_1 pode reaparecer pelo hook do XP como CMD_NG depois que a
+            # interface já limpou current_aoi_info. Sem esta trava, o mesmo
+            # frame podia ser salvo uma segunda vez como SEM_CATEGORIA.
+            if archive_image is not None:
+                self._ng_archive_last_event_id = current_event_id
+
+        if (
+            normalized == "NG"
+            and getattr(self, "ng_archive_enabled", False)
+            and current_cycle_source == "network"
+            and has_live_analysis
+            and not duplicate_event
+            and archive_image is None
+        ):
             updater = getattr(self, "update_network_status", None)
             if callable(updater):
-                updater(
-                    "NG não arquivado: o frame XP do evento atual não está "
-                    "disponível. Nenhum recorte alternativo foi usado."
-                )
+                if not current_category:
+                    updater(
+                        "NG não arquivado: a captura ativa não possui categoria "
+                        "AOI. Nenhum arquivo SEM_CATEGORIA foi criado."
+                    )
+                else:
+                    updater(
+                        "NG não arquivado: o frame XP do evento atual não está "
+                        "disponível. Nenhum recorte alternativo foi usado."
+                    )
 
         result = original_save_label(
             self,
