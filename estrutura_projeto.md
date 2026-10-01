@@ -802,6 +802,48 @@ Manter testes que garantam:
 - hard missing contextual continua zerando o peso KNN na fusão;
 - debug e UI expõem claramente as duas escalas.
 
+
+
+### Regressão de segurança — DESLOCADO presente não pode virar hard missing
+
+Em 01/10/2026 foi registrado o evento `4128dec4a02f423fbdbcd47fca777108` da categoria `DESLOCADO`. Visualmente o componente `104` estava presente tanto no gabarito quanto no teste; a ocorrência foi validada pelo operador como **falha falsa** do ODIN.
+
+O debug anterior mostrava:
+
+- `missing_score ≈ 98,9%`;
+- cobertura local ≈ 78,8%;
+- residual local ≈ 70,1%;
+- dual-scale contextual ≈ 97,8%;
+- cobertura contextual ≈ 69,8%;
+- estrutural independente ≈ 48,7%;
+- semântico independente ≈ 30,1%;
+- `missing_context_physical_support.supported = False`;
+- melhor memória KNN `OK ≈ 98,18%`;
+- melhor memória NG ≈ 89,76%;
+- resultado incorreto antigo: `missing_hard_absence=True`, KNN suprimido e `DEFEITO REAL`.
+
+A causa era a rota contextual de **colapso visual extremo** permitir hard missing mesmo quando os motores físicos independentes não confirmavam a ausência. Em uma categoria de deslocamento, comparar referência e teste em posições fixas pode produzir grande residual apenas porque o mesmo componente mudou de posição/registro.
+
+#### Regra corrigida
+
+Para a guarda transversal usada por `EMBORCADO`, `DESLOCADO` e `INVERTIDO`:
+
+- a rota extrema do Dual-Scale Presence **não pode** promover `missing_hard_absence` sem `missing_context_physical_support.supported=True`;
+- `FALTANDO` mantém sua política própria e pode continuar usando a rota contextual extrema conforme seu contrato dedicado;
+- a categoria original continua preservada;
+- memória KNN continua sendo consultada normalmente quando o hard missing transversal é bloqueado.
+
+No evento de referência, como o suporte transversal era falso, a ausência física deve permanecer falsa e o KNN `OK ≈ 98,18%` volta a participar da fusão. O resultado esperado é **FALHA FALSA / OK**, sem suprimir a memória.
+
+Essa proteção existe para impedir que **deslocamento, mudança de registro, pequena variação geométrica ou iluminação** sejam confundidos com desaparecimento físico apenas porque a comparação fixa local/contextual apresenta residual alto.
+
+Regressões obrigatórias:
+
+- evento DESLOCADO presente + suporte físico transversal falso → `missing_hard_absence=False`;
+- rota extrema transversal sem suporte independente → não promove ausência;
+- KNN OK forte permanece elegível quando o hard missing foi corretamente bloqueado;
+- os casos reais anteriores de ausência física em EMBORCADO/INVERTIDO continuam passando quando possuem suporte físico independente suficiente.
+
 ### Validação operacional em AOI real
 
 Em 01/10/2026, após a implementação da **Dual-Scale Presence**, o fluxo foi
