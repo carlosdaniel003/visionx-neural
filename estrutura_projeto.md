@@ -971,7 +971,9 @@ O visual segue a identidade industrial do ODIN:
 - `0 / OK`: detalhe, borda e tipografia de estado em verde `#4ade80`;
 - `1 / NG`: detalhe, borda e tipografia de estado em vermelho `#ff6262`;
 - origem exibida como `TECLADO ODIN` ou `TECLADO WINDOWS XP`;
-- duração aproximada: `800 ms`;
+- duração aproximada total: `800 ms`;
+- entrada suave: fade-in + deslocamento vertical de apenas `8 px` em aproximadamente `120 ms`;
+- saída suave: fade-out em aproximadamente `160 ms`;
 - desaparece automaticamente.
 
 Implementação:
@@ -993,7 +995,9 @@ Esse recurso é **somente apresentação**. Ele não pode:
 - capturar foco ou cliques do mouse;
 - criar espera ativa, `sleep` ou animação pesada no caminho produtivo.
 
-O overlay reutiliza um único widget e um único `QTimer` single-shot. Ele possui `WA_TransparentForMouseEvents` e `NoFocus`, portanto pode aparecer sobre outros componentes sem impedir interação.
+O overlay reutiliza um único widget, um único `QTimer` single-shot e animações curtas de propriedades Qt. A animação só existe enquanto o alerta está visível: não há loop, animação contínua, thread adicional ou `sleep`. O fade usa `QGraphicsOpacityEffect` somente sobre o pequeno widget de `180 × 180 px`, e o slide altera apenas sua posição em `8 px`.
+
+Ele possui `WA_TransparentForMouseEvents` e `NoFocus`, portanto pode aparecer sobre outros componentes sem impedir interação. A escolha de animações curtas e locais é obrigatória para manter o custo de renderização desprezível diante do pipeline de visão computacional.
 
 ### Ordem de acionamento
 
@@ -1019,6 +1023,9 @@ Manter testes que garantam:
 - o eco da mesma decisão não gera um segundo alerta imediato;
 - o overlay permanece click-through e sem foco;
 - o overlay permanece ancorado no canto inferior direito em telas de tamanhos diferentes;
+- fade-in/fade-out são curtos e sem repetição;
+- o movimento de entrada permanece pequeno e não desloca outros componentes;
+- não existe animação em background quando o alerta está oculto;
 - o recurso não altera nenhuma regra de negócio do ciclo.
 
 ### Validação operacional
