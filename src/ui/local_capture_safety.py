@@ -13,12 +13,12 @@ from uuid import uuid4
 
 from PyQt6.QtCore import QTimer
 
+from src.services.capture_debug_payload import (
+    decision_record,
+    image_summary,
+)
 from src.services.capture_evidence import store_capture_evidence
 from src.services.screen_monitor import ScreenMonitor
-from src.ui.network_aoi_intake_filter import (
-    decision_record_for_debug,
-    image_summary_for_debug,
-)
 from src.ui.network_image_cycle_gate import (
     _force_discard_cleanup,
     _lock_cycle,
@@ -62,9 +62,9 @@ def _store_local_capture_debug(
         "stage": "local_capture_analysis",
         "mode": _mode(panel),
         "transport": {
-            "image": image_summary_for_debug(full_frame),
-            "sample_crop": image_summary_for_debug(sample),
-            "test_crop": image_summary_for_debug(test),
+            "image": image_summary(full_frame),
+            "sample_crop": image_summary(sample),
+            "test_crop": image_summary(test),
             "stable_required_frames": 1,
         },
         "cycle": {
@@ -79,10 +79,10 @@ def _store_local_capture_debug(
             "valid": True,
             "reason": "local_capture_processed",
             "diagnostic_hints": [],
-            "sample_crop": image_summary_for_debug(sample),
-            "test_crop": image_summary_for_debug(test),
+            "sample_crop": image_summary(sample),
+            "test_crop": image_summary(test),
         },
-        "decision": decision_record_for_debug(analysis, aoi_info),
+        "decision": decision_record(analysis, aoi_info),
     }
     if not store_capture_evidence(panel, full_frame, record):
         return False
