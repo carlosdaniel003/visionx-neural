@@ -67,10 +67,16 @@ class NGArchiveNamingTests(unittest.TestCase):
 
 
 class NGArchiveDecisionTests(unittest.TestCase):
-    def test_archive_is_disabled_by_default(self):
+    def test_archive_is_enabled_by_default(self):
         panel = FakePanel()
         panel.save_label("NG", source="button")
         self.assertEqual(panel.saved, [("NG", "button")])
+        self.assertEqual(len(panel.archived), 1)
+
+    def test_operator_can_disable_archive_for_current_session(self):
+        panel = FakePanel()
+        panel.set_ng_archive_enabled(False)
+        panel.save_label("NG", source="button")
         self.assertEqual(panel.archived, [])
 
     def test_ok_is_never_archived_even_when_enabled(self):
@@ -232,7 +238,8 @@ class NGArchiveSourceContractTests(unittest.TestCase):
     def test_ui_exposes_checkable_archive_toggle(self):
         source = Path("src/ui/control_panel_ui.py").read_text(encoding="utf-8")
         self.assertIn("btn_toggle_ng_archive.setCheckable(True)", source)
-        self.assertIn("Salvar imagens NG • DESATIVADO", source)
+        self.assertIn("Salvar imagens NG • ATIVADO", source)
+        self.assertIn("btn_toggle_ng_archive.setChecked(True)", source)
         self.assertIn("_layout_ng_archive(window, compact=compact)", source)
 
 
