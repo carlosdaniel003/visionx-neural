@@ -562,6 +562,72 @@ def _enrich_validation_record(
     }
 
 
+def _decision_record(analysis: Any, aoi_info: dict | None) -> dict:
+    if not isinstance(analysis, dict):
+        return {}
+
+    detail = analysis.get("detail", {})
+    detail = detail if isinstance(detail, dict) else {}
+    trace = detail.get("decision_trace", {})
+    trace = trace if isinstance(trace, dict) else {}
+    memory = trace.get("memory", {})
+    memory = memory if isinstance(memory, dict) else {}
+
+    missing_fields = (
+        "missing_active",
+        "missing_is_defect",
+        "missing_score",
+        "missing_tolerance",
+        "missing_classification",
+        "missing_changed_coverage",
+        "missing_residual_mean",
+        "missing_structure_loss",
+        "missing_background_exposure",
+        "missing_best_similarity",
+        "missing_hard_absence",
+        "missing_hard_absence_reason",
+    )
+    missing = {
+        key: _json_safe(detail.get(key))
+        for key in missing_fields
+        if key in detail
+    }
+
+    return {
+        "category": str((aoi_info or {}).get("category", "") or ""),
+        "is_defect": bool(analysis.get("is_defect", False)),
+        "verdict": str(analysis.get("verdict", "") or ""),
+        "confidence": _json_safe(analysis.get("confidence")),
+        "reason": str(analysis.get("reason", "") or ""),
+        "final_score": _json_safe(detail.get("final_score")),
+        "physical_score": _json_safe(detail.get("physical_score")),
+        "fusion_rule": str(detail.get("fusion_rule", "") or ""),
+        "dominant_engine": str(detail.get("dominant_engine", "") or ""),
+        "operator_review_required": bool(
+            analysis.get("production_review_required", False)
+            or trace.get("operator_review_required", False)
+        ),
+        "hard_missing_evidence": bool(
+            trace.get("hard_missing_evidence", False)
+            or detail.get("missing_hard_absence", False)
+        ),
+        "missing": missing,
+        "memory": {
+            "has_memory": bool(memory.get("has_memory", False)),
+            "memory_available": bool(memory.get("memory_available", False)),
+            "best_match_label": str(memory.get("best_match_label", "") or ""),
+            "best_similarity": _json_safe(memory.get("best_similarity")),
+            "best_ok_similarity": _json_safe(memory.get("best_ok_similarity")),
+            "best_ng_similarity": _json_safe(memory.get("best_ng_similarity")),
+            "memory_conflict": bool(memory.get("memory_conflict", False)),
+            "role": str(memory.get("role", "") or ""),
+            "suppressed_by_hard_missing": bool(
+                memory.get("suppressed_by_hard_missing", False)
+            ),
+        },
+    }
+
+
 def _safe_button(button, *, enabled: bool | None = None, text: str | None = None):
     if button is None:
         return
@@ -718,6 +784,14 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
 
         analysis = getattr(self, "current_analysis", None)
         if isinstance(analysis, dict):
+            # A categoria só é normalizada dentro do processamento principal.
+            # Atualize o registro depois da análise para que o debug carregue
+            # tanto o intake quanto a decisão efetivamente tomada.
+            record["aoi_info"] = _json_safe(aoi_info or {})
+            record["decision"] = _decision_record(analysis, aoi_info)
+            self.network_intake_last_validation = record
+            set_network_debug_available(self, True)
+
             detail = analysis.setdefault("detail", {})
             detail["network_intake_validation"] = dict(audit)
             detail["network_intake_debug"] = dict(record)
