@@ -167,13 +167,25 @@ class MissingComponentExpertTests(unittest.TestCase):
         )
 
         self.assertTrue(presence["missing_component_body_present"])
-        self.assertGreaterEqual(
+        self.assertEqual(
+            presence["missing_body_presence_policy"],
+            "geometry_only",
+        )
+        self.assertLess(
             presence["missing_body_coarse_similarity"],
             self.expert.BODY_PRESENCE_MIN_COARSE_SIMILARITY,
         )
         self.assertGreaterEqual(
             presence["missing_body_silhouette_dice"],
-            self.expert.BODY_PRESENCE_MIN_SILHOUETTE_DICE,
+            self.expert.BODY_GEOMETRY_MIN_SILHOUETTE_DICE,
+        )
+        self.assertGreaterEqual(
+            presence["missing_body_area_ratio"],
+            self.expert.BODY_GEOMETRY_MIN_AREA_RATIO,
+        )
+        self.assertLessEqual(
+            presence["missing_body_area_ratio"],
+            self.expert.BODY_GEOMETRY_MAX_AREA_RATIO,
         )
 
         result = self.expert.analyze(
@@ -220,6 +232,10 @@ class MissingComponentExpertTests(unittest.TestCase):
 
         self.assertTrue(result["missing_is_defect"])
         self.assertFalse(result["missing_component_body_present"])
+        self.assertNotEqual(
+            result.get("missing_body_presence_policy"),
+            "geometry_only",
+        )
         self.assertIn(
             result.get("missing_body_presence_source"),
             {"missing_roi", "aoi_epicenter"},
