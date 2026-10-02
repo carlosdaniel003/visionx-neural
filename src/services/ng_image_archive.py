@@ -10,39 +10,28 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from queue import Queue
-import re
 from threading import Thread
-import unicodedata
 
 import cv2
 import numpy as np
 
 from src.config.settings import settings
+from src.services.image_archive_naming import (
+    build_archive_filename,
+    safe_archive_category,
+)
 from src.services.network_xp_frame import (
     network_xp_frame_snapshot,
     network_xp_record_event_id,
 )
 
 
-def safe_archive_category(value: str) -> str:
-    """Converte a categoria para um trecho seguro de nome de arquivo."""
-    normalized = unicodedata.normalize("NFKD", str(value or ""))
-    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
-    compact = re.sub(r"[^A-Za-z0-9_-]+", "_", ascii_text.upper()).strip("_")
-    return compact or "SEM_CATEGORIA"
-
-
 def build_ng_archive_filename(
     category: str,
     timestamp: datetime | None = None,
 ) -> str:
-    moment = timestamp or datetime.now()
-    return (
-        f"{moment:%d}d{moment:%m}m{moment:%Y}_"
-        f"{moment:%H}h{moment:%M}min{moment:%S}s"
-        f"{moment.microsecond // 1000:03d}ms_"
-        f"{safe_archive_category(category)}.png"
-    )
+    """Alias compatível para o formato compartilhado de arquivo visual."""
+    return build_archive_filename(category, timestamp)
 
 
 class NGImageArchiveQueue:
