@@ -48,6 +48,7 @@ A aplicação foi pensada para cenários onde uma máquina, câmera ou estação
 - Proteção de ausência física dual-scale: o epicentro local é combinado, quando necessário, com uma ROI contextual maior para detectar componentes ausentes que ainda parecem semelhantes em um patch pequeno; `FALTANDO` e a guarda transversal de `EMBORCADO/DESLOCADO/INVERTIDO` terminam na mesma fusão central, mantendo categoria e memória isoladas.
 - Salvamento de amostras para formação de dataset local.
 - Arquivo visual NG: inicia **ativado por padrão** e, para capturas do Windows XP, salva em `public/ng_archive/` no máximo uma evidência por `event_id`, usando exatamente o mesmo frame completo disponível em **Copiar imagem**. O operador pode desativá-lo durante a sessão. O nome segue o formato legível `01d10m2026_10h22min21s943ms_FALTANDO.png`; eventos duplicados e capturas sem categoria não geram `SEM_CATEGORIA`.
+- Arquivo visual OK: inicia **ativado por padrão**, fica logo abaixo do controle NG e salva em `public/ok_archive/` cada julgamento humano OK, tanto para XP quanto MSS, usando exatamente a mesma evidência completa de **Copiar imagem**. Decisões automáticas não entram nesse arquivo; o formato do nome, deduplicação por `event_id` e gravação assíncrona seguem o mesmo contrato do arquivo NG.
 - Suporte a fluxo de **active learning**, permitindo melhorar a base de exemplos com validação humana.
 - Organização modular em camadas de configuração, núcleo, serviços, interface e utilitários.
 
@@ -94,7 +95,8 @@ visionx-neural/
 ├── public/
 │   ├── debug_crop/
 │   ├── debug_ocr/
-│   └── ng_archive/
+│   ├── ng_archive/
+│   └── ok_archive/
 ├── src/
 │   ├── config/
 │   ├── core/
@@ -120,6 +122,7 @@ visionx-neural/
 | `public/debug_crop/` | Saídas e recortes usados para depuração visual. |
 | `public/debug_ocr/` | Arquivos de apoio e depuração relacionados a OCR. |
 | `public/ng_archive/` | Evidências NG do Windows XP salvas somente quando o toggle "Salvar imagens NG" está ativado. Usa exatamente o mesmo frame completo de "Copiar imagem XP"; não alimenta o KNN. |
+| `public/ok_archive/` | Evidências OK confirmadas pelo operador, vindas de XP ou MSS, salvas somente quando "Salvar imagens OK" está ativado. Usa a mesma evidência completa de "Copiar imagem"; não alimenta o KNN. |
 
 ---
 
