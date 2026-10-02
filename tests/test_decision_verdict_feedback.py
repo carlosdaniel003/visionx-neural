@@ -83,7 +83,6 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
 
         overlay = panel.ai_verdict_feedback
         self.assertTrue(shown)
-        self.assertEqual(overlay.header_label.text(), "VEREDITO DA IA")
         self.assertEqual(overlay.verdict_label.text(), "FALHA FALSA")
         self.assertEqual(overlay.verdict_label.property("tone"), "ok")
         self.assertNotIn("%", overlay.verdict_label.text())
@@ -180,16 +179,13 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
             }
         )
         rendered_texts = {
-            panel.ai_verdict_feedback.header_label.text(),
             panel.ai_verdict_feedback.verdict_label.text(),
-            panel.ai_verdict_feedback.hint_label.text(),
         }
-        self.assertEqual(
-            rendered_texts,
-            {"VEREDITO DA IA", "FALHA FALSA", "ANÁLISE CONCLUÍDA"},
-        )
+        self.assertEqual(rendered_texts, {"FALHA FALSA"})
         self.assertFalse(any("%" in value for value in rendered_texts))
         self.assertFalse(any("99" in value for value in rendered_texts))
+        self.assertNotIn("aiVerdictHeader", source)
+        self.assertNotIn("aiVerdictHint", source)
 
     def test_clear_hides_overlay_and_removes_text(self):
         panel = self._panel()
