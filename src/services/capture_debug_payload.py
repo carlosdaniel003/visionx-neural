@@ -156,8 +156,13 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         trace.get("hard_missing_contradicted_by_exact_ok", False)
         or memory.get("hard_missing_contradicted_by_exact_ok", False)
     )
+    hard_missing_contradicted_by_invariant_ok = bool(
+        trace.get("hard_missing_contradicted_by_invariant_ok", False)
+        or memory.get("hard_missing_contradicted_by_invariant_ok", False)
+    )
     hard_missing = bool(
         not hard_missing_contradicted_by_exact_ok
+        and not hard_missing_contradicted_by_invariant_ok
         and (
             trace.get("hard_missing_evidence", False)
             or memory.get("suppressed_by_hard_missing", False)
@@ -191,6 +196,9 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         "raw_hard_missing_evidence": raw_hard_missing,
         "hard_missing_contradicted_by_exact_ok": (
             hard_missing_contradicted_by_exact_ok
+        ),
+        "hard_missing_contradicted_by_invariant_ok": (
+            hard_missing_contradicted_by_invariant_ok
         ),
         "missing": missing,
         "memory": {
