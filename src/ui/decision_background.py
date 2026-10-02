@@ -1,7 +1,8 @@
-"""Fundo dinâmico do ODIN conforme o estado final da análise.
+"""Fundo neutro do ODIN.
 
-Esta camada é exclusivamente visual. Ela observa o veredito já produzido pelo
-pipeline e não altera classificação, confiança, memória, persistência ou ciclo.
+O fundo não representa mais o veredito da análise. Este módulo permanece apenas
+como compatibilidade defensiva: qualquer solicitação de estado visual é
+normalizada para "neutral".
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QWidget
 
 
-VALID_BACKGROUND_STATES = {"neutral", "ok", "ng"}
+VALID_BACKGROUND_STATES = {"neutral"}
 
 BACKGROUND_OBJECT_NAMES = {
     "rootWindow",
@@ -25,10 +26,8 @@ BACKGROUND_OBJECT_NAMES = {
 
 
 def decision_background_state(analysis: dict | None) -> str:
-    """Converte somente o veredito final existente em um estado visual."""
-    if not isinstance(analysis, dict) or not analysis:
-        return "neutral"
-    return "ng" if bool(analysis.get("is_defect", False)) else "ok"
+    """O fundo permanece neutro independentemente do veredito."""
+    return "neutral"
 
 
 def _background_widgets(panel):
@@ -68,9 +67,7 @@ def _background_widgets(panel):
 
 def apply_decision_background(panel, state: str) -> str:
     """Atualiza só propriedades dos containers e preserva todo stylesheet existente."""
-    normalized = str(state or "neutral").strip().lower()
-    if normalized not in VALID_BACKGROUND_STATES:
-        normalized = "neutral"
+    normalized = "neutral"
 
     for widget in _background_widgets(panel):
         try:
@@ -86,7 +83,7 @@ def apply_decision_background(panel, state: str) -> str:
 
 
 def install_decision_background(control_panel_cls) -> None:
-    """Observa resultado/reset do controller sem participar da regra de negócio."""
+    """Compatibilidade: mantém os containers sempre no estado neutro."""
     if getattr(control_panel_cls, "_decision_background_installed", False):
         return
 
