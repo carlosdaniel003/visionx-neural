@@ -14,6 +14,8 @@ TEXT_DIM = "#737373"
 SUCCESS = "#4ade80"
 DANGER = "#ff6262"
 WARNING = "#f5c518"
+DECISION_OK_BACKGROUND = "#07180d"
+DECISION_NG_BACKGROUND = "#21090b"
 
 APP_STYLESHEET = f"""
 QWidget {{
@@ -26,6 +28,18 @@ QWidget#rootWindow,
 QWidget#rootContent,
 QWidget#rootViewport {{
     background-color: {BACKGROUND};
+}}
+
+QWidget#rootWindow[decisionState="ok"],
+QWidget#rootContent[decisionState="ok"],
+QWidget#rootViewport[decisionState="ok"] {{
+    background-color: {DECISION_OK_BACKGROUND};
+}}
+
+QWidget#rootWindow[decisionState="ng"],
+QWidget#rootContent[decisionState="ng"],
+QWidget#rootViewport[decisionState="ng"] {{
+    background-color: {DECISION_NG_BACKGROUND};
 }}
 
 QFrame#headerFrame,
