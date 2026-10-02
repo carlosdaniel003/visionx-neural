@@ -16,6 +16,8 @@ DANGER = "#ff6262"
 WARNING = "#f5c518"
 DECISION_OK_BACKGROUND = "#07180d"
 DECISION_NG_BACKGROUND = "#21090b"
+DECISION_OK_SURFACE = "#0c1a11"
+DECISION_NG_SURFACE = "#1a0b0c"
 
 APP_STYLESHEET = f"""
 QWidget {{
@@ -278,11 +280,18 @@ DECISION_BACKGROUND_COLORS = {
     "ng": DECISION_NG_BACKGROUND,
 }
 
+DECISION_SURFACE_COLORS = {
+    "neutral": SURFACE,
+    "ok": DECISION_OK_SURFACE,
+    "ng": DECISION_NG_SURFACE,
+}
+
 
 def stylesheet_for_decision_state(state: str) -> str:
-    """Retorna o tema completo com o fundo principal forçado no final do QSS."""
+    """Retorna o tema completo com canvas e painéis principais forçados no fim."""
     normalized = str(state or "neutral").strip().lower()
     color = DECISION_BACKGROUND_COLORS.get(normalized, BACKGROUND)
+    surface = DECISION_SURFACE_COLORS.get(normalized, SURFACE)
     return (
         APP_STYLESHEET
         + "\n"
@@ -292,6 +301,17 @@ QWidget#rootWindow,
 QWidget#rootContent,
 QWidget#rootViewport {{
     background-color: {color};
+}}
+
+QFrame#headerFrame,
+QFrame#sectionPanel,
+QFrame#infoSection,
+QFrame#confidenceFrame,
+QFrame#controlsSection,
+QFrame#ngArchiveFrame,
+QFrame#networkDebugFrame,
+QFrame#statusBar {{
+    background-color: {surface};
 }}
 """
     )
