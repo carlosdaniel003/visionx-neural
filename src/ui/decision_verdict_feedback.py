@@ -13,7 +13,6 @@ from PyQt6.QtCore import (
     QPoint,
     QPropertyAnimation,
     Qt,
-    QTimer,
 )
 from PyQt6.QtWidgets import (
     QFrame,
@@ -25,9 +24,7 @@ from PyQt6.QtWidgets import (
 from src.ui.theme import ACCENT, DANGER, SUCCESS, SURFACE
 
 
-VERDICT_FEEDBACK_DURATION_MS = 1500
 VERDICT_FEEDBACK_FADE_IN_MS = 140
-VERDICT_FEEDBACK_FADE_OUT_MS = 220
 VERDICT_FEEDBACK_SLIDE_PX = 10
 VERDICT_FEEDBACK_WIDTH = 300
 VERDICT_FEEDBACK_HEIGHT = 88
@@ -135,19 +132,6 @@ class AIVerdictFeedbackOverlay(QFrame):
         self._slide_in.setDuration(VERDICT_FEEDBACK_FADE_IN_MS)
         self._slide_in.setEasingCurve(QEasingCurve.Type.OutCubic)
 
-        self._fade_out = QPropertyAnimation(
-            self._opacity_effect,
-            b"opacity",
-            self,
-        )
-        self._fade_out.setDuration(VERDICT_FEEDBACK_FADE_OUT_MS)
-        self._fade_out.setEndValue(0.0)
-        self._fade_out.setEasingCurve(QEasingCurve.Type.InOutQuad)
-        self._fade_out.finished.connect(self._finish_hide)
-
-        self._hide_timer = QTimer(self)
-        self._hide_timer.setSingleShot(True)
-        self._hide_timer.timeout.connect(self._start_fade_out)
         self.hide()
 
     @staticmethod
@@ -169,24 +153,13 @@ class AIVerdictFeedbackOverlay(QFrame):
         return QPoint(x, y)
 
     def _stop_motion(self) -> None:
-        self._hide_timer.stop()
         self._fade_in.stop()
         self._slide_in.stop()
-        self._fade_out.stop()
-
-    def _start_fade_out(self) -> None:
-        self._fade_out.stop()
-        self._fade_out.setStartValue(self._opacity_effect.opacity())
-        self._fade_out.setEndValue(0.0)
-        self._fade_out.start()
-
-    def _finish_hide(self) -> None:
-        self.hide()
-        self._opacity_effect.setOpacity(0.0)
 
     def clear_verdict(self) -> None:
         self._stop_motion()
-        self._finish_hide()
+        self.hide()
+        self._opacity_effect.setOpacity(0.0)
         self.verdict_label.setText("")
 
     def show_analysis(self, analysis: dict | None) -> bool:
@@ -216,13 +189,6 @@ class AIVerdictFeedbackOverlay(QFrame):
         self.show()
         self._fade_in.start()
         self._slide_in.start()
-
-        hold_before_fade = max(
-            0,
-            VERDICT_FEEDBACK_DURATION_MS
-            - VERDICT_FEEDBACK_FADE_OUT_MS,
-        )
-        self._hide_timer.start(hold_before_fade)
         return True
 
 
@@ -295,9 +261,7 @@ def install_ai_verdict_feedback(panel) -> None:
 
 __all__ = [
     "AIVerdictFeedbackOverlay",
-    "VERDICT_FEEDBACK_DURATION_MS",
     "VERDICT_FEEDBACK_FADE_IN_MS",
-    "VERDICT_FEEDBACK_FADE_OUT_MS",
     "VERDICT_FEEDBACK_HEIGHT",
     "VERDICT_FEEDBACK_MARGIN",
     "VERDICT_FEEDBACK_SLIDE_PX",
