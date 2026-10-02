@@ -70,7 +70,7 @@ class OKArchiveNamingTests(unittest.TestCase):
         stamp = datetime(2026, 10, 2, 8, 11, 12, 345000)
         self.assertEqual(
             build_ok_archive_filename("Muito Adesivo", stamp),
-            "02d10m2026_08h11min12s345ms_MUITO_ADESIVO.png",
+            "2026-10-02_0811_MUITO_ADESIVO.png",
         )
 
 
@@ -235,7 +235,7 @@ class OKArchiveQueueTests(unittest.TestCase):
             self.assertEqual(len(files), 1)
             self.assertEqual(
                 files[0].name,
-                "02d10m2026_08h15min01s012ms_DESLOCADO.png",
+                "2026-10-02_0815_DESLOCADO.png",
             )
             loaded = cv2.imread(str(files[0]), cv2.IMREAD_COLOR)
             self.assertIsNotNone(loaded)
