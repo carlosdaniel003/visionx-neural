@@ -328,12 +328,10 @@ def _fusion_wrapper_factory(original_dynamic_fusion):
         final_score, is_defect, confidence, reason, trace = result
         memory = knn if isinstance(knn, dict) else {}
 
-        # Um conflito entre memórias não pode transformar em revisão humana uma
-        # ausência física já confirmada pelo especialista FALTANDO.
-        if bool(
-            isinstance(missing_result, dict)
-            and missing_result.get("missing_hard_absence", False)
-        ):
+        # Só o hard missing efetivo possui autoridade para suprimir conflito.
+        # Uma evidência física bruta pode ter sido contradita por testemunha OK
+        # quase exata na fusão anterior.
+        if bool(trace.get("hard_missing_evidence", False)):
             trace["operator_review_required"] = False
             trace.pop("operator_review_reason", None)
             return result
