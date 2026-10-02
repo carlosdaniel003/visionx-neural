@@ -528,12 +528,39 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
             panel.root_scroll.viewport().property("decisionState"),
             "ng",
         )
+        self.assertIn(
+            "/* decision-background: ng */",
+            panel.styleSheet(),
+        )
+        self.assertTrue(
+            panel.styleSheet().rstrip().endswith(
+                "background-color: #21090b;\n}"
+            )
+        )
 
         panel._update_reference_panel({"is_defect": False})
         self.assertEqual(panel.property("decisionState"), "ok")
+        self.assertIn(
+            "/* decision-background: ok */",
+            panel.styleSheet(),
+        )
+        self.assertTrue(
+            panel.styleSheet().rstrip().endswith(
+                "background-color: #07180d;\n}"
+            )
+        )
 
         panel._reset_confidence_panel()
         self.assertEqual(panel.property("decisionState"), "neutral")
+        self.assertIn(
+            "/* decision-background: neutral */",
+            panel.styleSheet(),
+        )
+        self.assertTrue(
+            panel.styleSheet().rstrip().endswith(
+                "background-color: #050505;\n}"
+            )
+        )
 
         panel._update_reference_panel({"is_defect": True})
         panel.save_label("NG")
@@ -546,6 +573,8 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
         self.assertIn('DECISION_NG_BACKGROUND = "#21090b"', source)
         self.assertIn('[decisionState="ok"]', source)
         self.assertIn('[decisionState="ng"]', source)
+        self.assertIn("def stylesheet_for_decision_state", source)
+        self.assertIn("/* decision-background: {normalized} */", source)
 
 
 class NetworkXPDebugUILayoutTests(unittest.TestCase):
