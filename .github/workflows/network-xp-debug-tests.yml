@@ -6,7 +6,10 @@ on:
     paths:
       - "src/ui/network_aoi_intake_filter.py"
       - "src/ui/branding.py"
+      - "src/ui/decision_background.py"
       - "src/ui/decision_key_feedback.py"
+      - "src/ui/theme.py"
+      - "main.py"
       - "src/ui/hud_window.py"
       - "src/ui/calibration_window.py"
       - "src/ui/network_xp_debug.py"
