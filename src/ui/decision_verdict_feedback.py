@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from src.ui.theme import ACCENT, BORDER, DANGER, SUCCESS, SURFACE, TEXT_MUTED
+from src.ui.theme import ACCENT, DANGER, SUCCESS, SURFACE
 
 
 VERDICT_FEEDBACK_DURATION_MS = 1500
@@ -30,7 +30,7 @@ VERDICT_FEEDBACK_FADE_IN_MS = 140
 VERDICT_FEEDBACK_FADE_OUT_MS = 220
 VERDICT_FEEDBACK_SLIDE_PX = 10
 VERDICT_FEEDBACK_WIDTH = 300
-VERDICT_FEEDBACK_HEIGHT = 112
+VERDICT_FEEDBACK_HEIGHT = 88
 VERDICT_FEEDBACK_MARGIN = 24
 VERDICT_FEEDBACK_TOP_OFFSET = 84
 
@@ -41,18 +41,10 @@ QFrame#aiVerdictFeedback {{
     border: 1px solid {ACCENT};
     border-radius: 8px;
 }}
-QLabel#aiVerdictHeader {{
-    color: {ACCENT};
-    background: transparent;
-    border: none;
-    font-size: 9px;
-    font-weight: 900;
-    letter-spacing: 1px;
-}}
 QLabel#aiVerdictText {{
     background: transparent;
     border: none;
-    font-size: 24px;
+    font-size: 25px;
     font-weight: 900;
     letter-spacing: 0.8px;
 }}
@@ -61,14 +53,6 @@ QLabel#aiVerdictText[tone="ok"] {{
 }}
 QLabel#aiVerdictText[tone="ng"] {{
     color: {DANGER};
-}}
-QLabel#aiVerdictHint {{
-    color: {TEXT_MUTED};
-    background: transparent;
-    border: none;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
 }}
 """
 
@@ -125,30 +109,13 @@ class AIVerdictFeedbackOverlay(QFrame):
         self.setStyleSheet(VERDICT_FEEDBACK_STYLESHEET)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 13, 18, 13)
-        layout.setSpacing(3)
-
-        self.header_label = QLabel("VEREDITO DA IA")
-        self.header_label.setObjectName("aiVerdictHeader")
-        self.header_label.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        )
+        layout.setContentsMargins(18, 12, 18, 12)
 
         self.verdict_label = QLabel("")
         self.verdict_label.setObjectName("aiVerdictText")
-        self.verdict_label.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        )
+        self.verdict_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.hint_label = QLabel("ANÁLISE CONCLUÍDA")
-        self.hint_label.setObjectName("aiVerdictHint")
-        self.hint_label.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        )
-
-        layout.addWidget(self.header_label)
         layout.addWidget(self.verdict_label, 1)
-        layout.addWidget(self.hint_label)
 
         self._opacity_effect = QGraphicsOpacityEffect(self)
         self._opacity_effect.setOpacity(0.0)
