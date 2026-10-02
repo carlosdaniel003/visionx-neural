@@ -24,6 +24,7 @@ on:
       - "src/services/capture_evidence.py"
       - "src/services/capture_debug_payload.py"
       - "src/core/experts/missing_component_expert.py"
+      - "src/core/inspection.py"
       - "src/services/image_archive_naming.py"
       - "src/services/ng_image_archive.py"
       - "src/services/ok_image_archive.py"
