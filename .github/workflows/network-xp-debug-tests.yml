@@ -8,6 +8,7 @@ on:
       - "src/ui/branding.py"
       - "src/ui/decision_background.py"
       - "src/ui/decision_key_feedback.py"
+      - "src/ui/decision_verdict_feedback.py"
       - "src/ui/theme.py"
       - "main.py"
       - "src/ui/hud_window.py"
@@ -38,6 +39,7 @@ on:
       - "tests/test_ok_image_archive.py"
       - "tests/test_visual_branding.py"
       - "tests/test_decision_key_feedback.py"
+      - "tests/test_decision_verdict_feedback.py"
       - "tests/test_responsive_layout.py"
       - "tests/test_responsive_iconography.py"
       - "tests/test_xp_decision_shortcuts.py"
@@ -71,4 +73,4 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONUTF8: "1"
-        run: python -m unittest tests.test_visual_branding tests.test_decision_key_feedback tests.test_network_xp_debug tests.test_missing_component_expert tests.test_ng_image_archive tests.test_ok_image_archive tests.test_responsive_layout tests.test_responsive_iconography tests.test_xp_decision_shortcuts tests.test_fast_xp_decision_cycle tests.test_network_aoi_intake_filter tests.test_image_cycle_gate tests.test_local_capture_network_takeover tests.test_production_confidence_gate -v
+        run: python -m unittest tests.test_visual_branding tests.test_decision_key_feedback tests.test_decision_verdict_feedback tests.test_network_xp_debug tests.test_missing_component_expert tests.test_ng_image_archive tests.test_ok_image_archive tests.test_responsive_layout tests.test_responsive_iconography tests.test_xp_decision_shortcuts tests.test_fast_xp_decision_cycle tests.test_network_aoi_intake_filter tests.test_image_cycle_gate tests.test_local_capture_network_takeover tests.test_production_confidence_gate -v
