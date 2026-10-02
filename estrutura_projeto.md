@@ -963,18 +963,42 @@ DEFEITO REAL / NG
 → fundo vermelho escuro
 ```
 
-Cores atuais:
+Cores atuais do canvas:
 
 - neutro: `#050505`;
 - OK: `#07180d`;
 - NG: `#21090b`.
 
-A implementação usa a propriedade Qt `decisionState` nos elementos principais
-do fundo:
+Cores das superfícies principais:
+
+- neutro: `#0d0d0d`;
+- OK: `#0c1a11`;
+- NG: `#1a0b0c`.
+
+A implementação mantém a propriedade Qt `decisionState` para telemetria e
+estado visual, mas **não depende apenas do repolish de propriedade dinâmica**.
+O stylesheet completo do ODIN é reaplicado com um override final explícito para
+garantir que a mudança seja visível imediatamente.
+
+O estado é aplicado ao canvas principal:
 
 - `rootWindow`;
 - `rootContent`;
-- `rootViewport`.
+- `rootViewport`;
+
+e também aos grandes painéis que cobrem a maior parte da janela:
+
+- `headerFrame`;
+- `sectionPanel`;
+- `infoSection`;
+- `confidenceFrame`;
+- `controlsSection`;
+- `ngArchiveFrame`;
+- `networkDebugFrame`;
+- `statusBar`.
+
+Os cards internos continuam escuros para manter contraste, hierarquia visual e
+legibilidade.
 
 Os estados visuais válidos são:
 
@@ -1036,7 +1060,28 @@ Manter testes que garantam:
 - reset da confiança/análise → `neutral`;
 - conclusão do julgamento/ciclo → `neutral`;
 - `rootWindow`, `rootContent` e `rootViewport` recebem o mesmo estado;
+- o stylesheet final contém o override explícito do canvas e das superfícies
+  principais para `neutral`, `ok` e `ng`;
 - o recurso continua exclusivamente visual.
+
+### Correção visual em 02/10/2026
+
+Foi observado em operação que o veredito podia mostrar **DEFEITO REAL** enquanto
+o fundo permanecia visualmente no tema escuro original. A causa era depender do
+repolish das propriedades dinâmicas do Qt, que não estava garantindo a
+reaplicação visível do fundo no stylesheet já instalado na janela.
+
+A correção passou a:
+
+1. manter `decisionState` como estado explícito;
+2. reconstruir o tema a partir do stylesheet completo existente;
+3. acrescentar no final um override QSS específico do estado atual;
+4. tingir também as superfícies principais que ocupam a maior parte da janela;
+5. preservar os cards internos escuros.
+
+Assim, `DEFEITO REAL / NG` deve produzir fundo vermelho-escuro visível e
+`FALHA FALSA / OK` deve produzir fundo verde-escuro visível, retornando ao
+tema neutro ao limpar ou concluir o ciclo.
 
 
 ## Feedback visual temporário de julgamento 0/1
