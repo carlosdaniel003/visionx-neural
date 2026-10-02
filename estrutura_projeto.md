@@ -674,8 +674,48 @@ O debug passa a registrar:
 - `missing_global_envelope_background_exposure`;
 - `missing_global_envelope_reason`.
 
-Status: **correção implementada; aguardando validação operacional na mesma peça
-antes de registrar como comportamento validado**.
+#### Validação operacional em 02/10/2026
+
+O caso foi retestado na interface real após a correção e o operador confirmou
+que o falso positivo foi resolvido.
+
+Foi validado que:
+
+- o componente presente deixou de ser tratado como ausência física forte;
+- o envelope global da AOI passou a participar da verificação de presença;
+- a ROI interna estreita não possui mais autoridade isolada para impor
+  `missing_hard_absence`;
+- o hard missing foi rebaixado quando o envelope completo permaneceu coerente;
+- a divergência física continuou registrada, sem ser apagada;
+- a decisão retornou à fusão normal física + KNN;
+- a memória OK forte pôde voltar a participar da decisão;
+- o veredito final passou corretamente para **FALHA FALSA**;
+- a correção não exigiu redução global de limiares;
+- componentes realmente ausentes continuam protegidos pelas regressões que
+  exigem baixo suporte do envelope antes de manter `missing_hard_absence=True`.
+
+Contrato operacional validado:
+
+```text
+ROI interna estreita indica ausência
+        +
+envelope global do componente permanece preservado
+        ↓
+missing_global_envelope_support = True
+missing_global_envelope_veto = True
+        ↓
+hard missing perde autoridade especial
+        ↓
+fusão normal física + KNN
+        ↓
+FALHA FALSA neste caso validado
+```
+
+Esse comportamento passa a ser a referência operacional para casos de
+`FALTANDO` em que a ROI interna concentra serigrafia/conteúdo e não representa
+corretamente o corpo completo do componente.
+
+Status em 02/10/2026: **validado operacionalmente na mesma peça**.
 
 ### Validação operacional — testemunha OK quase exata em FALTANDO em 02/10/2026
 
