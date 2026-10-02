@@ -1115,3 +1115,23 @@ Manter testes que garantam:
 - `event_id` da imagem e do relatório sempre coincide;
 - o toggle `Salvar imagens NG` inicia marcado/ativado;
 - o operador ainda pode desativar o arquivamento durante a sessão.
+
+### Validação operacional em 02/10/2026
+
+O comportamento foi validado em uso real pelo operador após a implementação.
+
+Foi confirmado que:
+
+- imagens obtidas por **`Capturar nova peça (descarta a atual)`** também disponibilizam
+  corretamente **`Copiar debug`** e **`Copiar imagem`**;
+- a evidência copiada pertence à captura local MSS atual e não reutiliza um frame
+  anterior recebido do Windows XP;
+- o diagnóstico e a imagem permanecem associados ao mesmo `event_id`;
+- o controle **`Salvar imagens NG`** inicia **ATIVADO** ao abrir o ODIN;
+- o operador continua podendo desativar o arquivamento durante a sessão;
+- o arquivamento automático de NG permanece restrito ao fluxo Windows XP, sem
+  introduzir salvamento automático de capturas MSS.
+
+Essa validação deve ser preservada como regressão operacional. Refatorações futuras
+na camada de evidência não podem voltar a tornar os botões exclusivos do XP nem
+permitir mistura silenciosa entre frames XP e MSS.
