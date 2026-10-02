@@ -5,13 +5,21 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QFrame, QPushButton, QScrollArea, QWidget
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from src.ui.decision_background import (
     apply_decision_background,
     decision_background_state,
     install_decision_background,
 )
+from src.ui.theme import APP_STYLESHEET
 from src.ui.network_xp_debug import (
     DEBUG_SCHEMA,
     copy_network_image_to_clipboard,
@@ -558,6 +566,35 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
         panel._update_reference_panel({"is_defect": True})
         panel.save_label("NG")
         self.assertEqual(panel.property("decisionState"), "neutral")
+
+    def test_ng_state_renders_primary_section_red_without_replacing_theme(self):
+        panel = QWidget()
+        panel.setObjectName("rootWindow")
+        panel.setStyleSheet(APP_STYLESHEET)
+        panel.resize(240, 140)
+
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        section = QFrame(panel)
+        section.setObjectName("sectionPanel")
+        layout.addWidget(section)
+
+        panel.show()
+        self.app.processEvents()
+
+        theme_before = panel.styleSheet()
+        apply_decision_background(panel, "ng")
+        self.app.processEvents()
+
+        rendered = section.grab().toImage()
+        pixel = rendered.pixelColor(
+            max(1, rendered.width() // 2),
+            max(1, rendered.height() // 2),
+        )
+
+        self.assertEqual(pixel.name().lower(), "#1a0b0c")
+        self.assertEqual(panel.styleSheet(), theme_before)
+        panel.close()
 
     def test_theme_declares_dark_ok_and_ng_backgrounds(self):
         source = open("src/ui/theme.py", encoding="utf-8").read()
