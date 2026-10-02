@@ -39,6 +39,15 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
     BODY_PRESENCE_MAX_AREA_RATIO = 1.55
     BODY_PRESENCE_MAX_CENTROID_SHIFT = 0.10
 
+    # Segunda rota: silhueta/ocupação quase idênticas podem provar presença
+    # mesmo quando acabamento, brilho e serigrafia destroem a correlação tonal.
+    BODY_GEOMETRY_MIN_SILHOUETTE_DICE = 0.84
+    BODY_GEOMETRY_MIN_AREA_RATIO = 0.70
+    BODY_GEOMETRY_MAX_AREA_RATIO = 1.35
+    BODY_GEOMETRY_MAX_CENTROID_SHIFT = 0.07
+    BODY_GEOMETRY_MIN_BOX_RATIO = 0.75
+    BODY_GEOMETRY_MAX_BOX_RATIO = 1.33
+
     @staticmethod
     def _palette_residual(reference: np.ndarray, test: np.ndarray) -> np.ndarray:
         """Mede se o teste ainda pertence à paleta cromática do patch.
@@ -264,6 +273,8 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
         silhouette_dice = 0.0
         area_ratio = 0.0
         centroid_shift = 1.0
+        box_width_ratio = 0.0
+        box_height_ratio = 0.0
         if (
             reference_mask is not None
             and test_mask is not None
@@ -299,8 +310,16 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
                     - reference_info["centroid_y"],
                 )
             )
+            box_width_ratio = float(
+                test_info["box_width_ratio"]
+                / max(float(reference_info["box_width_ratio"]), 1e-6)
+            )
+            box_height_ratio = float(
+                test_info["box_height_ratio"]
+                / max(float(reference_info["box_height_ratio"]), 1e-6)
+            )
 
-        body_present = bool(
+        appearance_body_present = bool(
             coarse_similarity
             >= cls.BODY_PRESENCE_MIN_COARSE_SIMILARITY
             and silhouette_dice
@@ -311,12 +330,38 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             and centroid_shift
             <= cls.BODY_PRESENCE_MAX_CENTROID_SHIFT
         )
-
-        reason = (
-            "corpo geométrico preservado apesar da divergência de aparência"
-            if body_present
-            else "sem testemunha geométrica suficiente de corpo preservado"
+        geometry_body_present = bool(
+            silhouette_dice >= cls.BODY_GEOMETRY_MIN_SILHOUETTE_DICE
+            and cls.BODY_GEOMETRY_MIN_AREA_RATIO
+            <= area_ratio
+            <= cls.BODY_GEOMETRY_MAX_AREA_RATIO
+            and centroid_shift
+            <= cls.BODY_GEOMETRY_MAX_CENTROID_SHIFT
+            and cls.BODY_GEOMETRY_MIN_BOX_RATIO
+            <= box_width_ratio
+            <= cls.BODY_GEOMETRY_MAX_BOX_RATIO
+            and cls.BODY_GEOMETRY_MIN_BOX_RATIO
+            <= box_height_ratio
+            <= cls.BODY_GEOMETRY_MAX_BOX_RATIO
         )
+        body_present = bool(
+            appearance_body_present or geometry_body_present
+        )
+
+        if geometry_body_present and not appearance_body_present:
+            policy = "geometry_only"
+            reason = (
+                "silhueta, área e centro preservados apesar da mudança "
+                "forte de brilho/serigrafia"
+            )
+        elif appearance_body_present:
+            policy = "coarse_and_geometry"
+            reason = (
+                "corpo geométrico preservado apesar da divergência de aparência"
+            )
+        else:
+            policy = "none"
+            reason = "sem testemunha geométrica suficiente de corpo preservado"
         return {
             "missing_body_presence_active": True,
             "missing_component_body_present": body_present,
@@ -324,6 +369,9 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             "missing_body_silhouette_dice": float(silhouette_dice),
             "missing_body_area_ratio": float(area_ratio),
             "missing_body_centroid_shift": float(centroid_shift),
+            "missing_body_box_width_ratio": float(box_width_ratio),
+            "missing_body_box_height_ratio": float(box_height_ratio),
+            "missing_body_presence_policy": policy,
             "missing_body_presence_reason": reason,
         }
 
@@ -574,7 +622,7 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
 
         hard_absence, hard_reason = self._hard_absence_evidence(result)
 
-        if result.get("missing_component_body_present", False):
+        if result.get("missing_body_presence_veto", False):
             result.update(
                 {
                     "missing_dual_scale_policy": (
@@ -657,6 +705,24 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             ),
             "body_presence_centroid_shift_max": (
                 self.BODY_PRESENCE_MAX_CENTROID_SHIFT
+            ),
+            "body_geometry_silhouette_dice": (
+                self.BODY_GEOMETRY_MIN_SILHOUETTE_DICE
+            ),
+            "body_geometry_area_ratio_min": (
+                self.BODY_GEOMETRY_MIN_AREA_RATIO
+            ),
+            "body_geometry_area_ratio_max": (
+                self.BODY_GEOMETRY_MAX_AREA_RATIO
+            ),
+            "body_geometry_centroid_shift_max": (
+                self.BODY_GEOMETRY_MAX_CENTROID_SHIFT
+            ),
+            "body_geometry_box_ratio_min": (
+                self.BODY_GEOMETRY_MIN_BOX_RATIO
+            ),
+            "body_geometry_box_ratio_max": (
+                self.BODY_GEOMETRY_MAX_BOX_RATIO
             ),
             "dual_scale_policy": DualScalePresenceAnalyzer.POLICY,
             "dual_scale_local_global_ratio_max": (
