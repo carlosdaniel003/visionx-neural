@@ -5,8 +5,13 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QPushButton
+from PyQt6.QtWidgets import QApplication, QPushButton, QScrollArea, QWidget
 
+from src.ui.decision_background import (
+    apply_decision_background,
+    decision_background_state,
+    install_decision_background,
+)
 from src.ui.network_xp_debug import (
     DEBUG_SCHEMA,
     copy_network_image_to_clipboard,
@@ -463,6 +468,84 @@ class NetworkXPImageClipboardTests(unittest.TestCase):
         self.assertEqual(pixel.red(), 230)
         self.assertEqual(pixel.green(), 20)
         self.assertEqual(pixel.blue(), 10)
+
+
+class DynamicDecisionBackgroundTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_state_mapping_uses_final_ai_verdict(self):
+        self.assertEqual(decision_background_state(None), "neutral")
+        self.assertEqual(decision_background_state({}), "neutral")
+        self.assertEqual(
+            decision_background_state({"is_defect": False}),
+            "ok",
+        )
+        self.assertEqual(
+            decision_background_state({"is_defect": True}),
+            "ng",
+        )
+
+    def test_background_properties_follow_analysis_and_reset(self):
+        class Panel(QWidget):
+            def __init__(self):
+                super().__init__()
+                self.setObjectName("rootWindow")
+                self.root_content = QWidget()
+                self.root_content.setObjectName("rootContent")
+                self.root_scroll = QScrollArea()
+                self.root_scroll.viewport().setObjectName("rootViewport")
+                self.current_analysis = None
+                self.is_locked = False
+
+            def _update_reference_panel(self, analysis):
+                self.current_analysis = analysis
+                self.is_locked = True
+
+            def _reset_confidence_panel(self):
+                self.current_analysis = None
+                self.is_locked = False
+
+            def save_label(self, _decision, source="button"):
+                self.current_analysis = None
+                self.is_locked = False
+                return source
+
+        install_decision_background(Panel)
+        panel = Panel()
+
+        apply_decision_background(panel, "neutral")
+        self.assertEqual(panel.property("decisionState"), "neutral")
+
+        panel._update_reference_panel({"is_defect": True})
+        self.assertEqual(panel.property("decisionState"), "ng")
+        self.assertEqual(
+            panel.root_content.property("decisionState"),
+            "ng",
+        )
+        self.assertEqual(
+            panel.root_scroll.viewport().property("decisionState"),
+            "ng",
+        )
+
+        panel._update_reference_panel({"is_defect": False})
+        self.assertEqual(panel.property("decisionState"), "ok")
+
+        panel._reset_confidence_panel()
+        self.assertEqual(panel.property("decisionState"), "neutral")
+
+        panel._update_reference_panel({"is_defect": True})
+        panel.save_label("NG")
+        self.assertEqual(panel.property("decisionState"), "neutral")
+
+    def test_theme_declares_dark_ok_and_ng_backgrounds(self):
+        source = open("src/ui/theme.py", encoding="utf-8").read()
+
+        self.assertIn('DECISION_OK_BACKGROUND = "#07180d"', source)
+        self.assertIn('DECISION_NG_BACKGROUND = "#21090b"', source)
+        self.assertIn('[decisionState="ok"]', source)
+        self.assertIn('[decisionState="ng"]', source)
 
 
 class NetworkXPDebugUILayoutTests(unittest.TestCase):
