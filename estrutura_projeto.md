@@ -87,6 +87,27 @@ Regressões obrigatórias do arquivo OK:
 - o bloco visual OK permanece imediatamente abaixo do bloco NG e usa o mesmo padrão responsivo.
 
 
+### Validação operacional do arquivo visual OK em 02/10/2026
+
+O recurso foi validado em uso real pelo operador após a implementação.
+
+Foi confirmado que:
+
+- o bloco **`Salvar imagens OK`** aparece corretamente logo abaixo de
+  **`Salvar imagens NG`**;
+- o toggle inicia **ATIVADO** ao abrir o ODIN;
+- o operador pode desativar e reativar o recurso durante a sessão;
+- julgamentos humanos `OK` geram corretamente a evidência visual;
+- a imagem salva corresponde à mesma evidência completa de **`Copiar imagem`**;
+- o comportamento funciona sem alterar o fluxo normal de julgamento;
+- o visual do bloco permanece consistente com o arquivo NG;
+- a gravação não interfere no ciclo produtivo, KNN, dataset ou decisão.
+
+Essa validação passa a ser a referência operacional do arquivo visual OK.
+Refatorações futuras devem preservar o mesmo contrato de evidência, o estado
+ativado por padrão e a posição visual imediatamente abaixo do arquivo NG.
+
+
 **Regra visual do painel KNN:**
 - A existência de memória e a força do match são conceitos diferentes na interface.
 - `PRIMEIRA OCORRÊNCIA` só pode ser exibido quando não existir nenhum registro da categoria consultada.
