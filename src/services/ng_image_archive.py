@@ -80,7 +80,7 @@ class NGImageArchiveQueue:
 
                 image, category, timestamp = item
                 self.output_dir.mkdir(parents=True, exist_ok=True)
-                target = self.output_dir / build_ng_archive_filename(
+                target = self.output_dir / build_archive_filename(
                     category,
                     timestamp,
                 )
