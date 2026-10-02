@@ -48,6 +48,10 @@
 - `SEM_CATEGORIA` não é permitido no arquivamento automático OK.
 - A gravação é assíncrona em fila daemon e não pode bloquear julgamento, envio de tecla, limpeza da interface ou recepção da próxima captura.
 - Deduplicação obrigatória por `event_id`: um mesmo evento não pode ser salvo duas vezes caso o julgamento retorne pelo hook do XP.
+- **Deduplicação persistente por conteúdo visual somente para OK:** se uma imagem pixel a pixel idêntica já existir em `public/ok_archive/`, um novo julgamento OK dessa mesma imagem não deve criar outro PNG, mesmo que apareça muitos eventos depois ou após reiniciar o ODIN.
+- A verificação é feita pelo conteúdo da imagem, não pelo nome do arquivo nem pelo `event_id`. Portanto arquivos antigos com o padrão de nome legado também contam como duplicatas se contiverem exatamente os mesmos pixels.
+- A fila OK indexa os PNGs já existentes em background para não bloquear o julgamento. Novas imagens realmente diferentes continuam sendo salvas normalmente.
+- Essa deduplicação por conteúdo **não se aplica ao arquivo NG**; o fluxo NG permanece com sua regra atual.
 - O arquivo é somente evidência visual/auditoria e não participa do dataset, KNN, protótipos, score, confiança ou decisão.
 
 Fluxo:
@@ -81,11 +85,39 @@ Regressões obrigatórias do arquivo OK:
 - MSS salva exatamente o mesmo frame de `Copiar imagem`;
 - MSS nunca reutiliza frame XP anterior;
 - mesmo `event_id` é salvo no máximo uma vez;
-- novo `event_id` pode ser salvo normalmente;
+- mesma imagem OK reaparecendo em outro `event_id` não cria outro PNG;
+- mesma imagem OK já existente antes de reiniciar o ODIN também não é duplicada;
+- um PNG antigo com nome legado bloqueia nova cópia quando o conteúdo visual é idêntico;
+- imagens visualmente diferentes continuam sendo preservadas separadamente;
+- novo `event_id` com imagem diferente pode ser salvo normalmente;
 - categoria vazia não cria `SEM_CATEGORIA`;
 - fila grava PNG com o mesmo formato de nome do NG;
 - o bloco visual OK permanece imediatamente abaixo do bloco NG e usa o mesmo padrão responsivo.
 
+
+### Regra de não duplicar a mesma imagem OK
+
+A necessidade operacional é manter apenas uma evidência quando a **mesma imagem**
+for julgada como OK repetidas vezes.
+
+Exemplo:
+
+```text
+imagem A → operador julga OK → salva 1 PNG
+10 outras imagens passam
+imagem A reaparece → operador julga OK → NÃO salva outro PNG
+imagem A reaparece novamente → operador julga OK → NÃO salva outro PNG
+```
+
+A identidade usada nessa regra é o conteúdo exato dos pixels. O nome do arquivo,
+horário e `event_id` podem mudar; se os pixels forem idênticos, a evidência já
+existe e o novo salvamento é ignorado.
+
+A deduplicação deve sobreviver a reinicializações do ODIN porque a fila
+`OKImageArchiveQueue` indexa os PNGs já existentes em `public/ok_archive/`.
+
+Essa regra é exclusiva do arquivo visual OK. O arquivo visual NG não deve adotar
+automaticamente essa deduplicação por conteúdo.
 
 ### Padrão de nome dos arquivos visuais OK/NG
 
