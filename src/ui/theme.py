@@ -270,3 +270,28 @@ QToolTip {{
     padding: 5px;
 }}
 """
+
+
+DECISION_BACKGROUND_COLORS = {
+    "neutral": BACKGROUND,
+    "ok": DECISION_OK_BACKGROUND,
+    "ng": DECISION_NG_BACKGROUND,
+}
+
+
+def stylesheet_for_decision_state(state: str) -> str:
+    """Retorna o tema completo com o fundo principal forçado no final do QSS."""
+    normalized = str(state or "neutral").strip().lower()
+    color = DECISION_BACKGROUND_COLORS.get(normalized, BACKGROUND)
+    return (
+        APP_STYLESHEET
+        + "\n"
+        + f"""
+/* decision-background: {normalized} */
+QWidget#rootWindow,
+QWidget#rootContent,
+QWidget#rootViewport {{
+    background-color: {color};
+}}
+"""
+    )
