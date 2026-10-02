@@ -19,7 +19,7 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
     Retorna uma tupla: (anomalies, inner_boxes, global_box_info, gab_focus, test_focus)
     - anomalies: Coordenadas dos defeitos texturais encontrados.
     - inner_boxes: Epicentros da AOI (quadradinhos menores).
-    - global_box_info: Dimensoes do componente para tolerancias de deslocamento.
+    - global_box_info: Caixa global completa do componente (x, y, w, h).
     - gab_focus / test_focus: Imagens completas do componente para calculo de Shift Global.
     """
     if img_gabarito.shape != img_teste.shape:
@@ -41,7 +41,7 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
     inner_boxes = []
     
     # Default para caixa global (caso não ache as linhas verdes, assume a tela toda)
-    global_box_info = {"w": w_full, "h": h_full}
+    global_box_info = {"x": 0, "y": 0, "w": w_full, "h": h_full}
 
     if contours_green:
         # Pega as caixas pelas dimensões (bounding rect) e não pela massa de pixels
@@ -67,7 +67,12 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
             gx, gy, gw, gh = unique_greens[0]
             
             # Salva o tamanho original do componente para exportar
-            global_box_info = {"w": gw, "h": gh}
+            global_box_info = {
+                "x": int(gx),
+                "y": int(gy),
+                "w": int(gw),
+                "h": int(gh),
+            }
             
             padding = 40
             fx1 = max(0, gx - padding)
