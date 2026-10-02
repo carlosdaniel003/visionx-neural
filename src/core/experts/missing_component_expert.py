@@ -328,6 +328,113 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
         }
 
     @classmethod
+    def _component_body_presence_witness(
+        cls,
+        full_reference: np.ndarray,
+        full_test: np.ndarray,
+        local_box,
+        aoi_epicenters,
+    ) -> dict:
+        """Busca presença no patch local e também no envelope do componente.
+
+        A ROI interna pode concentrar serigrafia/texto e parecer completamente
+        diferente mesmo quando o corpo físico continua presente. O epicentro
+        final da AOI fornece uma segunda escala geométrica independente.
+        """
+        default = {
+            "missing_body_presence_active": False,
+            "missing_component_body_present": False,
+            "missing_body_presence_source": "none",
+            "missing_body_presence_box": None,
+            "missing_body_presence_reason": "ROI indisponível",
+        }
+
+        safe_reference, safe_test = cls._safe_pair(
+            full_reference,
+            full_test,
+        )
+        candidates = []
+        seen = set()
+
+        def add_candidate(source: str, box) -> None:
+            if not box or len(box) < 4:
+                return
+            candidate = tuple(int(value) for value in box[:4])
+            x, y, width, height = candidate
+            if width <= 0 or height <= 0:
+                return
+            if candidate in seen:
+                return
+            seen.add(candidate)
+            candidates.append((source, candidate))
+
+        add_candidate("missing_roi", local_box)
+        for index, box in enumerate(aoi_epicenters or []):
+            add_candidate(
+                "aoi_epicenter" if index == 0 else f"aoi_epicenter_{index + 1}",
+                box,
+            )
+
+        if not candidates:
+            return default
+
+        best = None
+        best_strength = -1.0
+        for source, box in candidates:
+            reference_roi = cls._crop(safe_reference, box)
+            test_roi = cls._crop(safe_test, box)
+            witness = cls._component_body_presence(
+                reference_roi,
+                test_roi,
+            )
+            witness["missing_body_presence_source"] = source
+            witness["missing_body_presence_box"] = list(box)
+
+            coarse = float(
+                witness.get("missing_body_coarse_similarity", 0.0) or 0.0
+            )
+            dice = float(
+                witness.get("missing_body_silhouette_dice", 0.0) or 0.0
+            )
+            area_ratio = float(
+                witness.get("missing_body_area_ratio", 0.0) or 0.0
+            )
+            centroid_shift = float(
+                witness.get("missing_body_centroid_shift", 1.0) or 1.0
+            )
+            area_fit = (
+                1.0
+                if cls.BODY_PRESENCE_MIN_AREA_RATIO
+                <= area_ratio
+                <= cls.BODY_PRESENCE_MAX_AREA_RATIO
+                else 0.0
+            )
+            centroid_fit = max(
+                0.0,
+                1.0
+                - centroid_shift
+                / max(cls.BODY_PRESENCE_MAX_CENTROID_SHIFT, 1e-6),
+            )
+            strength = (
+                max(0.0, coarse) * 0.35
+                + max(0.0, dice) * 0.45
+                + area_fit * 0.10
+                + centroid_fit * 0.10
+            )
+
+            if bool(witness.get("missing_component_body_present", False)):
+                # Uma testemunha positiva na escala do componente é suficiente
+                # para impedir que diferença de aparência vire "falta física".
+                return witness
+
+            if strength > best_strength:
+                best_strength = strength
+                best = witness
+
+        return best or default
+
+
+    @classmethod
     def _hard_absence_evidence(cls, result: dict) -> tuple[bool, str]:
         """Confirma desaparecimento físico sem confundir deslocamento com falta."""
         if not bool(result.get("missing_active", False)):
@@ -420,23 +527,17 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
         body_presence = {
             "missing_body_presence_active": False,
             "missing_component_body_present": False,
+            "missing_body_presence_source": "none",
+            "missing_body_presence_box": None,
             "missing_body_presence_reason": "ROI indisponível",
         }
         roi_box = result.get("missing_roi_box")
-        if (
-            result.get("missing_active", False)
-            and roi_box
-            and len(roi_box) >= 4
-        ):
-            safe_reference, safe_test = self._safe_pair(
+        if result.get("missing_active", False):
+            body_presence = self._component_body_presence_witness(
                 full_reference,
                 full_test,
-            )
-            reference_roi = self._crop(safe_reference, roi_box)
-            test_roi = self._crop(safe_test, roi_box)
-            body_presence = self._component_body_presence(
-                reference_roi,
-                test_roi,
+                roi_box,
+                aoi_epicenters,
             )
         result.update(body_presence)
 
@@ -461,9 +562,14 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             result["missing_classification"] = (
                 "COMPONENTE PRESENTE — APARÊNCIA DIVERGENTE"
             )
+            source = str(
+                result.get("missing_body_presence_source", "geometria")
+                or "geometria"
+            )
             result["missing_reason"] = (
                 "CORPO DO COMPONENTE PRESENTE: geometria e ocupação "
-                "preservadas; divergência interna tratada por outros motores"
+                f"preservadas ({source}); divergência interna tratada por "
+                "outros motores"
             )
 
         hard_absence, hard_reason = self._hard_absence_evidence(result)
