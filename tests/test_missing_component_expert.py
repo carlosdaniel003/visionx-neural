@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 
 from src.core.experts.missing_component_expert import MissingComponentExpert
+from src.core.experts.roi_patch_expert import ROIPatchExpectationExpert
 
 
 def dark_body_scene(intrusion=False, illumination_shift=0):
@@ -42,6 +43,35 @@ def component_body_variant_scene():
     cv2.line(image, (x1 + 26, 52), (x1 + 26, 128), (185, 188, 192), 4)
     cv2.line(image, (x1 + 39, 72), (x2 - 10, 72), (205, 205, 198), 4)
     cv2.line(image, (x1 + 39, 105), (x2 - 18, 105), (150, 135, 110), 4)
+    return image
+
+
+def real_like_tall_component_scene(variant=False, present=True):
+    """Envelope alto inspirado no caso R9*5, com marcação interna variável."""
+    image = np.full((540, 355, 3), (26, 28, 32), dtype=np.uint8)
+
+    cv2.rectangle(image, (26, 26), (332, 539), (0, 255, 0), 2)
+    cv2.rectangle(image, (128, 60), (228, 539), (0, 255, 0), 2)
+
+    cv2.rectangle(image, (50, 28), (310, 180), (52, 58, 180), -1)
+    cv2.rectangle(image, (50, 360), (310, 520), (52, 58, 180), -1)
+    cv2.rectangle(image, (58, 155), (302, 205), (205, 205, 190), -1)
+    cv2.rectangle(image, (58, 335), (302, 385), (205, 205, 190), -1)
+
+    if present:
+        body = (35, 37, 42) if not variant else (45, 47, 53)
+        cv2.rectangle(image, (52, 190), (308, 350), body, -1)
+        cv2.rectangle(image, (72, 205), (288, 335), (24, 25, 29), -1)
+
+        if not variant:
+            cv2.line(image, (145, 235), (215, 235), (222, 222, 214), 8)
+            cv2.line(image, (145, 275), (205, 275), (222, 222, 214), 8)
+            cv2.line(image, (145, 315), (215, 315), (222, 222, 214), 8)
+        else:
+            cv2.line(image, (150, 235), (215, 235), (225, 225, 218), 8)
+            cv2.line(image, (150, 275), (215, 275), (225, 225, 218), 8)
+            cv2.line(image, (160, 315), (220, 315), (225, 225, 218), 8)
+
     return image
 
 
@@ -271,6 +301,142 @@ class MissingComponentExpertTests(unittest.TestCase):
             result["missing_classification"],
             "COMPONENTE FISICAMENTE AUSENTE",
         )
+
+    def test_global_aoi_envelope_can_downgrade_false_hard_missing_to_normal_fusion(self):
+        reference = real_like_tall_component_scene(
+            variant=False,
+            present=True,
+        )
+        test = real_like_tall_component_scene(
+            variant=True,
+            present=True,
+        )
+        observed = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "QUEBRA DA EXPECTATIVA VISUAL",
+            "missing_score": 0.9650457569485484,
+            "missing_changed_coverage": 0.5742780528052805,
+            "missing_residual_mean": 0.592208743095398,
+            "missing_structure_loss": 0.5261014439096631,
+            "missing_background_exposure": 0.0,
+            "missing_best_similarity": 0.26161158084869385,
+            "missing_appearance_loss": 0.5514829146344776,
+            "missing_direct_similarity": 0.44851708536552237,
+            "missing_roi_box": (128, 60, 101, 480),
+        }
+
+        with patch.object(
+            ROIPatchExpectationExpert,
+            "analyze",
+            return_value=dict(observed),
+        ), patch.object(
+            self.expert,
+            "_component_body_presence_witness",
+            return_value={
+                "missing_body_presence_active": True,
+                "missing_component_body_present": False,
+                "missing_body_presence_source": "missing_roi",
+                "missing_body_presence_box": [128, 60, 101, 480],
+                "missing_body_presence_policy": "none",
+                "missing_body_presence_reason": (
+                    "ROI interna não prova presença"
+                ),
+            },
+        ):
+            result = self.expert.analyze(
+                reference,
+                test,
+                global_box_info={
+                    "x": 26,
+                    "y": 26,
+                    "w": 307,
+                    "h": 514,
+                    "detected": True,
+                },
+                aoi_info={"category": "FALTANDO"},
+                aoi_epicenters=[(128, 60, 101, 480)],
+            )
+
+        self.assertTrue(result["missing_global_envelope_active"])
+        self.assertTrue(result["missing_global_envelope_support"])
+        self.assertTrue(result["missing_global_envelope_veto"])
+        self.assertGreaterEqual(
+            result["missing_global_envelope_row_profile"],
+            self.expert.GLOBAL_ENVELOPE_MIN_ROW_PROFILE,
+        )
+        self.assertGreaterEqual(
+            result["missing_global_envelope_col_profile"],
+            self.expert.GLOBAL_ENVELOPE_MIN_COL_PROFILE,
+        )
+        self.assertGreaterEqual(
+            result["missing_global_envelope_coarse_similarity"],
+            self.expert.GLOBAL_ENVELOPE_MIN_COARSE_SIMILARITY,
+        )
+        self.assertTrue(result["missing_is_defect"])
+        self.assertFalse(result["missing_hard_absence"])
+        self.assertFalse(result["missing_dual_scale_active"])
+        self.assertIn(
+            "fusão normal",
+            result["missing_hard_absence_reason"],
+        )
+
+    def test_global_envelope_does_not_hide_real_component_disappearance(self):
+        reference = real_like_tall_component_scene(
+            variant=False,
+            present=True,
+        )
+        test = real_like_tall_component_scene(
+            variant=False,
+            present=False,
+        )
+        observed = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "QUEBRA DA EXPECTATIVA VISUAL",
+            "missing_score": 0.97,
+            "missing_changed_coverage": 0.60,
+            "missing_residual_mean": 0.68,
+            "missing_structure_loss": 0.62,
+            "missing_background_exposure": 0.0,
+            "missing_best_similarity": 0.18,
+            "missing_appearance_loss": 0.68,
+            "missing_direct_similarity": 0.32,
+            "missing_roi_box": (128, 60, 101, 480),
+        }
+
+        with patch.object(
+            ROIPatchExpectationExpert,
+            "analyze",
+            return_value=dict(observed),
+        ), patch.object(
+            self.expert,
+            "_component_body_presence_witness",
+            return_value={
+                "missing_body_presence_active": True,
+                "missing_component_body_present": False,
+                "missing_body_presence_source": "missing_roi",
+                "missing_body_presence_policy": "none",
+            },
+        ):
+            result = self.expert.analyze(
+                reference,
+                test,
+                global_box_info={
+                    "x": 26,
+                    "y": 26,
+                    "w": 307,
+                    "h": 514,
+                    "detected": True,
+                },
+                aoi_info={"category": "FALTANDO"},
+                aoi_epicenters=[(128, 60, 101, 480)],
+            )
+
+        self.assertTrue(result["missing_global_envelope_active"])
+        self.assertFalse(result["missing_global_envelope_support"])
+        self.assertFalse(result["missing_global_envelope_veto"])
+        self.assertTrue(result["missing_hard_absence"])
 
     def test_dark_footprint_missing_case_from_real_aoi_becomes_hard_absence(self):
         # Regressão do evento bf6b6a2f1e844cc796ae355ae7ceb7e8:
