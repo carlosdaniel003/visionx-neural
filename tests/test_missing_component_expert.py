@@ -122,6 +122,40 @@ class MissingComponentExpertTests(unittest.TestCase):
         self.assertGreater(result["missing_residual_p90"], 0.30)
         self.assertLess(result["missing_direct_similarity"], 0.82)
 
+    def test_component_envelope_can_confirm_presence_when_local_patch_is_misleading(self):
+        reference = missing_body_scene(component_present=True)
+        test = component_body_variant_scene()
+
+        # ROI interna concentrada em marcação/serigrafia: pode divergir muito.
+        local_box = (104, 54, 34, 72)
+        # Epicentro final envolve o corpo físico completo.
+        epicenter = [(82, 40, 77, 101)]
+
+        local_presence = self.expert._component_body_presence(
+            reference[54:126, 104:138],
+            test[54:126, 104:138],
+        )
+        envelope_presence = self.expert._component_body_presence_witness(
+            reference,
+            test,
+            local_box,
+            epicenter,
+        )
+
+        self.assertTrue(envelope_presence["missing_component_body_present"])
+        self.assertEqual(
+            envelope_presence["missing_body_presence_source"],
+            "aoi_epicenter",
+        )
+        self.assertEqual(
+            envelope_presence["missing_body_presence_box"],
+            [82, 40, 77, 101],
+        )
+        self.assertGreater(
+            envelope_presence["missing_body_silhouette_dice"],
+            local_presence.get("missing_body_silhouette_dice", 0.0),
+        )
+
     def test_same_component_body_with_different_marking_blocks_false_missing(self):
         reference = missing_body_scene(component_present=True)
         test = component_body_variant_scene()
@@ -186,6 +220,10 @@ class MissingComponentExpertTests(unittest.TestCase):
 
         self.assertTrue(result["missing_is_defect"])
         self.assertFalse(result["missing_component_body_present"])
+        self.assertIn(
+            result.get("missing_body_presence_source"),
+            {"missing_roi", "aoi_epicenter"},
+        )
         self.assertFalse(result["missing_body_presence_veto"])
         self.assertTrue(result["missing_hard_absence"])
         self.assertEqual(
