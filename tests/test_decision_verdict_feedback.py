@@ -189,14 +189,26 @@ class AIVerdictFeedbackHookTests(unittest.TestCase):
         class FakePanel:
             def __init__(self):
                 self.events = []
+                self.current_analysis = object()
+                self.is_locked = True
 
             def _update_reference_panel(self, analysis):
+                self.current_analysis = analysis
+                self.is_locked = True
                 self.events.append(("reference", analysis["verdict"]))
                 return "updated"
 
             def _reset_confidence_panel(self):
+                self.current_analysis = None
+                self.is_locked = False
                 self.events.append(("reset", None))
                 return "reset"
+
+            def save_label(self, decision, source="button"):
+                self.current_analysis = None
+                self.is_locked = False
+                self.events.append(("save", decision))
+                return source
 
             def show_ai_verdict_feedback(self, analysis):
                 self.events.append(("overlay", analysis["verdict"]))
@@ -220,6 +232,21 @@ class AIVerdictFeedbackHookTests(unittest.TestCase):
                 ("reference", "FALHA FALSA"),
                 ("overlay", "FALHA FALSA"),
                 ("reset", None),
+                ("clear", None),
+            ],
+        )
+
+        panel.events.clear()
+        panel._update_reference_panel(
+            {"verdict": "DEFEITO REAL", "is_defect": True}
+        )
+        panel.save_label("NG")
+        self.assertEqual(
+            panel.events,
+            [
+                ("reference", "DEFEITO REAL"),
+                ("overlay", "DEFEITO REAL"),
+                ("save", "NG"),
                 ("clear", None),
             ],
         )
