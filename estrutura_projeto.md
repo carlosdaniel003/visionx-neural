@@ -119,6 +119,27 @@ A deduplicação deve sobreviver a reinicializações do ODIN porque a fila
 Essa regra é exclusiva do arquivo visual OK. O arquivo visual NG não deve adotar
 automaticamente essa deduplicação por conteúdo.
 
+
+#### Validação operacional da deduplicação OK em 02/10/2026
+
+O operador validou em uso real o comportamento de não duplicar a mesma imagem OK.
+
+Foi confirmado que:
+
+- uma imagem julgada OK é salva na primeira ocorrência;
+- se a mesma imagem reaparecer vários eventos depois e for julgada OK novamente,
+  nenhum novo PNG é criado;
+- outras imagens podem passar entre as ocorrências sem quebrar a deduplicação;
+- imagens visualmente diferentes continuam sendo salvas normalmente;
+- a regra permanece exclusiva do arquivo OK;
+- o arquivo NG mantém o comportamento anterior;
+- a deduplicação por conteúdo não altera julgamento, dataset, KNN ou ciclo
+  produtivo.
+
+Essa validação passa a ser a referência operacional para o arquivo visual OK:
+**uma mesma evidência visual exata deve existir apenas uma vez em
+`public/ok_archive/`**.
+
 ### Padrão de nome dos arquivos visuais OK/NG
 
 OK e NG usam obrigatoriamente o mesmo gerador compartilhado em
