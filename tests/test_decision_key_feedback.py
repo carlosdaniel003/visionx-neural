@@ -107,8 +107,8 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
         ).read()
 
         self.assertEqual(overlay.header_label.text(), "DECISÃO RECEBIDA")
-        self.assertIn("rgba(16, 16, 16, 244)", source)
-        self.assertIn("#303030", source)
+        self.assertIn("rgba(13, 13, 13, 248)", source)
+        self.assertIn("border: 1px solid #f5c518", source)
         self.assertIn("#f5c518", source)
         self.assertIn("#4ade80", source)
         self.assertIn("#ff6262", source)
