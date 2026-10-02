@@ -13,6 +13,7 @@ import numpy as np
 
 from src.services.capture_evidence import (
     capture_debug_record,
+    capture_debug_source,
     capture_image_available,
     capture_image_snapshot,
 )
@@ -182,12 +183,18 @@ def _debug_record(panel) -> dict:
     return dict(legacy) if isinstance(legacy, dict) else {}
 
 
+def _legacy_xp_image_fallback_allowed(panel) -> bool:
+    """Impede reutilizar frame XP quando o diagnóstico atual é local MSS."""
+    return capture_debug_source(panel).strip().lower() != "local_mss"
+
+
 def network_debug_image_available(panel) -> bool:
-    """Compatibilidade pública; aceita evidência XP ou captura local MSS."""
-    return bool(
-        capture_image_available(panel)
-        or network_xp_frame_available(panel)
-    )
+    """Aceita a evidência do evento atual sem misturar origens."""
+    if capture_image_available(panel):
+        return True
+    if not _legacy_xp_image_fallback_allowed(panel):
+        return False
+    return bool(network_xp_frame_available(panel))
 
 
 def _set_button_feedback(button, copied_text: str, idle_text: str) -> None:
@@ -279,7 +286,7 @@ def _qimage_from_bgr(image: np.ndarray):
 
 def copy_network_image_to_clipboard(panel) -> bool:
     image = capture_image_snapshot(panel)
-    if image is None:
+    if image is None and _legacy_xp_image_fallback_allowed(panel):
         image = network_xp_frame_snapshot(panel)
     if image is None:
         return False
