@@ -1306,201 +1306,70 @@ título principal deve aceitar quebra de linha e largura mínima zero para
 continuar responsivo em notebooks e monitores menores.
 
 
-## Fundo dinâmico conforme o veredito da análise
+## Fundo neutro permanente do ODIN
 
-O fundo principal do ODIN acompanha visualmente o **veredito final já calculado
-pela IA**, sem participar da lógica de decisão.
+O fundo geral do ODIN permanece **sempre no tema escuro neutro**, independentemente
+do veredito final da IA.
 
-Estados obrigatórios:
+Contrato atual:
 
 ```text
-sem análise / aguardando imagem / processando sem resultado
-→ fundo neutro original
+sem análise
+→ fundo neutro
 
 FALHA FALSA / OK
-→ fundo verde escuro
+→ fundo neutro
 
 DEFEITO REAL / NG
-→ fundo vermelho escuro
+→ fundo neutro
+
+REVISÃO OBRIGATÓRIA
+→ fundo neutro
 ```
 
-Cores atuais do canvas:
+O fundo não comunica mais estado operacional. A comunicação visual do resultado
+fica concentrada no card de veredito do canto superior direito.
 
-- neutro: `#050505`;
-- OK: `#0b2f18`;
-- NG: `#3a0d12`.
+Cores neutras de referência:
 
-Cores das superfícies principais:
+- canvas: `#050505`;
+- superfícies principais: `#0d0d0d`.
 
-- neutro: `#0d0d0d`;
-- OK: `#103d22`;
-- NG: `#46131a`.
+### Alteração de contrato em 02/10/2026
 
-Os estados OK/NG devem continuar escuros, porém visualmente inequívocos. Tons
-tão próximos do preto que só sejam perceptíveis por comparação não atendem ao
-objetivo operacional dessa sinalização.
+O comportamento anterior, já validado em operação, fazia o fundo principal
+mudar para verde-escuro em `FALHA FALSA` e vermelho-escuro em
+`DEFEITO REAL`.
 
-A implementação mantém a propriedade Qt `decisionState` para telemetria e
-estado visual e o stylesheet global do ODIN permanece **fixo** durante a
-execução. A troca de estado não pode chamar `setStyleSheet()` no painel
-principal nem reconstruir/reaplicar o tema completo.
+Esse comportamento foi **substituído deliberadamente**.
 
-O estado é aplicado ao canvas principal:
+A partir desta alteração:
 
-- `rootWindow`;
-- `rootContent`;
-- `rootViewport`;
+- o fundo não acompanha `analysis["is_defect"]`;
+- o `main.py` não instala mais `install_decision_background(ControlPanel)`;
+- o módulo `src/ui/decision_background.py` permanece apenas como compatibilidade
+  defensiva e normaliza qualquer solicitação para `neutral`;
+- verde/vermelho continuam permitidos no texto do card de veredito;
+- botões, hover, focus, checked e demais componentes mantêm o tema original.
 
-e também aos grandes painéis que cobrem a maior parte da janela e não possuem
-stylesheet local próprio:
-
-- `headerFrame`;
-- `sectionPanel`;
-- `infoSection`;
-- `confidenceFrame`;
-- `controlsSection`;
-- `statusBar`.
-
-`ngArchiveFrame` e `networkDebugFrame` mantêm seus stylesheets locais
-originais para preservar completamente o visual, estados `:hover`, `:focus`
-e `:checked` dos respectivos botões.
-
-Os cards internos continuam escuros para manter contraste, hierarquia visual e
-legibilidade.
-
-Os estados visuais válidos são:
-
-- `neutral`;
-- `ok`;
-- `ng`.
-
-O estado é derivado exclusivamente de `analysis["is_defect"]`:
-
-- `False` → `ok`;
-- `True` → `ng`;
-- análise ausente → `neutral`.
-
-### Regra de ciclo
-
-O fundo colorido só pode permanecer enquanto existe uma análise final ativa para
-visualização.
-
-O fundo deve retornar obrigatoriamente ao neutro quando:
-
-- o ODIN inicia;
-- uma nova captura começa antes de existir um novo resultado;
-- a captura é descartada;
-- a análise é limpa;
-- o julgamento/ciclo é concluído;
-- o sistema fica aguardando a próxima imagem do Windows XP ou uma nova captura
-  MSS.
-
-Isso evita que o operador interprete a cor da peça anterior como estado da peça
-seguinte.
+A decisão de remover o fundo dinâmico evita que grandes áreas coloridas disputem
+atenção com a inspeção e deixa o veredito explícito em um único elemento visual.
 
 ### Regra crítica de arquitetura
 
-O fundo dinâmico é **somente apresentação**. Ele não pode:
+Nenhum veredito pode alterar a cor geral do canvas ou das superfícies principais.
 
-- alterar `is_defect`, score, confiança ou veredito;
-- alterar KNN, memória ou dataset;
-- mudar os comandos `PRESS_0/PRESS_1`;
-- interferir no gate de imagens;
-- alterar origem XP/MSS;
-- manter estado vermelho/verde depois que a análise atual deixou de existir.
+Regressões obrigatórias:
 
-A implementação fica isolada em:
-
-```text
-src/ui/decision_background.py
-```
-
-e reutiliza o resultado já produzido pelo pipeline. O tema apenas declara as
-cores em `src/ui/theme.py`.
-
-### Regressões obrigatórias
-
-Manter testes que garantam:
-
-- sem análise → `neutral`;
-- `is_defect=False` → `ok`;
-- `is_defect=True` → `ng`;
-- reset da confiança/análise → `neutral`;
-- conclusão do julgamento/ciclo → `neutral`;
-- `rootWindow`, `rootContent` e `rootViewport` recebem o mesmo estado;
-- os containers principais recebem `decisionState` sem substituir o
-  stylesheet global;
-- um `sectionPanel` real renderiza `#1a0b0c` em estado NG;
-- o stylesheet existente da janela permanece byte-a-byte inalterado após a
-  troca de estado;
-- estilos de botão e estados `:hover`, `:focus` e `:checked` permanecem
-  preservados;
-- o recurso continua exclusivamente visual.
-
-### Correções visuais em 02/10/2026
-
-Foi observado em operação que o veredito podia mostrar **DEFEITO REAL** enquanto
-o fundo permanecia visualmente no tema escuro original.
-
-Uma primeira tentativa forçou a reaplicação do stylesheet completo da janela.
-Essa estratégia foi descartada porque, em uso real, alterou o visual dos botões
-e fez estados de interação como `:hover` deixarem de responder corretamente.
-
-A implementação válida passa a obedecer estas regras:
-
-1. o stylesheet global instalado em `ControlPanelUI.setup_ui()` não é
-   substituído durante uma decisão;
-2. `apply_decision_background()` altera somente a propriedade dinâmica
-   `decisionState` dos containers de fundo;
-3. cada container alterado é repolido individualmente;
-4. os seletores `[decisionState="ok"]` e `[decisionState="ng"]` já fazem
-   parte de `APP_STYLESHEET` desde a criação da interface;
-5. frames que possuem stylesheet local próprio não são tocados pela rotina de
-   fundo;
-6. botões, hover, focus, checked e demais estados interativos devem permanecer
-   idênticos ao tema original.
-
-Além dos testes de estado, deve existir regressão de renderização Qt offscreen:
-um `sectionPanel` real em estado `ng` precisa renderizar o pixel de fundo
-`#46131a` sem que o stylesheet da janela seja modificado.
-
-Assim, `DEFEITO REAL / NG` deve produzir fundo vermelho-escuro visível e
-`FALHA FALSA / OK` deve produzir fundo verde-escuro visível, retornando ao
-tema neutro ao limpar ou concluir o ciclo, sem regressão visual dos controles.
-
-#### Ajuste de contraste validado por captura em 02/10/2026
-
-Uma captura real mostrou que o estado `OK` estava tecnicamente ativo, porém a
-superfície `#0c1a11` era escura demais e visualmente parecia o tema neutro.
-Por isso, os tons foram reforçados sem alterar a arquitetura:
-
-- canvas OK: `#0b2f18`;
-- superfície OK: `#103d22`;
-- canvas NG: `#3a0d12`;
-- superfície NG: `#46131a`.
-
-Esse ajuste é somente cromático. Não pode reintroduzir `setStyleSheet()` global
-durante a análise nem alterar hover, focus, checked ou estilos dos botões.
-
-#### Validação operacional final em 02/10/2026
-
-Após o reforço cromático, o operador validou o comportamento em uso real e
-confirmou que a sinalização ficou correta.
-
-Foi confirmado que:
-
-- `FALHA FALSA / OK` deixa o fundo claramente verde-escuro;
-- `DEFEITO REAL / NG` deixa o fundo claramente vermelho-escuro;
-- sem análise ativa, o ODIN retorna ao fundo neutro original;
-- o contraste é perceptível sem descaracterizar o tema escuro industrial;
-- os botões mantêm o visual original;
-- os estados `:hover`, `:focus` e `:checked` continuam funcionando;
-- a mudança permanece exclusivamente visual e não interfere em decisão,
-  confiança, KNN, captura, XP/MSS ou ciclo produtivo.
-
-Essa configuração cromática passa a ser a referência operacional validada para
-o fundo dinâmico do ODIN.
-
+- `None` → `neutral`;
+- `is_defect=False` → `neutral`;
+- `is_defect=True` → `neutral`;
+- uma chamada defensiva `apply_decision_background(..., "ok")` ou
+  `apply_decision_background(..., "ng")` também resulta em `neutral`;
+- `main.py` não instala o hook de fundo dinâmico;
+- o stylesheet global não é substituído;
+- um `sectionPanel` permanece em `#0d0d0d` mesmo se alguém tentar aplicar
+  estado NG pelo módulo legado.
 
 ## Feedback visual temporário de julgamento 0/1
 
@@ -1689,50 +1558,54 @@ O verde/vermelho é usado apenas para o texto do estado. A estrutura do card
 continua escura/amarela. Não exibir cabeçalho, subtítulo ou legenda dentro do
 card: a moldura amarela já comunica que o elemento pertence ao ODIN.
 
-### Sincronização com o fundo dinâmico
+### Relação com o fundo neutro
 
-O overlay deve surgir a partir do mesmo veredito final que alimenta o fundo:
+O card de veredito é agora o **único elemento global de alto nível** que comunica
+o resultado binário da IA.
 
 ```text
 FALHA FALSA
         ↓
-fundo verde-escuro
+fundo permanece neutro
         +
-card superior direito verde
+card superior direito com texto verde
 
 DEFEITO REAL
         ↓
-fundo vermelho-escuro
+fundo permanece neutro
         +
-card superior direito vermelho
+card superior direito com texto vermelho
 ```
 
-A ordem de instalação é importante:
-
-1. o fundo dinâmico observa o resultado final;
-2. o hook do overlay de veredito é instalado depois;
-3. ao receber a análise, o fundo é atualizado primeiro;
-4. em seguida o card aparece já sincronizado com o novo estado visual.
+Não existe mais dependência de ordem entre overlay e fundo dinâmico, porque o
+fundo não reage ao resultado.
 
 Quando o ODIN volta para `AGUARDANDO PEÇA`, o card deve desaparecer e o fundo
-retorna ao neutro.
+continua neutro.
 
-### Animação e desempenho
+### Persistência, entrada e desempenho
 
-O overlay é temporário e leve:
+O card não possui mais desaparecimento automático.
 
-- duração total aproximada: `1500 ms`;
-- fade-in: aproximadamente `140 ms`;
-- fade-out: aproximadamente `220 ms`;
+Comportamento:
+
+- fade-in curto de aproximadamente `140 ms`;
 - pequeno slide horizontal de aproximadamente `10 px`;
-- `QTimer` single-shot;
+- depois da entrada, permanece estático e visível;
+- não existe `QTimer` de auto-hide;
+- não existe fade-out automático;
 - sem thread adicional;
 - sem `sleep`;
 - sem loop contínuo;
 - `WA_TransparentForMouseEvents`;
 - `NoFocus`.
 
-A animação só existe durante a exibição do card.
+O card permanece na tela enquanto a análise atual continua sendo o resultado
+ativo. Ele só é removido quando o ciclo/análise é encerrado ou resetado e o ODIN
+retorna para `AGUARDANDO PEÇA`.
+
+Uma nova análise válida pode substituir diretamente o conteúdo do card pelo novo
+veredito.
 
 ### Estados inconclusivos
 
@@ -1773,17 +1646,19 @@ Manter testes que garantam:
 - `DEFEITO REAL` → texto vermelho, sem percentual;
 - posição no canto superior direito;
 - card click-through e sem foco;
-- animações curtas, single-shot e não bloqueantes;
+- entrada curta e não bloqueante;
+- ausência de `QTimer` e fade-out automático;
+- card permanece visível após a animação de entrada;
 - revisão obrigatória não inventa um veredito;
 - reset para `AGUARDANDO PEÇA` limpa o overlay;
-- conclusão do ciclo também limpa o overlay se o fundo já voltou ao neutro;
-- hook do overlay é instalado depois do fundo dinâmico;
+- conclusão do ciclo limpa o overlay;
+- o fundo permanece neutro durante toda a análise;
 - feedback de tecla continua independente no canto inferior direito;
 - o visual do feedback `0/1` usa moldura amarela/escura e conserva
   verde/vermelho apenas no conteúdo do estado.
 
-Status em 02/10/2026: **implementado, aguardando validação operacional na
-interface real**.
+Status em 02/10/2026: **contrato atualizado; implementação concluída e
+aguardando validação operacional na interface real**.
 
 
 ## Diagnóstico e cópia de evidência por origem
