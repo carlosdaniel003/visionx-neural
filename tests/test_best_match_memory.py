@@ -127,6 +127,73 @@ class FusionTests(unittest.TestCase):
         self.assertEqual(confidence, 0.99)
         self.assertEqual(trace["memory"]["memory_score"], 0.0)
 
+    def test_real_faltando_exact_ok_witness_beats_raw_hard_missing(self):
+        knn = {
+            "has_memory": True,
+            "memory_available": True,
+            "match_reliable": True,
+            "best_match_label": "OK",
+            "best_similarity": 0.9999999946355821,
+            "best_ok_similarity": 0.9999999946355821,
+            "best_ng_similarity": 0.8724773603677749,
+            "ng_memory_available": True,
+            "hypothesis_margin": 0.1275226342678072,
+            "memory_conflict": False,
+            "operator_review_required": False,
+            "vote_defect": 0.0,
+            "n_neighbors": 5,
+            "memory_mode": "anomaly",
+            "memory_scope": "categoria",
+        }
+        missing = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_score": 0.979522189040151,
+            "missing_tolerance": 0.36,
+            "missing_reason": (
+                "QUEBRA DA EXPECTATIVA VISUAL DA ROI (98%)"
+            ),
+            "missing_hard_absence": True,
+            "missing_hard_absence_reason": (
+                "estrutura esperada colapsou sem correspondência próxima válida"
+            ),
+        }
+
+        score, defect, confidence, reason, trace = self.fusion(
+            self.orchestrator,
+            {
+                "silk_error_pct": 0.61,
+                "semantic_loss": 0.52,
+                "local_score": 0.60,
+                "ctx_score": 0.0,
+                "decision_threshold": 0.45,
+                "ssim": 0.26,
+                "pct_changed": 0.60,
+            },
+            "FALTANDO",
+            missing,
+            knn,
+        )
+
+        self.assertEqual(score, 0.0)
+        self.assertFalse(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(
+            trace["fusion_rule"],
+            "hard_missing_exact_ok_witness",
+        )
+        self.assertEqual(trace["dominant_engine"], "knn")
+        self.assertEqual(trace["weights"], {"physical": 0.0, "knn": 1.0})
+        self.assertFalse(trace["hard_missing_evidence"])
+        self.assertTrue(trace["raw_hard_missing_evidence"])
+        self.assertTrue(trace["hard_missing_contradicted_by_exact_ok"])
+        self.assertFalse(trace["memory"]["suppressed_by_hard_missing"])
+        self.assertEqual(
+            trace["memory"]["role"],
+            "TESTEMUNHA OK QUASE EXATA",
+        )
+        self.assertIn("HARD MISSING CONTRADITO", reason)
+
     def test_hard_missing_cannot_be_vetoed_by_strong_ok_memory(self):
         knn = {
             "has_memory": True,
