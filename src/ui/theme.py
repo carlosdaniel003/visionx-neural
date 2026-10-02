@@ -44,6 +44,24 @@ QWidget#rootViewport[decisionState="ng"] {{
     background-color: {DECISION_NG_BACKGROUND};
 }}
 
+QFrame#headerFrame[decisionState="ok"],
+QFrame#sectionPanel[decisionState="ok"],
+QFrame#infoSection[decisionState="ok"],
+QFrame#confidenceFrame[decisionState="ok"],
+QFrame#controlsSection[decisionState="ok"],
+QFrame#statusBar[decisionState="ok"] {{
+    background-color: {DECISION_OK_SURFACE};
+}}
+
+QFrame#headerFrame[decisionState="ng"],
+QFrame#sectionPanel[decisionState="ng"],
+QFrame#infoSection[decisionState="ng"],
+QFrame#confidenceFrame[decisionState="ng"],
+QFrame#controlsSection[decisionState="ng"],
+QFrame#statusBar[decisionState="ng"] {{
+    background-color: {DECISION_NG_SURFACE};
+}}
+
 QFrame#headerFrame,
 QFrame#sectionPanel,
 QFrame#infoSection,
@@ -272,46 +290,3 @@ QToolTip {{
     padding: 5px;
 }}
 """
-
-
-DECISION_BACKGROUND_COLORS = {
-    "neutral": BACKGROUND,
-    "ok": DECISION_OK_BACKGROUND,
-    "ng": DECISION_NG_BACKGROUND,
-}
-
-DECISION_SURFACE_COLORS = {
-    "neutral": SURFACE,
-    "ok": DECISION_OK_SURFACE,
-    "ng": DECISION_NG_SURFACE,
-}
-
-
-def stylesheet_for_decision_state(state: str) -> str:
-    """Retorna o tema completo com canvas e painéis principais forçados no fim."""
-    normalized = str(state or "neutral").strip().lower()
-    color = DECISION_BACKGROUND_COLORS.get(normalized, BACKGROUND)
-    surface = DECISION_SURFACE_COLORS.get(normalized, SURFACE)
-    return (
-        APP_STYLESHEET
-        + "\n"
-        + f"""
-/* decision-background: {normalized} */
-QWidget#rootWindow,
-QWidget#rootContent,
-QWidget#rootViewport {{
-    background-color: {color};
-}}
-
-QFrame#headerFrame,
-QFrame#sectionPanel,
-QFrame#infoSection,
-QFrame#confidenceFrame,
-QFrame#controlsSection,
-QFrame#ngArchiveFrame,
-QFrame#networkDebugFrame,
-QFrame#statusBar {{
-    background-color: {surface};
-}}
-"""
-    )
