@@ -945,6 +945,100 @@ título principal deve aceitar quebra de linha e largura mínima zero para
 continuar responsivo em notebooks e monitores menores.
 
 
+## Fundo dinâmico conforme o veredito da análise
+
+O fundo principal do ODIN acompanha visualmente o **veredito final já calculado
+pela IA**, sem participar da lógica de decisão.
+
+Estados obrigatórios:
+
+```text
+sem análise / aguardando imagem / processando sem resultado
+→ fundo neutro original
+
+FALHA FALSA / OK
+→ fundo verde escuro
+
+DEFEITO REAL / NG
+→ fundo vermelho escuro
+```
+
+Cores atuais:
+
+- neutro: `#050505`;
+- OK: `#07180d`;
+- NG: `#21090b`.
+
+A implementação usa a propriedade Qt `decisionState` nos elementos principais
+do fundo:
+
+- `rootWindow`;
+- `rootContent`;
+- `rootViewport`.
+
+Os estados visuais válidos são:
+
+- `neutral`;
+- `ok`;
+- `ng`.
+
+O estado é derivado exclusivamente de `analysis["is_defect"]`:
+
+- `False` → `ok`;
+- `True` → `ng`;
+- análise ausente → `neutral`.
+
+### Regra de ciclo
+
+O fundo colorido só pode permanecer enquanto existe uma análise final ativa para
+visualização.
+
+O fundo deve retornar obrigatoriamente ao neutro quando:
+
+- o ODIN inicia;
+- uma nova captura começa antes de existir um novo resultado;
+- a captura é descartada;
+- a análise é limpa;
+- o julgamento/ciclo é concluído;
+- o sistema fica aguardando a próxima imagem do Windows XP ou uma nova captura
+  MSS.
+
+Isso evita que o operador interprete a cor da peça anterior como estado da peça
+seguinte.
+
+### Regra crítica de arquitetura
+
+O fundo dinâmico é **somente apresentação**. Ele não pode:
+
+- alterar `is_defect`, score, confiança ou veredito;
+- alterar KNN, memória ou dataset;
+- mudar os comandos `PRESS_0/PRESS_1`;
+- interferir no gate de imagens;
+- alterar origem XP/MSS;
+- manter estado vermelho/verde depois que a análise atual deixou de existir.
+
+A implementação fica isolada em:
+
+```text
+src/ui/decision_background.py
+```
+
+e reutiliza o resultado já produzido pelo pipeline. O tema apenas declara as
+cores em `src/ui/theme.py`.
+
+### Regressões obrigatórias
+
+Manter testes que garantam:
+
+- sem análise → `neutral`;
+- `is_defect=False` → `ok`;
+- `is_defect=True` → `ng`;
+- reset da confiança/análise → `neutral`;
+- conclusão do julgamento/ciclo → `neutral`;
+- `rootWindow`, `rootContent` e `rootViewport` recebem o mesmo estado;
+- o recurso continua exclusivamente visual.
+
+
 ## Feedback visual temporário de julgamento 0/1
 
 O ODIN possui um overlay exclusivamente visual para confirmar imediatamente ao operador quando uma tecla de julgamento foi recebida.
