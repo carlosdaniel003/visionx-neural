@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QObject, Qt
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -32,6 +33,48 @@ from src.ui.widgets.semantic_dna import SemanticDNAWidget
 from src.ui.widgets.shift_debugger import ShiftDebuggerWidget
 from src.ui.widgets.silk_debugger import SilkDebuggerWidget
 from src.ui.widgets.ssim_debugger import SSIMDebuggerWidget
+
+
+class _ResponsiveCapturePreview(QLabel):
+    """Prévia que preserva proporção ao redimensionar o painel."""
+
+    def __init__(self, placeholder: str = "Aguardando captura"):
+        super().__init__(placeholder)
+        self._source_pixmap = QPixmap()
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Expanding,
+        )
+
+    def set_source_image(self, qimage) -> None:
+        pixmap = QPixmap.fromImage(qimage)
+        if pixmap.isNull():
+            return
+        self._source_pixmap = pixmap
+        self._render_source()
+
+    def clear_source_image(self, placeholder: str = "Aguardando captura") -> None:
+        self._source_pixmap = QPixmap()
+        self.clear()
+        self.setText(placeholder)
+
+    def _render_source(self) -> None:
+        if self._source_pixmap.isNull():
+            return
+        target = self.contentsRect().size()
+        if target.width() <= 1 or target.height() <= 1:
+            return
+        scaled = self._source_pixmap.scaled(
+            target,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        super().setPixmap(scaled)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._render_source()
 
 
 class _ResponsiveEventFilter(QObject):
@@ -64,6 +107,7 @@ class ControlPanelUI:
         self.footer_cards: list[QWidget] = []
         self.debug_wrappers: list[QWidget] = []
         self.image_viewports: list[QLabel] = []
+        self.capture_preview_viewport: QLabel | None = None
         self.light_buttons: list[QPushButton] = []
         self.action_buttons: list[QPushButton] = []
 
@@ -307,6 +351,20 @@ class ControlPanelUI:
                 "Visão completa e recorte do epicentro para comparação rápida.",
             )
         )
+
+        window.lbl_capture_evidence_preview = _ResponsiveCapturePreview(
+            "Aguardando captura"
+        )
+        self.capture_preview_viewport = window.lbl_capture_evidence_preview
+        capture_preview_card = self._create_image_card(
+            "CAPTURA RECEBIDA • EVIDÊNCIA COMPLETA",
+            window.lbl_capture_evidence_preview,
+        )
+        capture_preview_card.setToolTip(
+            "Prévia da mesma imagem completa disponível em Copiar imagem, "
+            "seja recebida do Windows XP ou capturada localmente por MSS."
+        )
+        images_layout.addWidget(capture_preview_card)
 
         image_grid = QGridLayout()
         image_grid.setHorizontalSpacing(8)
@@ -963,6 +1021,10 @@ class ControlPanelUI:
 
         for viewport in self.image_viewports:
             viewport.setMinimumHeight(profile.image_min_height)
+
+        if self.capture_preview_viewport is not None:
+            preview_min_height = 140 if compact else 180
+            self.capture_preview_viewport.setMinimumHeight(preview_min_height)
 
         for wrapper in self.debug_wrappers:
             wrapper.setMinimumWidth(profile.debugger_min_width)
