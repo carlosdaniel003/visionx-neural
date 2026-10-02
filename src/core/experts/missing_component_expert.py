@@ -440,10 +440,23 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             )
         result.update(body_presence)
 
-        if result.get("missing_component_body_present", False):
-            # O especialista FALTANDO responde presença física. Se o corpo
-            # permanece, divergência de impressão/brilho pertence aos outros
-            # motores, não deve virar ausência física.
+        raw_classification = str(
+            result.get("missing_classification", "")
+        ).strip().upper()
+        body_presence_veto = bool(
+            result.get("missing_component_body_present", False)
+            and result.get("missing_is_defect", False)
+            and raw_classification
+            in {
+                "CONTEÚDO ESPERADO AUSENTE",
+                "QUEBRA DA EXPECTATIVA VISUAL",
+            }
+        )
+        result["missing_body_presence_veto"] = body_presence_veto
+
+        if body_presence_veto:
+            # O especialista FALTANDO responde presença física. Mudança de
+            # brilho/serigrafia com silhueta preservada não é falta física.
             result["missing_is_defect"] = False
             result["missing_classification"] = (
                 "COMPONENTE PRESENTE — APARÊNCIA DIVERGENTE"
