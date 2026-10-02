@@ -514,11 +514,13 @@ class MissingComponentExpertTests(unittest.TestCase):
             )
 
         self.assertTrue(result["missing_global_envelope_invariant_support"])
-        self.assertTrue(result["missing_global_envelope_veto"])
-        self.assertFalse(result["missing_hard_absence"])
+        self.assertFalse(result["missing_global_envelope_support"])
+        self.assertFalse(result["missing_global_envelope_veto"])
+        # A massa invariável é somente evidência auxiliar. Sem a memória KNN,
+        # o especialista físico não pode transformar sozinho esse caso em OK.
+        self.assertTrue(result["missing_hard_absence"])
         self.assertTrue(result["missing_is_defect"])
         self.assertFalse(result["missing_dual_scale_active"])
-        self.assertIn("fusão normal", result["missing_hard_absence_reason"])
 
     def test_global_aoi_envelope_can_downgrade_false_hard_missing_to_normal_fusion(self):
         reference = real_like_tall_component_scene(
