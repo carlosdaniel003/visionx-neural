@@ -368,6 +368,31 @@ class NetworkXPImageClipboardTests(unittest.TestCase):
         self.assertEqual(pixel.green(), 60)
         self.assertEqual(pixel.blue(), 15)
 
+    def test_local_mss_never_falls_back_to_previous_xp_frame(self):
+        panel = self._panel("legacy-network")
+        panel.capture_debug_last_record = {
+            "schema": "visionx.capture_debug.v1",
+            "event_id": "local-003",
+            "source": "local_mss",
+            "validation": {
+                "valid": True,
+                "reason": "local_capture_processed",
+            },
+        }
+        panel.capture_debug_last_image_event_id = "local-other"
+        panel.capture_debug_last_image = np.full(
+            (20, 30, 3),
+            (15, 60, 210),
+            dtype=np.uint8,
+        )
+
+        sync_network_debug_controls(panel)
+
+        self.assertTrue(panel.btn_copy_network_debug.isEnabled())
+        self.assertFalse(panel.btn_copy_network_image.isEnabled())
+        self.assertFalse(network_debug_image_available(panel))
+        self.assertFalse(copy_network_image_to_clipboard(panel))
+
     def test_different_event_blocks_image_copy(self):
         panel = self._panel()
         panel.network_intake_last_image_event_id = "evt-other"
