@@ -15,7 +15,7 @@ from src.services.capture_evidence import (
     capture_debug_record,
     capture_debug_source,
     capture_image_available,
-    capture_image_snapshot,
+    current_copy_image_snapshot,
 )
 from src.ui.branding import (
     DECISION_DEBUG_TITLE,
@@ -285,11 +285,8 @@ def _qimage_from_bgr(image: np.ndarray):
 
 
 def network_debug_image_snapshot(panel) -> np.ndarray | None:
-    """Retorna exatamente a mesma evidência visual usada por Copiar imagem."""
-    image = capture_image_snapshot(panel)
-    if image is None and _legacy_xp_image_fallback_allowed(panel):
-        image = network_xp_frame_snapshot(panel)
-    return image
+    """Retorna exatamente a evidência visual resolvida por Copiar imagem."""
+    return current_copy_image_snapshot(panel)
 
 
 def _sync_capture_image_preview(panel) -> None:
