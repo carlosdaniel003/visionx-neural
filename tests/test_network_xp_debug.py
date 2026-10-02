@@ -653,24 +653,24 @@ class NetworkXPImageClipboardTests(unittest.TestCase):
         self.assertEqual(pixel.blue(), 10)
 
 
-class DynamicDecisionBackgroundTests(unittest.TestCase):
+class NeutralDecisionBackgroundTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_state_mapping_uses_final_ai_verdict(self):
+    def test_every_analysis_maps_to_neutral_background(self):
         self.assertEqual(decision_background_state(None), "neutral")
         self.assertEqual(decision_background_state({}), "neutral")
         self.assertEqual(
             decision_background_state({"is_defect": False}),
-            "ok",
+            "neutral",
         )
         self.assertEqual(
             decision_background_state({"is_defect": True}),
-            "ng",
+            "neutral",
         )
 
-    def test_background_properties_follow_analysis_and_reset(self):
+    def test_background_compatibility_hook_never_applies_ok_or_ng_state(self):
         class Panel(QWidget):
             def __init__(self):
                 super().__init__()
@@ -708,41 +708,27 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
         )
         panel.setStyleSheet(original_stylesheet)
 
-        apply_decision_background(panel, "neutral")
+        apply_decision_background(panel, "ng")
         self.assertEqual(panel.property("decisionState"), "neutral")
-        self.assertEqual(panel.styleSheet(), original_stylesheet)
-
-        panel._update_reference_panel({"is_defect": True})
-        self.assertEqual(panel.property("decisionState"), "ng")
-        self.assertEqual(
-            panel.root_content.property("decisionState"),
-            "ng",
-        )
+        self.assertEqual(panel.root_content.property("decisionState"), "neutral")
         self.assertEqual(
             panel.root_scroll.viewport().property("decisionState"),
-            "ng",
+            "neutral",
         )
-        self.assertEqual(panel.section.property("decisionState"), "ng")
-        self.assertEqual(panel.controls.property("decisionState"), "ng")
-        self.assertEqual(panel.styleSheet(), original_stylesheet)
-
-        panel._update_reference_panel({"is_defect": False})
-        self.assertEqual(panel.property("decisionState"), "ok")
-        self.assertEqual(panel.section.property("decisionState"), "ok")
-        self.assertEqual(panel.controls.property("decisionState"), "ok")
-        self.assertEqual(panel.styleSheet(), original_stylesheet)
-
-        panel._reset_confidence_panel()
-        self.assertEqual(panel.property("decisionState"), "neutral")
         self.assertEqual(panel.section.property("decisionState"), "neutral")
         self.assertEqual(panel.controls.property("decisionState"), "neutral")
         self.assertEqual(panel.styleSheet(), original_stylesheet)
 
         panel._update_reference_panel({"is_defect": True})
-        panel.save_label("NG")
         self.assertEqual(panel.property("decisionState"), "neutral")
 
-    def test_ng_state_renders_primary_section_red_without_replacing_theme(self):
+        panel._update_reference_panel({"is_defect": False})
+        self.assertEqual(panel.property("decisionState"), "neutral")
+
+        panel._reset_confidence_panel()
+        self.assertEqual(panel.property("decisionState"), "neutral")
+
+    def test_forced_ng_request_still_renders_neutral_surface(self):
         panel = QWidget()
         panel.setObjectName("rootWindow")
         panel.setStyleSheet(APP_STYLESHEET)
@@ -767,22 +753,14 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
             max(1, rendered.height() // 2),
         )
 
-        self.assertEqual(pixel.name().lower(), "#46131a")
+        self.assertEqual(pixel.name().lower(), "#0d0d0d")
+        self.assertEqual(section.property("decisionState"), "neutral")
         self.assertEqual(panel.styleSheet(), theme_before)
         panel.close()
 
-    def test_theme_declares_dark_ok_and_ng_backgrounds(self):
-        source = open("src/ui/theme.py", encoding="utf-8").read()
-
-        self.assertIn('DECISION_OK_BACKGROUND = "#0b2f18"', source)
-        self.assertIn('DECISION_NG_BACKGROUND = "#3a0d12"', source)
-        self.assertIn('DECISION_OK_SURFACE = "#103d22"', source)
-        self.assertIn('DECISION_NG_SURFACE = "#46131a"', source)
-        self.assertIn('QFrame#sectionPanel[decisionState="ok"]', source)
-        self.assertIn('QFrame#sectionPanel[decisionState="ng"]', source)
-        self.assertIn('QFrame#controlsSection[decisionState="ok"]', source)
-        self.assertIn('QFrame#controlsSection[decisionState="ng"]', source)
-        self.assertNotIn("def stylesheet_for_decision_state", source)
+    def test_main_does_not_install_dynamic_background(self):
+        source = open("main.py", encoding="utf-8").read()
+        self.assertNotIn("install_decision_background", source)
 
 
 class NetworkXPDebugUILayoutTests(unittest.TestCase):
