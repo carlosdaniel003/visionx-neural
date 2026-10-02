@@ -1135,3 +1135,27 @@ Foi confirmado que:
 Essa validação deve ser preservada como regressão operacional. Refatorações futuras
 na camada de evidência não podem voltar a tornar os botões exclusivos do XP nem
 permitir mistura silenciosa entre frames XP e MSS.
+
+### Validação operacional da prévia da captura em 02/10/2026
+
+A nova visualização **`CAPTURA RECEBIDA • EVIDÊNCIA COMPLETA`**, posicionada na
+seção **`IMAGENS DA INSPEÇÃO`** antes dos cards de gabarito/teste, foi validada
+em uso real pelo operador.
+
+Foi confirmado que:
+
+- a prévia exibe corretamente a captura recebida do **Windows XP**;
+- a prévia também exibe corretamente a captura local **MSS**;
+- a imagem mostrada é exatamente a mesma evidência utilizada por
+  **`Copiar imagem`**, sem criar uma segunda fonte visual independente;
+- a proporção original da imagem é preservada durante o redimensionamento;
+- o componente se adapta de forma responsiva ao espaço disponível na interface;
+- o visual permanece consistente com os demais cards do ODIN;
+- a prévia não altera classificação, KNN, decisão, ciclo produtivo nem regras de
+  captura;
+- permanece proibido reutilizar silenciosamente um frame XP antigo quando a
+  evidência atual pertence a uma captura local MSS.
+
+Essa prévia deve continuar sendo apenas uma camada de visualização da evidência
+já validada pelo `event_id`. Refatorações futuras não devem duplicar a fonte da
+imagem nem desacoplar a prévia do mesmo contrato usado por **`Copiar imagem`**.
