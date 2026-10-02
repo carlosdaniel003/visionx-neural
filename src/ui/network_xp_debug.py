@@ -284,10 +284,49 @@ def _qimage_from_bgr(image: np.ndarray):
     return None
 
 
-def copy_network_image_to_clipboard(panel) -> bool:
+def network_debug_image_snapshot(panel) -> np.ndarray | None:
+    """Retorna exatamente a mesma evidência visual usada por Copiar imagem."""
     image = capture_image_snapshot(panel)
     if image is None and _legacy_xp_image_fallback_allowed(panel):
         image = network_xp_frame_snapshot(panel)
+    return image
+
+
+def _sync_capture_image_preview(panel) -> None:
+    """Atualiza somente a prévia visual, sem participar do ciclo produtivo."""
+    preview = getattr(panel, "lbl_capture_evidence_preview", None)
+    if preview is None:
+        return
+
+    image = network_debug_image_snapshot(panel)
+    if image is None:
+        try:
+            if hasattr(preview, "clear_source_image"):
+                preview.clear_source_image("Aguardando captura")
+            else:
+                preview.clear()
+                preview.setText("Aguardando captura")
+        except Exception:
+            pass
+        return
+
+    qimage = _qimage_from_bgr(image)
+    if qimage is None or qimage.isNull():
+        return
+
+    try:
+        if hasattr(preview, "set_source_image"):
+            preview.set_source_image(qimage)
+        else:
+            from PyQt6.QtGui import QPixmap
+
+            preview.setPixmap(QPixmap.fromImage(qimage))
+    except Exception:
+        pass
+
+
+def copy_network_image_to_clipboard(panel) -> bool:
+    image = network_debug_image_snapshot(panel)
     if image is None:
         return False
 
@@ -310,6 +349,7 @@ def sync_network_debug_controls(panel) -> None:
     record = _debug_record(panel)
     debug_available = bool(isinstance(record, dict) and record)
     image_available = network_debug_image_available(panel)
+    _sync_capture_image_preview(panel)
 
     debug_button = getattr(panel, "btn_copy_network_debug", None)
     image_button = getattr(panel, "btn_copy_network_image", None)
@@ -398,6 +438,7 @@ __all__ = [
     "copy_network_image_to_clipboard",
     "format_network_debug_report",
     "network_debug_image_available",
+    "network_debug_image_snapshot",
     "set_network_debug_available",
     "sync_network_debug_controls",
 ]
