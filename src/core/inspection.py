@@ -41,7 +41,13 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
     inner_boxes = []
     
     # Default para caixa global (caso não ache as linhas verdes, assume a tela toda)
-    global_box_info = {"x": 0, "y": 0, "w": w_full, "h": h_full}
+    global_box_info = {
+        "x": 0,
+        "y": 0,
+        "w": w_full,
+        "h": h_full,
+        "detected": False,
+    }
 
     if contours_green:
         # Pega as caixas pelas dimensões (bounding rect) e não pela massa de pixels
@@ -72,6 +78,7 @@ def detect_anomalies(img_gabarito: np.ndarray, img_teste: np.ndarray) -> tuple:
                 "y": int(gy),
                 "w": int(gw),
                 "h": int(gh),
+                "detected": True,
             }
             
             padding = 40
