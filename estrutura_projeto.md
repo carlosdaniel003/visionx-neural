@@ -411,6 +411,51 @@ Manter testes que garantam:
 - casos ambíguos continuam seguindo a política normal.
 
 
+### Validação operacional — testemunha OK quase exata em FALTANDO em 02/10/2026
+
+Foi validado em uso real um caso da categoria `FALTANDO` em que o detector
+físico bruto levantava `missing_hard_absence=True`, porém a memória encontrava
+uma ocorrência OK praticamente idêntica ao evento atual.
+
+No caso validado:
+
+- melhor similaridade OK ≈ `99,999999%`;
+- melhor similaridade NG ≈ `87,25%`;
+- sem conflito de memória efetivo;
+- o hard missing bruto continuou registrado para auditoria;
+- o hard missing efetivo foi descartado;
+- o motor dominante passou a ser o KNN;
+- o veredito final passou corretamente para **FALHA FALSA**.
+
+Contrato validado:
+
+```text
+raw_hard_missing_evidence = True
+hard_missing_evidence = False
+hard_missing_contradicted_by_exact_ok = True
+fusion_rule = hard_missing_exact_ok_witness
+dominant_engine = knn
+weights = physical 0% / knn 100%
+veredito = FALHA FALSA
+```
+
+A causa técnica corrigida estava na camada `best_match_memory.py`: ela recebia
+novamente o `missing_hard_absence` bruto depois da fusão base e restaurava
+indevidamente a prioridade física, anulando a testemunha OK quase exata.
+
+A regra validada permanece restrita:
+
+- aplica-se à categoria `FALTANDO`;
+- exige memória OK quase exata;
+- exige vantagem clara sobre a melhor hipótese NG;
+- não vale para memória apenas "forte";
+- não vale quando existe conflito relevante;
+- não enfraquece a guarda transversal de ausência física em outras categorias;
+- não altera o detector físico bruto, apenas a autoridade final de fusão.
+
+Essa validação passa a ser a referência operacional para falsos positivos de
+hard missing quando existir uma recorrência OK praticamente idêntica.
+
 ### Regra de consistência visual — hard missing não pode reaparecer como revisão
 
 Foi identificado um segundo ponto após a proteção de hard missing: a camada de
