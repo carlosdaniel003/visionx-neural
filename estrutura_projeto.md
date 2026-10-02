@@ -717,6 +717,145 @@ corretamente o corpo completo do componente.
 
 Status em 02/10/2026: **validado operacionalmente na mesma peça**.
 
+### Caso observado em 02/10/2026 — componente presente com posição interna diferente
+
+Evento: `fb7de76ab04843c3b2ab4ad3e16da3f6`.
+
+A AOI classificou a ocorrência como `FALTANDO`, mas o componente físico estava
+presente tanto no gabarito quanto no teste. O ODIN concluiu incorretamente
+`DEFEITO REAL` por `missing_hard_absence`.
+
+O caso mostrou um limite diferente do falso positivo anterior:
+
+- caixa global detectada: aproximadamente `[26, 26, 308, 514]`;
+- ROI/foco local: aproximadamente `[39, 105, 279, 147]`;
+- `missing_score ≈ 99,62%`;
+- cobertura local ≈ `68,58%`;
+- residual médio ≈ `78,36%`;
+- exposição de fundo local ≈ `62,69%`;
+- melhor KNN = `OK` com ≈ `92,30%`;
+- melhor NG ≈ `91,01%`;
+- margem OK × NG ≈ `1,30 p.p.`;
+- sem conflito de memória.
+
+Visualmente, o componente continuava presente, porém sua massa escura,
+serigrafia e posição interna estavam diferentes dentro do envelope global.
+
+#### Erro de escopo espacial identificado
+
+Foi identificado que `missing_global_envelope_background_exposure` estava
+reutilizando diretamente `missing_background_exposure`, calculado na ROI local.
+
+Isso é incorreto porque exposição de fundo é uma métrica espacial:
+
+```text
+background_exposure da ROI local
+!=
+background_exposure do envelope global
+```
+
+A partir desta correção, a exposição de fundo do envelope é recalculada
+diretamente sobre a própria caixa global com `_background_replacement_signal()`.
+
+Nenhuma métrica espacial da ROI local pode ser apresentada como se tivesse sido
+medida no envelope global.
+
+#### Presença global invariável a deslocamento interno
+
+Os perfis horizontal/vertical alinhados do envelope continuam úteis, mas podem
+cair quando o mesmo componente muda de posição ou orientação interna.
+
+Foi adicionada uma testemunha auxiliar que mede a distribuição de massa escura
+no envelope sem exigir que essa massa esteja nas mesmas linhas/colunas.
+
+Ela registra:
+
+- limiar de massa escura;
+- fração escura no gabarito;
+- fração escura no teste;
+- retenção de massa escura;
+- perfil horizontal invariável;
+- perfil vertical invariável;
+- `missing_global_envelope_invariant_support`.
+
+Os perfis invariáveis são comparados após ordenação de suas distribuições. Isso
+reduz a dependência de translação interna e da orientação da serigrafia.
+
+#### Regra de segurança: massa escura sozinha não derruba hard missing
+
+Uma regressão de segurança mostrou que um componente realmente ausente pode
+deixar footprint/base escuro e, portanto, também preservar parte da massa
+escura.
+
+Por isso:
+
+```text
+missing_global_envelope_invariant_support = True
+```
+
+**não é suficiente sozinho** para vetar `missing_hard_absence`.
+
+A evidência invariável permanece auxiliar no especialista físico.
+
+#### Nova regra combinada
+
+Para `FALTANDO`, um hard missing bruto pode perder autoridade pela nova rota
+somente quando todas as condições abaixo forem satisfeitas:
+
+- `missing_global_envelope_invariant_support=True`;
+- memória disponível e confiável;
+- melhor rótulo = `OK`;
+- melhor OK >= `90%`;
+- vantagem OK sobre NG >= `1 ponto percentual`;
+- sem conflito de memória.
+
+Contrato:
+
+```text
+hard missing bruto
+        +
+massa física global invariável preservada
+        +
+melhor memória OK >= 90%
+        +
+OK - NG >= 1 p.p.
+        +
+sem conflito
+        ↓
+hard_missing_contradicted_by_invariant_ok = True
+fusion_rule = hard_missing_invariant_presence_ok_witness
+hard_missing_evidence = False
+        ↓
+FALHA FALSA
+```
+
+Essa combinação é deliberadamente mais restrita que simplesmente permitir que
+uma memória OK forte anule ausência física.
+
+As duas proteções são obrigatórias:
+
+- **OK forte sem presença global invariável** não veta hard missing;
+- **massa global invariável sem OK forte dominante** não veta hard missing.
+
+Isso preserva os casos reais de componente removido com footprint escuro.
+
+#### Telemetria adicionada
+
+O debug passa a registrar também:
+
+- `missing_global_envelope_dark_threshold`;
+- `missing_global_envelope_reference_dark_fraction`;
+- `missing_global_envelope_test_dark_fraction`;
+- `missing_global_envelope_dark_retention`;
+- `missing_global_envelope_invariant_row_profile`;
+- `missing_global_envelope_invariant_col_profile`;
+- `missing_global_envelope_invariant_support`;
+- `hard_missing_contradicted_by_invariant_ok`.
+
+Status em 02/10/2026: **correção implementada e protegida por regressões;
+aguardando validação operacional nesta mesma peça antes de considerar a regra
+validada**.
+
 ### Validação operacional — testemunha OK quase exata em FALTANDO em 02/10/2026
 
 Foi validado em uso real um caso da categoria `FALTANDO` em que o detector
