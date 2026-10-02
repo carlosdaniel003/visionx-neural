@@ -116,11 +116,25 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
             detail.get("operator_review_required", False),
         )
     )
-    hard_missing = bool(
-        trace.get("hard_missing_evidence", False)
-        or memory.get("suppressed_by_hard_missing", False)
+    raw_hard_missing = bool(
+        trace.get(
+            "raw_hard_missing_evidence",
+            detail.get("missing_hard_absence", False),
+        )
         or detail.get("missing_hard_absence", False)
-        or str(trace.get("fusion_rule", "")) == "missing_hard_absence"
+    )
+    hard_missing_contradicted_by_exact_ok = bool(
+        trace.get("hard_missing_contradicted_by_exact_ok", False)
+        or memory.get("hard_missing_contradicted_by_exact_ok", False)
+    )
+    hard_missing = bool(
+        not hard_missing_contradicted_by_exact_ok
+        and (
+            trace.get("hard_missing_evidence", False)
+            or memory.get("suppressed_by_hard_missing", False)
+            or detail.get("missing_hard_absence", False)
+            or str(trace.get("fusion_rule", "")) == "missing_hard_absence"
+        )
     )
     effective_memory_conflict = bool(
         raw_memory_conflict and not hard_missing
@@ -144,9 +158,10 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
             or trace.get("operator_review_required", False)
             or effective_memory_review
         ),
-        "hard_missing_evidence": bool(
-            trace.get("hard_missing_evidence", False)
-            or detail.get("missing_hard_absence", False)
+        "hard_missing_evidence": hard_missing,
+        "raw_hard_missing_evidence": raw_hard_missing,
+        "hard_missing_contradicted_by_exact_ok": (
+            hard_missing_contradicted_by_exact_ok
         ),
         "missing": missing,
         "memory": {
