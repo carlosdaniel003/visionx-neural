@@ -5,7 +5,7 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QPushButton, QScrollArea, QWidget
+from PyQt6.QtWidgets import QApplication, QFrame, QPushButton, QScrollArea, QWidget
 
 from src.ui.decision_background import (
     apply_decision_background,
@@ -496,6 +496,10 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
                 self.root_content.setObjectName("rootContent")
                 self.root_scroll = QScrollArea()
                 self.root_scroll.viewport().setObjectName("rootViewport")
+                self.section = QFrame(self)
+                self.section.setObjectName("sectionPanel")
+                self.controls = QFrame(self)
+                self.controls.setObjectName("controlsSection")
                 self.current_analysis = None
                 self.is_locked = False
 
@@ -515,8 +519,15 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
         install_decision_background(Panel)
         panel = Panel()
 
+        original_stylesheet = (
+            "QPushButton { background: #181818; } "
+            "QPushButton:hover { background: #242424; }"
+        )
+        panel.setStyleSheet(original_stylesheet)
+
         apply_decision_background(panel, "neutral")
         self.assertEqual(panel.property("decisionState"), "neutral")
+        self.assertEqual(panel.styleSheet(), original_stylesheet)
 
         panel._update_reference_panel({"is_defect": True})
         self.assertEqual(panel.property("decisionState"), "ng")
@@ -528,42 +539,21 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
             panel.root_scroll.viewport().property("decisionState"),
             "ng",
         )
-        self.assertIn(
-            "/* decision-background: ng */",
-            panel.styleSheet(),
-        )
-        ng_override = panel.styleSheet().rsplit(
-            "/* decision-background: ng */",
-            1,
-        )[1]
-        self.assertIn("background-color: #21090b;", ng_override)
-        self.assertIn("background-color: #1a0b0c;", ng_override)
+        self.assertEqual(panel.section.property("decisionState"), "ng")
+        self.assertEqual(panel.controls.property("decisionState"), "ng")
+        self.assertEqual(panel.styleSheet(), original_stylesheet)
 
         panel._update_reference_panel({"is_defect": False})
         self.assertEqual(panel.property("decisionState"), "ok")
-        self.assertIn(
-            "/* decision-background: ok */",
-            panel.styleSheet(),
-        )
-        ok_override = panel.styleSheet().rsplit(
-            "/* decision-background: ok */",
-            1,
-        )[1]
-        self.assertIn("background-color: #07180d;", ok_override)
-        self.assertIn("background-color: #0c1a11;", ok_override)
+        self.assertEqual(panel.section.property("decisionState"), "ok")
+        self.assertEqual(panel.controls.property("decisionState"), "ok")
+        self.assertEqual(panel.styleSheet(), original_stylesheet)
 
         panel._reset_confidence_panel()
         self.assertEqual(panel.property("decisionState"), "neutral")
-        self.assertIn(
-            "/* decision-background: neutral */",
-            panel.styleSheet(),
-        )
-        neutral_override = panel.styleSheet().rsplit(
-            "/* decision-background: neutral */",
-            1,
-        )[1]
-        self.assertIn("background-color: #050505;", neutral_override)
-        self.assertIn("background-color: #0d0d0d;", neutral_override)
+        self.assertEqual(panel.section.property("decisionState"), "neutral")
+        self.assertEqual(panel.controls.property("decisionState"), "neutral")
+        self.assertEqual(panel.styleSheet(), original_stylesheet)
 
         panel._update_reference_panel({"is_defect": True})
         panel.save_label("NG")
@@ -576,10 +566,11 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
         self.assertIn('DECISION_NG_BACKGROUND = "#21090b"', source)
         self.assertIn('DECISION_OK_SURFACE = "#0c1a11"', source)
         self.assertIn('DECISION_NG_SURFACE = "#1a0b0c"', source)
-        self.assertIn('[decisionState="ok"]', source)
-        self.assertIn('[decisionState="ng"]', source)
-        self.assertIn("def stylesheet_for_decision_state", source)
-        self.assertIn("/* decision-background: {normalized} */", source)
+        self.assertIn('QFrame#sectionPanel[decisionState="ok"]', source)
+        self.assertIn('QFrame#sectionPanel[decisionState="ng"]', source)
+        self.assertIn('QFrame#controlsSection[decisionState="ok"]', source)
+        self.assertIn('QFrame#controlsSection[decisionState="ng"]', source)
+        self.assertNotIn("def stylesheet_for_decision_state", source)
 
 
 class NetworkXPDebugUILayoutTests(unittest.TestCase):
