@@ -411,6 +411,83 @@ Manter testes que garantam:
 - casos ambíguos continuam seguindo a política normal.
 
 
+### Caso observado em 02/10/2026 — componente presente confundido com ausência
+
+Evento operacional: `a997255818ea489b8afddf3d90b470fd`.
+
+A AOI classificou a ocorrência como `FALTANDO`, mas visualmente o componente
+continuava presente. O corpo físico permanecia no mesmo local e com dimensões
+compatíveis; a principal diferença estava em aparência, brilho, contraste e
+serigrafia interna.
+
+O debug mostrou:
+
+- `missing_score ≈ 100%`;
+- cobertura divergente ≈ `56,3%`;
+- residual médio ≈ `61,4%`;
+- perda estrutural ≈ `86,6%`;
+- exposição de fundo ≈ `55,3%`;
+- incompatibilidade de bordas ≈ `78,8%`;
+- melhor correspondência próxima do motor físico ≈ `34,3%`;
+- KNN melhor rótulo = `OK`;
+- similaridade OK ≈ `99,43%`;
+- melhor NG ≈ `89,68%`;
+- sem conflito de memória;
+- resultado incorreto antes da correção: `missing_hard_absence=True` e
+  `DEFEITO REAL`.
+
+Este caso reforça que **não é suficiente apenas baixar ou subir limiares**.
+Uma mudança grande de aparência pode produzir métricas típicas de ausência mesmo
+quando o corpo físico continua presente.
+
+#### Nova testemunha de presença em duas escalas
+
+O `MissingComponentExpert` passa a procurar presença física em duas regiões:
+
+1. a ROI interna usada pelo motor `FALTANDO`;
+2. o envelope do componente fornecido pelo epicentro final da AOI.
+
+A segunda escala é obrigatoriamente geométrica e procura:
+
+- similaridade de baixa frequência do corpo;
+- Dice da silhueta;
+- razão de área;
+- deslocamento do centróide.
+
+A serigrafia/texto interno e variações globais de brilho não devem, sozinhos,
+ser usados como prova de falta física.
+
+Se a ROI interna divergir muito, mas o epicentro final confirmar massa,
+silhueta, área e centro coerentes, o sistema deve registrar:
+
+```text
+missing_component_body_present = True
+missing_body_presence_source = aoi_epicenter
+missing_body_presence_veto = True
+missing_hard_absence = False
+```
+
+Nesse estado, o motor `FALTANDO` não pode classificar o componente como
+fisicamente ausente. A divergência de aparência continua disponível para os
+outros motores e para a memória KNN.
+
+#### Telemetria obrigatória
+
+O debug de captura deve registrar:
+
+- `missing_component_body_present`;
+- `missing_body_presence_veto`;
+- `missing_body_presence_source`;
+- `missing_body_presence_box`;
+- `missing_body_coarse_similarity`;
+- `missing_body_silhouette_dice`;
+- `missing_body_area_ratio`;
+- `missing_body_centroid_shift`;
+- `missing_body_presence_reason`.
+
+Essa regra ainda deve ser validada em uso real antes de ser considerada
+referência operacional definitiva.
+
 ### Validação operacional — testemunha OK quase exata em FALTANDO em 02/10/2026
 
 Foi validado em uso real um caso da categoria `FALTANDO` em que o detector
