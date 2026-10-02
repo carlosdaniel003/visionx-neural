@@ -194,6 +194,114 @@ class FusionTests(unittest.TestCase):
         )
         self.assertIn("HARD MISSING CONTRADITO", reason)
 
+    def test_real_event_fb7de76_invariant_presence_plus_strong_ok_beats_hard_missing(self):
+        knn = {
+            "has_memory": True,
+            "memory_available": True,
+            "match_reliable": True,
+            "best_match_label": "OK",
+            "best_similarity": 0.9230359348654749,
+            "best_ok_similarity": 0.9230359348654749,
+            "best_ng_similarity": 0.9100668640434741,
+            "ng_memory_available": True,
+            "hypothesis_margin": 0.0129690708220008,
+            "memory_conflict": False,
+            "operator_review_required": False,
+            "vote_defect": 0.0,
+            "n_neighbors": 5,
+            "memory_mode": "anomaly",
+            "memory_scope": "categoria",
+        }
+        missing = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_score": 0.9961602686328229,
+            "missing_tolerance": 0.36,
+            "missing_reason": "QUEBRA DA EXPECTATIVA VISUAL DA ROI",
+            "missing_hard_absence": True,
+            "missing_hard_absence_reason": (
+                "conteúdo do gabarito foi substituído pelo fundo da região"
+            ),
+            "missing_global_envelope_invariant_support": True,
+            "missing_global_envelope_background_exposure": 0.0,
+        }
+
+        score, defect, confidence, reason, trace = self.fusion(
+            self.orchestrator,
+            {
+                "silk_error_pct": 0.5247493861618107,
+                "semantic_loss": 0.57,
+            },
+            "FALTANDO",
+            missing,
+            knn,
+        )
+
+        self.assertEqual(score, 0.0)
+        self.assertFalse(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(
+            trace["fusion_rule"],
+            "hard_missing_invariant_presence_ok_witness",
+        )
+        self.assertEqual(trace["dominant_engine"], "knn")
+        self.assertEqual(trace["weights"], {"physical": 0.0, "knn": 1.0})
+        self.assertFalse(trace["hard_missing_evidence"])
+        self.assertTrue(trace["raw_hard_missing_evidence"])
+        self.assertTrue(
+            trace["hard_missing_contradicted_by_invariant_ok"]
+        )
+        self.assertFalse(
+            trace["memory"]["suppressed_by_hard_missing"]
+        )
+        self.assertEqual(
+            trace["memory"]["role"],
+            "TESTEMUNHA OK FORTE + PRESENÇA GLOBAL INVARIÁVEL",
+        )
+        self.assertIn("PRESENÇA GLOBAL INVARIÁVEL", reason)
+
+    def test_strong_ok_without_invariant_presence_cannot_veto_hard_missing(self):
+        knn = {
+            "has_memory": True,
+            "memory_available": True,
+            "match_reliable": True,
+            "best_match_label": "OK",
+            "best_similarity": 0.9230359348654749,
+            "best_ok_similarity": 0.9230359348654749,
+            "best_ng_similarity": 0.9100668640434741,
+            "ng_memory_available": True,
+            "memory_conflict": False,
+            "operator_review_required": False,
+            "vote_defect": 0.0,
+            "n_neighbors": 5,
+            "memory_mode": "anomaly",
+            "memory_scope": "categoria",
+        }
+        missing = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_score": 0.996,
+            "missing_tolerance": 0.36,
+            "missing_reason": "ausência física confirmada",
+            "missing_hard_absence": True,
+            "missing_hard_absence_reason": "ausência física confirmada",
+            "missing_global_envelope_invariant_support": False,
+        }
+
+        score, defect, confidence, _reason, trace = self.fusion(
+            self.orchestrator,
+            {},
+            "FALTANDO",
+            missing,
+            knn,
+        )
+
+        self.assertEqual(score, 1.0)
+        self.assertTrue(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(trace["fusion_rule"], "missing_hard_absence")
+        self.assertTrue(trace["hard_missing_evidence"])
+
     def test_hard_missing_cannot_be_vetoed_by_strong_ok_memory(self):
         knn = {
             "has_memory": True,
