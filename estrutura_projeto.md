@@ -1665,7 +1665,7 @@ Essa escolha é deliberada:
 Contrato atual:
 
 - largura aproximada: `300 px`;
-- altura aproximada: `112 px`;
+- altura aproximada: `88 px`;
 - margem direita: `24 px`;
 - offset superior aproximado: `84 px`.
 
@@ -1675,7 +1675,7 @@ O card deve seguir a identidade industrial do ODIN:
 
 - base escura `SURFACE`;
 - borda fina amarela `ACCENT`;
-- cabeçalho `VEREDITO DA IA` em amarelo;
+- nenhum texto auxiliar: o único texto renderizado é o próprio veredito;
 - `FALHA FALSA` em verde;
 - `DEFEITO REAL` em vermelho;
 - tipografia forte e limpa;
@@ -1686,7 +1686,8 @@ O card deve seguir a identidade industrial do ODIN:
 - sem aparência de componente gerado por IA.
 
 O verde/vermelho é usado apenas para o texto do estado. A estrutura do card
-continua escura/amarela.
+continua escura/amarela. Não exibir cabeçalho, subtítulo ou legenda dentro do
+card: a moldura amarela já comunica que o elemento pertence ao ODIN.
 
 ### Sincronização com o fundo dinâmico
 
