@@ -273,13 +273,13 @@ copiar para auditoria.
 Formato do nome:
 
 ```text
-DDdMMmAAAA_HHhMMminSSsmmmms_CATEGORIA.png
+YYYY-MM-DD_HHmm_CATEGORIA.png
 ```
 
 Exemplo:
 
 ```text
-01d10m2026_10h22min21s943ms_DESLOCADO.png
+2026-10-02_0811_DESLOCADO.png
 ```
 
 Esse arquivo é somente evidência visual. Ele é independente de
