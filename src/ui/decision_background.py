@@ -6,10 +6,22 @@ pipeline e não altera classificação, confiança, memória, persistência ou c
 
 from __future__ import annotations
 
-from src.ui.theme import stylesheet_for_decision_state
+from PyQt6.QtWidgets import QWidget
 
 
 VALID_BACKGROUND_STATES = {"neutral", "ok", "ng"}
+
+BACKGROUND_OBJECT_NAMES = {
+    "rootWindow",
+    "rootContent",
+    "rootViewport",
+    "headerFrame",
+    "sectionPanel",
+    "infoSection",
+    "confidenceFrame",
+    "controlsSection",
+    "statusBar",
+}
 
 
 def decision_background_state(analysis: dict | None) -> str:
@@ -20,6 +32,7 @@ def decision_background_state(analysis: dict | None) -> str:
 
 
 def _background_widgets(panel):
+    """Seleciona somente containers de fundo; nunca reestiliza botões."""
     widgets = [panel]
 
     root_content = getattr(panel, "root_content", None)
@@ -35,6 +48,13 @@ def _background_widgets(panel):
         if viewport is not None:
             widgets.append(viewport)
 
+    try:
+        for widget in panel.findChildren(QWidget):
+            if str(widget.objectName() or "") in BACKGROUND_OBJECT_NAMES:
+                widgets.append(widget)
+    except Exception:
+        pass
+
     unique = []
     seen = set()
     for widget in widgets:
@@ -47,15 +67,10 @@ def _background_widgets(panel):
 
 
 def apply_decision_background(panel, state: str) -> str:
-    """Aplica o estado visual e força o override final do fundo no tema."""
+    """Atualiza só propriedades dos containers e preserva todo stylesheet existente."""
     normalized = str(state or "neutral").strip().lower()
     if normalized not in VALID_BACKGROUND_STATES:
         normalized = "neutral"
-
-    try:
-        panel.setStyleSheet(stylesheet_for_decision_state(normalized))
-    except Exception:
-        pass
 
     for widget in _background_widgets(panel):
         try:
@@ -111,6 +126,7 @@ def install_decision_background(control_panel_cls) -> None:
 
 
 __all__ = [
+    "BACKGROUND_OBJECT_NAMES",
     "VALID_BACKGROUND_STATES",
     "apply_decision_background",
     "decision_background_state",
