@@ -77,6 +77,7 @@ class ControlPanel(QWidget):
         self.current_ng = None
         self.current_aoi_info = {}
         self.current_analysis = None
+        self._inspection_images_visible = False
         self.capture_start_time = 0.0
         self.orchestrator = MoEOrchestrator()
         self.is_locked = False 
@@ -161,6 +162,9 @@ class ControlPanel(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        if not bool(getattr(self, "_inspection_images_visible", False)):
+            return
+
         if hasattr(self, 'current_sample') and self.current_sample is not None and self.current_sample.size > 0:
             px_sample = self.numpy_to_pixmap(self.current_sample)
             if self.lbl_sample.width() > 0 and self.lbl_sample.height() > 0:
@@ -265,7 +269,38 @@ class ControlPanel(QWidget):
         self.current_aoi_info = {}
         self.current_analysis = None
 
+    def _clear_inspection_images(self):
+        """Remove somente os visuais da peça anterior, preservando a evidência técnica."""
+        self._inspection_images_visible = False
+
+        for name, placeholder in (
+            ("lbl_sample", "Aguardando peça"),
+            ("lbl_sample_focus", "Sem foco"),
+            ("lbl_ng", "Aguardando peça"),
+            ("lbl_ng_focus", "Sem foco"),
+        ):
+            label = getattr(self, name, None)
+            if label is None:
+                continue
+            try:
+                label.clear()
+                label.setText(placeholder)
+            except Exception:
+                pass
+
+        preview = getattr(self, "lbl_capture_evidence_preview", None)
+        if preview is not None:
+            try:
+                if hasattr(preview, "clear_source_image"):
+                    preview.clear_source_image("Aguardando captura")
+                else:
+                    preview.clear()
+                    preview.setText("Aguardando captura")
+            except Exception:
+                pass
+
     def _reset_confidence_panel(self):
+        self._clear_inspection_images()
         self.lbl_verdict.setText("AGUARDANDO PEÇA")
         self.lbl_verdict.setStyleSheet("color: #8b949e; font-size: 16px; font-weight: bold; border: none;")
         self.lbl_reason.setText("---")
@@ -361,6 +396,7 @@ class ControlPanel(QWidget):
     def process_aoi_images(self, sample_crop: np.ndarray, ng_crop: np.ndarray, aoi_info: dict):
         if sample_crop.size == 0 or ng_crop.size == 0: return
 
+        self._inspection_images_visible = True
         self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)
 
         raw_val = aoi_info.get("value", "")
