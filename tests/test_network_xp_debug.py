@@ -12,6 +12,7 @@ from src.ui.network_xp_debug import (
     copy_network_image_to_clipboard,
     format_network_debug_report,
     network_debug_image_available,
+    network_debug_image_snapshot,
     sync_network_debug_controls,
 )
 
@@ -353,7 +354,33 @@ class NetworkXPImageClipboardTests(unittest.TestCase):
             dtype=np.uint8,
         )
 
+        class Preview:
+            def __init__(self):
+                self.image = None
+                self.placeholder = None
+
+            def set_source_image(self, image):
+                self.image = image.copy()
+
+            def clear_source_image(self, placeholder):
+                self.placeholder = placeholder
+                self.image = None
+
+        panel.lbl_capture_evidence_preview = Preview()
+
         sync_network_debug_controls(panel)
+
+        self.assertIsNotNone(panel.lbl_capture_evidence_preview.image)
+        self.assertEqual(panel.lbl_capture_evidence_preview.image.width(), 30)
+        self.assertEqual(panel.lbl_capture_evidence_preview.image.height(), 20)
+        preview_pixel = panel.lbl_capture_evidence_preview.image.pixelColor(0, 0)
+        self.assertEqual(preview_pixel.red(), 210)
+        self.assertEqual(preview_pixel.green(), 60)
+        self.assertEqual(preview_pixel.blue(), 15)
+
+        snapshot = network_debug_image_snapshot(panel)
+        self.assertIsNotNone(snapshot)
+        self.assertTrue(np.array_equal(snapshot, panel.capture_debug_last_image))
 
         self.assertTrue(panel.btn_copy_network_debug.isEnabled())
         self.assertTrue(panel.btn_copy_network_image.isEnabled())
@@ -386,11 +413,31 @@ class NetworkXPImageClipboardTests(unittest.TestCase):
             dtype=np.uint8,
         )
 
+        class Preview:
+            def __init__(self):
+                self.image = "stale"
+                self.placeholder = None
+
+            def set_source_image(self, image):
+                self.image = image.copy()
+
+            def clear_source_image(self, placeholder):
+                self.placeholder = placeholder
+                self.image = None
+
+        panel.lbl_capture_evidence_preview = Preview()
+
         sync_network_debug_controls(panel)
 
         self.assertTrue(panel.btn_copy_network_debug.isEnabled())
         self.assertFalse(panel.btn_copy_network_image.isEnabled())
         self.assertFalse(network_debug_image_available(panel))
+        self.assertIsNone(network_debug_image_snapshot(panel))
+        self.assertIsNone(panel.lbl_capture_evidence_preview.image)
+        self.assertEqual(
+            panel.lbl_capture_evidence_preview.placeholder,
+            "Aguardando captura",
+        )
         self.assertFalse(copy_network_image_to_clipboard(panel))
 
     def test_different_event_blocks_image_copy(self):
@@ -419,6 +466,42 @@ class NetworkXPImageClipboardTests(unittest.TestCase):
 
 
 class NetworkXPDebugUILayoutTests(unittest.TestCase):
+    def test_inspection_section_has_responsive_full_capture_preview(self):
+        source = open(
+            "src/ui/control_panel_ui.py",
+            encoding="utf-8",
+        ).read()
+        debug_source = open(
+            "src/ui/network_xp_debug.py",
+            encoding="utf-8",
+        ).read()
+
+        self.assertIn("class _ResponsiveCapturePreview(QLabel):", source)
+        self.assertIn(
+            '"CAPTURA RECEBIDA • EVIDÊNCIA COMPLETA"',
+            source,
+        )
+        self.assertIn(
+            "window.lbl_capture_evidence_preview = _ResponsiveCapturePreview(",
+            source,
+        )
+        self.assertLess(
+            source.index('"CAPTURA RECEBIDA • EVIDÊNCIA COMPLETA"'),
+            source.index('"GABARITO • VISÃO COMPLETA"'),
+        )
+        self.assertIn(
+            "preview_min_height = 140 if compact else 180",
+            source,
+        )
+        self.assertIn(
+            "image = network_debug_image_snapshot(panel)",
+            debug_source,
+        )
+        self.assertGreaterEqual(
+            debug_source.count("image = network_debug_image_snapshot(panel)"),
+            2,
+        )
+
     def test_debug_actions_live_outside_global_status_bar(self):
         source = open(
             "src/ui/control_panel_ui.py",
