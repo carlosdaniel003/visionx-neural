@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.services.capture_debug_payload import decision_record
 from src.ui.decision_background import (
     apply_decision_background,
     decision_background_state,
@@ -134,9 +135,83 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
         )
         self.assertIn("Categoria: FALTANDO", report)
         self.assertIn("Regra de fusão: missing_hard_absence", report)
-        self.assertIn("Ausência física forte: True", report)
+        self.assertIn("Ausência física forte efetiva: True", report)
         self.assertIn("KNN melhor rótulo: OK", report)
         self.assertIn("KNN suprimido por ausência física: True", report)
+
+    def test_report_distinguishes_raw_hard_missing_from_exact_ok_witness(self):
+        analysis = {
+            "is_defect": False,
+            "verdict": "FALHA FALSA",
+            "confidence": 0.99,
+            "reason": "TESTEMUNHA OK QUASE EXATA",
+            "detail": {
+                "missing_hard_absence": True,
+                "missing_hard_absence_reason": (
+                    "estrutura esperada colapsou sem correspondência próxima válida"
+                ),
+                "final_score": 0.0,
+                "physical_score": 0.979522189040151,
+                "fusion_rule": "hard_missing_exact_ok_witness",
+                "dominant_engine": "knn",
+                "decision_trace": {
+                    "hard_missing_evidence": False,
+                    "raw_hard_missing_evidence": True,
+                    "hard_missing_contradicted_by_exact_ok": True,
+                    "operator_review_required": False,
+                    "fusion_rule": "hard_missing_exact_ok_witness",
+                    "memory": {
+                        "has_memory": True,
+                        "memory_available": True,
+                        "best_match_label": "OK",
+                        "best_similarity": 0.9999999946355821,
+                        "best_ok_similarity": 0.9999999946355821,
+                        "best_ng_similarity": 0.8724773603677749,
+                        "operator_review_required": False,
+                        "suppressed_by_hard_missing": False,
+                        "hard_missing_contradicted_by_exact_ok": True,
+                        "role": "TESTEMUNHA OK QUASE EXATA",
+                    },
+                },
+            },
+        }
+
+        decision = decision_record(
+            analysis,
+            {"category": "FALTANDO"},
+        )
+        record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "evt-exact-ok",
+            "timestamp": "2026-10-02T08:44:28.829",
+            "source_ip": "169.254.95.200",
+            "stage": "aoi_intake_validation",
+            "mode": "Modo Teste",
+            "transport": {"image": {"valid": True}},
+            "cycle": {},
+            "validation_message": "epicentro válido",
+            "validation": {"valid": True, "reason": "valid_epicenter"},
+            "decision": decision,
+        }
+
+        self.assertFalse(decision["hard_missing_evidence"])
+        self.assertTrue(decision["raw_hard_missing_evidence"])
+        self.assertTrue(
+            decision["hard_missing_contradicted_by_exact_ok"]
+        )
+        self.assertFalse(
+            decision["memory"]["suppressed_by_hard_missing"]
+        )
+
+        report = format_network_debug_report(record)
+        self.assertIn("Veredito: FALHA FALSA", report)
+        self.assertIn("Ausência física forte efetiva: False", report)
+        self.assertIn("Ausência física forte bruta: True", report)
+        self.assertIn(
+            "Hard missing contradito por OK quase exato: True",
+            report,
+        )
+        self.assertIn("KNN melhor rótulo: OK", report)
 
     def test_report_exposes_cross_category_absence_guard(self):
         record = {
