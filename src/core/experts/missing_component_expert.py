@@ -400,7 +400,11 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             and background
             <= cls.GLOBAL_ENVELOPE_INVARIANT_MAX_BACKGROUND_EXPOSURE
         )
-        supported = bool(aligned_support or invariant_support)
+        # A rota invariável é testemunha auxiliar. Ela não pode, sozinha,
+        # vetar hard missing porque footprints escuros reais também podem
+        # preservar massa. A autoridade direta do envelope continua restrita
+        # à rota alinhada; a rota invariável exige confirmação OK da memória.
+        supported = bool(aligned_support)
 
         if aligned_support:
             reason = (
@@ -408,8 +412,8 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             )
         elif invariant_support:
             reason = (
-                "envelope global preserva massa física mesmo com "
-                "deslocamento/orientação interna"
+                "massa física invariável preservada; requer testemunha OK "
+                "forte antes de contrariar hard missing"
             )
         else:
             reason = "envelope global sem suporte estrutural suficiente"
