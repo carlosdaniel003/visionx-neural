@@ -149,6 +149,7 @@ class ControlPanelUI:
         self._build_footer(window, window.content_layout)
         self._build_action_buttons(window, window.content_layout)
         self._build_ng_archive_bar(window, window.content_layout)
+        self._build_ok_archive_bar(window, window.content_layout)
         self._build_network_debug_bar(window, window.content_layout)
         self._build_status_bar(window, window.content_layout)
 
@@ -704,6 +705,119 @@ class ControlPanelUI:
 
         window.btn_toggle_ng_archive.setMinimumWidth(0 if compact else 250)
 
+    def _build_ok_archive_bar(self, window, parent_layout):
+        window.ok_archive_frame = QFrame()
+        window.ok_archive_frame.setObjectName("okArchiveFrame")
+        window.ok_archive_frame.setMinimumWidth(0)
+        window.ok_archive_frame.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        window.ok_archive_frame.setStyleSheet(
+            "QFrame#okArchiveFrame {"
+            "background: #101010; border: 1px solid #303030; border-radius: 8px;"
+            "}"
+            "QLabel#okArchiveTitle {"
+            "color: #f5c518; font-size: 10px; font-weight: 900; letter-spacing: 1px;"
+            "}"
+            "QLabel#okArchiveStatus {"
+            "color: #8b949e; font-size: 11px; font-weight: 700;"
+            "}"
+            "QLabel#okArchiveStatus[archiveEnabled='true'] { color: #4ade80; }"
+            "QPushButton#okArchiveToggleButton {"
+            "min-height: 40px; padding: 7px 14px; border-radius: 6px; "
+            "font-size: 11px; font-weight: 800; color: #b8b8b8; "
+            "background: #181818; border: 1px solid #505050;"
+            "}"
+            "QPushButton#okArchiveToggleButton:hover,"
+            "QPushButton#okArchiveToggleButton:focus {"
+            "color: #f5c518; border-color: #f5c518; background: #242424;"
+            "}"
+            "QPushButton#okArchiveToggleButton:checked {"
+            "color: #07120b; background: #4ade80; border: 1px solid #4ade80;"
+            "}"
+            "QPushButton#okArchiveToggleButton:checked:hover {"
+            "background: #6ee79a; border-color: #b7f7cb;"
+            "}"
+        )
+
+        self.ok_archive_grid = QGridLayout(window.ok_archive_frame)
+        self.ok_archive_grid.setContentsMargins(12, 8, 12, 8)
+        self.ok_archive_grid.setHorizontalSpacing(10)
+        self.ok_archive_grid.setVerticalSpacing(6)
+
+        window.lbl_ok_archive_title = QLabel("ARQUIVO VISUAL OK")
+        window.lbl_ok_archive_title.setObjectName("okArchiveTitle")
+
+        window.lbl_ok_archive_status = QLabel(
+            "Ativado • salvamento de OK confirmados pelo operador"
+        )
+        window.lbl_ok_archive_status.setObjectName("okArchiveStatus")
+        window.lbl_ok_archive_status.setProperty("archiveEnabled", True)
+        window.lbl_ok_archive_status.setWordWrap(True)
+        window.lbl_ok_archive_status.setMinimumWidth(0)
+        window.lbl_ok_archive_status.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+
+        window.btn_toggle_ok_archive = QPushButton(
+            "Salvar imagens OK • ATIVADO"
+        )
+        window.btn_toggle_ok_archive.setObjectName("okArchiveToggleButton")
+        window.btn_toggle_ok_archive.setCheckable(True)
+        window.btn_toggle_ok_archive.setChecked(True)
+        window.btn_toggle_ok_archive.setProperty("archiveEnabled", True)
+        window.btn_toggle_ok_archive.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+        window.btn_toggle_ok_archive.setFocusPolicy(
+            Qt.FocusPolicy.StrongFocus
+        )
+        window.btn_toggle_ok_archive.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        window.btn_toggle_ok_archive.setToolTip(
+            "Ativado por padrão ao iniciar o ODIN. Salva em public/ok_archive "
+            "exatamente a mesma imagem completa disponível em Copiar imagem "
+            "quando o operador julga a peça como OK. Aceita XP e MSS e não "
+            "altera o dataset."
+        )
+        window.btn_toggle_ok_archive.toggled.connect(
+            lambda checked: window.set_ok_archive_enabled(checked)
+        )
+
+        self.ok_archive_widgets = [
+            window.lbl_ok_archive_title,
+            window.lbl_ok_archive_status,
+            window.btn_toggle_ok_archive,
+        ]
+
+        parent_layout.addWidget(window.ok_archive_frame)
+
+    def _layout_ok_archive(self, window, compact: bool) -> None:
+        grid = self.ok_archive_grid
+        for widget in self.ok_archive_widgets:
+            grid.removeWidget(widget)
+
+        if compact:
+            grid.addWidget(window.lbl_ok_archive_title, 0, 0)
+            grid.addWidget(window.lbl_ok_archive_status, 1, 0)
+            grid.addWidget(window.btn_toggle_ok_archive, 2, 0)
+            grid.setColumnStretch(0, 1)
+            grid.setColumnStretch(1, 0)
+            grid.setColumnStretch(2, 0)
+        else:
+            grid.addWidget(window.lbl_ok_archive_title, 0, 0)
+            grid.addWidget(window.lbl_ok_archive_status, 0, 1)
+            grid.addWidget(window.btn_toggle_ok_archive, 0, 2)
+            grid.setColumnStretch(0, 0)
+            grid.setColumnStretch(1, 1)
+            grid.setColumnStretch(2, 0)
+
+        window.btn_toggle_ok_archive.setMinimumWidth(0 if compact else 250)
+
     def _build_network_debug_bar(self, window, parent_layout):
         window.network_debug_frame = QFrame()
         window.network_debug_frame.setObjectName("networkDebugFrame")
@@ -1004,6 +1118,7 @@ class ControlPanelUI:
                 profile.action_columns,
             )
             self._layout_ng_archive(window, compact=compact)
+            self._layout_ok_archive(window, compact=compact)
             self._layout_network_debug(window, compact=compact)
             self._layout_status_bar(window, compact=compact)
 
