@@ -592,17 +592,17 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
             max(1, rendered.height() // 2),
         )
 
-        self.assertEqual(pixel.name().lower(), "#1a0b0c")
+        self.assertEqual(pixel.name().lower(), "#46131a")
         self.assertEqual(panel.styleSheet(), theme_before)
         panel.close()
 
     def test_theme_declares_dark_ok_and_ng_backgrounds(self):
         source = open("src/ui/theme.py", encoding="utf-8").read()
 
-        self.assertIn('DECISION_OK_BACKGROUND = "#07180d"', source)
-        self.assertIn('DECISION_NG_BACKGROUND = "#21090b"', source)
-        self.assertIn('DECISION_OK_SURFACE = "#0c1a11"', source)
-        self.assertIn('DECISION_NG_SURFACE = "#1a0b0c"', source)
+        self.assertIn('DECISION_OK_BACKGROUND = "#0b2f18"', source)
+        self.assertIn('DECISION_NG_BACKGROUND = "#3a0d12"', source)
+        self.assertIn('DECISION_OK_SURFACE = "#103d22"', source)
+        self.assertIn('DECISION_NG_SURFACE = "#46131a"', source)
         self.assertIn('QFrame#sectionPanel[decisionState="ok"]', source)
         self.assertIn('QFrame#sectionPanel[decisionState="ng"]', source)
         self.assertIn('QFrame#controlsSection[decisionState="ok"]', source)
