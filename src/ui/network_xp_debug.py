@@ -298,6 +298,17 @@ def _sync_capture_image_preview(panel) -> None:
     if preview is None:
         return
 
+    if not bool(getattr(panel, "_inspection_images_visible", True)):
+        try:
+            if hasattr(preview, "clear_source_image"):
+                preview.clear_source_image("Aguardando captura")
+            else:
+                preview.clear()
+                preview.setText("Aguardando captura")
+        except Exception:
+            pass
+        return
+
     image = network_debug_image_snapshot(panel)
     if image is None:
         try:
