@@ -40,7 +40,6 @@ from src.services.ng_image_archive import install_ng_image_archive
 from src.services.ok_image_archive import install_ok_image_archive
 from src.ui.capture_button_copy import install_capture_button_copy
 from src.ui.control_panel import ControlPanel
-from src.ui.decision_background import install_decision_background
 from src.ui.decision_key_feedback import (
     install_decision_key_feedback,
     install_decision_key_feedback_hooks,
@@ -142,11 +141,8 @@ def main():
     install_mode_selector_gate(OperationalControlsPresenter)
     # Hook visual leve: confirma 0/1 recebidos do XP sem alterar a decisão.
     install_decision_key_feedback_hooks(ControlPanel)
-    # Fundo do sistema acompanha apenas o veredito já calculado e retorna ao
-    # neutro assim que o ciclo termina/aguarda a próxima imagem.
-    install_decision_background(ControlPanel)
-    # Overlay de veredito final é instalado depois do fundo para aparecer já
-    # sincronizado com o estado verde/vermelho, sem interferir na decisão.
+    # O fundo permanece neutro em todos os estados. O veredito final é
+    # comunicado somente pelo overlay persistente no canto superior direito.
     install_ai_verdict_feedback_hooks(ControlPanel)
 
     # Camada exclusivamente visual: resume dual-scale, protótipos e contraste
