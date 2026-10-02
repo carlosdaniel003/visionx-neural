@@ -213,6 +213,96 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
         self.assertIn("Envelope global perfil vertical: 0.88", report)
         self.assertIn("Envelope global coarse similarity: 0.7", report)
 
+    def test_report_exposes_invariant_presence_plus_strong_ok_witness(self):
+        analysis = {
+            "is_defect": False,
+            "verdict": "FALHA FALSA",
+            "confidence": 0.99,
+            "reason": "PRESENÇA GLOBAL INVARIÁVEL + OK FORTE",
+            "detail": {
+                "missing_hard_absence": True,
+                "missing_global_envelope_active": True,
+                "missing_global_envelope_support": False,
+                "missing_global_envelope_invariant_support": True,
+                "missing_global_envelope_veto": False,
+                "missing_global_envelope_box": [26, 26, 308, 514],
+                "missing_global_envelope_background_exposure": 0.0,
+                "missing_global_envelope_reference_dark_fraction": 0.39,
+                "missing_global_envelope_test_dark_fraction": 0.42,
+                "missing_global_envelope_dark_retention": 1.08,
+                "missing_global_envelope_invariant_row_profile": 0.94,
+                "missing_global_envelope_invariant_col_profile": 0.93,
+                "final_score": 0.0,
+                "physical_score": 1.0,
+                "fusion_rule": (
+                    "hard_missing_invariant_presence_ok_witness"
+                ),
+                "dominant_engine": "knn",
+                "decision_trace": {
+                    "hard_missing_evidence": False,
+                    "raw_hard_missing_evidence": True,
+                    "hard_missing_contradicted_by_exact_ok": False,
+                    "hard_missing_contradicted_by_invariant_ok": True,
+                    "operator_review_required": False,
+                    "fusion_rule": (
+                        "hard_missing_invariant_presence_ok_witness"
+                    ),
+                    "memory": {
+                        "has_memory": True,
+                        "memory_available": True,
+                        "best_match_label": "OK",
+                        "best_similarity": 0.9230359348654749,
+                        "best_ok_similarity": 0.9230359348654749,
+                        "best_ng_similarity": 0.9100668640434741,
+                        "memory_conflict": False,
+                        "operator_review_required": False,
+                        "suppressed_by_hard_missing": False,
+                        "hard_missing_contradicted_by_invariant_ok": True,
+                        "role": (
+                            "TESTEMUNHA OK FORTE + PRESENÇA GLOBAL INVARIÁVEL"
+                        ),
+                    },
+                },
+            },
+        }
+
+        decision = decision_record(
+            analysis,
+            {"category": "FALTANDO"},
+        )
+        record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "fb7de76ab04843c3b2ab4ad3e16da3f6",
+            "timestamp": "2026-10-02T14:52:50.388",
+            "source_ip": "169.254.95.200",
+            "stage": "aoi_intake_validation",
+            "mode": "Modo Teste",
+            "transport": {"image": {"valid": True}},
+            "cycle": {},
+            "validation_message": "epicentro válido",
+            "validation": {"valid": True, "reason": "valid_epicenter"},
+            "decision": decision,
+        }
+
+        self.assertFalse(decision["hard_missing_evidence"])
+        self.assertTrue(decision["raw_hard_missing_evidence"])
+        self.assertTrue(
+            decision["hard_missing_contradicted_by_invariant_ok"]
+        )
+        self.assertFalse(
+            decision["memory"]["suppressed_by_hard_missing"]
+        )
+
+        report = format_network_debug_report(record)
+        self.assertIn("Veredito: FALHA FALSA", report)
+        self.assertIn("Ausência física forte efetiva: False", report)
+        self.assertIn(
+            "Hard missing contradito por presença invariável + OK forte: True",
+            report,
+        )
+        self.assertIn("Envelope global suporte invariável: True", report)
+        self.assertIn("KNN melhor rótulo: OK", report)
+
     def test_report_distinguishes_raw_hard_missing_from_exact_ok_witness(self):
         analysis = {
             "is_defect": False,
