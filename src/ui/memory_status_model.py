@@ -54,11 +54,18 @@ def memory_status_from_detail(detail: dict | None) -> dict:
             ),
         )
     )
+    hard_missing_contradicted_by_exact_ok = bool(
+        trace.get("hard_missing_contradicted_by_exact_ok", False)
+        or memory.get("hard_missing_contradicted_by_exact_ok", False)
+    )
     hard_missing_override = bool(
-        trace.get("hard_missing_evidence", False)
-        or memory.get("suppressed_by_hard_missing", False)
-        or payload.get("missing_hard_absence", False)
-        or str(trace.get("fusion_rule", "")) == "missing_hard_absence"
+        not hard_missing_contradicted_by_exact_ok
+        and (
+            trace.get("hard_missing_evidence", False)
+            or memory.get("suppressed_by_hard_missing", False)
+            or payload.get("missing_hard_absence", False)
+            or str(trace.get("fusion_rule", "")) == "missing_hard_absence"
+        )
     )
 
     # A memória pode continuar reportando um conflito bruto para auditoria,
@@ -195,6 +202,9 @@ def memory_status_from_detail(detail: dict | None) -> dict:
         "review_required": review_required,
         "raw_review_required": raw_review_required,
         "hard_missing_override": hard_missing_override,
+        "hard_missing_contradicted_by_exact_ok": (
+            hard_missing_contradicted_by_exact_ok
+        ),
         "memory_suppressed_by_hard_missing": bool(
             memory.get("suppressed_by_hard_missing", False)
         ),
@@ -247,6 +257,13 @@ def memory_summary_text(detail: dict | None) -> str:
         return (
             "AUSÊNCIA FÍSICA FORTE • KNN somente auditoria • "
             f"hipótese {leader} • match {_pct(model['combined_similarity'])}"
+        )
+
+    if model["hard_missing_contradicted_by_exact_ok"]:
+        return (
+            "TESTEMUNHA OK QUASE EXATA • hard missing local descartado • "
+            f"OK {_pct(model['best_ok_similarity'])} × "
+            f"NG {_pct(model['best_ng_similarity'])}"
         )
 
     if model["conflict"]:
