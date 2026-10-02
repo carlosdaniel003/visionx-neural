@@ -45,6 +45,10 @@ from src.ui.decision_key_feedback import (
     install_decision_key_feedback,
     install_decision_key_feedback_hooks,
 )
+from src.ui.decision_verdict_feedback import (
+    install_ai_verdict_feedback,
+    install_ai_verdict_feedback_hooks,
+)
 from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
 from src.ui.inverted_face_panel import install_inverted_face_panel
@@ -141,6 +145,9 @@ def main():
     # Fundo do sistema acompanha apenas o veredito já calculado e retorna ao
     # neutro assim que o ciclo termina/aguarda a próxima imagem.
     install_decision_background(ControlPanel)
+    # Overlay de veredito final é instalado depois do fundo para aparecer já
+    # sincronizado com o estado verde/vermelho, sem interferir na decisão.
+    install_ai_verdict_feedback_hooks(ControlPanel)
 
     # Camada exclusivamente visual: resume dual-scale, protótipos e contraste
     # OK x NG sem modificar analysis, score, confiança ou persistência.
@@ -148,6 +155,7 @@ def main():
 
     panel = ControlPanel()
     install_decision_key_feedback(panel)
+    install_ai_verdict_feedback(panel)
     install_missing_component_panel(panel)
     install_inverted_face_panel(panel)
     install_decision_panel(panel)
