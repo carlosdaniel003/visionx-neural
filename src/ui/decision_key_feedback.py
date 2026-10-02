@@ -35,15 +35,13 @@ FEEDBACK_MARGIN = 24
 
 FEEDBACK_STYLESHEET = """
 QFrame#decisionKeyFeedback {
-    background-color: rgba(16, 16, 16, 244);
-    border: 1px solid #303030;
+    background-color: rgba(13, 13, 13, 248);
+    border: 1px solid #f5c518;
     border-radius: 8px;
 }
-QFrame#decisionKeyFeedback[tone="ok"] {
-    border: 2px solid #4ade80;
-}
+QFrame#decisionKeyFeedback[tone="ok"],
 QFrame#decisionKeyFeedback[tone="ng"] {
-    border: 2px solid #ff6262;
+    border: 1px solid #f5c518;
 }
 QLabel#decisionKeyHeader {
     color: #f5c518;
