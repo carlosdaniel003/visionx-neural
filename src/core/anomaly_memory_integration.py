@@ -20,6 +20,11 @@ STANDARD_ROUTES = ("silk", "ssim", "semantic", "knn")
 ADHESIVE_ROUTES = ("shift",) + STANDARD_ROUTES
 MISSING_ROUTES = ("missing",) + STANDARD_ROUTES
 
+# Hard missing continua soberano por padrão. A única exceção é uma recorrência
+# OK quase exata e claramente superior à melhor hipótese NG.
+HARD_MISSING_EXACT_OK_SIMILARITY = 0.995
+HARD_MISSING_EXACT_OK_MARGIN = 0.05
+
 CATEGORY_KEY_ALIASES = {
     "INVERTIDO": "INVERTIDO",
     "INVERTED": "INVERTIDO",
@@ -59,6 +64,37 @@ def routes_for_category(category: str) -> tuple[str, ...]:
     if is_missing_category(category):
         return MISSING_ROUTES
     return STANDARD_ROUTES
+
+
+def _hard_missing_exact_ok_witness(
+    category: str,
+    raw_hard_absence: bool,
+    knn: dict | None,
+) -> bool:
+    """Permite veto apenas para recorrência OK quase exata em FALTANDO."""
+    if not raw_hard_absence or not is_missing_category(category):
+        return False
+    if not isinstance(knn, dict) or not bool(knn.get("has_memory", False)):
+        return False
+    if bool(knn.get("memory_conflict", False)):
+        return False
+
+    label = str(knn.get("best_match_label", "") or "").strip().upper()
+    if label != "OK":
+        return False
+
+    ok_similarity = float(knn.get("best_ok_similarity", 0.0) or 0.0)
+    ng_available = bool(knn.get("ng_memory_available", False))
+    ng_similarity = float(knn.get("best_ng_similarity", 0.0) or 0.0)
+    margin = (
+        ok_similarity - ng_similarity
+        if ng_available
+        else ok_similarity
+    )
+    return bool(
+        ok_similarity >= HARD_MISSING_EXACT_OK_SIMILARITY
+        and margin >= HARD_MISSING_EXACT_OK_MARGIN
+    )
 
 
 def _normalize_knn_memory_categories(knn_expert) -> None:
@@ -331,10 +367,16 @@ def _dynamic_fusion(
     memory_similarity = float(knn.get("best_similarity", 0.0)) if knn else 0.0
     neighbors = int(knn.get("n_neighbors", 0)) if knn else 0
 
-    hard_absence = bool(
+    raw_hard_absence = bool(
         isinstance(missing_result, dict)
         and missing_result.get("missing_hard_absence", False)
     )
+    exact_ok_witness = _hard_missing_exact_ok_witness(
+        category,
+        raw_hard_absence,
+        knn,
+    )
+    hard_absence = bool(raw_hard_absence and not exact_ok_witness)
 
     physical_weight = 1.0
     memory_weight = 0.0
@@ -349,6 +391,12 @@ def _dynamic_fusion(
         memory_weight = 0.0
         fusion_rule = "missing_hard_absence"
         memory_role = "AUDITORIA — SEM VETO SOBRE AUSÊNCIA FÍSICA"
+    elif exact_ok_witness:
+        physical_weight = 0.0
+        memory_weight = 1.0
+        final_score = memory_vote
+        fusion_rule = "hard_missing_exact_ok_witness"
+        memory_role = "TESTEMUNHA OK QUASE EXATA"
     elif has_memory:
         if physical_defect:
             if memory_similarity >= 0.85:
@@ -437,10 +485,17 @@ def _dynamic_fusion(
             "Memória preservada somente para auditoria; ausência física "
             "forte tem prioridade"
         )
+    elif exact_ok_witness:
+        memory_entry["triggered"] = False
+        memory_entry["summary"] = (
+            "Testemunha OK quase exata contradiz o hard missing local"
+        )
     engines.append(memory_entry)
 
     if hard_absence:
         dominant_engine = "missing"
+    elif exact_ok_witness:
+        dominant_engine = "knn"
     elif memory_weight >= physical_weight and memory_weight > 0:
         dominant_engine = "knn"
     elif physical_dominant:
@@ -456,6 +511,13 @@ def _dynamic_fusion(
             f" || KNN {memory_vote:.0%} NG; similaridade "
             f"{memory_similarity:.0%}; {memory_role}"
         )
+    if exact_ok_witness:
+        ok_similarity = float((knn or {}).get("best_ok_similarity", 0.0) or 0.0)
+        ng_similarity = float((knn or {}).get("best_ng_similarity", 0.0) or 0.0)
+        reason += (
+            " || HARD MISSING CONTRADITO POR TESTEMUNHA OK QUASE EXATA: "
+            f"OK {ok_similarity:.1%} x NG {ng_similarity:.1%}"
+        )
 
     decision_trace = {
         "schema": orchestrator.DECISION_SCHEMA,
@@ -468,6 +530,10 @@ def _dynamic_fusion(
         "dominant_engine": dominant_engine,
         "fusion_rule": fusion_rule,
         "hard_missing_evidence": bool(hard_absence),
+        "raw_hard_missing_evidence": bool(raw_hard_absence),
+        "hard_missing_contradicted_by_exact_ok": bool(exact_ok_witness),
+        "hard_missing_exact_ok_threshold": HARD_MISSING_EXACT_OK_SIMILARITY,
+        "hard_missing_exact_ok_margin": HARD_MISSING_EXACT_OK_MARGIN,
         "operator_review_required": False,
         "weights": {
             "physical": float(physical_weight),
@@ -477,9 +543,13 @@ def _dynamic_fusion(
             "has_memory": has_memory,
             "vote_defect": float(memory_vote),
             "best_similarity": float(memory_similarity),
+            "best_ok_similarity": float((knn or {}).get("best_ok_similarity", 0.0) or 0.0),
+            "best_ng_similarity": float((knn or {}).get("best_ng_similarity", 0.0) or 0.0),
+            "hypothesis_margin": (knn or {}).get("hypothesis_margin"),
             "n_neighbors": neighbors,
             "role": memory_role,
             "suppressed_by_hard_missing": bool(hard_absence),
+            "hard_missing_contradicted_by_exact_ok": bool(exact_ok_witness),
             "operator_review_required": False if hard_absence else bool(
                 (knn or {}).get("operator_review_required", False)
             ),
@@ -670,4 +740,7 @@ __all__ = [
     "is_missing_category",
     "routes_for_category",
     "CROSS_CATEGORY_ABSENCE_GUARD_CATEGORIES",
+    "HARD_MISSING_EXACT_OK_MARGIN",
+    "HARD_MISSING_EXACT_OK_SIMILARITY",
+    "_hard_missing_exact_ok_witness",
 ]
