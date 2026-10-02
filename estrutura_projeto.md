@@ -976,9 +976,9 @@ Cores das superfícies principais:
 - NG: `#1a0b0c`.
 
 A implementação mantém a propriedade Qt `decisionState` para telemetria e
-estado visual, mas **não depende apenas do repolish de propriedade dinâmica**.
-O stylesheet completo do ODIN é reaplicado com um override final explícito para
-garantir que a mudança seja visível imediatamente.
+estado visual e o stylesheet global do ODIN permanece **fixo** durante a
+execução. A troca de estado não pode chamar `setStyleSheet()` no painel
+principal nem reconstruir/reaplicar o tema completo.
 
 O estado é aplicado ao canvas principal:
 
@@ -986,16 +986,19 @@ O estado é aplicado ao canvas principal:
 - `rootContent`;
 - `rootViewport`;
 
-e também aos grandes painéis que cobrem a maior parte da janela:
+e também aos grandes painéis que cobrem a maior parte da janela e não possuem
+stylesheet local próprio:
 
 - `headerFrame`;
 - `sectionPanel`;
 - `infoSection`;
 - `confidenceFrame`;
 - `controlsSection`;
-- `ngArchiveFrame`;
-- `networkDebugFrame`;
 - `statusBar`.
+
+`ngArchiveFrame` e `networkDebugFrame` mantêm seus stylesheets locais
+originais para preservar completamente o visual, estados `:hover`, `:focus`
+e `:checked` dos respectivos botões.
 
 Os cards internos continuam escuros para manter contraste, hierarquia visual e
 legibilidade.
@@ -1060,28 +1063,45 @@ Manter testes que garantam:
 - reset da confiança/análise → `neutral`;
 - conclusão do julgamento/ciclo → `neutral`;
 - `rootWindow`, `rootContent` e `rootViewport` recebem o mesmo estado;
-- o stylesheet final contém o override explícito do canvas e das superfícies
-  principais para `neutral`, `ok` e `ng`;
+- os containers principais recebem `decisionState` sem substituir o
+  stylesheet global;
+- um `sectionPanel` real renderiza `#1a0b0c` em estado NG;
+- o stylesheet existente da janela permanece byte-a-byte inalterado após a
+  troca de estado;
+- estilos de botão e estados `:hover`, `:focus` e `:checked` permanecem
+  preservados;
 - o recurso continua exclusivamente visual.
 
-### Correção visual em 02/10/2026
+### Correções visuais em 02/10/2026
 
 Foi observado em operação que o veredito podia mostrar **DEFEITO REAL** enquanto
-o fundo permanecia visualmente no tema escuro original. A causa era depender do
-repolish das propriedades dinâmicas do Qt, que não estava garantindo a
-reaplicação visível do fundo no stylesheet já instalado na janela.
+o fundo permanecia visualmente no tema escuro original.
 
-A correção passou a:
+Uma primeira tentativa forçou a reaplicação do stylesheet completo da janela.
+Essa estratégia foi descartada porque, em uso real, alterou o visual dos botões
+e fez estados de interação como `:hover` deixarem de responder corretamente.
 
-1. manter `decisionState` como estado explícito;
-2. reconstruir o tema a partir do stylesheet completo existente;
-3. acrescentar no final um override QSS específico do estado atual;
-4. tingir também as superfícies principais que ocupam a maior parte da janela;
-5. preservar os cards internos escuros.
+A implementação válida passa a obedecer estas regras:
+
+1. o stylesheet global instalado em `ControlPanelUI.setup_ui()` não é
+   substituído durante uma decisão;
+2. `apply_decision_background()` altera somente a propriedade dinâmica
+   `decisionState` dos containers de fundo;
+3. cada container alterado é repolido individualmente;
+4. os seletores `[decisionState="ok"]` e `[decisionState="ng"]` já fazem
+   parte de `APP_STYLESHEET` desde a criação da interface;
+5. frames que possuem stylesheet local próprio não são tocados pela rotina de
+   fundo;
+6. botões, hover, focus, checked e demais estados interativos devem permanecer
+   idênticos ao tema original.
+
+Além dos testes de estado, deve existir regressão de renderização Qt offscreen:
+um `sectionPanel` real em estado `ng` precisa renderizar o pixel de fundo
+`#1a0b0c` sem que o stylesheet da janela seja modificado.
 
 Assim, `DEFEITO REAL / NG` deve produzir fundo vermelho-escuro visível e
 `FALHA FALSA / OK` deve produzir fundo verde-escuro visível, retornando ao
-tema neutro ao limpar ou concluir o ciclo.
+tema neutro ao limpar ou concluir o ciclo, sem regressão visual dos controles.
 
 
 ## Feedback visual temporário de julgamento 0/1
