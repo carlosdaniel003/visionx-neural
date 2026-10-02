@@ -453,6 +453,50 @@ class NetworkXPImageClipboardTests(unittest.TestCase):
         )
         self.assertFalse(copy_network_image_to_clipboard(panel))
 
+    def test_waiting_state_hides_preview_but_preserves_copy_evidence(self):
+        panel = self._panel()
+        panel.capture_debug_last_record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "evt-waiting",
+            "source": "windows_xp",
+        }
+        panel.capture_debug_last_image_event_id = "evt-waiting"
+        panel.capture_debug_last_image = np.full(
+            (16, 24, 3),
+            (20, 80, 180),
+            dtype=np.uint8,
+        )
+        panel._inspection_images_visible = False
+
+        class Preview:
+            def __init__(self):
+                self.image = "previous"
+                self.placeholder = None
+
+            def set_source_image(self, image):
+                self.image = image.copy()
+
+            def clear_source_image(self, placeholder):
+                self.image = None
+                self.placeholder = placeholder
+
+        panel.lbl_capture_evidence_preview = Preview()
+
+        sync_network_debug_controls(panel)
+
+        self.assertIsNone(panel.lbl_capture_evidence_preview.image)
+        self.assertEqual(
+            panel.lbl_capture_evidence_preview.placeholder,
+            "Aguardando captura",
+        )
+        self.assertTrue(panel.btn_copy_network_image.isEnabled())
+        self.assertTrue(network_debug_image_available(panel))
+        snapshot = network_debug_image_snapshot(panel)
+        self.assertIsNotNone(snapshot)
+        self.assertTrue(
+            np.array_equal(snapshot, panel.capture_debug_last_image)
+        )
+
     def test_different_event_blocks_image_copy(self):
         panel = self._panel()
         panel.network_intake_last_image_event_id = "evt-other"
@@ -611,6 +655,53 @@ class DynamicDecisionBackgroundTests(unittest.TestCase):
 
 
 class NetworkXPDebugUILayoutTests(unittest.TestCase):
+    def test_waiting_piece_contract_clears_previous_inspection_images(self):
+        source = open(
+            "src/ui/control_panel.py",
+            encoding="utf-8",
+        ).read()
+        debug_source = open(
+            "src/ui/network_xp_debug.py",
+            encoding="utf-8",
+        ).read()
+
+        self.assertIn("def _clear_inspection_images(self):", source)
+        self.assertIn(
+            "self._inspection_images_visible = False",
+            source,
+        )
+        self.assertIn(
+            '("lbl_sample", "Aguardando peça")',
+            source,
+        )
+        self.assertIn(
+            '("lbl_ng", "Aguardando peça")',
+            source,
+        )
+        self.assertIn(
+            'preview.clear_source_image("Aguardando captura")',
+            source,
+        )
+        self.assertIn(
+            "self._clear_inspection_images()\n"
+            '        self.lbl_verdict.setText("AGUARDANDO PEÇA")',
+            source,
+        )
+        self.assertIn(
+            'if not bool(getattr(self, "_inspection_images_visible", False)):\n'
+            "            return",
+            source,
+        )
+        self.assertIn(
+            "self._inspection_images_visible = True\n"
+            '        self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)',
+            source,
+        )
+        self.assertIn(
+            'if not bool(getattr(panel, "_inspection_images_visible", True)):',
+            debug_source,
+        )
+
     def test_inspection_section_has_responsive_full_capture_preview(self):
         source = open(
             "src/ui/control_panel_ui.py",
