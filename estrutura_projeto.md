@@ -21,7 +21,7 @@
 **Arquivo visual NG opcional:**
 - Toggle **ativado por padrão** em toda inicialização do ODIN. O operador pode desativá-lo manualmente durante a sessão.
 - Ativado: cada evento válido do Windows XP pode gerar **no máximo uma** evidência final `NG` em `public/ng_archive/`, usando exatamente o mesmo frame completo disponibilizado pelo botão `Copiar imagem`.
-- Nome: `DDdMMmAAAA_HHhMMminSSsmmmms_CATEGORIA.png`, por exemplo `01d10m2026_10h22min21s943ms_FALTANDO.png`. O formato mantém dia, mês, ano, hora, minuto, segundo e milissegundo visualmente identificáveis sem deixar o nome excessivamente longo.
+- Nome: `YYYY-MM-DD_HHmm_CATEGORIA.png`, por exemplo `2026-10-02_0811_FALTANDO.png`. O formato usa ano, mês, dia, hora e minuto, seguido da categoria normalizada.
 - Para o arquivamento XP, a fonte continua sendo `src/services/network_xp_frame.py`, que valida que o `event_id` do frame preservado é o mesmo do diagnóstico atual. O botão genérico `Copiar imagem` usa essa mesma evidência quando a origem é XP.
 - Não existe fallback para `current_ng` ou outro recorte. Se o frame XP do evento atual não estiver disponível, nenhuma imagem substituta é arquivada.
 - O arquivo é evidência/auditoria e não participa de treinamento, protótipos ou votação KNN.
@@ -43,7 +43,7 @@
 - O arquivo OK aceita tanto captura recebida do **Windows XP** quanto captura local **MSS**, desde que exista análise ativa, `event_id` válido e categoria AOI válida.
 - Uma captura local MSS nunca pode usar como fallback um frame XP anterior.
 - Não usar `current_ng`, ROI, foco ou outro recorte como imagem substituta.
-- O formato do nome é o mesmo do arquivo NG: `DDdMMmAAAA_HHhMMminSSsmmmms_CATEGORIA.png`.
+- O formato do nome é o mesmo do arquivo NG: `YYYY-MM-DD_HHmm_CATEGORIA.png`.
 - A implementação de nome compartilhada fica em `src/services/image_archive_naming.py`.
 - `SEM_CATEGORIA` não é permitido no arquivamento automático OK.
 - A gravação é assíncrona em fila daemon e não pode bloquear julgamento, envio de tecla, limpeza da interface ou recepção da próxima captura.
@@ -86,6 +86,27 @@ Regressões obrigatórias do arquivo OK:
 - fila grava PNG com o mesmo formato de nome do NG;
 - o bloco visual OK permanece imediatamente abaixo do bloco NG e usa o mesmo padrão responsivo.
 
+
+### Padrão de nome dos arquivos visuais OK/NG
+
+OK e NG usam obrigatoriamente o mesmo gerador compartilhado em
+`src/services/image_archive_naming.py`.
+
+Formato atual:
+
+```text
+YYYY-MM-DD_HHmm_CATEGORIA.png
+```
+
+Exemplo:
+
+```text
+2026-10-02_0811_FALTANDO.png
+```
+
+Esse padrão substitui o formato anterior com dia/mês textual, segundos e
+milissegundos. Refatorações futuras não devem criar formatos diferentes entre
+`public/ng_archive/` e `public/ok_archive/`.
 
 ### Validação operacional do arquivo visual OK em 02/10/2026
 
