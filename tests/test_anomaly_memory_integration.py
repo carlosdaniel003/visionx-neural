@@ -4,6 +4,8 @@ import numpy as np
 
 from src.core.anomaly_memory_integration import (
     CROSS_CATEGORY_ABSENCE_GUARD_CATEGORIES,
+    HARD_MISSING_EXACT_OK_MARGIN,
+    HARD_MISSING_EXACT_OK_SIMILARITY,
     _dynamic_fusion,
     install_anomaly_memory_integration,
 )
@@ -156,6 +158,134 @@ class _FusionOrchestrator:
             "final_influence": 0.0,
             "summary": str(summary),
         }
+
+
+class MissingExactOKWitnessFusionTests(unittest.TestCase):
+    def test_near_exact_ok_witness_overrides_false_hard_missing(self):
+        score, defect, confidence, reason, trace = _dynamic_fusion(
+            _FusionOrchestrator(),
+            {
+                "silk_error_pct": 0.61,
+                "semantic_loss": 0.52,
+            },
+            "FALTANDO",
+            {
+                "missing_active": True,
+                "missing_is_defect": True,
+                "missing_score": 0.979522189040151,
+                "missing_tolerance": 0.36,
+                "missing_reason": "estrutura esperada colapsou",
+                "missing_hard_absence": True,
+                "missing_cross_category_guard": False,
+            },
+            {
+                "has_memory": True,
+                "vote_defect": 0.0,
+                "best_similarity": 0.9999999946355821,
+                "best_ok_similarity": 0.9999999946355821,
+                "best_ng_similarity": 0.8724773603677749,
+                "ng_memory_available": True,
+                "memory_conflict": False,
+                "n_neighbors": 2,
+                "best_match_label": "OK",
+                "operator_review_required": False,
+            },
+        )
+
+        self.assertEqual(score, 0.0)
+        self.assertFalse(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(
+            trace["fusion_rule"],
+            "hard_missing_exact_ok_witness",
+        )
+        self.assertEqual(trace["dominant_engine"], "knn")
+        self.assertEqual(trace["weights"], {"physical": 0.0, "knn": 1.0})
+        self.assertFalse(trace["hard_missing_evidence"])
+        self.assertTrue(trace["raw_hard_missing_evidence"])
+        self.assertTrue(trace["hard_missing_contradicted_by_exact_ok"])
+        self.assertFalse(trace["memory"]["suppressed_by_hard_missing"])
+        self.assertEqual(
+            trace["memory"]["role"],
+            "TESTEMUNHA OK QUASE EXATA",
+        )
+        self.assertIn("HARD MISSING CONTRADITO", reason)
+
+    def test_strong_but_not_near_exact_ok_does_not_veto_hard_missing(self):
+        score, defect, confidence, _reason, trace = _dynamic_fusion(
+            _FusionOrchestrator(),
+            {
+                "silk_error_pct": 0.54,
+                "semantic_loss": 0.71,
+            },
+            "FALTANDO",
+            {
+                "missing_active": True,
+                "missing_is_defect": True,
+                "missing_score": 0.96,
+                "missing_tolerance": 0.36,
+                "missing_reason": "ausência física confirmada",
+                "missing_hard_absence": True,
+                "missing_cross_category_guard": False,
+            },
+            {
+                "has_memory": True,
+                "vote_defect": 0.0,
+                "best_similarity": 0.97,
+                "best_ok_similarity": 0.97,
+                "best_ng_similarity": 0.82,
+                "ng_memory_available": True,
+                "memory_conflict": False,
+                "n_neighbors": 2,
+                "best_match_label": "OK",
+                "operator_review_required": False,
+            },
+        )
+
+        self.assertEqual(score, 1.0)
+        self.assertTrue(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(trace["fusion_rule"], "missing_hard_absence")
+        self.assertTrue(trace["hard_missing_evidence"])
+        self.assertFalse(trace["hard_missing_contradicted_by_exact_ok"])
+
+    def test_exact_ok_witness_requires_clear_margin_over_ng(self):
+        score, defect, _confidence, _reason, trace = _dynamic_fusion(
+            _FusionOrchestrator(),
+            {},
+            "FALTANDO",
+            {
+                "missing_active": True,
+                "missing_is_defect": True,
+                "missing_score": 0.98,
+                "missing_tolerance": 0.36,
+                "missing_reason": "ausência física confirmada",
+                "missing_hard_absence": True,
+            },
+            {
+                "has_memory": True,
+                "vote_defect": 0.0,
+                "best_similarity": 0.999,
+                "best_ok_similarity": 0.999,
+                "best_ng_similarity": 0.98,
+                "ng_memory_available": True,
+                "memory_conflict": False,
+                "n_neighbors": 2,
+                "best_match_label": "OK",
+            },
+        )
+
+        self.assertLess(
+            0.999 - 0.98,
+            HARD_MISSING_EXACT_OK_MARGIN,
+        )
+        self.assertGreaterEqual(
+            0.999,
+            HARD_MISSING_EXACT_OK_SIMILARITY,
+        )
+        self.assertEqual(score, 1.0)
+        self.assertTrue(defect)
+        self.assertEqual(trace["fusion_rule"], "missing_hard_absence")
 
 
 class CrossCategoryAbsenceFusionTests(unittest.TestCase):
