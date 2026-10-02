@@ -222,6 +222,86 @@ class OKArchiveDecisionTests(unittest.TestCase):
 
 
 class OKArchiveQueueTests(unittest.TestCase):
+    def test_same_image_submitted_in_different_events_is_saved_only_once(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            queue = OKImageArchiveQueue(Path(temp_dir))
+            image = np.full((20, 30, 3), (15, 70, 190), dtype=np.uint8)
+
+            self.assertTrue(
+                queue.submit(
+                    image,
+                    "Faltando",
+                    datetime(2026, 10, 2, 8, 16),
+                )
+            )
+            self.assertTrue(
+                queue.submit(
+                    image.copy(),
+                    "Faltando",
+                    datetime(2026, 10, 2, 8, 22),
+                )
+            )
+            self.assertTrue(
+                queue.submit(
+                    image.copy(),
+                    "Faltando",
+                    datetime(2026, 10, 2, 8, 25),
+                )
+            )
+            queue.wait_until_idle()
+
+            files = list(Path(temp_dir).glob("*.png"))
+            self.assertEqual(len(files), 1)
+            self.assertEqual(
+                files[0].name,
+                "2026-10-02_0816_FALTANDO.png",
+            )
+
+    def test_existing_legacy_named_png_blocks_same_image_after_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            image = np.full((20, 30, 3), (25, 90, 180), dtype=np.uint8)
+            legacy = output_dir / (
+                "02d10m2026_08h16min33s577ms_FALTANDO.png"
+            )
+            self.assertTrue(cv2.imwrite(str(legacy), image))
+
+            queue = OKImageArchiveQueue(output_dir)
+            self.assertTrue(
+                queue.submit(
+                    image.copy(),
+                    "Faltando",
+                    datetime(2026, 10, 2, 8, 32),
+                )
+            )
+            queue.wait_until_idle()
+
+            files = list(output_dir.glob("*.png"))
+            self.assertEqual(len(files), 1)
+            self.assertEqual(files[0].name, legacy.name)
+
+    def test_visually_different_images_are_both_preserved(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            queue = OKImageArchiveQueue(Path(temp_dir))
+            image_a = np.full((20, 30, 3), (15, 70, 190), dtype=np.uint8)
+            image_b = image_a.copy()
+            image_b[5:15, 10:20] = (200, 20, 30)
+
+            queue.submit(
+                image_a,
+                "Faltando",
+                datetime(2026, 10, 2, 8, 16),
+            )
+            queue.submit(
+                image_b,
+                "Faltando",
+                datetime(2026, 10, 2, 8, 22),
+            )
+            queue.wait_until_idle()
+
+            files = list(Path(temp_dir).glob("*.png"))
+            self.assertEqual(len(files), 2)
+
     def test_queue_writes_png_with_shared_filename_format(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             queue = OKImageArchiveQueue(Path(temp_dir))
@@ -267,6 +347,9 @@ class OKArchiveSourceContractTests(unittest.TestCase):
         self.assertIn("current_copy_image_snapshot", archive_source)
         self.assertIn("current_copy_image_snapshot", debug_source)
         self.assertNotIn("archive_image = self.current_ng.copy()", archive_source)
+        self.assertIn("ok_image_fingerprint", archive_source)
+        self.assertIn("_load_existing_fingerprints", archive_source)
+        self.assertIn('self.output_dir.glob("*.png")', archive_source)
 
     def test_ui_places_ok_toggle_after_ng_toggle_and_enabled_by_default(self):
         source = Path("src/ui/control_panel_ui.py").read_text(encoding="utf-8")
