@@ -170,7 +170,26 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
         self.assertIn("border: 1px solid {ACCENT}", source)
         self.assertIn('QLabel#aiVerdictText[tone="ok"]', source)
         self.assertIn('QLabel#aiVerdictText[tone="ng"]', source)
-        self.assertNotIn("confidence", source[source.index("class AIVerdictFeedbackOverlay"):])
+
+        panel = self._panel()
+        panel.show_ai_verdict_feedback(
+            {
+                "verdict": "FALHA FALSA",
+                "is_defect": False,
+                "confidence": 0.997,
+            }
+        )
+        rendered_texts = {
+            panel.ai_verdict_feedback.header_label.text(),
+            panel.ai_verdict_feedback.verdict_label.text(),
+            panel.ai_verdict_feedback.hint_label.text(),
+        }
+        self.assertEqual(
+            rendered_texts,
+            {"VEREDITO DA IA", "FALHA FALSA", "ANÁLISE CONCLUÍDA"},
+        )
+        self.assertFalse(any("%" in value for value in rendered_texts))
+        self.assertFalse(any("99" in value for value in rendered_texts))
 
     def test_clear_hides_overlay_and_removes_text(self):
         panel = self._panel()
