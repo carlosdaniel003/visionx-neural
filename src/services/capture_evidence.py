@@ -47,6 +47,40 @@ def capture_image_snapshot(panel) -> np.ndarray | None:
     return image.copy()
 
 
+
+def current_copy_image_event_id(panel) -> str:
+    """Retorna o event_id da mesma evidência resolvida por Copiar imagem."""
+    event_id = capture_debug_event_id(panel)
+    if event_id:
+        return event_id
+
+    if capture_debug_source(panel).strip().lower() == "local_mss":
+        return ""
+
+    from src.services.network_xp_frame import network_xp_record_event_id
+
+    return network_xp_record_event_id(panel)
+
+
+def current_copy_image_snapshot(panel) -> np.ndarray | None:
+    """Resolve exatamente a evidência visual usada por Copiar imagem.
+
+    A evidência genérica cobre XP e MSS. O fallback legado XP continua
+    disponível apenas quando o diagnóstico atual não pertence a uma captura
+    local MSS, preservando o isolamento entre origens.
+    """
+    image = capture_image_snapshot(panel)
+    if image is not None:
+        return image
+
+    if capture_debug_source(panel).strip().lower() == "local_mss":
+        return None
+
+    from src.services.network_xp_frame import network_xp_frame_snapshot
+
+    return network_xp_frame_snapshot(panel)
+
+
 def store_capture_evidence(panel, image, record: dict) -> bool:
     if not isinstance(record, dict):
         return False
@@ -83,6 +117,8 @@ __all__ = [
     "capture_debug_source",
     "capture_image_available",
     "capture_image_snapshot",
+    "current_copy_image_event_id",
+    "current_copy_image_snapshot",
     "store_capture_evidence",
     "update_capture_debug_record",
 ]
