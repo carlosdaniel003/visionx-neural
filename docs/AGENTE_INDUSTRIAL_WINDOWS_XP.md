@@ -295,6 +295,50 @@ Essa função existe apenas no VisionX do computador novo e **não exige altera�
 do agente industrial no Windows XP**.
 
 
+## Arquivo visual OK opcional no VisionX
+
+O computador novo também possui um toggle chamado:
+
+```text
+Salvar imagens OK
+```
+
+Ele aparece imediatamente abaixo de `Salvar imagens NG` e inicia:
+
+```text
+ATIVADO
+```
+
+Quando ativado, um julgamento humano `OK` salva uma evidência em:
+
+```text
+public/ok_archive/
+```
+
+São considerados julgamentos humanos:
+
+- botão/atalho do próprio ODIN;
+- `CMD_OK` recebido do teclado físico do Windows XP.
+
+Decisões automáticas de Produção não geram arquivo OK.
+
+A imagem salva é exatamente a mesma evidência completa disponível em
+`Copiar imagem` para o evento atual. Isso vale tanto para frame recebido do XP
+quanto para uma captura local MSS. O `event_id` é usado para impedir
+duplicação e mistura entre ciclos.
+
+O formato do nome é o mesmo usado no arquivo NG:
+
+```text
+DDdMMmAAAA_HHhMMminSSsmmmms_CATEGORIA.png
+```
+
+A gravação é assíncrona e não participa do dataset/KNN nem altera a decisão.
+
+Esta funcionalidade também existe somente no computador novo e **não exige
+alterar manualmente o `agente_industrial_xp.py` no Windows XP**.
+
+
 
 ### Copiar debug / Copiar imagem e captura local MSS
 
