@@ -139,6 +139,62 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
         self.assertIn("KNN melhor rótulo: OK", report)
         self.assertIn("KNN suprimido por ausência física: True", report)
 
+    def test_report_exposes_component_body_presence_witness(self):
+        analysis = {
+            "is_defect": False,
+            "verdict": "FALHA FALSA",
+            "confidence": 0.99,
+            "reason": "CORPO DO COMPONENTE PRESENTE",
+            "detail": {
+                "missing_component_body_present": True,
+                "missing_body_presence_veto": True,
+                "missing_body_presence_source": "aoi_epicenter",
+                "missing_body_presence_box": [60, 21, 401, 239],
+                "missing_body_coarse_similarity": 0.76,
+                "missing_body_silhouette_dice": 0.95,
+                "missing_body_area_ratio": 0.97,
+                "missing_body_centroid_shift": 0.01,
+                "missing_body_presence_reason": (
+                    "corpo geométrico preservado apesar da divergência de aparência"
+                ),
+                "missing_hard_absence": False,
+                "decision_trace": {
+                    "hard_missing_evidence": False,
+                    "raw_hard_missing_evidence": False,
+                    "operator_review_required": False,
+                    "fusion_rule": "best_match_strong",
+                    "memory": {},
+                },
+            },
+        }
+
+        decision = decision_record(
+            analysis,
+            {"category": "FALTANDO"},
+        )
+        record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "evt-body-present",
+            "timestamp": "2026-10-02T09:49:04.447",
+            "source_ip": "169.254.95.200",
+            "stage": "aoi_intake_validation",
+            "mode": "Modo Teste",
+            "transport": {"image": {"valid": True}},
+            "cycle": {},
+            "validation_message": "epicentro válido",
+            "validation": {"valid": True, "reason": "valid_epicenter"},
+            "decision": decision,
+        }
+
+        report = format_network_debug_report(record)
+        self.assertIn("Corpo presente: True", report)
+        self.assertIn("Veto por corpo presente: True", report)
+        self.assertIn("Fonte da presença: aoi_epicenter", report)
+        self.assertIn("Presença coarse similarity: 0.76", report)
+        self.assertIn("Presença silhouette dice: 0.95", report)
+        self.assertIn("Presença area ratio: 0.97", report)
+        self.assertIn("Presença centroid shift: 0.01", report)
+
     def test_report_distinguishes_raw_hard_missing_from_exact_ok_witness(self):
         analysis = {
             "is_defect": False,
