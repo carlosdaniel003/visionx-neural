@@ -58,8 +58,13 @@ def memory_status_from_detail(detail: dict | None) -> dict:
         trace.get("hard_missing_contradicted_by_exact_ok", False)
         or memory.get("hard_missing_contradicted_by_exact_ok", False)
     )
+    hard_missing_contradicted_by_invariant_ok = bool(
+        trace.get("hard_missing_contradicted_by_invariant_ok", False)
+        or memory.get("hard_missing_contradicted_by_invariant_ok", False)
+    )
     hard_missing_override = bool(
         not hard_missing_contradicted_by_exact_ok
+        and not hard_missing_contradicted_by_invariant_ok
         and (
             trace.get("hard_missing_evidence", False)
             or memory.get("suppressed_by_hard_missing", False)
@@ -205,6 +210,9 @@ def memory_status_from_detail(detail: dict | None) -> dict:
         "hard_missing_contradicted_by_exact_ok": (
             hard_missing_contradicted_by_exact_ok
         ),
+        "hard_missing_contradicted_by_invariant_ok": (
+            hard_missing_contradicted_by_invariant_ok
+        ),
         "memory_suppressed_by_hard_missing": bool(
             memory.get("suppressed_by_hard_missing", False)
         ),
@@ -262,6 +270,13 @@ def memory_summary_text(detail: dict | None) -> str:
     if model["hard_missing_contradicted_by_exact_ok"]:
         return (
             "TESTEMUNHA OK QUASE EXATA • hard missing local descartado • "
+            f"OK {_pct(model['best_ok_similarity'])} × "
+            f"NG {_pct(model['best_ng_similarity'])}"
+        )
+
+    if model["hard_missing_contradicted_by_invariant_ok"]:
+        return (
+            "PRESENÇA GLOBAL + OK FORTE • hard missing local descartado • "
             f"OK {_pct(model['best_ok_similarity'])} × "
             f"NG {_pct(model['best_ng_similarity'])}"
         )
