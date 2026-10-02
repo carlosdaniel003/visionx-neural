@@ -8,6 +8,7 @@ MSS, mas somente decisões humanas OK.
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
 from pathlib import Path
 from queue import Queue
 from threading import Thread
@@ -37,12 +38,27 @@ def build_ok_archive_filename(
     return build_archive_filename(category, timestamp)
 
 
+def ok_image_fingerprint(image: np.ndarray) -> str:
+    """Hash determinístico do conteúdo visual exato, independente do nome."""
+    if not isinstance(image, np.ndarray) or image.size == 0:
+        return ""
+
+    array = np.ascontiguousarray(image)
+    digest = hashlib.sha256()
+    digest.update(str(array.dtype).encode("ascii", errors="ignore"))
+    digest.update(str(tuple(array.shape)).encode("ascii", errors="ignore"))
+    digest.update(array.tobytes())
+    return digest.hexdigest()
+
+
 class OKImageArchiveQueue:
-    """Fila serial daemon para não bloquear julgamento nem próxima captura."""
+    """Fila serial daemon com deduplicação persistente por conteúdo visual."""
 
     def __init__(self, output_dir: Path | None = None):
         self.output_dir = Path(output_dir or settings.OK_ARCHIVE_DIR)
         self._queue: Queue[tuple[np.ndarray, str, datetime] | None] = Queue()
+        self._seen_fingerprints: set[str] = set()
+        self._fingerprints_loaded = False
         self._worker = Thread(
             target=self._run,
             name="VisionXOKImageArchive",
@@ -73,7 +89,29 @@ class OKImageArchiveQueue:
     def wait_until_idle(self) -> None:
         self._queue.join()
 
+    def _load_existing_fingerprints(self) -> None:
+        """Indexa PNGs existentes em background, inclusive nomes legados."""
+        if self._fingerprints_loaded:
+            return
+
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        for path in self.output_dir.glob("*.png"):
+            try:
+                image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+                fingerprint = ok_image_fingerprint(image)
+                if fingerprint:
+                    self._seen_fingerprints.add(fingerprint)
+            except Exception:
+                continue
+
+        self._fingerprints_loaded = True
+
     def _run(self) -> None:
+        try:
+            self._load_existing_fingerprints()
+        except Exception as exc:
+            print(f"Falha não fatal ao indexar arquivo visual OK: {exc}")
+
         while True:
             item = self._queue.get()
             try:
@@ -81,6 +119,10 @@ class OKImageArchiveQueue:
                     return
 
                 image, category, timestamp = item
+                fingerprint = ok_image_fingerprint(image)
+                if fingerprint and fingerprint in self._seen_fingerprints:
+                    continue
+
                 self.output_dir.mkdir(parents=True, exist_ok=True)
                 target = self.output_dir / build_archive_filename(
                     category,
@@ -88,6 +130,10 @@ class OKImageArchiveQueue:
                 )
                 if not cv2.imwrite(str(target), image):
                     print(f"Falha ao salvar arquivo visual OK: {target}")
+                    continue
+
+                if fingerprint:
+                    self._seen_fingerprints.add(fingerprint)
             except Exception as exc:
                 print(f"Falha não fatal ao arquivar imagem OK: {exc}")
             finally:
@@ -251,5 +297,6 @@ __all__ = [
     "OPERATOR_OK_SOURCES",
     "build_ok_archive_filename",
     "install_ok_image_archive",
+    "ok_image_fingerprint",
     "safe_archive_category",
 ]
