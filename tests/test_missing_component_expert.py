@@ -32,6 +32,19 @@ def missing_body_scene(component_present=True, shift_x=0):
     return image
 
 
+def component_body_variant_scene():
+    """Mesmo corpo físico, mas brilho e marcação interna bem diferentes."""
+    image = np.full((180, 240, 3), (42, 70, 176), dtype=np.uint8)
+    x1, x2 = 82, 158
+    cv2.rectangle(image, (x1, 40), (x2, 140), (83, 87, 92), -1)
+    cv2.rectangle(image, (x1 + 5, 45), (x2 - 5, 135), (104, 108, 114), 2)
+    cv2.line(image, (x1 + 14, 52), (x1 + 14, 128), (185, 188, 192), 4)
+    cv2.line(image, (x1 + 26, 52), (x1 + 26, 128), (185, 188, 192), 4)
+    cv2.line(image, (x1 + 39, 72), (x2 - 10, 72), (205, 205, 198), 4)
+    cv2.line(image, (x1 + 39, 105), (x2 - 18, 105), (150, 135, 110), 4)
+    return image
+
+
 def red_pad_scene(intrusion=False):
     image = np.full((130, 220, 3), (52, 98, 148), dtype=np.uint8)
     cv2.rectangle(image, (92, 26), (176, 110), (45, 70, 190), -1)
@@ -109,6 +122,56 @@ class MissingComponentExpertTests(unittest.TestCase):
         self.assertGreater(result["missing_residual_p90"], 0.30)
         self.assertLess(result["missing_direct_similarity"], 0.82)
 
+    def test_same_component_body_with_different_marking_blocks_false_missing(self):
+        reference = missing_body_scene(component_present=True)
+        test = component_body_variant_scene()
+        roi = [(82, 40, 77, 101)]
+
+        presence = self.expert._component_body_presence(
+            reference[40:141, 82:159],
+            test[40:141, 82:159],
+        )
+
+        self.assertTrue(presence["missing_component_body_present"])
+        self.assertGreaterEqual(
+            presence["missing_body_coarse_similarity"],
+            self.expert.BODY_PRESENCE_MIN_COARSE_SIMILARITY,
+        )
+        self.assertGreaterEqual(
+            presence["missing_body_silhouette_dice"],
+            self.expert.BODY_PRESENCE_MIN_SILHOUETTE_DICE,
+        )
+
+        result = self.expert.analyze(
+            reference,
+            test,
+            aoi_info={"category": "FALTANDO"},
+            aoi_epicenters=roi,
+        )
+
+        self.assertTrue(result["missing_component_body_present"])
+        self.assertFalse(result["missing_hard_absence"])
+        self.assertFalse(result["missing_is_defect"])
+        self.assertTrue(result["missing_body_presence_veto"])
+        self.assertEqual(
+            result["missing_classification"],
+            "COMPONENTE PRESENTE — APARÊNCIA DIVERGENTE",
+        )
+        self.assertIn("CORPO DO COMPONENTE PRESENTE", result["missing_reason"])
+
+    def test_body_presence_does_not_hide_localized_non_missing_anomaly(self):
+        result = self.expert.analyze(
+            self.dark_reference,
+            dark_body_scene(True),
+            aoi_info={"category": "FALTANDO"},
+            aoi_epicenters=self.dark_roi,
+        )
+
+        if result.get("missing_component_body_present", False):
+            self.assertFalse(result["missing_hard_absence"])
+            self.assertFalse(result["missing_body_presence_veto"])
+            self.assertTrue(result["missing_is_defect"])
+
     def test_complete_component_disappearance_sets_hard_absence(self):
         reference = missing_body_scene(component_present=True)
         test = missing_body_scene(component_present=False)
@@ -122,6 +185,8 @@ class MissingComponentExpertTests(unittest.TestCase):
         )
 
         self.assertTrue(result["missing_is_defect"])
+        self.assertFalse(result["missing_component_body_present"])
+        self.assertFalse(result["missing_body_presence_veto"])
         self.assertTrue(result["missing_hard_absence"])
         self.assertEqual(
             result["missing_classification"],
