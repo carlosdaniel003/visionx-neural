@@ -398,7 +398,9 @@ class MissingComponentExpertTests(unittest.TestCase):
 
         self.assertTrue(evidence["missing_global_envelope_active"])
         self.assertTrue(evidence["missing_global_envelope_invariant_support"])
-        self.assertTrue(evidence["missing_global_envelope_support"])
+        # A rota invariável é auxiliar: sozinha não possui autoridade para
+        # vetar hard missing, pois footprint escuro real pode preservar massa.
+        self.assertFalse(evidence["missing_global_envelope_support"])
         self.assertLessEqual(
             evidence["missing_global_envelope_background_exposure"],
             self.expert.GLOBAL_ENVELOPE_INVARIANT_MAX_BACKGROUND_EXPOSURE,
