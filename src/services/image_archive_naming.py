@@ -22,9 +22,7 @@ def build_archive_filename(
     """Mantém um único formato de nome para evidências OK e NG."""
     moment = timestamp or datetime.now()
     return (
-        f"{moment:%d}d{moment:%m}m{moment:%Y}_"
-        f"{moment:%H}h{moment:%M}min{moment:%S}s"
-        f"{moment.microsecond // 1000:03d}ms_"
+        f"{moment:%Y-%m-%d}_{moment:%H%M}_"
         f"{safe_archive_category(category)}.png"
     )
 
