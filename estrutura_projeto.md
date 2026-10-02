@@ -3,6 +3,8 @@
 **Módulos Existentes:**
 - `src/config/settings.py`: Centralização de todas as variáveis de ambiente, caminhos e constantes mágicas.
 - `src/services/ng_image_archive.py`: Arquivo visual opcional de decisões finais NG em fila de background, independente do dataset e da memória KNN.
+- `src/services/ok_image_archive.py`: Arquivo visual opcional de decisões humanas OK em fila de background, usando a mesma evidência de `Copiar imagem`.
+- `src/services/image_archive_naming.py`: Formato compartilhado de nomes dos arquivos visuais OK/NG.
 
 **Fluxos Principais (Planejados):**
 1. **Pilar 1 (Extrator Visual):** Monitoramento contínuo da tela usando `mss` para detectar a janela da AOI.
@@ -27,6 +29,62 @@
 - Deduplicação obrigatória por `event_id`: o mesmo evento XP nunca pode gerar duas imagens de arquivo, mesmo se o `PRESS_1` enviado pelo VisionX reaparecer pelo hook global do XP como `CMD_NG`.
 - O arquivamento só é permitido enquanto existe uma captura de rede ativa, com análise ativa e categoria AOI não vazia.
 - `SEM_CATEGORIA` não é um nome de arquivo válido para o fluxo automático de evidências NG. Se a categoria já tiver sido limpa, o evento não deve ser salvo novamente.
+
+
+**Arquivo visual OK opcional:**
+- Existe um segundo toggle **`Salvar imagens OK`**, exibido imediatamente abaixo de **`Salvar imagens NG`**.
+- O toggle inicia **ATIVADO por padrão** em toda abertura do ODIN e o operador pode desativá-lo durante a sessão.
+- Visualmente, o bloco OK deve manter o mesmo layout, dimensões, tipografia, hover, focus e estado checked do bloco NG.
+- Quando ativado, cada julgamento humano final `OK` pode gerar **no máximo uma** evidência em `public/ok_archive/`.
+- Julgamentos humanos aceitos: botão/atalho do ODIN (`source="button"`) e teclado físico do XP (`source="xp_keyboard"`).
+- Decisão automática de Produção (`source="auto"`) **não** gera arquivo OK.
+- A imagem salva deve ser **exatamente a mesma evidência completa resolvida por `Copiar imagem`** para aquele evento.
+- O contrato compartilhado de evidência fica em `src/services/capture_evidence.py`, por meio de `current_copy_image_snapshot()` e `current_copy_image_event_id()`.
+- O arquivo OK aceita tanto captura recebida do **Windows XP** quanto captura local **MSS**, desde que exista análise ativa, `event_id` válido e categoria AOI válida.
+- Uma captura local MSS nunca pode usar como fallback um frame XP anterior.
+- Não usar `current_ng`, ROI, foco ou outro recorte como imagem substituta.
+- O formato do nome é o mesmo do arquivo NG: `DDdMMmAAAA_HHhMMminSSsmmmms_CATEGORIA.png`.
+- A implementação de nome compartilhada fica em `src/services/image_archive_naming.py`.
+- `SEM_CATEGORIA` não é permitido no arquivamento automático OK.
+- A gravação é assíncrona em fila daemon e não pode bloquear julgamento, envio de tecla, limpeza da interface ou recepção da próxima captura.
+- Deduplicação obrigatória por `event_id`: um mesmo evento não pode ser salvo duas vezes caso o julgamento retorne pelo hook do XP.
+- O arquivo é somente evidência visual/auditoria e não participa do dataset, KNN, protótipos, score, confiança ou decisão.
+
+Fluxo:
+
+```text
+captura XP ou MSS analisada
+        ↓
+operador julga OK
+        ↓
+Salvar imagens OK está ATIVADO?
+        ├── NÃO → não arquiva
+        └── SIM
+              ↓
+event_id + categoria + análise ativa válidos?
+              ├── NÃO → não arquiva
+              └── SIM
+                    ↓
+mesma evidência de Copiar imagem
+                    ↓
+public/ok_archive/
+```
+
+Regressões obrigatórias do arquivo OK:
+
+- toggle inicia ativado;
+- operador pode desativar durante a sessão;
+- NG nunca é salvo pelo arquivo OK;
+- `source="auto"` nunca gera arquivo OK;
+- `source="button"` e `source="xp_keyboard"` podem gerar arquivo OK;
+- XP salva exatamente o mesmo frame de `Copiar imagem`;
+- MSS salva exatamente o mesmo frame de `Copiar imagem`;
+- MSS nunca reutiliza frame XP anterior;
+- mesmo `event_id` é salvo no máximo uma vez;
+- novo `event_id` pode ser salvo normalmente;
+- categoria vazia não cria `SEM_CATEGORIA`;
+- fila grava PNG com o mesmo formato de nome do NG;
+- o bloco visual OK permanece imediatamente abaixo do bloco NG e usa o mesmo padrão responsivo.
 
 
 **Regra visual do painel KNN:**
@@ -1280,6 +1338,29 @@ Para captura local, o relatório usa o schema de observabilidade
 
 Essa camada é somente de observabilidade e não altera classificação, memória,
 dataset, gate, confiança ou decisão.
+
+### Estado padrão dos arquivos visuais NG e OK
+
+Os controles `Salvar imagens NG` e `Salvar imagens OK` iniciam em:
+
+```text
+ATIVADO
+```
+
+em toda abertura do ODIN.
+
+O operador continua podendo desativar cada arquivo independentemente durante a
+sessão.
+
+O NG mantém seu contrato atual: arquivamento automático restrito às evidências
+de captura recebidas do Windows XP.
+
+O OK possui contrato próprio: arquiva somente julgamentos humanos `OK`
+(`button` ou `xp_keyboard`) e pode usar XP ou MSS, sempre através da mesma
+evidência completa de `Copiar imagem`.
+
+O arquivo OK não transforma decisões automáticas de Produção em evidência de
+operador e não participa do dataset/KNN.
 
 ### Estado padrão do arquivo visual NG
 
