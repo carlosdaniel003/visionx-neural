@@ -15,6 +15,7 @@ from src.core.anomaly_signature import (
     compare_anomaly_signatures,
     valid_anomaly_signature,
 )
+from src.core.anomaly_memory_integration import _hard_missing_exact_ok_witness
 
 
 BEST_MATCH_MIN_SIMILARITY = 0.75
@@ -346,10 +347,17 @@ def _best_match_dynamic_fusion_factory(original_dynamic_fusion):
             None,
         )
 
-        hard_missing = bool(
+        raw_hard_missing = bool(
             isinstance(missing_result, dict)
             and missing_result.get("missing_hard_absence", False)
         )
+        exact_ok_witness = _hard_missing_exact_ok_witness(
+            category,
+            raw_hard_missing,
+            memory,
+        )
+        hard_missing = bool(raw_hard_missing and not exact_ok_witness)
+
         if hard_missing:
             hard_reason = str(
                 missing_result.get(
@@ -444,6 +452,100 @@ def _best_match_dynamic_fusion_factory(original_dynamic_fusion):
                 "sem poder anular o defeito físico."
             )
             return 1.0, True, 0.99, reason, trace
+
+        if exact_ok_witness:
+            cutoff = float(orchestrator.DECISION_CUTOFF)
+            final_score = 0.0
+            confidence = _confidence(final_score, cutoff)
+
+            for engine in trace.get("engines", []):
+                if engine.get("id") == "knn":
+                    engine.update(
+                        {
+                            "active": True,
+                            "triggered": False,
+                            "selected": True,
+                            "raw_score": 0.0,
+                            "effective_score": 0.0,
+                            "threshold": cutoff,
+                            "final_influence": 0.0,
+                            "summary": (
+                                "TESTEMUNHA OK QUASE EXATA; hard missing "
+                                "local contradito por recorrência visual"
+                            ),
+                        }
+                    )
+                elif engine.get("id") == "missing":
+                    engine.update(
+                        {
+                            "selected": False,
+                            "final_influence": 0.0,
+                            "summary": (
+                                f"{engine.get('summary', '')} • evidência "
+                                "física bruta contradita por testemunha OK "
+                                "quase exata"
+                            ).strip(" •"),
+                        }
+                    )
+                elif engine.get("selected", False):
+                    engine["selected"] = False
+                    engine["final_influence"] = 0.0
+
+            trace.update(
+                {
+                    "final_score": final_score,
+                    "confidence": confidence,
+                    "verdict": "FALHA FALSA",
+                    "dominant_engine": "knn",
+                    "fusion_rule": "hard_missing_exact_ok_witness",
+                    "weights": {"physical": 0.0, "knn": 1.0},
+                    "operator_review_required": False,
+                    "hard_missing_evidence": False,
+                    "raw_hard_missing_evidence": True,
+                    "hard_missing_contradicted_by_exact_ok": True,
+                }
+            )
+            memory_trace.update(
+                {
+                    "has_memory": True,
+                    "memory_available": bool(
+                        memory.get("memory_available", True)
+                    ),
+                    "best_match_label": "OK",
+                    "best_similarity": similarity,
+                    "best_ok_similarity": memory.get(
+                        "best_ok_similarity"
+                    ),
+                    "best_ng_similarity": memory.get(
+                        "best_ng_similarity"
+                    ),
+                    "hypothesis_margin": memory.get(
+                        "hypothesis_margin"
+                    ),
+                    "memory_conflict": False,
+                    "raw_operator_review_required": bool(
+                        memory.get("operator_review_required", False)
+                    ),
+                    "operator_review_required": False,
+                    "memory_score": 0.0,
+                    "vote_defect": 0.0,
+                    "role": "TESTEMUNHA OK QUASE EXATA",
+                    "suppressed_by_hard_missing": False,
+                    "hard_missing_contradicted_by_exact_ok": True,
+                }
+            )
+            ok_similarity = float(
+                memory.get("best_ok_similarity", similarity) or similarity
+            )
+            ng_similarity = float(
+                memory.get("best_ng_similarity", 0.0) or 0.0
+            )
+            reason = (
+                f"{base_reason} || HARD MISSING CONTRADITO POR TESTEMUNHA "
+                f"OK QUASE EXATA: OK {ok_similarity:.1%} x "
+                f"NG {ng_similarity:.1%}."
+            )
+            return final_score, False, confidence, reason, trace
 
         if not reliable:
             if knn_engine is not None:
