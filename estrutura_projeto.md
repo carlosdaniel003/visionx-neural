@@ -966,14 +966,18 @@ DEFEITO REAL / NG
 Cores atuais do canvas:
 
 - neutro: `#050505`;
-- OK: `#07180d`;
-- NG: `#21090b`.
+- OK: `#0b2f18`;
+- NG: `#3a0d12`.
 
 Cores das superfícies principais:
 
 - neutro: `#0d0d0d`;
-- OK: `#0c1a11`;
-- NG: `#1a0b0c`.
+- OK: `#103d22`;
+- NG: `#46131a`.
+
+Os estados OK/NG devem continuar escuros, porém visualmente inequívocos. Tons
+tão próximos do preto que só sejam perceptíveis por comparação não atendem ao
+objetivo operacional dessa sinalização.
 
 A implementação mantém a propriedade Qt `decisionState` para telemetria e
 estado visual e o stylesheet global do ODIN permanece **fixo** durante a
@@ -1097,11 +1101,25 @@ A implementação válida passa a obedecer estas regras:
 
 Além dos testes de estado, deve existir regressão de renderização Qt offscreen:
 um `sectionPanel` real em estado `ng` precisa renderizar o pixel de fundo
-`#1a0b0c` sem que o stylesheet da janela seja modificado.
+`#46131a` sem que o stylesheet da janela seja modificado.
 
 Assim, `DEFEITO REAL / NG` deve produzir fundo vermelho-escuro visível e
 `FALHA FALSA / OK` deve produzir fundo verde-escuro visível, retornando ao
 tema neutro ao limpar ou concluir o ciclo, sem regressão visual dos controles.
+
+#### Ajuste de contraste validado por captura em 02/10/2026
+
+Uma captura real mostrou que o estado `OK` estava tecnicamente ativo, porém a
+superfície `#0c1a11` era escura demais e visualmente parecia o tema neutro.
+Por isso, os tons foram reforçados sem alterar a arquitetura:
+
+- canvas OK: `#0b2f18`;
+- superfície OK: `#103d22`;
+- canvas NG: `#3a0d12`;
+- superfície NG: `#46131a`.
+
+Esse ajuste é somente cromático. Não pode reintroduzir `setStyleSheet()` global
+durante a análise nem alterar hover, focus, checked ou estilos dos botões.
 
 
 ## Feedback visual temporário de julgamento 0/1
