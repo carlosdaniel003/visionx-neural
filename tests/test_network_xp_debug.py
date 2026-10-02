@@ -157,6 +157,17 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
                 "missing_body_presence_reason": (
                     "corpo geométrico preservado apesar da divergência de aparência"
                 ),
+                "missing_global_envelope_active": True,
+                "missing_global_envelope_support": True,
+                "missing_global_envelope_veto": True,
+                "missing_global_envelope_box": [26, 26, 307, 514],
+                "missing_global_envelope_row_profile": 0.89,
+                "missing_global_envelope_col_profile": 0.88,
+                "missing_global_envelope_coarse_similarity": 0.70,
+                "missing_global_envelope_background_exposure": 0.0,
+                "missing_global_envelope_reason": (
+                    "envelope global preserva perfis horizontal/vertical do componente"
+                ),
                 "missing_hard_absence": False,
                 "decision_trace": {
                     "hard_missing_evidence": False,
@@ -194,6 +205,13 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
         self.assertIn("Presença silhouette dice: 0.95", report)
         self.assertIn("Presença area ratio: 0.97", report)
         self.assertIn("Presença centroid shift: 0.01", report)
+        self.assertIn("Envelope global ativo: True", report)
+        self.assertIn("Envelope global suporta presença: True", report)
+        self.assertIn("Envelope global vetou hard missing: True", report)
+        self.assertIn("Envelope global caixa: [26, 26, 307, 514]", report)
+        self.assertIn("Envelope global perfil horizontal: 0.89", report)
+        self.assertIn("Envelope global perfil vertical: 0.88", report)
+        self.assertIn("Envelope global coarse similarity: 0.7", report)
 
     def test_report_distinguishes_raw_hard_missing_from_exact_ok_witness(self):
         analysis = {
