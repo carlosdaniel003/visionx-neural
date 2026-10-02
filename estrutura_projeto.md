@@ -1657,8 +1657,34 @@ Manter testes que garantam:
 - o visual do feedback `0/1` usa moldura amarela/escura e conserva
   verde/vermelho apenas no conteúdo do estado.
 
-Status em 02/10/2026: **contrato atualizado; implementação concluída e
-aguardando validação operacional na interface real**.
+### Validação operacional do fundo neutro e card persistente em 02/10/2026
+
+O comportamento atualizado foi validado em uso real pelo operador.
+
+Foi confirmado que:
+
+- o fundo do ODIN permanece escuro/neutro durante `FALHA FALSA`;
+- o fundo permanece escuro/neutro durante `DEFEITO REAL`;
+- o fundo também permanece neutro em `AGUARDANDO PEÇA`;
+- o card do canto superior direito continua exibindo somente o veredito;
+- `FALHA FALSA` permanece visível em verde enquanto a análise atual continua
+  ativa;
+- `DEFEITO REAL` permanece visível em vermelho enquanto a análise atual
+  continua ativa;
+- o card não desaparece mais por tempo;
+- não existe `QTimer` de auto-hide nem fade-out automático;
+- ao encerrar/resetar o ciclo e retornar para `AGUARDANDO PEÇA`, o card é
+  removido;
+- uma nova análise pode substituir o conteúdo do card pelo novo veredito;
+- o feedback temporário de tecla `0/1` continua independente no canto inferior
+  direito;
+- nenhum desses elementos altera decisão, confiança, KNN, dataset ou comandos XP.
+
+Essa configuração passa a ser a referência operacional validada para a
+sinalização global do veredito no ODIN: **fundo sempre neutro + card persistente
+de decisão no canto superior direito**.
+
+Status em 02/10/2026: **validado operacionalmente na interface real**.
 
 
 ## Diagnóstico e cópia de evidência por origem
