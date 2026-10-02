@@ -48,6 +48,13 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
     BODY_GEOMETRY_MIN_BOX_RATIO = 0.75
     BODY_GEOMETRY_MAX_BOX_RATIO = 1.33
 
+    # Testemunha complementar do envelope global detectado pela AOI. Usa
+    # perfis de baixa frequência em vez de depender da serigrafia central.
+    GLOBAL_ENVELOPE_MIN_ROW_PROFILE = 0.84
+    GLOBAL_ENVELOPE_MIN_COL_PROFILE = 0.84
+    GLOBAL_ENVELOPE_MIN_COARSE_SIMILARITY = 0.66
+    GLOBAL_ENVELOPE_MAX_BACKGROUND_EXPOSURE = 0.08
+
     @staticmethod
     def _palette_residual(reference: np.ndarray, test: np.ndarray) -> np.ndarray:
         """Mede se o teste ainda pertence à paleta cromática do patch.
@@ -155,6 +162,154 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             reference_small,
             test_small,
         )
+
+    @classmethod
+    def _global_envelope_presence_support(
+        cls,
+        full_reference: np.ndarray,
+        full_test: np.ndarray,
+        global_box_info: dict | None,
+        background_exposure: float,
+    ) -> dict:
+        """Testemunha conservadora da forma global do componente.
+
+        Esta rota não declara OK. Ela apenas impede que uma ROI interna estreita
+        tenha autoridade de "ausência física forte" quando o envelope AOI
+        completo preserva a estrutura de baixa frequência do componente.
+        """
+        default = {
+            "missing_global_envelope_active": False,
+            "missing_global_envelope_support": False,
+            "missing_global_envelope_box": None,
+            "missing_global_envelope_row_profile": 0.0,
+            "missing_global_envelope_col_profile": 0.0,
+            "missing_global_envelope_coarse_similarity": 0.0,
+            "missing_global_envelope_background_exposure": float(
+                background_exposure or 0.0
+            ),
+            "missing_global_envelope_reason": (
+                "caixa global da AOI indisponível"
+            ),
+        }
+        if not isinstance(global_box_info, dict):
+            return default
+        if not bool(global_box_info.get("detected", False)):
+            return default
+
+        try:
+            box = (
+                int(global_box_info.get("x", 0)),
+                int(global_box_info.get("y", 0)),
+                int(global_box_info.get("w", 0)),
+                int(global_box_info.get("h", 0)),
+            )
+        except Exception:
+            return default
+
+        x, y, width, height = box
+        if width <= 0 or height <= 0:
+            return default
+
+        safe_reference, safe_test = cls._safe_pair(
+            full_reference,
+            full_test,
+        )
+        reference_roi = cls._crop(safe_reference, box)
+        test_roi = cls._crop(safe_test, box)
+        if (
+            not isinstance(reference_roi, np.ndarray)
+            or not isinstance(test_roi, np.ndarray)
+            or reference_roi.size == 0
+            or test_roi.size == 0
+        ):
+            return default
+
+        if reference_roi.shape[:2] != test_roi.shape[:2]:
+            test_roi = cv2.resize(
+                test_roi,
+                (reference_roi.shape[1], reference_roi.shape[0]),
+                interpolation=cv2.INTER_AREA,
+            )
+
+        reference_gray = cv2.cvtColor(
+            reference_roi,
+            cv2.COLOR_BGR2GRAY,
+        ).astype(np.float32)
+        test_gray = cv2.cvtColor(
+            test_roi,
+            cv2.COLOR_BGR2GRAY,
+        ).astype(np.float32)
+
+        minimum_side = max(1, min(reference_gray.shape[:2]))
+        kernel = max(9, int(round(minimum_side * 0.18)))
+        if kernel % 2 == 0:
+            kernel += 1
+
+        reference_blur = cv2.GaussianBlur(
+            reference_gray,
+            (kernel, kernel),
+            0,
+        )
+        test_blur = cv2.GaussianBlur(
+            test_gray,
+            (kernel, kernel),
+            0,
+        )
+
+        # Usa apenas os 70% centrais para remover a moldura verde e reduzir
+        # influência das bordas da interface.
+        roi_height, roi_width = reference_blur.shape[:2]
+        x_margin = int(round(roi_width * 0.15))
+        y_margin = int(round(roi_height * 0.15))
+        x1 = min(max(0, x_margin), max(0, roi_width - 2))
+        x2 = max(x1 + 1, roi_width - x_margin)
+        y1 = min(max(0, y_margin), max(0, roi_height - 2))
+        y2 = max(y1 + 1, roi_height - y_margin)
+
+        reference_core = reference_blur[y1:y2, x1:x2]
+        test_core = test_blur[y1:y2, x1:x2]
+
+        row_similarity = cls._normalized_correlation(
+            np.mean(reference_core, axis=1),
+            np.mean(test_core, axis=1),
+        )
+        col_similarity = cls._normalized_correlation(
+            np.mean(reference_core, axis=0),
+            np.mean(test_core, axis=0),
+        )
+        coarse_similarity = cls._coarse_body_similarity(
+            reference_roi,
+            test_roi,
+        )
+        background = float(background_exposure or 0.0)
+
+        supported = bool(
+            row_similarity >= cls.GLOBAL_ENVELOPE_MIN_ROW_PROFILE
+            and col_similarity >= cls.GLOBAL_ENVELOPE_MIN_COL_PROFILE
+            and coarse_similarity
+            >= cls.GLOBAL_ENVELOPE_MIN_COARSE_SIMILARITY
+            and background
+            <= cls.GLOBAL_ENVELOPE_MAX_BACKGROUND_EXPOSURE
+        )
+
+        reason = (
+            "envelope global preserva perfis horizontal/vertical do componente"
+            if supported
+            else "envelope global sem suporte estrutural suficiente"
+        )
+        return {
+            "missing_global_envelope_active": True,
+            "missing_global_envelope_support": supported,
+            "missing_global_envelope_box": list(box),
+            "missing_global_envelope_row_profile": float(row_similarity),
+            "missing_global_envelope_col_profile": float(col_similarity),
+            "missing_global_envelope_coarse_similarity": float(
+                coarse_similarity
+            ),
+            "missing_global_envelope_background_exposure": background,
+            "missing_global_envelope_reason": reason,
+        }
+
 
     @staticmethod
     def _central_silhouette(image: np.ndarray):
@@ -589,6 +744,14 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             )
         result.update(body_presence)
 
+        global_envelope = self._global_envelope_presence_support(
+            full_reference,
+            full_test,
+            global_box_info,
+            float(result.get("missing_background_exposure", 0.0) or 0.0),
+        )
+        result.update(global_envelope)
+
         raw_classification = str(
             result.get("missing_classification", "")
         ).strip().upper()
@@ -622,6 +785,19 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
 
         hard_absence, hard_reason = self._hard_absence_evidence(result)
 
+        if (
+            hard_absence
+            and result.get("missing_global_envelope_support", False)
+        ):
+            hard_absence = False
+            hard_reason = (
+                "envelope global do componente preservado; ausência forte "
+                "rebaixada para a fusão normal"
+            )
+            result["missing_global_envelope_veto"] = True
+        else:
+            result["missing_global_envelope_veto"] = False
+
         if result.get("missing_body_presence_veto", False):
             result.update(
                 {
@@ -640,6 +816,22 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             hard_absence = False
             hard_reason = (
                 "corpo do componente preservado; hard missing bloqueado"
+            )
+        elif result.get("missing_global_envelope_veto", False):
+            result.update(
+                {
+                    "missing_dual_scale_policy": (
+                        DualScalePresenceAnalyzer.POLICY
+                    ),
+                    "missing_dual_scale_active": False,
+                    "missing_dual_scale_triggered": False,
+                    "missing_scale_disagreement": False,
+                    "missing_context_hard_absence": False,
+                    "missing_context_hard_reason": (
+                        "envelope global preservado; decisão devolvida à "
+                        "fusão física + memória"
+                    ),
+                }
             )
         elif not hard_absence:
             dual_scale = DualScalePresenceAnalyzer.analyze(
@@ -723,6 +915,18 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             ),
             "body_geometry_box_ratio_max": (
                 self.BODY_GEOMETRY_MAX_BOX_RATIO
+            ),
+            "global_envelope_row_profile": (
+                self.GLOBAL_ENVELOPE_MIN_ROW_PROFILE
+            ),
+            "global_envelope_col_profile": (
+                self.GLOBAL_ENVELOPE_MIN_COL_PROFILE
+            ),
+            "global_envelope_coarse_similarity": (
+                self.GLOBAL_ENVELOPE_MIN_COARSE_SIMILARITY
+            ),
+            "global_envelope_background_exposure_max": (
+                self.GLOBAL_ENVELOPE_MAX_BACKGROUND_EXPOSURE
             ),
             "dual_scale_policy": DualScalePresenceAnalyzer.POLICY,
             "dual_scale_local_global_ratio_max": (
