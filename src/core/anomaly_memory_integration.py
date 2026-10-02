@@ -25,6 +25,12 @@ MISSING_ROUTES = ("missing",) + STANDARD_ROUTES
 HARD_MISSING_EXACT_OK_SIMILARITY = 0.995
 HARD_MISSING_EXACT_OK_MARGIN = 0.05
 
+# Segunda exceção, mais restrita fisicamente: quando o envelope global mantém
+# massa invariável compatível, uma memória OK forte pode contradizer um hard
+# missing produzido por uma ROI interna sensível a deslocamento/orientação.
+HARD_MISSING_INVARIANT_OK_SIMILARITY = 0.90
+HARD_MISSING_INVARIANT_OK_MARGIN = 0.01
+
 CATEGORY_KEY_ALIASES = {
     "INVERTIDO": "INVERTIDO",
     "INVERTED": "INVERTIDO",
@@ -94,6 +100,55 @@ def _hard_missing_exact_ok_witness(
     return bool(
         ok_similarity >= HARD_MISSING_EXACT_OK_SIMILARITY
         and margin >= HARD_MISSING_EXACT_OK_MARGIN
+    )
+
+
+def _hard_missing_invariant_presence_ok_witness(
+    category: str,
+    raw_hard_absence: bool,
+    missing_result: dict | None,
+    knn: dict | None,
+) -> bool:
+    """Combina presença física invariável + memória OK forte em FALTANDO."""
+    if not raw_hard_absence or not is_missing_category(category):
+        return False
+    if not isinstance(missing_result, dict):
+        return False
+    if not bool(
+        missing_result.get(
+            "missing_global_envelope_invariant_support",
+            False,
+        )
+    ):
+        return False
+    if not isinstance(knn, dict) or not bool(knn.get("has_memory", False)):
+        return False
+    if not bool(knn.get("match_reliable", True)):
+        return False
+    if bool(knn.get("memory_conflict", False)):
+        return False
+
+    label = str(knn.get("best_match_label", "") or "").strip().upper()
+    if label != "OK":
+        return False
+
+    ok_similarity = float(
+        knn.get(
+            "best_ok_similarity",
+            knn.get("best_similarity", 0.0),
+        )
+        or 0.0
+    )
+    ng_available = bool(knn.get("ng_memory_available", False))
+    ng_similarity = float(knn.get("best_ng_similarity", 0.0) or 0.0)
+    margin = (
+        ok_similarity - ng_similarity
+        if ng_available
+        else ok_similarity
+    )
+    return bool(
+        ok_similarity >= HARD_MISSING_INVARIANT_OK_SIMILARITY
+        and margin >= HARD_MISSING_INVARIANT_OK_MARGIN
     )
 
 
@@ -742,5 +797,8 @@ __all__ = [
     "CROSS_CATEGORY_ABSENCE_GUARD_CATEGORIES",
     "HARD_MISSING_EXACT_OK_MARGIN",
     "HARD_MISSING_EXACT_OK_SIMILARITY",
+    "HARD_MISSING_INVARIANT_OK_MARGIN",
+    "HARD_MISSING_INVARIANT_OK_SIMILARITY",
     "_hard_missing_exact_ok_witness",
+    "_hard_missing_invariant_presence_ok_witness",
 ]
