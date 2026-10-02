@@ -142,7 +142,7 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
             overlay._fade_in.easingCurve().type(),
             QEasingCurve.Type.OutCubic,
         )
-        self.assertTrue(overlay.isVisible())
+        self.assertFalse(overlay.isHidden())
         self.assertFalse(hasattr(overlay, "_hide_timer"))
         self.assertFalse(hasattr(overlay, "_fade_out"))
 
