@@ -1355,3 +1355,52 @@ Foi confirmado que:
 Essa prévia deve continuar sendo apenas uma camada de visualização da evidência
 já validada pelo `event_id`. Refatorações futuras não devem duplicar a fonte da
 imagem nem desacoplar a prévia do mesmo contrato usado por **`Copiar imagem`**.
+
+
+### Limpeza visual ao entrar em AGUARDANDO PEÇA
+
+Quando o painel de decisão retorna para:
+
+```text
+AGUARDANDO PEÇA
+```
+
+nenhuma imagem da inspeção anterior pode permanecer visível na seção de
+inspeção.
+
+Devem ser limpos visualmente:
+
+- `CAPTURA RECEBIDA • EVIDÊNCIA COMPLETA`;
+- gabarito em visão completa;
+- foco do gabarito;
+- teste em visão completa;
+- foco do teste.
+
+A limpeza é **somente visual**. Ela não apaga a evidência técnica da última
+captura e não invalida, por si só:
+
+- `Copiar debug`;
+- `Copiar imagem`;
+- `event_id`;
+- frame completo preservado para auditoria.
+
+O controller mantém o estado visual `_inspection_images_visible`:
+
+- `False` em `AGUARDANDO PEÇA`;
+- `True` quando uma nova inspeção válida começa a ser processada.
+
+Enquanto esse estado estiver falso, `resizeEvent` não pode reconstruir os
+pixmaps a partir de `current_sample` ou `current_ng`, e a sincronização do
+diagnóstico não pode repopular a prévia completa com a evidência anterior.
+
+Essa separação é obrigatória: **evidência preservada para auditoria não significa
+imagem antiga visível na inspeção atual**.
+
+Regressões obrigatórias:
+
+- `_reset_confidence_panel()` limpa todos os visuais da peça anterior;
+- a prévia completa mostra `Aguardando captura`;
+- gabarito/teste mostram apenas placeholders de espera;
+- resize durante espera não faz a peça anterior reaparecer;
+- `Copiar imagem` continua disponível quando existe evidência válida;
+- nova inspeção válida reabilita a exibição das imagens.
