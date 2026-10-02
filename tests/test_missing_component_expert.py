@@ -75,6 +75,76 @@ def real_like_tall_component_scene(variant=False, present=True):
     return image
 
 
+def shifted_global_component_scene(shift_y=0, variant=False, present=True):
+    """Corpo escuro preservado, mas deslocado dentro do envelope global."""
+    image = np.full((540, 355, 3), (74, 88, 118), dtype=np.uint8)
+
+    # Região fora da caixa global permanece estável para medir fundo real.
+    cv2.rectangle(image, (26, 26), (333, 539), (0, 255, 0), 2)
+
+    # Pads/placa permanecem como contexto.
+    cv2.rectangle(image, (48, 28), (310, 150), (56, 70, 155), -1)
+    cv2.rectangle(image, (48, 390), (310, 520), (56, 70, 155), -1)
+
+    if present:
+        top = 165 + int(shift_y)
+        bottom = top + 220
+        cv2.rectangle(image, (78, top), (290, bottom), (24, 27, 32), -1)
+        cv2.rectangle(
+            image,
+            (88, top + 12),
+            (280, bottom - 12),
+            (34, 37, 42) if not variant else (43, 47, 52),
+            2,
+        )
+        # Terminais metálicos permanecem, marcação interna muda.
+        cv2.rectangle(
+            image,
+            (72, top - 18),
+            (296, top + 18),
+            (210, 210, 196),
+            -1,
+        )
+        cv2.rectangle(
+            image,
+            (72, bottom - 18),
+            (296, bottom + 18),
+            (210, 210, 196),
+            -1,
+        )
+        if variant:
+            cv2.line(
+                image,
+                (145, top + 55),
+                (225, top + 55),
+                (235, 235, 225),
+                8,
+            )
+            cv2.line(
+                image,
+                (155, top + 110),
+                (235, top + 110),
+                (235, 235, 225),
+                8,
+            )
+        else:
+            cv2.line(
+                image,
+                (135, top + 70),
+                (220, top + 70),
+                (230, 230, 220),
+                8,
+            )
+            cv2.line(
+                image,
+                (145, top + 130),
+                (215, top + 130),
+                (230, 230, 220),
+                8,
+            )
+    return image
+
+
 def red_pad_scene(intrusion=False):
     image = np.full((130, 220, 3), (52, 98, 148), dtype=np.uint8)
     cv2.rectangle(image, (92, 26), (176, 110), (45, 70, 190), -1)
@@ -301,6 +371,154 @@ class MissingComponentExpertTests(unittest.TestCase):
             result["missing_classification"],
             "COMPONENTE FISICAMENTE AUSENTE",
         )
+
+    def test_global_envelope_invariant_mass_survives_internal_shift_and_marking_change(self):
+        reference = shifted_global_component_scene(
+            shift_y=0,
+            variant=False,
+            present=True,
+        )
+        test = shifted_global_component_scene(
+            shift_y=-58,
+            variant=True,
+            present=True,
+        )
+
+        evidence = self.expert._global_envelope_presence_support(
+            reference,
+            test,
+            {
+                "x": 26,
+                "y": 26,
+                "w": 308,
+                "h": 514,
+                "detected": True,
+            },
+        )
+
+        self.assertTrue(evidence["missing_global_envelope_active"])
+        self.assertTrue(evidence["missing_global_envelope_invariant_support"])
+        self.assertTrue(evidence["missing_global_envelope_support"])
+        self.assertLessEqual(
+            evidence["missing_global_envelope_background_exposure"],
+            self.expert.GLOBAL_ENVELOPE_INVARIANT_MAX_BACKGROUND_EXPOSURE,
+        )
+        self.assertGreaterEqual(
+            evidence["missing_global_envelope_reference_dark_fraction"],
+            self.expert.GLOBAL_ENVELOPE_MIN_DARK_REFERENCE_FRACTION,
+        )
+        self.assertGreaterEqual(
+            evidence["missing_global_envelope_test_dark_fraction"],
+            self.expert.GLOBAL_ENVELOPE_MIN_DARK_TEST_FRACTION,
+        )
+        self.assertGreaterEqual(
+            evidence["missing_global_envelope_invariant_row_profile"],
+            self.expert.GLOBAL_ENVELOPE_MIN_INVARIANT_ROW_PROFILE,
+        )
+        self.assertGreaterEqual(
+            evidence["missing_global_envelope_invariant_col_profile"],
+            self.expert.GLOBAL_ENVELOPE_MIN_INVARIANT_COL_PROFILE,
+        )
+        self.assertIn("massa física", evidence["missing_global_envelope_reason"])
+
+    def test_global_envelope_invariant_mass_rejects_real_disappearance(self):
+        reference = shifted_global_component_scene(
+            shift_y=0,
+            variant=False,
+            present=True,
+        )
+        test = shifted_global_component_scene(
+            shift_y=0,
+            variant=False,
+            present=False,
+        )
+
+        evidence = self.expert._global_envelope_presence_support(
+            reference,
+            test,
+            {
+                "x": 26,
+                "y": 26,
+                "w": 308,
+                "h": 514,
+                "detected": True,
+            },
+        )
+
+        self.assertTrue(evidence["missing_global_envelope_active"])
+        self.assertFalse(evidence["missing_global_envelope_invariant_support"])
+        self.assertFalse(evidence["missing_global_envelope_support"])
+        self.assertLess(
+            evidence["missing_global_envelope_test_dark_fraction"],
+            self.expert.GLOBAL_ENVELOPE_MIN_DARK_TEST_FRACTION,
+        )
+
+    def test_real_event_fb7de76_uses_global_invariant_presence_to_block_hard_missing(self):
+        reference = shifted_global_component_scene(
+            shift_y=0,
+            variant=False,
+            present=True,
+        )
+        test = shifted_global_component_scene(
+            shift_y=-58,
+            variant=True,
+            present=True,
+        )
+        observed = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "COMPONENTE FISICAMENTE AUSENTE",
+            "missing_score": 0.9961602686328229,
+            "missing_changed_coverage": 0.6857581742374369,
+            "missing_residual_mean": 0.7836465239524841,
+            "missing_residual_p90": 1.0,
+            "missing_structure_loss": 0.48948475289169296,
+            "missing_background_exposure": 0.6269353181123734,
+            "missing_best_similarity": 0.4097987413406372,
+            "missing_appearance_loss": 0.6868006474077814,
+            "missing_direct_similarity": 0.31319935259221865,
+            "missing_roi_box": (39, 105, 279, 147),
+            "missing_reason": "QUEBRA DA EXPECTATIVA VISUAL DA ROI",
+        }
+
+        with patch.object(
+            ROIPatchExpectationExpert,
+            "analyze",
+            return_value=dict(observed),
+        ), patch.object(
+            self.expert,
+            "_component_body_presence_witness",
+            return_value={
+                "missing_body_presence_active": True,
+                "missing_component_body_present": False,
+                "missing_body_presence_source": "missing_roi",
+                "missing_body_presence_box": [39, 105, 279, 147],
+                "missing_body_presence_policy": "none",
+                "missing_body_presence_reason": (
+                    "ROI local não confirmou o corpo completo"
+                ),
+            },
+        ):
+            result = self.expert.analyze(
+                reference,
+                test,
+                global_box_info={
+                    "x": 26,
+                    "y": 26,
+                    "w": 308,
+                    "h": 514,
+                    "detected": True,
+                },
+                aoi_info={"category": "FALTANDO"},
+                aoi_epicenters=[(39, 105, 279, 147)],
+            )
+
+        self.assertTrue(result["missing_global_envelope_invariant_support"])
+        self.assertTrue(result["missing_global_envelope_veto"])
+        self.assertFalse(result["missing_hard_absence"])
+        self.assertTrue(result["missing_is_defect"])
+        self.assertFalse(result["missing_dual_scale_active"])
+        self.assertIn("fusão normal", result["missing_hard_absence_reason"])
 
     def test_global_aoi_envelope_can_downgrade_false_hard_missing_to_normal_fusion(self):
         reference = real_like_tall_component_scene(
