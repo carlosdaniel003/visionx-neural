@@ -6,6 +6,8 @@ pipeline e não altera classificação, confiança, memória, persistência ou c
 
 from __future__ import annotations
 
+from src.ui.theme import stylesheet_for_decision_state
+
 
 VALID_BACKGROUND_STATES = {"neutral", "ok", "ng"}
 
@@ -45,10 +47,15 @@ def _background_widgets(panel):
 
 
 def apply_decision_background(panel, state: str) -> str:
-    """Aplica a propriedade Qt usada pelo tema, sem trocar o stylesheet global."""
+    """Aplica o estado visual e força o override final do fundo no tema."""
     normalized = str(state or "neutral").strip().lower()
     if normalized not in VALID_BACKGROUND_STATES:
         normalized = "neutral"
+
+    try:
+        panel.setStyleSheet(stylesheet_for_decision_state(normalized))
+    except Exception:
+        pass
 
     for widget in _background_widgets(panel):
         try:
