@@ -98,6 +98,54 @@ def hard_missing_conflict_detail():
     return detail
 
 
+def exact_ok_witness_detail():
+    detail = strong_ng_detail()
+    detail.update(
+        {
+            "missing_hard_absence": True,
+            "missing_hard_absence_reason": (
+                "estrutura esperada colapsou sem correspondência próxima válida"
+            ),
+            "has_memory": True,
+            "memory_available": True,
+            "best_similarity": 0.9999999946,
+            "best_ng_similarity": 0.8724773604,
+            "best_ok_similarity": 0.9999999946,
+            "hypothesis_margin": 0.1275226342,
+            "best_match_label": "OK",
+            "leading_hypothesis": "OK",
+            "memory_score": 0.0,
+        }
+    )
+    detail["decision_trace"] = {
+        "hard_missing_evidence": False,
+        "raw_hard_missing_evidence": True,
+        "hard_missing_contradicted_by_exact_ok": True,
+        "operator_review_required": False,
+        "fusion_rule": "hard_missing_exact_ok_witness",
+        "dominant_engine": "knn",
+        "final_score": 0.0,
+        "confidence": 0.99,
+        "weights": {"physical": 0.0, "knn": 1.0},
+        "memory": {
+            "has_memory": True,
+            "memory_available": True,
+            "best_match_label": "OK",
+            "best_similarity": 0.9999999946,
+            "best_ng_similarity": 0.8724773604,
+            "best_ok_similarity": 0.9999999946,
+            "hypothesis_margin": 0.1275226342,
+            "memory_score": 0.0,
+            "operator_review_required": False,
+            "suppressed_by_hard_missing": False,
+            "hard_missing_contradicted_by_exact_ok": True,
+            "memory_scope": "categoria",
+            "role": "TESTEMUNHA OK QUASE EXATA",
+        },
+    }
+    return detail
+
+
 def conflict_detail():
     detail = strong_ng_detail()
     detail.update(
@@ -182,6 +230,19 @@ class MemoryStatusModelTests(unittest.TestCase):
         self.assertIn("AUSÊNCIA FÍSICA FORTE", summary)
         self.assertIn("KNN somente auditoria", summary)
         self.assertNotIn("revisão obrigatória", summary)
+
+    def test_exact_ok_witness_disables_visual_hard_missing_override(self):
+        detail = exact_ok_witness_detail()
+        model = memory_status_from_detail(detail)
+        summary = memory_summary_text(detail)
+
+        self.assertFalse(model["hard_missing_override"])
+        self.assertTrue(model["hard_missing_contradicted_by_exact_ok"])
+        self.assertFalse(model["memory_suppressed_by_hard_missing"])
+        self.assertEqual(model["leading_hypothesis"], "OK")
+        self.assertIn("TESTEMUNHA OK QUASE EXATA", summary)
+        self.assertIn("hard missing local descartado", summary)
+        self.assertNotIn("KNN somente auditoria", summary)
 
     def test_legacy_epicenter_only_is_presented_without_fake_context(self):
         detail = {
@@ -333,6 +394,20 @@ class MemoryStatusUiWrapperTests(unittest.TestCase):
         self.assertNotIn("REVISÃO OBRIGATÓRIA", panel.lbl_verdict.text)
         self.assertIn("AUSÊNCIA FÍSICA FORTE", panel.lbl_db_info.text)
         self.assertIn("KNN somente auditoria", panel.lbl_db_info.text)
+
+    def test_exact_ok_witness_preserves_false_failure_verdict(self):
+        panel = FakePanel()
+        analysis = {
+            "verdict": "FALHA FALSA",
+            "confidence": 0.99,
+            "detail": exact_ok_witness_detail(),
+        }
+
+        panel._update_confidence_panel(analysis)
+
+        self.assertEqual(panel.lbl_verdict.text, "FALHA FALSA")
+        self.assertIn("TESTEMUNHA OK QUASE EXATA", panel.lbl_db_info.text)
+        self.assertNotIn("AUSÊNCIA FÍSICA FORTE", panel.lbl_db_info.text)
 
     def test_normal_summary_preserves_original_verdict(self):
         panel = FakePanel()
