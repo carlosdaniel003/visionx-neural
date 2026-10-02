@@ -7,9 +7,7 @@ from PyQt6.QtCore import QEasingCurve, Qt
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from src.ui.decision_verdict_feedback import (
-    VERDICT_FEEDBACK_DURATION_MS,
     VERDICT_FEEDBACK_FADE_IN_MS,
-    VERDICT_FEEDBACK_FADE_OUT_MS,
     VERDICT_FEEDBACK_HEIGHT,
     VERDICT_FEEDBACK_MARGIN,
     VERDICT_FEEDBACK_SLIDE_PX,
@@ -124,7 +122,7 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
         self.assertEqual(overlay.verdict_label.text(), "DEFEITO REAL")
         self.assertEqual(overlay.verdict_label.property("tone"), "ng")
 
-    def test_animation_is_short_single_shot_and_non_blocking(self):
+    def test_overlay_enters_once_and_stays_visible_until_explicit_reset(self):
         panel = self._panel()
         overlay = panel.ai_verdict_feedback
 
@@ -137,10 +135,6 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
             VERDICT_FEEDBACK_FADE_IN_MS,
         )
         self.assertEqual(
-            overlay._fade_out.duration(),
-            VERDICT_FEEDBACK_FADE_OUT_MS,
-        )
-        self.assertEqual(
             overlay._slide_in.duration(),
             VERDICT_FEEDBACK_FADE_IN_MS,
         )
@@ -148,15 +142,17 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
             overlay._fade_in.easingCurve().type(),
             QEasingCurve.Type.OutCubic,
         )
-        self.assertEqual(
-            overlay._fade_out.easingCurve().type(),
-            QEasingCurve.Type.InOutQuad,
-        )
-        self.assertTrue(overlay._hide_timer.isSingleShot())
-        self.assertEqual(
-            overlay._hide_timer.interval(),
-            VERDICT_FEEDBACK_DURATION_MS - VERDICT_FEEDBACK_FADE_OUT_MS,
-        )
+        self.assertTrue(overlay.isVisible())
+        self.assertFalse(hasattr(overlay, "_hide_timer"))
+        self.assertFalse(hasattr(overlay, "_fade_out"))
+
+        source = open(
+            "src/ui/decision_verdict_feedback.py",
+            encoding="utf-8",
+        ).read()
+        self.assertNotIn("QTimer", source)
+        self.assertNotIn("VERDICT_FEEDBACK_DURATION_MS", source)
+        self.assertNotIn("VERDICT_FEEDBACK_FADE_OUT_MS", source)
 
     def test_visual_language_is_dark_yellow_with_state_color_only_on_verdict(self):
         source = open(
@@ -268,16 +264,15 @@ class AIVerdictFeedbackHookTests(unittest.TestCase):
 
 
 class AIVerdictFeedbackSourceContractTests(unittest.TestCase):
-    def test_main_installs_verdict_hook_after_background_and_overlay_on_panel(self):
+    def test_main_installs_persistent_verdict_overlay_without_dynamic_background(self):
         source = open("main.py", encoding="utf-8").read()
 
-        background = source.index("install_decision_background(ControlPanel)")
         hook = source.index("install_ai_verdict_feedback_hooks(ControlPanel)")
         panel = source.index("panel = ControlPanel()")
         key_overlay = source.index("install_decision_key_feedback(panel)")
         verdict_overlay = source.index("install_ai_verdict_feedback(panel)")
 
-        self.assertLess(background, hook)
+        self.assertNotIn("install_decision_background", source)
         self.assertLess(hook, panel)
         self.assertLess(panel, key_overlay)
         self.assertLess(key_overlay, verdict_overlay)
