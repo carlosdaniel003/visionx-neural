@@ -1592,6 +1592,199 @@ Em 01/10/2026, o feedback visual `0 = OK` / `1 = NG` foi validado em operação 
 Após essa validação, a posição visual foi refinada do centro da tela para o canto inferior direito para reduzir interferência visual sobre a inspeção principal. Essa posição passa a fazer parte do contrato da interface.
 
 
+### Refinamento visual do feedback 0/1 em 02/10/2026
+
+O card de confirmação de tecla continua no canto inferior direito e mantém a
+mesma função operacional, porém sua linguagem visual passa a ficar mais próxima
+do restante do ODIN:
+
+- fundo escuro próximo ao `SURFACE`;
+- borda amarela ODIN, em vez de usar verde/vermelho como moldura principal;
+- cabeçalho continua amarelo;
+- verde/vermelho ficam restritos ao conteúdo do estado `OK` / `NG`;
+- animação, posição, click-through, duração e deduplicação de eco permanecem
+  inalterados.
+
+O objetivo é evitar um alerta visual que pareça pertencer a outro sistema ou a
+um componente genérico de IA.
+
+## Feedback visual do veredito final da IA
+
+Além do feedback de tecla `0/1`, o ODIN possui um segundo overlay exclusivamente
+visual para comunicar o veredito final calculado pela IA.
+
+Esse overlay tem função diferente do feedback de tecla:
+
+```text
+feedback 0/1
+= confirma ação/comando recebido
+
+feedback de veredito
+= comunica o resultado final da análise da IA
+```
+
+### Mensagens permitidas
+
+O card de veredito deve exibir somente:
+
+```text
+FALHA FALSA
+```
+
+ou:
+
+```text
+DEFEITO REAL
+```
+
+Não exibir nesse card:
+
+- porcentagem;
+- score;
+- confiança;
+- motor dominante;
+- regra de fusão;
+- categoria;
+- justificativa;
+- origem da tecla.
+
+Essas informações continuam disponíveis nos painéis detalhados e no debug.
+
+### Posição
+
+O overlay do veredito fica no **canto superior direito** da janela principal.
+
+Essa escolha é deliberada:
+
+- separa visualmente o veredito da IA do feedback de tecla `0/1`, que fica no
+  canto inferior direito;
+- não compete com a área central de decisão;
+- segue um padrão natural de notificação sem ocupar o centro da inspeção;
+- mantém leitura imediata em telas largas.
+
+Contrato atual:
+
+- largura aproximada: `300 px`;
+- altura aproximada: `112 px`;
+- margem direita: `24 px`;
+- offset superior aproximado: `84 px`.
+
+### Linguagem visual
+
+O card deve seguir a identidade industrial do ODIN:
+
+- base escura `SURFACE`;
+- borda fina amarela `ACCENT`;
+- cabeçalho `VEREDITO DA IA` em amarelo;
+- `FALHA FALSA` em verde;
+- `DEFEITO REAL` em vermelho;
+- tipografia forte e limpa;
+- sem ícones decorativos genéricos;
+- sem pills;
+- sem gradientes;
+- sem barras laterais coloridas;
+- sem aparência de componente gerado por IA.
+
+O verde/vermelho é usado apenas para o texto do estado. A estrutura do card
+continua escura/amarela.
+
+### Sincronização com o fundo dinâmico
+
+O overlay deve surgir a partir do mesmo veredito final que alimenta o fundo:
+
+```text
+FALHA FALSA
+        ↓
+fundo verde-escuro
+        +
+card superior direito verde
+
+DEFEITO REAL
+        ↓
+fundo vermelho-escuro
+        +
+card superior direito vermelho
+```
+
+A ordem de instalação é importante:
+
+1. o fundo dinâmico observa o resultado final;
+2. o hook do overlay de veredito é instalado depois;
+3. ao receber a análise, o fundo é atualizado primeiro;
+4. em seguida o card aparece já sincronizado com o novo estado visual.
+
+Quando o ODIN volta para `AGUARDANDO PEÇA`, o card deve desaparecer e o fundo
+retorna ao neutro.
+
+### Animação e desempenho
+
+O overlay é temporário e leve:
+
+- duração total aproximada: `1500 ms`;
+- fade-in: aproximadamente `140 ms`;
+- fade-out: aproximadamente `220 ms`;
+- pequeno slide horizontal de aproximadamente `10 px`;
+- `QTimer` single-shot;
+- sem thread adicional;
+- sem `sleep`;
+- sem loop contínuo;
+- `WA_TransparentForMouseEvents`;
+- `NoFocus`.
+
+A animação só existe durante a exibição do card.
+
+### Estados inconclusivos
+
+Se a análise estiver em revisão obrigatória ou não possuir um veredito final
+reconhecido, o overlay não deve inventar uma decisão binária.
+
+Portanto:
+
+- `REVISÃO OBRIGATÓRIA` → não mostrar `FALHA FALSA` nem `DEFEITO REAL`;
+- análises legadas sem texto de veredito só podem usar `is_defect` como
+  fallback quando não existir revisão humana pendente.
+
+### Arquitetura
+
+Implementação:
+
+```text
+src/ui/decision_verdict_feedback.py
+```
+
+O recurso é exclusivamente visual e não pode:
+
+- alterar `analysis`;
+- alterar `is_defect`;
+- alterar confiança ou score;
+- alterar KNN;
+- alterar dataset;
+- alterar arquivos OK/NG;
+- enviar `PRESS_0/PRESS_1`;
+- responder pelo operador;
+- bloquear o ciclo de imagens.
+
+### Regressões obrigatórias
+
+Manter testes que garantam:
+
+- `FALHA FALSA` → texto verde, sem percentual;
+- `DEFEITO REAL` → texto vermelho, sem percentual;
+- posição no canto superior direito;
+- card click-through e sem foco;
+- animações curtas, single-shot e não bloqueantes;
+- revisão obrigatória não inventa um veredito;
+- reset para `AGUARDANDO PEÇA` limpa o overlay;
+- conclusão do ciclo também limpa o overlay se o fundo já voltou ao neutro;
+- hook do overlay é instalado depois do fundo dinâmico;
+- feedback de tecla continua independente no canto inferior direito;
+- o visual do feedback `0/1` usa moldura amarela/escura e conserva
+  verde/vermelho apenas no conteúdo do estado.
+
+Status em 02/10/2026: **implementado, aguardando validação operacional na
+interface real**.
+
+
 ## Diagnóstico e cópia de evidência por origem
 
 Os controles visuais:
