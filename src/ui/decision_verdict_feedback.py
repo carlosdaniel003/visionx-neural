@@ -266,6 +266,7 @@ def install_ai_verdict_feedback_hooks(control_panel_cls) -> None:
 
     original_reference_update = control_panel_cls._update_reference_panel
     original_reset = control_panel_cls._reset_confidence_panel
+    original_save_label = control_panel_cls.save_label
 
     @wraps(original_reference_update)
     def wrapped_reference_update(self, analysis):
@@ -291,8 +292,25 @@ def install_ai_verdict_feedback_hooks(control_panel_cls) -> None:
             clear_feedback()
         return result
 
+    @wraps(original_save_label)
+    def wrapped_save_label(self, *args, **kwargs):
+        result = original_save_label(self, *args, **kwargs)
+        if (
+            getattr(self, "current_analysis", None) is None
+            or not bool(getattr(self, "is_locked", False))
+        ):
+            clear_feedback = getattr(
+                self,
+                "clear_ai_verdict_feedback",
+                None,
+            )
+            if callable(clear_feedback):
+                clear_feedback()
+        return result
+
     control_panel_cls._update_reference_panel = wrapped_reference_update
     control_panel_cls._reset_confidence_panel = wrapped_reset
+    control_panel_cls.save_label = wrapped_save_label
     control_panel_cls._ai_verdict_feedback_hooks = True
 
 
