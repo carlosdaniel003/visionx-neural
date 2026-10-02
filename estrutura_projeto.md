@@ -108,6 +108,30 @@ Esse padrão substitui o formato anterior com dia/mês textual, segundos e
 milissegundos. Refatorações futuras não devem criar formatos diferentes entre
 `public/ng_archive/` e `public/ok_archive/`.
 
+
+#### Validação operacional do padrão de nomes em 02/10/2026
+
+Após reiniciar o ODIN com a versão atualizada, o operador confirmou em uso real
+que novos arquivos OK e NG passaram a ser gravados no padrão correto:
+
+```text
+YYYY-MM-DD_HHmm_CATEGORIA.png
+```
+
+Foi confirmado que:
+
+- o formato antigo deixou de ser usado para novos arquivos;
+- OK e NG usam o mesmo padrão;
+- a categoria continua sendo normalizada no nome;
+- arquivos antigos já existentes não são renomeados retroativamente;
+- a aplicação precisa carregar a versão atual do módulo de nomeação para usar o
+  novo padrão;
+- a gravação efetiva de OK e NG chama diretamente o gerador compartilhado
+  `build_archive_filename()`.
+
+Essa configuração passa a ser a referência operacional validada para nomes dos
+arquivos visuais de auditoria.
+
 ### Validação operacional do arquivo visual OK em 02/10/2026
 
 O recurso foi validado em uso real pelo operador após a implementação.
