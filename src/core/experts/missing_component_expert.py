@@ -55,6 +55,17 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
     GLOBAL_ENVELOPE_MIN_COARSE_SIMILARITY = 0.66
     GLOBAL_ENVELOPE_MAX_BACKGROUND_EXPOSURE = 0.08
 
+    # Segunda rota do envelope: compara a massa escura sem depender da posição
+    # exata dentro da caixa. Ordenar os perfis remove translação e inversão de
+    # orientação, mantendo a distribuição física do corpo.
+    GLOBAL_ENVELOPE_MIN_DARK_REFERENCE_FRACTION = 0.18
+    GLOBAL_ENVELOPE_MIN_DARK_TEST_FRACTION = 0.18
+    GLOBAL_ENVELOPE_MIN_DARK_RETENTION = 0.55
+    GLOBAL_ENVELOPE_MAX_DARK_RETENTION = 1.80
+    GLOBAL_ENVELOPE_MIN_INVARIANT_ROW_PROFILE = 0.84
+    GLOBAL_ENVELOPE_MIN_INVARIANT_COL_PROFILE = 0.84
+    GLOBAL_ENVELOPE_INVARIANT_MAX_BACKGROUND_EXPOSURE = 0.15
+
     @staticmethod
     def _palette_residual(reference: np.ndarray, test: np.ndarray) -> np.ndarray:
         """Mede se o teste ainda pertence à paleta cromática do patch.
@@ -169,7 +180,6 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
         full_reference: np.ndarray,
         full_test: np.ndarray,
         global_box_info: dict | None,
-        background_exposure: float,
     ) -> dict:
         """Testemunha conservadora da forma global do componente.
 
@@ -184,9 +194,14 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             "missing_global_envelope_row_profile": 0.0,
             "missing_global_envelope_col_profile": 0.0,
             "missing_global_envelope_coarse_similarity": 0.0,
-            "missing_global_envelope_background_exposure": float(
-                background_exposure or 0.0
-            ),
+            "missing_global_envelope_background_exposure": 0.0,
+            "missing_global_envelope_dark_threshold": 0.0,
+            "missing_global_envelope_reference_dark_fraction": 0.0,
+            "missing_global_envelope_test_dark_fraction": 0.0,
+            "missing_global_envelope_dark_retention": 0.0,
+            "missing_global_envelope_invariant_row_profile": 0.0,
+            "missing_global_envelope_invariant_col_profile": 0.0,
+            "missing_global_envelope_invariant_support": False,
             "missing_global_envelope_reason": (
                 "caixa global da AOI indisponível"
             ),
@@ -281,9 +296,88 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             reference_roi,
             test_roi,
         )
-        background = float(background_exposure or 0.0)
 
-        supported = bool(
+        # Importante: fundo exposto é espacial. Não pode reutilizar a métrica
+        # da ROI local em uma caixa global diferente.
+        background = cls._background_replacement_signal(
+            safe_reference,
+            safe_test,
+            reference_roi,
+            test_roi,
+            box,
+        )
+
+        # Presença invariante a deslocamento/orientação interna. Usa o núcleo
+        # do envelope e mede massa escura relativa à distribuição do gabarito.
+        dark_x_margin = int(round(width * 0.18))
+        dark_y_margin = int(round(height * 0.12))
+        dark_x1 = min(max(0, dark_x_margin), max(0, width - 2))
+        dark_x2 = max(dark_x1 + 1, width - dark_x_margin)
+        dark_y1 = min(max(0, dark_y_margin), max(0, height - 2))
+        dark_y2 = max(dark_y1 + 1, height - dark_y_margin)
+
+        reference_dark_core = reference_gray[
+            dark_y1:dark_y2,
+            dark_x1:dark_x2,
+        ]
+        test_dark_core = test_gray[
+            dark_y1:dark_y2,
+            dark_x1:dark_x2,
+        ]
+
+        dark_threshold = float(
+            np.clip(
+                np.percentile(reference_dark_core, 25) + 26.0,
+                35.0,
+                85.0,
+            )
+        )
+        reference_dark_mask = (
+            reference_dark_core <= dark_threshold
+        ).astype(np.float32)
+        test_dark_mask = (
+            test_dark_core <= dark_threshold
+        ).astype(np.float32)
+
+        reference_dark_fraction = float(np.mean(reference_dark_mask))
+        test_dark_fraction = float(np.mean(test_dark_mask))
+        dark_retention = float(
+            test_dark_fraction / max(reference_dark_fraction, 1e-6)
+        )
+
+        reference_row_mass = np.sort(
+            np.mean(reference_dark_mask, axis=1)
+        )
+        test_row_mass = np.sort(
+            np.mean(test_dark_mask, axis=1)
+        )
+        reference_col_mass = np.sort(
+            np.mean(reference_dark_mask, axis=0)
+        )
+        test_col_mass = np.sort(
+            np.mean(test_dark_mask, axis=0)
+        )
+
+        invariant_row_similarity = float(
+            np.clip(
+                1.0 - np.mean(
+                    np.abs(reference_row_mass - test_row_mass)
+                ),
+                0.0,
+                1.0,
+            )
+        )
+        invariant_col_similarity = float(
+            np.clip(
+                1.0 - np.mean(
+                    np.abs(reference_col_mass - test_col_mass)
+                ),
+                0.0,
+                1.0,
+            )
+        )
+
+        aligned_support = bool(
             row_similarity >= cls.GLOBAL_ENVELOPE_MIN_ROW_PROFILE
             and col_similarity >= cls.GLOBAL_ENVELOPE_MIN_COL_PROFILE
             and coarse_similarity
@@ -291,12 +385,34 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             and background
             <= cls.GLOBAL_ENVELOPE_MAX_BACKGROUND_EXPOSURE
         )
-
-        reason = (
-            "envelope global preserva perfis horizontal/vertical do componente"
-            if supported
-            else "envelope global sem suporte estrutural suficiente"
+        invariant_support = bool(
+            reference_dark_fraction
+            >= cls.GLOBAL_ENVELOPE_MIN_DARK_REFERENCE_FRACTION
+            and test_dark_fraction
+            >= cls.GLOBAL_ENVELOPE_MIN_DARK_TEST_FRACTION
+            and cls.GLOBAL_ENVELOPE_MIN_DARK_RETENTION
+            <= dark_retention
+            <= cls.GLOBAL_ENVELOPE_MAX_DARK_RETENTION
+            and invariant_row_similarity
+            >= cls.GLOBAL_ENVELOPE_MIN_INVARIANT_ROW_PROFILE
+            and invariant_col_similarity
+            >= cls.GLOBAL_ENVELOPE_MIN_INVARIANT_COL_PROFILE
+            and background
+            <= cls.GLOBAL_ENVELOPE_INVARIANT_MAX_BACKGROUND_EXPOSURE
         )
+        supported = bool(aligned_support or invariant_support)
+
+        if aligned_support:
+            reason = (
+                "envelope global preserva perfis alinhados do componente"
+            )
+        elif invariant_support:
+            reason = (
+                "envelope global preserva massa física mesmo com "
+                "deslocamento/orientação interna"
+            )
+        else:
+            reason = "envelope global sem suporte estrutural suficiente"
         return {
             "missing_global_envelope_active": True,
             "missing_global_envelope_support": supported,
@@ -306,7 +422,24 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             "missing_global_envelope_coarse_similarity": float(
                 coarse_similarity
             ),
-            "missing_global_envelope_background_exposure": background,
+            "missing_global_envelope_background_exposure": float(background),
+            "missing_global_envelope_dark_threshold": float(dark_threshold),
+            "missing_global_envelope_reference_dark_fraction": float(
+                reference_dark_fraction
+            ),
+            "missing_global_envelope_test_dark_fraction": float(
+                test_dark_fraction
+            ),
+            "missing_global_envelope_dark_retention": float(dark_retention),
+            "missing_global_envelope_invariant_row_profile": float(
+                invariant_row_similarity
+            ),
+            "missing_global_envelope_invariant_col_profile": float(
+                invariant_col_similarity
+            ),
+            "missing_global_envelope_invariant_support": bool(
+                invariant_support
+            ),
             "missing_global_envelope_reason": reason,
         }
 
@@ -748,7 +881,6 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             full_reference,
             full_test,
             global_box_info,
-            float(result.get("missing_background_exposure", 0.0) or 0.0),
         )
         result.update(global_envelope)
 
@@ -927,6 +1059,27 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             ),
             "global_envelope_background_exposure_max": (
                 self.GLOBAL_ENVELOPE_MAX_BACKGROUND_EXPOSURE
+            ),
+            "global_envelope_dark_reference_fraction_min": (
+                self.GLOBAL_ENVELOPE_MIN_DARK_REFERENCE_FRACTION
+            ),
+            "global_envelope_dark_test_fraction_min": (
+                self.GLOBAL_ENVELOPE_MIN_DARK_TEST_FRACTION
+            ),
+            "global_envelope_dark_retention_min": (
+                self.GLOBAL_ENVELOPE_MIN_DARK_RETENTION
+            ),
+            "global_envelope_dark_retention_max": (
+                self.GLOBAL_ENVELOPE_MAX_DARK_RETENTION
+            ),
+            "global_envelope_invariant_row_profile_min": (
+                self.GLOBAL_ENVELOPE_MIN_INVARIANT_ROW_PROFILE
+            ),
+            "global_envelope_invariant_col_profile_min": (
+                self.GLOBAL_ENVELOPE_MIN_INVARIANT_COL_PROFILE
+            ),
+            "global_envelope_invariant_background_exposure_max": (
+                self.GLOBAL_ENVELOPE_INVARIANT_MAX_BACKGROUND_EXPOSURE
             ),
             "dual_scale_policy": DualScalePresenceAnalyzer.POLICY,
             "dual_scale_local_global_ratio_max": (
