@@ -550,6 +550,133 @@ que a aparência muda fortemente, mas o corpo físico do componente continua
 presente.
 
 
+### Caso observado em 02/10/2026 — ROI interna estreita escondia o envelope do componente
+
+Evento: `4a05d237e8c44c44a1c2dbd996afbb51`.
+
+A ocorrência foi classificada pela AOI como `FALTANDO`, porém visualmente o
+componente continuava presente. O ODIN concluiu incorretamente `DEFEITO REAL`
+por `missing_hard_absence`.
+
+O debug mostrou:
+
+- `missing_score ≈ 96,50%`;
+- cobertura divergente ≈ `57,43%`;
+- residual médio ≈ `59,22%`;
+- perda estrutural ≈ `52,61%`;
+- similaridade direta ≈ `44,85%`;
+- exposição de fundo = `0%`;
+- melhor similaridade próxima do motor físico ≈ `26,16%`;
+- melhor memória KNN = `OK` com ≈ `91,85%`;
+- melhor memória NG ≈ `87,66%`;
+- sem conflito de memória efetivo.
+
+A testemunha de presença havia sido executada somente na caixa estreita:
+
+```text
+[128, 60, 101, 480]
+```
+
+Nessa região interna, que concentra serigrafia/conteúdo do componente, as
+métricas ficaram incompatíveis:
+
+- `silhouette_dice ≈ 17,3%`;
+- `area_ratio ≈ 3,81`;
+- `box_height_ratio ≈ 3,31`.
+
+Entretanto, a própria AOI também havia detectado a caixa verde externa do
+componente, aproximadamente:
+
+```text
+[26, 26, 307, 514]
+```
+
+Essa caixa global não chegava ao especialista porque `detect_anomalies()`
+preservava somente `w/h` em `global_box_info`, descartando `x/y`.
+
+#### Correção arquitetural
+
+`src/core/inspection.py` passa a preservar:
+
+```text
+global_box_info = {
+    x,
+    y,
+    w,
+    h,
+    detected
+}
+```
+
+O `MissingComponentExpert` ganhou uma testemunha complementar de **envelope
+global**.
+
+Ela não declara OK e não apaga a divergência física. Sua única função é impedir
+que uma ROI interna estreita tenha autoridade absoluta para declarar
+`missing_hard_absence` quando o envelope completo do componente permanece
+estruturalmente coerente.
+
+A testemunha compara, no envelope global:
+
+- perfil horizontal de baixa frequência;
+- perfil vertical de baixa frequência;
+- similaridade coarse do corpo;
+- exposição de fundo.
+
+Contrato:
+
+```text
+ROI interna sugere hard missing
+        ↓
+envelope global AOI detectado
+        ↓
+perfis horizontal + vertical preservados
++ coarse similarity compatível
++ sem exposição relevante de fundo
+        ↓
+missing_global_envelope_support = True
+missing_global_envelope_veto = True
+        ↓
+missing_hard_absence = False
+        ↓
+divergência física continua existente
+        ↓
+decisão retorna à fusão normal física + KNN
+```
+
+Importante: o envelope global **não produz FALHA FALSA diretamente**. Ele apenas
+remove a autoridade especial de ausência física forte. A memória e os demais
+motores continuam responsáveis pelo veredito final.
+
+Isso é importante neste caso porque o KNN já possui correspondência OK forte
+(acima de 90%) e só estava impedido de atuar pela supressão de hard missing.
+
+#### Segurança
+
+A caixa global só é usada quando foi realmente detectada pela AOI
+(`global_box_info.detected=True`). O fallback de frame inteiro não pode servir
+como testemunha de presença.
+
+Uma remoção real do componente deve continuar produzindo baixo suporte do
+envelope e manter `missing_hard_absence=True`.
+
+#### Telemetria obrigatória
+
+O debug passa a registrar:
+
+- `missing_global_envelope_active`;
+- `missing_global_envelope_support`;
+- `missing_global_envelope_veto`;
+- `missing_global_envelope_box`;
+- `missing_global_envelope_row_profile`;
+- `missing_global_envelope_col_profile`;
+- `missing_global_envelope_coarse_similarity`;
+- `missing_global_envelope_background_exposure`;
+- `missing_global_envelope_reason`.
+
+Status: **correção implementada; aguardando validação operacional na mesma peça
+antes de registrar como comportamento validado**.
+
 ### Validação operacional — testemunha OK quase exata em FALTANDO em 02/10/2026
 
 Foi validado em uso real um caso da categoria `FALTANDO` em que o detector
