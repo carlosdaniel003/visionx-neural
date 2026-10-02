@@ -263,7 +263,7 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
         report = format_network_debug_report(record)
 
         self.assertIn("Categoria: EMBORCADO", report)
-        self.assertIn("Ausência física forte: True", report)
+        self.assertIn("Ausência física forte efetiva: True", report)
         self.assertIn("Guarda transversal: True", report)
         self.assertIn(
             "Guarda categoria origem: EMBORCADO",
