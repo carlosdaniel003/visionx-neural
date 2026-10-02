@@ -391,6 +391,12 @@ class NetworkInspectionValidationTests(unittest.TestCase):
         self.assertTrue(valid, msg=f"{reason}: {audit}")
         self.assertEqual(reason, "epicentro válido")
         self.assertEqual(audit["real_epicenter_count"], 1)
+        global_box = audit["global_box_info"]
+        self.assertTrue(global_box["detected"])
+        self.assertGreater(global_box["x"], 0)
+        self.assertGreater(global_box["y"], 0)
+        self.assertGreater(global_box["w"], 250)
+        self.assertGreater(global_box["h"], 450)
 
         radar = audit["green_detection"]["epicenter_radar_sample"]
         self.assertIsNotNone(radar["candidate_selected_by_radar"])
