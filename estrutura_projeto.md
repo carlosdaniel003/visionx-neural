@@ -452,7 +452,23 @@ A segunda escala é obrigatoriamente geométrica e procura:
 - similaridade de baixa frequência do corpo;
 - Dice da silhueta;
 - razão de área;
+- razão de largura e altura da massa principal;
 - deslocamento do centróide.
+
+Existem duas rotas de presença:
+
+1. **coarse + geometria**
+   - usa similaridade de baixa frequência junto com silhueta, área e centro;
+2. **geometry-only**
+   - não exige correlação tonal forte;
+   - exige silhueta muito compatível;
+   - área compatível;
+   - caixa principal com largura/altura compatíveis;
+   - centro praticamente preservado.
+
+A rota `geometry-only` existe para componentes como o D5 do caso real, em que
+o corpo continua presente, mas acabamento, brilho, cor aparente e serigrafia
+mudam o suficiente para derrubar a correlação tonal.
 
 A serigrafia/texto interno e variações globais de brilho não devem, sozinhos,
 ser usados como prova de falta física.
@@ -483,7 +499,16 @@ O debug de captura deve registrar:
 - `missing_body_silhouette_dice`;
 - `missing_body_area_ratio`;
 - `missing_body_centroid_shift`;
+- `missing_body_box_width_ratio`;
+- `missing_body_box_height_ratio`;
+- `missing_body_presence_policy`;
 - `missing_body_presence_reason`.
+
+A presença geométrica só bloqueia o hard missing quando o motor local está
+tentando classificar a ROI como conteúdo ausente/quebra da expectativa. Uma ROI
+local conforme, por si só, não pode impedir a análise dual-scale do contexto
+maior; isso preserva os casos reais em que um patch pequeno parece normal mas o
+componente desapareceu fora dele.
 
 Essa regra ainda deve ser validada em uso real antes de ser considerada
 referência operacional definitiva.
