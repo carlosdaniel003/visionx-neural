@@ -510,8 +510,45 @@ local conforme, por si só, não pode impedir a análise dual-scale do contexto
 maior; isso preserva os casos reais em que um patch pequeno parece normal mas o
 componente desapareceu fora dele.
 
-Essa regra ainda deve ser validada em uso real antes de ser considerada
-referência operacional definitiva.
+#### Validação operacional da testemunha geométrica em 02/10/2026
+
+O caso real do componente D5 foi retestado após a implementação da testemunha
+de presença em duas escalas e o operador confirmou que o falso positivo foi
+corrigido.
+
+Foi validado que:
+
+- o componente fisicamente presente deixou de ser tratado como ausência forte;
+- a análise do corpo completo pelo epicentro final complementa a ROI interna;
+- a rota `geometry_only` consegue preservar a evidência de presença mesmo com
+  mudança forte de brilho, acabamento e serigrafia;
+- a correção não depende de simplesmente baixar o `missing_score` ou afrouxar
+  globalmente os limiares de ausência;
+- o hard missing continua disponível para componentes realmente ausentes;
+- a análise dual-scale continua preservada nos casos em que a ROI local, sozinha,
+  não é suficiente para decidir;
+- a memória KNN continua atuando separadamente da testemunha física de presença.
+
+Contrato operacional validado:
+
+```text
+componente presente no envelope AOI
+        ↓
+silhueta/área/caixa/centro coerentes
+        ↓
+missing_component_body_present = True
+missing_body_presence_source = aoi_epicenter
+missing_body_presence_policy = geometry_only
+        ↓
+hard missing bloqueado
+        ↓
+não classificar como componente fisicamente ausente
+```
+
+Essa regra passa a ser a referência operacional para casos de `FALTANDO` em
+que a aparência muda fortemente, mas o corpo físico do componente continua
+presente.
+
 
 ### Validação operacional — testemunha OK quase exata em FALTANDO em 02/10/2026
 
