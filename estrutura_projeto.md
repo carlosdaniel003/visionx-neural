@@ -1121,6 +1121,25 @@ Por isso, os tons foram reforçados sem alterar a arquitetura:
 Esse ajuste é somente cromático. Não pode reintroduzir `setStyleSheet()` global
 durante a análise nem alterar hover, focus, checked ou estilos dos botões.
 
+#### Validação operacional final em 02/10/2026
+
+Após o reforço cromático, o operador validou o comportamento em uso real e
+confirmou que a sinalização ficou correta.
+
+Foi confirmado que:
+
+- `FALHA FALSA / OK` deixa o fundo claramente verde-escuro;
+- `DEFEITO REAL / NG` deixa o fundo claramente vermelho-escuro;
+- sem análise ativa, o ODIN retorna ao fundo neutro original;
+- o contraste é perceptível sem descaracterizar o tema escuro industrial;
+- os botões mantêm o visual original;
+- os estados `:hover`, `:focus` e `:checked` continuam funcionando;
+- a mudança permanece exclusivamente visual e não interfere em decisão,
+  confiança, KNN, captura, XP/MSS ou ciclo produtivo.
+
+Essa configuração cromática passa a ser a referência operacional validada para
+o fundo dinâmico do ODIN.
+
 
 ## Feedback visual temporário de julgamento 0/1
 
