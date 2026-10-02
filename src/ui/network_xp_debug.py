@@ -118,6 +118,7 @@ def format_network_debug_report(record: dict | None) -> str:
                 f"Ausência física forte efetiva: {decision.get('hard_missing_evidence', '-')}",
                 f"Ausência física forte bruta: {decision.get('raw_hard_missing_evidence', '-')}",
                 f"Hard missing contradito por OK quase exato: {decision.get('hard_missing_contradicted_by_exact_ok', '-')}",
+                f"Hard missing contradito por presença invariável + OK forte: {decision.get('hard_missing_contradicted_by_invariant_ok', '-')}",
                 f"Missing score: {missing.get('missing_score', '-')}",
                 f"Missing classe: {missing.get('missing_classification', '-')}",
                 f"Missing cobertura: {missing.get('missing_changed_coverage', '-')}",
