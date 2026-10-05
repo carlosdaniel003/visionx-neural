@@ -66,6 +66,16 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
     GLOBAL_ENVELOPE_MIN_INVARIANT_COL_PROFILE = 0.84
     GLOBAL_ENVELOPE_INVARIANT_MAX_BACKGROUND_EXPOSURE = 0.15
 
+    # Testemunha composta para ROIs locais pequenas. Ela não afrouxa a
+    # testemunha rígida de corpo: só atua quando o envelope global já preserva
+    # massa física invariável e a ocupação geométrica local continua coerente.
+    INVARIANT_OCCUPANCY_MIN_SILHOUETTE_DICE = 0.70
+    INVARIANT_OCCUPANCY_MIN_AREA_RATIO = 0.70
+    INVARIANT_OCCUPANCY_MAX_AREA_RATIO = 1.35
+    INVARIANT_OCCUPANCY_MAX_CENTROID_SHIFT = 0.10
+    INVARIANT_OCCUPANCY_MIN_BOX_RATIO = 0.75
+    INVARIANT_OCCUPANCY_MAX_BOX_RATIO = 1.33
+
     @staticmethod
     def _palette_residual(reference: np.ndarray, test: np.ndarray) -> np.ndarray:
         """Mede se o teste ainda pertence à paleta cromática do patch.
@@ -847,6 +857,103 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             )
         return False, "divergência presente, mas sem prova forte de ausência"
 
+    @classmethod
+    def _invariant_occupancy_presence_support(
+        cls,
+        result: dict,
+        image_shape,
+        global_box_info: dict | None,
+    ) -> dict:
+        """Corrobora presença sem exigir aparência/alinhamento idênticos.
+
+        Esta rota só existe para uma ROI local pequena em relação ao envelope
+        global. A massa global invariável precisa estar preservada e a própria
+        ROI deve continuar contendo uma ocupação geométrica coerente. Assim,
+        uma faixa local de terminal/serigrafia não pode declarar ausência do
+        componente inteiro apenas porque mudou de posição ou aparência.
+        """
+        output = {
+            "missing_invariant_occupancy_support": False,
+            "missing_invariant_occupancy_veto": False,
+            "missing_invariant_occupancy_reason": (
+                "evidência composta de presença indisponível"
+            ),
+            "missing_local_global_area_ratio": 1.0,
+        }
+        if not isinstance(result, dict):
+            return output
+
+        roi_box = result.get("missing_roi_box")
+        if not roi_box or len(roi_box) < 4:
+            output["missing_invariant_occupancy_reason"] = (
+                "ROI local indisponível"
+            )
+            return output
+
+        local_ratio = DualScalePresenceAnalyzer._local_global_ratio(
+            roi_box,
+            image_shape,
+            global_box_info,
+        )
+        output["missing_local_global_area_ratio"] = float(local_ratio)
+
+        if local_ratio > DualScalePresenceAnalyzer.MAX_LOCAL_GLOBAL_AREA_RATIO:
+            output["missing_invariant_occupancy_reason"] = (
+                "ROI local representa área suficiente do envelope global"
+            )
+            return output
+
+        if not bool(
+            result.get("missing_global_envelope_invariant_support", False)
+        ):
+            output["missing_invariant_occupancy_reason"] = (
+                "envelope global não preservou massa física invariável"
+            )
+            return output
+
+        silhouette = float(
+            result.get("missing_body_silhouette_dice", 0.0) or 0.0
+        )
+        area_ratio = float(
+            result.get("missing_body_area_ratio", 0.0) or 0.0
+        )
+        centroid_shift = float(
+            result.get("missing_body_centroid_shift", 1.0) or 1.0
+        )
+        box_width_ratio = float(
+            result.get("missing_body_box_width_ratio", 0.0) or 0.0
+        )
+        box_height_ratio = float(
+            result.get("missing_body_box_height_ratio", 0.0) or 0.0
+        )
+
+        geometry_support = bool(
+            silhouette >= cls.INVARIANT_OCCUPANCY_MIN_SILHOUETTE_DICE
+            and cls.INVARIANT_OCCUPANCY_MIN_AREA_RATIO
+            <= area_ratio
+            <= cls.INVARIANT_OCCUPANCY_MAX_AREA_RATIO
+            and centroid_shift
+            <= cls.INVARIANT_OCCUPANCY_MAX_CENTROID_SHIFT
+            and cls.INVARIANT_OCCUPANCY_MIN_BOX_RATIO
+            <= box_width_ratio
+            <= cls.INVARIANT_OCCUPANCY_MAX_BOX_RATIO
+            and cls.INVARIANT_OCCUPANCY_MIN_BOX_RATIO
+            <= box_height_ratio
+            <= cls.INVARIANT_OCCUPANCY_MAX_BOX_RATIO
+        )
+        output["missing_invariant_occupancy_support"] = geometry_support
+
+        if geometry_support:
+            output["missing_invariant_occupancy_reason"] = (
+                "ROI local pequena, massa global invariável e ocupação "
+                "geométrica local preservadas"
+            )
+        else:
+            output["missing_invariant_occupancy_reason"] = (
+                "ocupação geométrica local não confirmou presença física"
+            )
+        return output
+
     def analyze(
         self,
         full_reference: np.ndarray,
@@ -887,6 +994,13 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             global_box_info,
         )
         result.update(global_envelope)
+
+        invariant_occupancy = self._invariant_occupancy_presence_support(
+            result,
+            full_reference.shape,
+            global_box_info,
+        )
+        result.update(invariant_occupancy)
 
         raw_classification = str(
             result.get("missing_classification", "")
@@ -934,6 +1048,25 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
         else:
             result["missing_global_envelope_veto"] = False
 
+        invariant_occupancy_veto = bool(
+            hard_absence
+            and result.get("missing_invariant_occupancy_support", False)
+        )
+        result["missing_invariant_occupancy_veto"] = (
+            invariant_occupancy_veto
+        )
+        if invariant_occupancy_veto:
+            hard_absence = False
+            local_ratio = float(
+                result.get("missing_local_global_area_ratio", 1.0) or 1.0
+            )
+            hard_reason = (
+                "ROI local cobre apenas "
+                f"{local_ratio:.1%} do envelope; massa global invariável e "
+                "ocupação geométrica local preservadas; ausência forte "
+                "rebaixada para a fusão normal"
+            )
+
         if result.get("missing_body_presence_veto", False):
             result.update(
                 {
@@ -966,6 +1099,23 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
                     "missing_context_hard_reason": (
                         "envelope global preservado; decisão devolvida à "
                         "fusão física + memória"
+                    ),
+                }
+            )
+        elif result.get("missing_invariant_occupancy_veto", False):
+            result.update(
+                {
+                    "missing_dual_scale_policy": (
+                        DualScalePresenceAnalyzer.POLICY
+                    ),
+                    "missing_dual_scale_active": False,
+                    "missing_dual_scale_triggered": False,
+                    "missing_scale_disagreement": False,
+                    "missing_context_hard_absence": False,
+                    "missing_context_hard_reason": (
+                        "ROI local pequena contradita por massa global "
+                        "invariável + ocupação geométrica preservada; decisão "
+                        "devolvida à fusão física + memória"
                     ),
                 }
             )
@@ -1084,6 +1234,24 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             ),
             "global_envelope_invariant_background_exposure_max": (
                 self.GLOBAL_ENVELOPE_INVARIANT_MAX_BACKGROUND_EXPOSURE
+            ),
+            "invariant_occupancy_silhouette_dice_min": (
+                self.INVARIANT_OCCUPANCY_MIN_SILHOUETTE_DICE
+            ),
+            "invariant_occupancy_area_ratio_min": (
+                self.INVARIANT_OCCUPANCY_MIN_AREA_RATIO
+            ),
+            "invariant_occupancy_area_ratio_max": (
+                self.INVARIANT_OCCUPANCY_MAX_AREA_RATIO
+            ),
+            "invariant_occupancy_centroid_shift_max": (
+                self.INVARIANT_OCCUPANCY_MAX_CENTROID_SHIFT
+            ),
+            "invariant_occupancy_box_ratio_min": (
+                self.INVARIANT_OCCUPANCY_MIN_BOX_RATIO
+            ),
+            "invariant_occupancy_box_ratio_max": (
+                self.INVARIANT_OCCUPANCY_MAX_BOX_RATIO
             ),
             "dual_scale_policy": DualScalePresenceAnalyzer.POLICY,
             "dual_scale_local_global_ratio_max": (
