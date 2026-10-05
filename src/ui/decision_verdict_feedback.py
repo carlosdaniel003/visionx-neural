@@ -21,10 +21,12 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from src.ui.decision_key_feedback import FEEDBACK_FADE_OUT_MS
 from src.ui.theme import ACCENT, DANGER, SUCCESS, SURFACE
 
 
 VERDICT_FEEDBACK_FADE_IN_MS = 140
+VERDICT_FEEDBACK_FADE_OUT_MS = FEEDBACK_FADE_OUT_MS
 VERDICT_FEEDBACK_SLIDE_PX = 10
 VERDICT_FEEDBACK_WIDTH = 300
 VERDICT_FEEDBACK_HEIGHT = 88
@@ -92,6 +94,7 @@ class AIVerdictFeedbackOverlay(QFrame):
     def __init__(self, panel):
         super().__init__(panel)
         self.panel = panel
+        self._decision_dismiss_pending = False
 
         self.setObjectName("aiVerdictFeedback")
         self.setFixedSize(
@@ -132,6 +135,16 @@ class AIVerdictFeedbackOverlay(QFrame):
         self._slide_in.setDuration(VERDICT_FEEDBACK_FADE_IN_MS)
         self._slide_in.setEasingCurve(QEasingCurve.Type.OutCubic)
 
+        self._fade_out = QPropertyAnimation(
+            self._opacity_effect,
+            b"opacity",
+            self,
+        )
+        self._fade_out.setDuration(VERDICT_FEEDBACK_FADE_OUT_MS)
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._fade_out.finished.connect(self._finish_hide)
+
         self.hide()
 
     @staticmethod
@@ -155,18 +168,53 @@ class AIVerdictFeedbackOverlay(QFrame):
     def _stop_motion(self) -> None:
         self._fade_in.stop()
         self._slide_in.stop()
+        self._fade_out.stop()
 
-    def clear_verdict(self) -> None:
-        self._stop_motion()
+    def _finish_hide(self) -> None:
         self.hide()
         self._opacity_effect.setOpacity(0.0)
         self.verdict_label.setText("")
+        self._decision_dismiss_pending = False
+
+    def prepare_decision_dismissal(self) -> bool:
+        """Mantém o veredito vivo até o fade-out sincronizado do 0/1."""
+        if self.isHidden() or not self.verdict_label.text():
+            return False
+        self._decision_dismiss_pending = True
+        return True
+
+    def start_synchronized_fade_out(self) -> bool:
+        """Inicia a mesma saída temporal usada pelo feedback 0/1."""
+        if (
+            not self._decision_dismiss_pending
+            or self.isHidden()
+            or not self.verdict_label.text()
+        ):
+            return False
+
+        self._fade_out.stop()
+        self._fade_out.setStartValue(self._opacity_effect.opacity())
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.start()
+        return True
+
+    def clear_verdict(self, force: bool = False) -> bool:
+        # Durante um julgamento 0/1, o ciclo pode resetar internamente antes
+        # do feedback visual terminar. Nesse caso, preserve o card até o mesmo
+        # frame lógico em que o 0/1 inicia seu fade-out.
+        if self._decision_dismiss_pending and not force:
+            return False
+
+        self._stop_motion()
+        self._finish_hide()
+        return True
 
     def show_analysis(self, analysis: dict | None) -> bool:
         message, tone = verdict_feedback_state(analysis)
         if not message:
             return False
 
+        self._decision_dismiss_pending = False
         self.verdict_label.setText(message)
         self.verdict_label.setProperty("tone", tone)
         self._refresh_style(self.verdict_label)
@@ -256,12 +304,19 @@ def install_ai_verdict_feedback(panel) -> None:
     panel.ai_verdict_feedback = overlay
     panel.show_ai_verdict_feedback = overlay.show_analysis
     panel.clear_ai_verdict_feedback = overlay.clear_verdict
+    panel.prepare_ai_verdict_feedback_dismissal = (
+        overlay.prepare_decision_dismissal
+    )
+    panel.start_ai_verdict_feedback_fade_out = (
+        overlay.start_synchronized_fade_out
+    )
     panel._ai_verdict_feedback_installed = True
 
 
 __all__ = [
     "AIVerdictFeedbackOverlay",
     "VERDICT_FEEDBACK_FADE_IN_MS",
+    "VERDICT_FEEDBACK_FADE_OUT_MS",
     "VERDICT_FEEDBACK_HEIGHT",
     "VERDICT_FEEDBACK_MARGIN",
     "VERDICT_FEEDBACK_SLIDE_PX",
