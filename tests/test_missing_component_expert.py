@@ -4,6 +4,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
+from src.core.experts.dual_scale_presence import DualScalePresenceAnalyzer
 from src.core.experts.missing_component_expert import MissingComponentExpert
 from src.core.experts.roi_patch_expert import ROIPatchExpectationExpert
 
