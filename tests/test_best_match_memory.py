@@ -302,6 +302,58 @@ class FusionTests(unittest.TestCase):
         self.assertEqual(trace["fusion_rule"], "missing_hard_absence")
         self.assertTrue(trace["hard_missing_evidence"])
 
+    def test_real_event_c5a70_returns_false_failure_after_physical_hard_missing_is_demoted(self):
+        knn = {
+            "has_memory": True,
+            "memory_available": True,
+            "match_reliable": True,
+            "best_match_label": "OK",
+            "best_similarity": 0.8933712656795978,
+            "best_ok_similarity": 0.8933712656795978,
+            "best_ng_similarity": 0.8747072045811572,
+            "ng_memory_available": True,
+            "hypothesis_margin": 0.0186640610984406,
+            "memory_conflict": False,
+            "operator_review_required": False,
+            "vote_defect": 0.0,
+            "n_neighbors": 5,
+            "memory_mode": "anomaly",
+            "memory_scope": "categoria",
+        }
+        missing = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_score": 0.8937784610380831,
+            "missing_tolerance": 0.36,
+            "missing_reason": (
+                "ROI local pequena contradita por presença física composta"
+            ),
+            "missing_hard_absence": False,
+            "missing_invariant_occupancy_support": True,
+            "missing_invariant_occupancy_veto": True,
+            "missing_local_global_area_ratio": (
+                (137 * 260) / (525 * 285)
+            ),
+        }
+
+        score, defect, confidence, _reason, trace = self.fusion(
+            self.orchestrator,
+            {
+                "silk_error_pct": 0.38,
+                "semantic_loss": 0.40,
+            },
+            "FALTANDO",
+            missing,
+            knn,
+        )
+
+        self.assertFalse(defect)
+        self.assertLess(score, self.orchestrator.DECISION_CUTOFF)
+        self.assertEqual(trace["fusion_rule"], "best_match_intermediate")
+        self.assertEqual(trace["dominant_engine"], "knn")
+        self.assertFalse(trace["hard_missing_evidence"])
+        self.assertGreater(trace["weights"]["knn"], 0.80)
+
     def test_hard_missing_cannot_be_vetoed_by_strong_ok_memory(self):
         knn = {
             "has_memory": True,
