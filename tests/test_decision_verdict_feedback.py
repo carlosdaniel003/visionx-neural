@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QApplication, QWidget
 
 from src.ui.decision_verdict_feedback import (
     VERDICT_FEEDBACK_FADE_IN_MS,
+    VERDICT_FEEDBACK_FADE_OUT_MS,
     VERDICT_FEEDBACK_HEIGHT,
     VERDICT_FEEDBACK_MARGIN,
     VERDICT_FEEDBACK_SLIDE_PX,
@@ -122,7 +123,7 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
         self.assertEqual(overlay.verdict_label.text(), "DEFEITO REAL")
         self.assertEqual(overlay.verdict_label.property("tone"), "ng")
 
-    def test_overlay_enters_once_and_stays_visible_until_explicit_reset(self):
+    def test_overlay_stays_visible_until_decision_feedback_starts_synced_fade(self):
         panel = self._panel()
         overlay = panel.ai_verdict_feedback
 
@@ -142,9 +143,39 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
             overlay._fade_in.easingCurve().type(),
             QEasingCurve.Type.OutCubic,
         )
+        self.assertEqual(
+            overlay._fade_out.duration(),
+            VERDICT_FEEDBACK_FADE_OUT_MS,
+        )
+        self.assertEqual(
+            overlay._fade_out.easingCurve().type(),
+            QEasingCurve.Type.InOutQuad,
+        )
         self.assertFalse(overlay.isHidden())
         self.assertFalse(hasattr(overlay, "_hide_timer"))
-        self.assertFalse(hasattr(overlay, "_fade_out"))
+
+        prepared = panel.prepare_ai_verdict_feedback_dismissal()
+        self.assertTrue(prepared)
+        self.assertTrue(overlay._decision_dismiss_pending)
+
+        # O reset produtivo não pode apagar o card antes do feedback 0/1.
+        cleared = panel.clear_ai_verdict_feedback()
+        self.assertFalse(cleared)
+        self.assertFalse(overlay.isHidden())
+        self.assertEqual(overlay.verdict_label.text(), "FALHA FALSA")
+
+        started = panel.start_ai_verdict_feedback_fade_out()
+        self.assertTrue(started)
+        self.assertEqual(
+            overlay._fade_out.endValue(),
+            0.0,
+        )
+
+        # Simula o término da animação sem depender do relógio do CI.
+        overlay._finish_hide()
+        self.assertTrue(overlay.isHidden())
+        self.assertEqual(overlay.verdict_label.text(), "")
+        self.assertFalse(overlay._decision_dismiss_pending)
 
         source = open(
             "src/ui/decision_verdict_feedback.py",
@@ -152,7 +183,6 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
         ).read()
         self.assertNotIn("QTimer", source)
         self.assertNotIn("VERDICT_FEEDBACK_DURATION_MS", source)
-        self.assertNotIn("VERDICT_FEEDBACK_FADE_OUT_MS", source)
 
     def test_visual_language_is_dark_yellow_with_state_color_only_on_verdict(self):
         source = open(
@@ -183,14 +213,15 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
         self.assertNotIn("aiVerdictHeader", source)
         self.assertNotIn("aiVerdictHint", source)
 
-    def test_clear_hides_overlay_and_removes_text(self):
+    def test_clear_hides_overlay_and_removes_text_when_no_decision_animation_is_pending(self):
         panel = self._panel()
         panel.show_ai_verdict_feedback(
             {"verdict": "DEFEITO REAL", "is_defect": True}
         )
 
-        panel.clear_ai_verdict_feedback()
+        cleared = panel.clear_ai_verdict_feedback()
 
+        self.assertTrue(cleared)
         self.assertFalse(panel.ai_verdict_feedback.isVisible())
         self.assertEqual(panel.ai_verdict_feedback.verdict_label.text(), "")
 
