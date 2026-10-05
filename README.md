@@ -41,7 +41,7 @@ A aplicação foi pensada para cenários onde uma máquina, câmera ou estação
 
 - Interface desktop para monitoramento técnico em tempo real.
 - Feedback visual temporário `0 = OK` / `1 = NG` para decisões feitas no teclado do ODIN ou recebidas do teclado físico do Windows XP, sem bloquear a interface.
-- Overlay persistente de veredito da IA no canto superior direito, exibindo somente `FALHA FALSA` ou `DEFEITO REAL`, sem porcentagens ou métricas. O fundo geral permanece neutro em todos os estados.
+- Overlay de veredito da IA no canto superior direito, exibindo somente `FALHA FALSA` ou `DEFEITO REAL`, sem porcentagens ou métricas. Ele permanece fixo durante a análise e, quando o operador julga com `0/1`, desaparece sincronizado com o fade-out do feedback de tecla. O fundo geral permanece neutro em todos os estados.
 - Comparação entre imagem de **gabarito** e imagem de **teste**.
 - Análise visual com métricas de similaridade e diferença estrutural.
 - Painel de depuração para investigação da decisão da IA, com **Copiar debug** e **Copiar imagem** disponíveis tanto para frames recebidos do Windows XP quanto para capturas locais MSS.
