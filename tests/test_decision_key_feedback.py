@@ -168,8 +168,68 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
         )
         self.assertEqual(panel.decision_key_feedback.digit_label.text(), "1")
 
+    def test_key_feedback_prepares_and_starts_verdict_fade_in_same_exit_event(self):
+        panel = QWidget()
+        panel.resize(1000, 700)
+        events = []
+
+        def prepare_verdict():
+            events.append("prepare")
+            return True
+
+        def start_verdict_fade():
+            events.append("verdict_fade")
+            return True
+
+        panel.prepare_ai_verdict_feedback_dismissal = prepare_verdict
+        panel.start_ai_verdict_feedback_fade_out = start_verdict_fade
+        install_decision_key_feedback(panel)
+
+        shown = panel.show_decision_key_feedback(
+            "OK",
+            source="odin_keyboard",
+        )
+        self.assertTrue(shown)
+        self.assertEqual(events, ["prepare"])
+
+        panel.decision_key_feedback._start_fade_out()
+
+        self.assertEqual(events, ["prepare", "verdict_fade"])
+        self.assertEqual(
+            panel.decision_key_feedback._fade_out.duration(),
+            FEEDBACK_FADE_OUT_MS,
+        )
+
 
 class DecisionKeyFeedbackXPBridgeTests(unittest.TestCase):
+    def test_xp_feedback_is_prepared_before_productive_handler_resets_cycle(self):
+        class FakeControlPanel:
+            def __init__(self):
+                self.current_ng = object()
+                self.events = []
+
+            def handle_physical_keyboard(self, command):
+                self.events.append(("handler", command))
+                self.current_ng = None
+                return command
+
+            def show_decision_key_feedback(self, decision, source=""):
+                self.events.append(("feedback", decision, source))
+                return True
+
+        install_decision_key_feedback_hooks(FakeControlPanel)
+        panel = FakeControlPanel()
+
+        panel.handle_physical_keyboard("OK")
+
+        self.assertEqual(
+            panel.events,
+            [
+                ("feedback", "OK", "xp_keyboard"),
+                ("handler", "OK"),
+            ],
+        )
+
     def test_xp_ok_ng_commands_show_feedback_only_with_active_capture(self):
         class FakeControlPanel:
             def __init__(self):
