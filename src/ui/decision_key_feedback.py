@@ -201,6 +201,16 @@ class DecisionKeyFeedbackOverlay(QFrame):
         self._fade_out.setEndValue(0.0)
         self._fade_out.start()
 
+        # O veredito da IA deve sair no mesmo instante e com a mesma curva
+        # temporal do feedback 0/1.
+        start_verdict_fade = getattr(
+            self.panel,
+            "start_ai_verdict_feedback_fade_out",
+            None,
+        )
+        if callable(start_verdict_fade):
+            start_verdict_fade()
+
     def _finish_hide(self) -> None:
         self.hide()
         self._opacity_effect.setOpacity(0.0)
@@ -219,6 +229,16 @@ class DecisionKeyFeedbackOverlay(QFrame):
 
         self._last_decision = normalized
         self._last_shown_at = now
+
+        # Prepare o card de veredito antes do caminho produtivo consumir a
+        # decisão. Assim resets internos não o apagam antes da animação 0/1.
+        prepare_verdict = getattr(
+            self.panel,
+            "prepare_ai_verdict_feedback_dismissal",
+            None,
+        )
+        if callable(prepare_verdict):
+            prepare_verdict()
 
         digit = "0" if normalized == "OK" else "1"
         tone = "ok" if normalized == "OK" else "ng"
@@ -270,8 +290,9 @@ def install_decision_key_feedback_hooks(control_panel_cls) -> None:
         normalized = str(comando_xp or "").strip().upper()
         had_active_capture = bool(getattr(self, "current_ng", None) is not None)
 
-        result = original_handle_keyboard(self, comando_xp)
-
+        # Exibe/prepara antes do handler produtivo para preservar o veredito
+        # durante o reset interno do ciclo. O comportamento funcional do
+        # comando continua delegado integralmente ao handler original.
         if normalized in {"OK", "NG"} and had_active_capture:
             show_feedback = getattr(
                 self,
@@ -280,7 +301,8 @@ def install_decision_key_feedback_hooks(control_panel_cls) -> None:
             )
             if callable(show_feedback):
                 show_feedback(normalized, source="xp_keyboard")
-        return result
+
+        return original_handle_keyboard(self, comando_xp)
 
     control_panel_cls.handle_physical_keyboard = handle_physical_keyboard
     control_panel_cls._decision_key_feedback_hooks = True
