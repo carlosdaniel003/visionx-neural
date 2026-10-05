@@ -1990,29 +1990,69 @@ fundo não reage ao resultado.
 Quando o ODIN volta para `AGUARDANDO PEÇA`, o card deve desaparecer e o fundo
 continua neutro.
 
-### Persistência, entrada e desempenho
+### Persistência, entrada e saída sincronizada
 
-O card não possui mais desaparecimento automático.
+Enquanto existe uma análise ativa, o card de veredito permanece fixo no canto
+superior direito.
 
-Comportamento:
+Entrada:
 
 - fade-in curto de aproximadamente `140 ms`;
 - pequeno slide horizontal de aproximadamente `10 px`;
 - depois da entrada, permanece estático e visível;
-- não existe `QTimer` de auto-hide;
-- não existe fade-out automático;
+- não existe `QTimer` próprio de auto-hide;
 - sem thread adicional;
 - sem `sleep`;
 - sem loop contínuo;
 - `WA_TransparentForMouseEvents`;
 - `NoFocus`.
 
-O card permanece na tela enquanto a análise atual continua sendo o resultado
-ativo. Ele só é removido quando o ciclo/análise é encerrado ou resetado e o ODIN
-retorna para `AGUARDANDO PEÇA`.
+#### Saída sincronizada com o julgamento 0/1
 
-Uma nova análise válida pode substituir diretamente o conteúdo do card pelo novo
-veredito.
+Quando o operador confirma a decisão por `0 / OK` ou `1 / NG`, o card de
+veredito não pode desaparecer imediatamente por causa do reset interno do ciclo.
+
+O contrato é:
+
+```text
+operador pressiona 0 ou 1
+        ↓
+feedback 0/1 aparece
+        +
+card FALHA FALSA / DEFEITO REAL é marcado para saída
+        ↓
+ciclo produtivo pode salvar/resetar normalmente
+        ↓
+card de veredito permanece visível durante a confirmação 0/1
+        ↓
+feedback 0/1 inicia fade-out
+        ↓ mesmo evento
+card de veredito inicia fade-out
+        ↓
+ambos desaparecem juntos
+```
+
+A saída dos dois overlays usa:
+
+- início no mesmo callback lógico;
+- duração de fade-out: aproximadamente `160 ms`;
+- easing `InOutQuad`;
+- nenhuma animação contínua.
+
+O `QTimer` continua pertencendo somente ao feedback temporário de `0/1`. O
+card de veredito não cria um segundo timer: ele apenas aguarda o sinal de
+fade-out emitido pelo overlay de tecla.
+
+Durante essa janela, chamadas internas de reset/`save_label()` não podem
+apagar o veredito instantaneamente. Elas respeitam o estado de saída pendente.
+
+Se não existir feedback `0/1` ativo, um reset normal para
+`AGUARDANDO PEÇA` continua limpando o card imediatamente.
+
+Para comandos físicos vindos do Windows XP, o feedback visual é preparado antes
+do handler produtivo consumir `CMD_OK/CMD_NG`. Isso garante a mesma
+sincronização mesmo quando o processamento do comando encerra o ciclo
+imediatamente.
 
 ### Estados inconclusivos
 
@@ -2054,11 +2094,15 @@ Manter testes que garantam:
 - posição no canto superior direito;
 - card click-through e sem foco;
 - entrada curta e não bloqueante;
-- ausência de `QTimer` e fade-out automático;
+- ausência de `QTimer` próprio no card de veredito;
 - card permanece visível após a animação de entrada;
+- julgamento `0/1` prepara a saída antes do reset produtivo;
+- reset/`save_label()` não apagam o veredito enquanto a saída sincronizada está pendente;
+- fade-out do veredito e do feedback `0/1` iniciam no mesmo evento;
+- ambos usam aproximadamente `160 ms` e easing `InOutQuad`;
+- comando `CMD_OK/CMD_NG` do XP prepara o feedback antes do handler produtivo;
 - revisão obrigatória não inventa um veredito;
-- reset para `AGUARDANDO PEÇA` limpa o overlay;
-- conclusão do ciclo limpa o overlay;
+- reset sem feedback `0/1` ativo continua limpando o overlay imediatamente;
 - o fundo permanece neutro durante toda a análise;
 - feedback de tecla continua independente no canto inferior direito;
 - o visual do feedback `0/1` usa moldura amarela/escura e conserva
@@ -2087,11 +2131,13 @@ Foi confirmado que:
   direito;
 - nenhum desses elementos altera decisão, confiança, KNN, dataset ou comandos XP.
 
-Essa configuração passa a ser a referência operacional validada para a
-sinalização global do veredito no ODIN: **fundo sempre neutro + card persistente
-de decisão no canto superior direito**.
+Essa configuração continua sendo a referência para o fundo neutro e a posição do
+card. Em 05/10/2026, o contrato de **saída** do card foi refinado: após um
+julgamento `0/1`, ele deixa de ser removido imediatamente pelo reset e passa a
+desaparecer sincronizado com o feedback temporário de tecla.
 
-Status em 02/10/2026: **validado operacionalmente na interface real**.
+A sincronização de saída está **implementada e aguardando validação operacional
+na interface real**. A validação anterior do fundo neutro permanece válida.
 
 
 ## Diagnóstico e cópia de evidência por origem
