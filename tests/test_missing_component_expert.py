@@ -524,6 +524,139 @@ class MissingComponentExpertTests(unittest.TestCase):
         self.assertTrue(result["missing_is_defect"])
         self.assertFalse(result["missing_dual_scale_active"])
 
+    def test_real_event_c5a70_small_roi_plus_invariant_occupancy_blocks_hard_missing(self):
+        reference = np.zeros((331, 570, 3), dtype=np.uint8)
+        test = reference.copy()
+        observed = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "CONTEÚDO ESPERADO AUSENTE",
+            "missing_score": 0.8937784610380831,
+            "missing_changed_coverage": 0.4634194272880404,
+            "missing_residual_mean": 0.6930411458015442,
+            "missing_residual_p90": 0.8399999737739563,
+            "missing_structure_loss": 0.46972477064220186,
+            "missing_background_exposure": 0.47104059159755707,
+            "missing_best_similarity": 0.41752538084983826,
+            "missing_appearance_loss": 0.49676110615538727,
+            "missing_direct_similarity": 0.5032388938446127,
+            "missing_roi_box": (335, 36, 137, 260),
+            "missing_reason": "QUEBRA DA EXPECTATIVA VISUAL DA ROI",
+        }
+        body = {
+            "missing_body_presence_active": True,
+            "missing_component_body_present": False,
+            "missing_body_presence_source": "missing_roi",
+            "missing_body_presence_box": [335, 36, 137, 260],
+            "missing_body_coarse_similarity": 0.40989190340042114,
+            "missing_body_silhouette_dice": 0.7397280304138032,
+            "missing_body_area_ratio": 0.8858403419274784,
+            "missing_body_centroid_shift": 0.08592147903990828,
+            "missing_body_box_width_ratio": 1.0,
+            "missing_body_box_height_ratio": 1.0,
+            "missing_body_presence_policy": "none",
+            "missing_body_presence_reason": (
+                "sem testemunha geométrica suficiente de corpo preservado"
+            ),
+        }
+        envelope = {
+            "missing_global_envelope_active": True,
+            "missing_global_envelope_support": False,
+            "missing_global_envelope_veto": False,
+            "missing_global_envelope_box": [25, 25, 525, 285],
+            "missing_global_envelope_row_profile": 0.941638708114624,
+            "missing_global_envelope_col_profile": 0.6714836359024048,
+            "missing_global_envelope_coarse_similarity": 0.6775625944137573,
+            "missing_global_envelope_background_exposure": 0.05692705512046814,
+            "missing_global_envelope_dark_threshold": 58.0,
+            "missing_global_envelope_reference_dark_fraction": 0.4337540566921234,
+            "missing_global_envelope_test_dark_fraction": 0.5052304863929749,
+            "missing_global_envelope_dark_retention": 1.1647856166370913,
+            "missing_global_envelope_invariant_row_profile": 0.9056051969528198,
+            "missing_global_envelope_invariant_col_profile": 0.9251869916915894,
+            "missing_global_envelope_invariant_support": True,
+            "missing_global_envelope_reason": (
+                "massa física invariável preservada; requer testemunha OK forte "
+                "antes de contrariar hard missing"
+            ),
+        }
+
+        with patch.object(
+            ROIPatchExpectationExpert,
+            "analyze",
+            return_value=dict(observed),
+        ), patch.object(
+            self.expert,
+            "_component_body_presence_witness",
+            return_value=dict(body),
+        ), patch.object(
+            self.expert,
+            "_global_envelope_presence_support",
+            return_value=dict(envelope),
+        ):
+            result = self.expert.analyze(
+                reference,
+                test,
+                global_box_info={
+                    "x": 25,
+                    "y": 25,
+                    "w": 525,
+                    "h": 285,
+                    "detected": True,
+                },
+                aoi_info={"category": "FALTANDO"},
+                aoi_epicenters=[(335, 36, 137, 260)],
+            )
+
+        self.assertAlmostEqual(
+            result["missing_local_global_area_ratio"],
+            (137 * 260) / (525 * 285),
+            places=3,
+        )
+        self.assertTrue(result["missing_invariant_occupancy_support"])
+        self.assertTrue(result["missing_invariant_occupancy_veto"])
+        self.assertFalse(result["missing_hard_absence"])
+        self.assertFalse(result["missing_dual_scale_active"])
+        self.assertTrue(result["missing_is_defect"])
+        self.assertIn(
+            "ocupação geométrica local preservadas",
+            result["missing_hard_absence_reason"],
+        )
+
+    def test_invariant_mass_does_not_veto_real_missing_when_local_occupancy_collapses(self):
+        result = {
+            "missing_roi_box": (335, 36, 137, 260),
+            "missing_global_envelope_invariant_support": True,
+            "missing_body_silhouette_dice": 0.42,
+            "missing_body_area_ratio": 0.41,
+            "missing_body_centroid_shift": 0.22,
+            "missing_body_box_width_ratio": 0.62,
+            "missing_body_box_height_ratio": 0.58,
+        }
+
+        support = self.expert._invariant_occupancy_presence_support(
+            result,
+            (331, 570, 3),
+            {
+                "x": 25,
+                "y": 25,
+                "w": 525,
+                "h": 285,
+                "detected": True,
+            },
+        )
+
+        self.assertLessEqual(
+            support["missing_local_global_area_ratio"],
+            DualScalePresenceAnalyzer.MAX_LOCAL_GLOBAL_AREA_RATIO,
+        )
+        self.assertFalse(support["missing_invariant_occupancy_support"])
+        self.assertFalse(support["missing_invariant_occupancy_veto"])
+        self.assertIn(
+            "não confirmou presença",
+            support["missing_invariant_occupancy_reason"],
+        )
+
     def test_global_aoi_envelope_can_downgrade_false_hard_missing_to_normal_fusion(self):
         reference = real_like_tall_component_scene(
             variant=False,
