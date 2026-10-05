@@ -303,6 +303,73 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
         self.assertIn("Envelope global suporte invariável: True", report)
         self.assertIn("KNN melhor rótulo: OK", report)
 
+    def test_report_exposes_small_roi_invariant_occupancy_veto(self):
+        analysis = {
+            "is_defect": False,
+            "verdict": "FALHA FALSA",
+            "confidence": 0.83,
+            "reason": "ROI local pequena contradita por presença física composta",
+            "detail": {
+                "missing_hard_absence": False,
+                "missing_invariant_occupancy_support": True,
+                "missing_invariant_occupancy_veto": True,
+                "missing_invariant_occupancy_reason": (
+                    "ROI local pequena, massa global invariável e ocupação "
+                    "geométrica local preservadas"
+                ),
+                "missing_local_global_area_ratio": (
+                    (137 * 260) / (525 * 285)
+                ),
+                "missing_global_envelope_invariant_support": True,
+                "final_score": 0.16,
+                "physical_score": 1.0,
+                "fusion_rule": "best_match_intermediate",
+                "dominant_engine": "knn",
+                "decision_trace": {
+                    "hard_missing_evidence": False,
+                    "raw_hard_missing_evidence": False,
+                    "operator_review_required": False,
+                    "fusion_rule": "best_match_intermediate",
+                    "memory": {
+                        "has_memory": True,
+                        "memory_available": True,
+                        "best_match_label": "OK",
+                        "best_similarity": 0.8933712656795978,
+                        "best_ok_similarity": 0.8933712656795978,
+                        "best_ng_similarity": 0.8747072045811572,
+                        "memory_conflict": False,
+                        "operator_review_required": False,
+                        "suppressed_by_hard_missing": False,
+                    },
+                },
+            },
+        }
+
+        decision = decision_record(
+            analysis,
+            {"category": "FALTANDO"},
+        )
+        record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "c5a70a299d2349fabd0cd078998a70d1",
+            "timestamp": "2026-10-05T13:55:50.409",
+            "source_ip": "169.254.95.200",
+            "stage": "aoi_intake_validation",
+            "mode": "Modo Teste",
+            "transport": {"image": {"valid": True}},
+            "cycle": {},
+            "validation_message": "epicentro válido",
+            "validation": {"valid": True, "reason": "valid_epicenter"},
+            "decision": decision,
+        }
+
+        report = format_network_debug_report(record)
+        self.assertIn("Veredito: FALHA FALSA", report)
+        self.assertIn("Presença composta invariável: True", report)
+        self.assertIn("Presença composta vetou hard missing: True", report)
+        self.assertIn("Dual-scale razão local/global:", report)
+        self.assertIn("KNN melhor rótulo: OK", report)
+
     def test_report_distinguishes_raw_hard_missing_from_exact_ok_witness(self):
         analysis = {
             "is_defect": False,
