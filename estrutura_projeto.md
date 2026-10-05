@@ -856,6 +856,107 @@ Status em 02/10/2026: **correção implementada e protegida por regressões;
 aguardando validação operacional nesta mesma peça antes de considerar a regra
 validada**.
 
+### Caso observado em 05/10/2026 — ROI pequena preservava ocupação, mas hard missing encerrava a decisão
+
+Evento: `c5a70a299d2349fabd0cd078998a70d1`.
+
+A AOI classificou a ocorrência como `FALTANDO`, mas visualmente o componente
+estava presente. O ODIN concluiu incorretamente `DEFEITO REAL` por
+`missing_hard_absence`.
+
+O debug mostrou:
+
+- caixa global detectada: `[25, 25, 525, 285]`;
+- ROI/foco local: `[335, 36, 137, 260]`;
+- a ROI local representa aproximadamente `23,8%` da área global;
+- `missing_score ≈ 89,38%`;
+- cobertura local ≈ `46,34%`;
+- residual médio ≈ `69,30%`;
+- exposição de fundo local ≈ `47,10%`;
+- envelope global com `background_exposure ≈ 5,69%`;
+- massa escura do gabarito ≈ `43,38%`;
+- massa escura do teste ≈ `50,52%`;
+- retenção de massa escura ≈ `116,48%`;
+- perfil invariável horizontal ≈ `90,56%`;
+- perfil invariável vertical ≈ `92,52%`;
+- `missing_global_envelope_invariant_support=True`;
+- melhor memória KNN = `OK` com ≈ `89,34%`;
+- melhor NG ≈ `87,47%`;
+- sem conflito de memória.
+
+A testemunha rígida de corpo não passou, porém a geometria local permaneceu
+fortemente ocupada:
+
+- `silhouette_dice ≈ 73,97%`;
+- `area_ratio ≈ 88,58%`;
+- `centroid_shift ≈ 8,59%`;
+- `box_width_ratio = 1,0`;
+- `box_height_ratio = 1,0`.
+
+Mesmo com esses sinais, a ROI local encerrava o caso como ausência física forte
+e o dual-scale não era executado porque a escala local já havia confirmado
+`hard missing`.
+
+#### Correção arquitetural
+
+Foi adicionada uma testemunha composta de presença para `FALTANDO`.
+
+Ela não altera os limiares rígidos existentes e não baixa o corte global da
+memória. A nova rota só pode atuar quando todas as condições abaixo forem
+verdadeiras:
+
+- a ROI local ocupa no máximo `25%` do envelope global;
+- `missing_global_envelope_invariant_support=True`;
+- `silhouette_dice >= 70%`;
+- `area_ratio` entre `70%` e `135%`;
+- `centroid_shift <= 10%`;
+- razões de largura e altura entre `75%` e `133%`.
+
+Contrato:
+
+```text
+ROI local pequena (<= 25% do envelope)
+        +
+massa física global invariável preservada
+        +
+ocupação geométrica local ainda coerente
+        ↓
+missing_invariant_occupancy_support = True
+missing_invariant_occupancy_veto = True
+        ↓
+hard missing local perde autoridade especial
+        ↓
+divergência física permanece registrada
+        ↓
+decisão retorna à fusão normal física + memória
+```
+
+A nova testemunha não declara `OK` diretamente. Ela apenas impede que uma ROI
+local pequena represente sozinha o desaparecimento do componente inteiro.
+
+No vetor deste evento, após o rebaixamento do hard missing, a memória OK de
+aproximadamente `89,34%` volta a participar como `best_match_intermediate`.
+Como o peso da memória é superior a 80%, o resultado esperado é
+`FALHA FALSA` sem alterar o corte de 90% da regra
+`hard_missing_invariant_presence_ok_witness`.
+
+#### Segurança
+
+A presença composta exige simultaneamente evidência global e ocupação local.
+Uma massa escura global preservada sem geometria local coerente não pode vetar
+hard missing. Isso protege componentes realmente removidos que deixam footprint
+escuro.
+
+A telemetria adicionada inclui:
+
+- `missing_invariant_occupancy_support`;
+- `missing_invariant_occupancy_veto`;
+- `missing_invariant_occupancy_reason`;
+- `missing_local_global_area_ratio` mesmo quando o dual-scale não executa.
+
+Status em 05/10/2026: **correção implementada e coberta por regressões;
+aguardando validação operacional nesta peça antes de considerar o caso validado**.
+
 ### Validação operacional — testemunha OK quase exata em FALTANDO em 02/10/2026
 
 Foi validado em uso real um caso da categoria `FALTANDO` em que o detector
