@@ -8,7 +8,47 @@ Este documento registra o papel do arquivo `agente_industrial_xp.py` dentro da a
 
 Quando uma alteração nesse agente for necessária, o usuário deve ser informado de que precisa **atualizar manualmente o arquivo no Windows XP** antes que a mudança passe a valer na AOI.
 
+## Estado operacional validado em 06/10/2026 — agente V5.2 sincronizado
+
+O agente operacional do Windows XP foi atualizado manualmente pelo operador em
+06/10/2026. Neste marco, o arquivo realmente em execução na AOI foi informado
+como **igual ao arquivo `agente_industrial_xp.py` da branch `central` no GitHub**.
+
+Versão de referência atual:
+
+```text
+V5.2 - FULL DUPLEX C/ KERNEL HOOK + SETAS
+```
+
+Comandos aceitos pelo servidor do agente na porta `5000`:
+
+```text
+PRESS_0     → tecla 0
+PRESS_1     → tecla 1
+PRESS_LEFT  → seta para a esquerda
+PRESS_DOWN  → seta para baixo
+PRESS_RIGHT → seta para a direita
+```
+
+Na AOI atual, as setas selecionam as iluminações:
+
+```text
+← LEFT  → TOP
+↓ DOWN  → SIDE
+→ RIGHT → MID
+```
+
+Esse suporte às três setas é o pré-requisito operacional para a próxima melhoria
+do ODIN: capturar a **mesma peça** em `SIDE`, `TOP` e `MID` quando a categoria
+for de excesso de adesivo, permitindo um julgamento mult-iluminação.
+
+> **Importante:** a sincronização acima descreve o estado confirmado em
+> 06/10/2026. A regra de manutenção continua válida: qualquer alteração futura no
+> arquivo do GitHub exige nova cópia/atualização manual no Windows XP antes de
+> entrar em operação.
+
 ---
+
 
 ## Onde o agente realmente roda
 
@@ -102,13 +142,19 @@ O VisionX pode enviar:
 ```text
 PRESS_0
 PRESS_1
+PRESS_LEFT
+PRESS_DOWN
+PRESS_RIGHT
 ```
 
 O agente converte esses comandos em pressionamentos reais de teclado no Windows XP:
 
 ```text
-PRESS_0 → tecla 0 → OK / Falha Falsa
-PRESS_1 → tecla 1 → NG / Defeito Real
+PRESS_0     → tecla 0 → OK / Falha Falsa
+PRESS_1     → tecla 1 → NG / Defeito Real
+PRESS_LEFT  → seta ← → iluminação TOP
+PRESS_DOWN  → seta ↓ → iluminação SIDE
+PRESS_RIGHT → seta → → iluminação MID
 ```
 
 Fluxo:
@@ -116,15 +162,18 @@ Fluxo:
 ```text
 VisionX
         │
-        │ PRESS_0 / PRESS_1
+        │ PRESS_0 / PRESS_1 / PRESS_LEFT / PRESS_DOWN / PRESS_RIGHT
         ▼
 Windows XP:5000
         │
         ▼
 win32api.keybd_event(...)
         │
-        ├── 0 = OK
-        └── 1 = NG
+        ├── 0     = OK
+        ├── 1     = NG
+        ├── LEFT  = TOP
+        ├── DOWN  = SIDE
+        └── RIGHT = MID
 ```
 
 ---
@@ -185,9 +234,10 @@ Os atalhos do VisionX reutilizam exatamente os mesmos botões e travas da interf
 Eles não ignoram estados de segurança: se OK/NG estiver indisponível para o ciclo
 atual, pressionar 0/1 não força uma decisão.
 
-Essa função é implementada no computador novo. O agente XP V5.1 já entende
-`PRESS_0` e `PRESS_1`, portanto essa correção de atalhos não exige alterar o
-arquivo operacional do agente no Windows XP.
+Essa função é implementada no computador novo. O agente XP V5.2 mantém suporte
+`PRESS_0` e `PRESS_1` e acrescenta `PRESS_LEFT`, `PRESS_DOWN` e `PRESS_RIGHT`.
+No marco operacional de 06/10/2026, essa V5.2 já foi copiada manualmente para o
+Windows XP e informada como a versão em execução.
 
 ## Regra do ciclo rápido após julgamento
 
@@ -355,7 +405,7 @@ naquela análise e disponibiliza:
 A origem fica identificada no relatório. Essa ampliação é implementada somente
 no computador novo e **não exige qualquer alteração no agente Windows XP**.
 
-### Gargalo ainda existente no agente XP V5.1
+### Gargalo ainda existente no agente XP V5.2
 
 O agente operacional documentado ainda contém:
 
@@ -555,7 +605,7 @@ Abaixo está a versão informada como base operacional atual.
 > **Atenção:** este bloco é documentação. Ele não substitui automaticamente o arquivo que está no Windows XP.
 
 ```python
-# agente_industrial_xp.py (V5.1 - FULL DUPLEX C/ KERNEL HOOK: COMPATIVEL PYTHON 3.4)
+# agente_industrial_xp.py (V5.2 - FULL DUPLEX C/ KERNEL HOOK + SETAS: COMPATIVEL PYTHON 3.4)
 # Teste de envio
 import socket
 import win32gui
@@ -581,6 +631,21 @@ CROP_ALTURA = 840
 IP_IA = '169.254.87.66'
 PORTA_IA = 5001
 PORTA_COMANDOS_XP = 5000
+
+# Virtual-Key Codes usados no Windows XP.
+VK_0 = 0x30
+VK_1 = 0x31
+VK_LEFT = 0x25
+VK_RIGHT = 0x27
+VK_DOWN = 0x28
+
+TECLAS_VIRTUAIS = {
+    "0": VK_0,
+    "1": VK_1,
+    "LEFT": VK_LEFT,
+    "RIGHT": VK_RIGHT,
+    "DOWN": VK_DOWN,
+}
 
 user32 = ctypes.WinDLL('user32', use_last_error=True)
 
@@ -672,16 +737,27 @@ def capturar_recorte():
 # =====================================================================
 
 def apertar_tecla_fisica(tecla_str):
+    tecla = str(tecla_str).strip().upper()
+    codigo = TECLAS_VIRTUAIS.get(tecla)
+
+    if codigo is None:
+        print(
+            "\n[FANTASMA] Comando de tecla desconhecido: '{0}'.".format(
+                tecla
+            )
+        )
+        return False
+
     print(
         "\n[FANTASMA] A IA comandou. Pressionando '{0}' fisicamente...".format(
-            tecla_str
+            tecla
         )
     )
-    codigo = 0x30 if tecla_str == "0" else 0x31
 
     win32api.keybd_event(codigo, 0, 0, 0)
     time.sleep(0.05)
     win32api.keybd_event(codigo, 0, win32con.KEYEVENTF_KEYUP, 0)
+    return True
 
 
 def servidor_de_comandos():
@@ -691,6 +767,7 @@ def servidor_de_comandos():
     servidor.listen(1)
 
     while True:
+        conexao = None
         try:
             conexao, _ = servidor.accept()
             comando = conexao.recv(1024).decode('utf-8').strip()
@@ -699,10 +776,27 @@ def servidor_de_comandos():
                 apertar_tecla_fisica("0")
             elif comando == "PRESS_1":
                 apertar_tecla_fisica("1")
+            elif comando == "PRESS_LEFT":
+                apertar_tecla_fisica("LEFT")
+            elif comando == "PRESS_DOWN":
+                apertar_tecla_fisica("DOWN")
+            elif comando == "PRESS_RIGHT":
+                apertar_tecla_fisica("RIGHT")
+            else:
+                print(
+                    "\n[FANTASMA] Comando recebido e ignorado: '{0}'.".format(
+                        comando
+                    )
+                )
 
-            conexao.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print("-> Erro no servidor de comandos: {0}".format(e))
+        finally:
+            if conexao is not None:
+                try:
+                    conexao.close()
+                except Exception:
+                    pass
 
 
 def enviar_aviso_teclado_ia(mensagem):
@@ -719,7 +813,7 @@ def enviar_aviso_teclado_ia(mensagem):
 
 
 # =====================================================================
-# NOVO: KERNEL HOOK GLOBAL (INTERCEPTADOR DE TECLADO INCONDICIONAL)
+# KERNEL HOOK GLOBAL (INTERCEPTADOR DE TECLADO INCONDICIONAL)
 # =====================================================================
 
 WH_KEYBOARD_LL = 13
@@ -820,8 +914,9 @@ def loop_vigia_tela():
 
 def iniciar_agente():
     print("==========================================")
-    print(">>> AGENTE VISIONX V5.1 - FULL DUPLEX (KERNEL HOOK)")
+    print(">>> AGENTE VISIONX V5.2 - FULL DUPLEX (KERNEL HOOK + SETAS)")
     print(">>> Monitorando Tela, Rede e Teclado Fisico (Global)...")
+    print(">>> Comandos: 0, 1, LEFT, DOWN, RIGHT")
     print("==========================================")
 
     # 1. Liga o Ouvinte da IA (Porta 5000)
@@ -835,7 +930,7 @@ def iniciar_agente():
     t_tela.start()
 
     # 3. Trava a Main Thread no Loop de Mensagens do Windows Hook
-    # Isso garante que mesmo minimizado ou clicando fora, o XP sentirá o teclado.
+    # Isso garante que mesmo minimizado ou clicando fora, o XP sentira o teclado.
     iniciar_hook_teclado()
 
 
@@ -860,6 +955,9 @@ Antes de considerar uma mudança concluída:
 - [ ] Testar tecla física `1` no XP e confirmar `NG` no VisionX.
 - [ ] Testar comando do VisionX `PRESS_0` e confirmar tecla `0` no XP.
 - [ ] Testar comando do VisionX `PRESS_1` e confirmar tecla `1` no XP.
+- [ ] Testar `PRESS_LEFT` e confirmar seta `←` / iluminação `TOP`.
+- [ ] Testar `PRESS_DOWN` e confirmar seta `↓` / iluminação `SIDE`.
+- [ ] Testar `PRESS_RIGHT` e confirmar seta `→` / iluminação `MID`.
 
 ---
 
@@ -881,10 +979,16 @@ imagem + CMD_OK / CMD_NG
 
 VisionX → XP:
 porta 5000
-PRESS_0 / PRESS_1
+PRESS_0 / PRESS_1 / PRESS_LEFT / PRESS_DOWN / PRESS_RIGHT
 
 0 = OK / FALHA FALSA
 1 = NG / DEFEITO REAL
+LEFT = TOP
+DOWN = SIDE
+RIGHT = MID
+
+STATUS 06/10/2026:
+agente operacional do XP = agente_industrial_xp.py V5.2 da branch central
 ```
 
 A cópia registrada no GitHub é referência de engenharia. O arquivo em execução na AOI continua sendo o arquivo local do Windows XP e só muda após atualização manual.
