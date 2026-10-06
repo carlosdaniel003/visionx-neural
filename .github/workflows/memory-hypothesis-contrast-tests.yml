@@ -22,6 +22,7 @@ on:
       - "src/ui/production_confidence_gate.py"
       - "main.py"
       - "tests/test_memory_hypothesis_contrast.py"
+      - "tests/test_anomaly_memory_integration.py"
       - "tests/test_prototype_memory.py"
       - "tests/test_dual_scale_memory.py"
       - "tests/test_best_match_memory.py"
@@ -67,12 +68,14 @@ jobs:
             src/core/inverted_face_integration.py `
             src/ui/production_confidence_gate.py `
             main.py `
-            tests/test_memory_hypothesis_contrast.py
+            tests/test_memory_hypothesis_contrast.py `
+            tests/test_anomaly_memory_integration.py
 
       - name: Run memory regression tests
         run: |
           python -m unittest `
             tests.test_memory_hypothesis_contrast `
+            tests.test_anomaly_memory_integration `
             tests.test_prototype_memory `
             tests.test_dual_scale_memory `
             tests.test_best_match_memory `
