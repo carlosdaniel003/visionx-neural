@@ -151,6 +151,101 @@ Correção implementada:
 A correção do ODIN está implementada. A telemetria XP → ODIN depende de copiar a
 V5.3 do `agente_industrial_xp.py` para o Windows XP e reiniciar o agente.
 
+### Etapas A e B — interface e alimentação visual implementadas
+
+O ODIN agora possui uma área de inspeção específica para adesivo em
+`src/ui/adhesive_multilight_inspection.py`.
+
+Ativação:
+
+```text
+ADESIVO
+ADHESIVE
+MUITO ADESIVO
+MUCH ADHESIVE
+EXCESS ADHESIVE
+ADESIVO EM EXCESSO
+        ↓
+categoria canônica = MUITO ADESIVO
+        ↓
+layout multilight
+```
+
+As entradas `ADESIVO` e `ADHESIVE` também passam a ser aliases oficiais de
+`MUITO ADESIVO` no normalizador. Para qualquer outra categoria, a pilha visual
+retorna ao painel normal já existente e o comportamento anterior é preservado.
+
+Cada iluminação possui exatamente três visões:
+
+```text
+SIDE
+├── imagem TESTE recebida
+├── recorte do retângulo maior
+└── recorte do retângulo menor
+
+TOP
+├── imagem TESTE recebida
+├── recorte do retângulo maior
+└── recorte do retângulo menor
+
+MID
+├── imagem TESTE recebida
+├── recorte do retângulo maior
+└── recorte do retângulo menor
+```
+
+O retângulo maior vem de `global_box_info` produzido por
+`detect_anomalies()`. O retângulo menor usa o epicentro selecionado por
+`EpicenterExtractor.extract_focus()`. Portanto os recortes visuais reutilizam
+a mesma geometria já empregada pelo pipeline atual e não introduzem uma segunda
+regra de detecção de caixas.
+
+#### Alimentação das três iluminações
+
+A primeira imagem de uma peça de adesivo continua entrando no pipeline normal e
+é registrada visualmente como `SIDE`, conforme o contrato operacional da AOI.
+
+Depois que a análise inicial está ativa, o receptor pode aceitar frames
+auxiliares da mesma peça mesmo com o gate principal fechado. Essa exceção é
+explicitamente visual:
+
+- `NetworkReceiver.set_auxiliary_image_mode(True)` não reabre o gate principal;
+- o frame auxiliar não cria novo `event_id`;
+- o frame auxiliar não substitui `current_sample`, `current_ng` ou
+  `current_analysis`;
+- o frame auxiliar não roda novamente a decisão do MoE;
+- a iluminação atribuída ao preview vem do estado atual
+  `SIDE/TOP/MID` já comandado/confirmado pelo ODIN;
+- ao julgar ou descartar a peça, o modo auxiliar é desligado antes da liberação
+  do próximo ciclo.
+
+Assim, quando novas imagens chegarem após o operador mudar a iluminação, elas
+preenchem o card correspondente sem transformar TOP/MID em novas peças.
+
+Esta etapa **não automatiza ainda a sequência de teclas**. Ela apenas mostra e
+alimenta visualmente SIDE/TOP/MID à medida que os frames são recebidos. A
+automação completa da sequência e a fusão das três iluminações na decisão
+continuam separadas.
+
+#### Responsividade
+
+A área usa `QStackedWidget`: o painel antigo permanece como página padrão e a
+página multilight só é selecionada para adesivo.
+
+O layout multilight refluí:
+
+- largura abaixo de `1000 px`: uma iluminação por linha;
+- largura a partir de `1000 px`: SIDE, TOP e MID em três colunas;
+- em perfil compacto/notebook, o splitter principal permanece vertical e a
+  seção de imagens ganha altura adicional;
+- em monitores standard/wide, a seção de imagens pode usar aproximadamente
+  `62%` da largura, preservando espaço para os especialistas à direita;
+- todos os nove viewports preservam proporção com
+  `KeepAspectRatio + SmoothTransformation`.
+
+O objetivo é funcionar tanto em notebooks quanto em monitores grandes sem
+tamanhos fixos de imagem e sem alterar o layout das outras categorias.
+
 ### Fluxo-alvo da captura mult-iluminação
 
 O fluxo planejado para eventos de adesivo é:
@@ -210,19 +305,24 @@ A implementação futura deve preservar os seguintes contratos:
 
 A melhoria será executada por etapas, sem avançar automaticamente:
 
-1. **Concluído — agente XP:** suporte aos comandos de setas e sincronização da
-   V5.2 entre GitHub e Windows XP.
-2. **Correção implementada — controle manual do ODIN:** botões validados;
-   setas locais migradas para `QShortcut`; agente V5.3 preparado para devolver
-   `CMD_TOP/CMD_SIDE/CMD_MID`. Aguardando nova validação operacional após
-   atualização manual do agente no XP.
-3. **Próxima etapa — aquisição:** integrar no ODIN a captura segura de
-   `SIDE/TOP/MID` da mesma peça.
-4. **Etapa posterior — visão:** adaptar o `FLUXO DE ADESIVO` para comparar as
+1. **Concluído — agente XP:** comandos de setas disponíveis; a referência
+   atual do GitHub é V5.3 e a atualização operacional continua manual no XP.
+2. **Correção implementada — controle manual do ODIN:** botões e
+   `QShortcut` usam `← TOP / ↓ SIDE / → MID`; V5.3 suporta retorno
+   `CMD_TOP/CMD_SIDE/CMD_MID`.
+3. **Concluído — Etapa A:** layout multilight condicional e responsivo para
+   adesivo, com nove viewports.
+4. **Concluído — Etapa B visual:** SIDE usa a primeira inspeção normal e frames
+   auxiliares recebidos depois podem preencher TOP/MID sem criar nova peça nem
+   substituir a análise ativa.
+5. **Etapa futura — automação de aquisição:** comandar a sequência
+   SIDE → TOP → SIDE → MID → SIDE com confirmação segura do estado.
+6. **Etapa futura — visão:** adaptar o `FLUXO DE ADESIVO` para comparar as
    três iluminações e calibrar a decisão com amostras reais OK/NG.
 
-Até a etapa 2 ser implementada e validada na AOI, o julgamento atual de adesivo
-permanece inalterado.
+Até as etapas futuras de automação/fusão serem implementadas, o julgamento do
+motor de adesivo permanece monoimagem. O multilight atual é somente
+aquisição/apresentação visual.
 
 
 **Arquivo visual NG opcional:**
