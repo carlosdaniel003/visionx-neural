@@ -239,8 +239,12 @@ class ControlPanelUI:
         latency_layout.setSpacing(3)
         latency_title = QLabel("TEMPO DE ANÁLISE")
         latency_title.setObjectName("fieldLabel")
-        window.lbl_timer = QLabel("Latência: 0.00s")
+        window.lbl_timer = QLabel("0.00 s")
         window.lbl_timer.setObjectName("latencyLabel")
+        window.lbl_timer.setToolTip(
+            "Do recebimento/captura do frame até o resultado estar pintado "
+            "na interface."
+        )
         window.lbl_timer.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         latency_layout.addWidget(latency_title)
         latency_layout.addWidget(window.lbl_timer)
