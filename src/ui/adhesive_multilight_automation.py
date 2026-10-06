@@ -260,7 +260,7 @@ class AdhesiveMultiLightAutomation(QObject):
             "finalize_adhesive_multilight_decision",
             None,
         )
-        fused = finalize(self.panel) if callable(finalize) else None
+        fused = finalize() if callable(finalize) else None
         if not isinstance(fused, dict):
             self._network_status(
                 "Falha ao concluir julgamento multilight de adesivo."
