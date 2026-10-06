@@ -7,7 +7,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QLabel, QWidget
 
 from src.ui.lighting_status_feedback import (
+    LIGHTING_STATUS_FADE_IN_MS,
+    LIGHTING_STATUS_FADE_OUT_MS,
     LIGHTING_STATUS_MARGIN,
+    LIGHTING_STATUS_SLIDE_PX,
     LIGHTING_STATUS_TOP_OFFSET,
     LIGHTING_STATUS_WIDTH,
     install_lighting_status_feedback,
@@ -27,14 +30,14 @@ class LightingStatusOverlayTests(unittest.TestCase):
         install_lighting_status_feedback(panel)
         return panel
 
-    def test_persistent_card_starts_in_side(self):
+    def test_card_starts_hidden_until_analysis_finishes(self):
         panel = self._panel()
         overlay = panel.lighting_status_feedback
 
         self.assertEqual(overlay.current_mode, "SIDE")
         self.assertEqual(overlay.value_label.text(), "SIDE")
         self.assertEqual(overlay.key_label.text(), "↓")
-        self.assertFalse(overlay.isHidden())
+        self.assertTrue(overlay.isHidden())
         self.assertTrue(
             overlay.testAttribute(
                 Qt.WidgetAttribute.WA_TransparentForMouseEvents
@@ -43,18 +46,60 @@ class LightingStatusOverlayTests(unittest.TestCase):
         self.assertEqual(overlay.focusPolicy(), Qt.FocusPolicy.NoFocus)
         self.assertFalse(hasattr(overlay, "_hide_timer"))
 
-    def test_card_maps_top_side_mid_to_correct_arrows(self):
+    def test_card_maps_top_side_mid_without_becoming_visible_early(self):
         panel = self._panel()
         overlay = panel.lighting_status_feedback
 
         self.assertTrue(overlay.set_lighting("TOP"))
         self.assertEqual(overlay.key_label.text(), "←")
+        self.assertTrue(overlay.isHidden())
 
         self.assertTrue(overlay.set_lighting("SIDE"))
         self.assertEqual(overlay.key_label.text(), "↓")
+        self.assertTrue(overlay.isHidden())
 
         self.assertTrue(overlay.set_lighting("MID"))
         self.assertEqual(overlay.key_label.text(), "→")
+        self.assertTrue(overlay.isHidden())
+
+    def test_final_analysis_shows_lighting_with_verdict_timing(self):
+        panel = self._panel()
+        overlay = panel.lighting_status_feedback
+        overlay.set_lighting("TOP")
+
+        shown = panel.show_lighting_status_feedback(
+            {"verdict": "FALHA FALSA", "is_defect": False}
+        )
+
+        self.assertTrue(shown)
+        self.assertFalse(overlay.isHidden())
+        self.assertEqual(overlay.value_label.text(), "TOP")
+        self.assertEqual(overlay.key_label.text(), "←")
+        self.assertEqual(overlay._fade_in.duration(), LIGHTING_STATUS_FADE_IN_MS)
+        self.assertEqual(overlay._fade_out.duration(), LIGHTING_STATUS_FADE_OUT_MS)
+        self.assertEqual(
+            overlay._slide_in.startValue().x(),
+            overlay._slide_in.endValue().x() + LIGHTING_STATUS_SLIDE_PX,
+        )
+
+    def test_decision_keeps_lighting_visible_until_synchronized_fade(self):
+        panel = self._panel()
+        overlay = panel.lighting_status_feedback
+        panel.show_lighting_status_feedback(
+            {"verdict": "DEFEITO REAL", "is_defect": True}
+        )
+
+        self.assertTrue(panel.prepare_lighting_status_feedback_dismissal())
+        self.assertTrue(overlay._decision_dismiss_pending)
+        self.assertFalse(panel.clear_lighting_status_feedback())
+        self.assertFalse(overlay.isHidden())
+
+        self.assertTrue(panel.start_lighting_status_feedback_fade_out())
+        self.assertEqual(overlay._fade_out.endValue(), 0.0)
+
+        overlay._finish_hide()
+        self.assertTrue(overlay.isHidden())
+        self.assertFalse(overlay._decision_dismiss_pending)
 
     def test_card_is_anchored_below_verdict_area(self):
         panel = self._panel()
@@ -66,6 +111,53 @@ class LightingStatusOverlayTests(unittest.TestCase):
             panel.width() - LIGHTING_STATUS_WIDTH - LIGHTING_STATUS_MARGIN,
         )
         self.assertEqual(target.y(), LIGHTING_STATUS_TOP_OFFSET)
+
+
+class LightingStatusAnalysisLifecycleHookTests(unittest.TestCase):
+    def test_reference_update_shows_and_reset_clears_lighting_card(self):
+        class FakePanel:
+            def __init__(self):
+                self.events = []
+
+            def change_lighting(self, mode, source):
+                self.events.append(("change", mode, source))
+                return True
+
+            def _update_reference_panel(self, analysis):
+                self.events.append(("reference", analysis["verdict"]))
+                return "updated"
+
+            def _reset_confidence_panel(self):
+                self.events.append(("reset", None))
+                return "reset"
+
+            def show_lighting_status_feedback(self, analysis):
+                self.events.append(("show_light", analysis["verdict"]))
+                return True
+
+            def clear_lighting_status_feedback(self):
+                self.events.append(("clear_light", None))
+                return True
+
+        install_lighting_status_feedback_hooks(FakePanel)
+        panel = FakePanel()
+
+        result = panel._update_reference_panel(
+            {"verdict": "FALHA FALSA", "is_defect": False}
+        )
+        reset = panel._reset_confidence_panel()
+
+        self.assertEqual(result, "updated")
+        self.assertEqual(reset, "reset")
+        self.assertEqual(
+            panel.events,
+            [
+                ("reference", "FALHA FALSA"),
+                ("show_light", "FALHA FALSA"),
+                ("reset", None),
+                ("clear_light", None),
+            ],
+        )
 
 
 class LightingStatusHookTests(unittest.TestCase):
