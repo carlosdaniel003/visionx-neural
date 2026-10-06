@@ -1,11 +1,11 @@
 """Automação da aquisição SIDE/TOP/MID para a categoria de adesivo.
 
-A automação controla somente a troca de iluminação e a coleta das imagens
-auxiliares da mesma peça. Ela não executa TOP/MID no MoE e não altera o
-julgamento final. O fluxo atual é:
+A automação controla a troca de iluminação, a coleta das imagens auxiliares e
+o fechamento do ciclo multilight. TOP/MID são analisadas antes do avanço da
+máquina de estados e, ao final, SIDE/TOP/MID são fundidas em um único julgamento.
 
-SIDE já recebido -> TOP -> aguarda frame TOP -> MID -> aguarda frame MID
--> restaura SIDE.
+SIDE já recebido -> TOP -> análise TOP -> MID -> análise MID -> restaura SIDE
+-> fusão final.
 
 As setas da AOI são seletores absolutos:
 LEFT=TOP, DOWN=SIDE, RIGHT=MID.
@@ -251,22 +251,41 @@ class AdhesiveMultiLightAutomation(QObject):
             False,
         )
 
-        deferred = str(
-            getattr(
-                self.panel,
-                "adhesive_multilight_deferred_auto_decision",
-                "",
-            )
-            or ""
-        ).strip().upper()
-        if deferred in {"OK", "NG"}:
-            self.panel.adhesive_multilight_deferred_auto_decision = ""
+        # A decisão SIDE guardada durante o início da coleta deixa de ter
+        # autoridade. O único resultado elegível agora é a fusão das 3 luzes.
+        self.panel.adhesive_multilight_deferred_auto_decision = ""
 
-            # Em Modo Produção a decisão SIDE já foi calculada, mas o envio
-            # automático 0/1 é adiado até as fotos TOP/MID terminarem.
+        finalize = getattr(
+            self.panel,
+            "finalize_adhesive_multilight_decision",
+            None,
+        )
+        fused = finalize(self.panel) if callable(finalize) else None
+        if not isinstance(fused, dict):
+            self._network_status(
+                "Falha ao concluir julgamento multilight de adesivo."
+            )
+            self.completed = False
+            return False
+
+        try:
+            mode = str(self.panel.combo_mode.currentText() or "")
+        except Exception:
+            mode = ""
+
+        review_required = bool(
+            fused.get("production_review_required", False)
+            or str(fused.get("verdict", "") or "").strip().upper()
+            == "REVISÃO OBRIGATÓRIA"
+        )
+
+        if mode == "Modo Produção" and not review_required:
+            final_decision = (
+                "NG" if bool(fused.get("is_defect", False)) else "OK"
+            )
             QTimer.singleShot(
                 0,
-                lambda decision=deferred: self.panel.save_label(
+                lambda decision=final_decision: self.panel.save_label(
                     decision,
                     source="auto",
                 ),
