@@ -101,6 +101,39 @@ class LightingStatusHookTests(unittest.TestCase):
             ],
         )
 
+
+    def test_xp_network_lighting_updates_status_and_shows_physical_key(self):
+        class FakePanel:
+            def __init__(self):
+                self.events = []
+
+            def change_lighting(self, mode, source):
+                self.events.append(("change", mode, source))
+                return True
+
+            def update_lighting_status_feedback(self, mode):
+                self.events.append(("status", mode))
+                return True
+
+            def show_operational_key_feedback(self, key, source=""):
+                self.events.append(("key", key, source))
+                return True
+
+        install_lighting_status_feedback_hooks(FakePanel)
+        panel = FakePanel()
+
+        result = panel.change_lighting("MID", "network")
+
+        self.assertTrue(result)
+        self.assertEqual(
+            panel.events,
+            [
+                ("change", "MID", "network"),
+                ("status", "MID"),
+                ("key", "RIGHT", "xp_keyboard"),
+            ],
+        )
+
     def test_failed_xp_command_does_not_change_visual_state(self):
         class FakePanel:
             def __init__(self):
