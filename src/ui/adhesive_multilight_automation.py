@@ -250,6 +250,28 @@ class AdhesiveMultiLightAutomation(QObject):
             + suffix,
             False,
         )
+
+        deferred = str(
+            getattr(
+                self.panel,
+                "adhesive_multilight_deferred_auto_decision",
+                "",
+            )
+            or ""
+        ).strip().upper()
+        if deferred in {"OK", "NG"}:
+            self.panel.adhesive_multilight_deferred_auto_decision = ""
+
+            # Em Modo Produção a decisão SIDE já foi calculada, mas o envio
+            # automático 0/1 é adiado até as fotos TOP/MID terminarem.
+            QTimer.singleShot(
+                0,
+                lambda decision=deferred: self.panel.save_label(
+                    decision,
+                    source="auto",
+                ),
+            )
+
         return True
 
     def abort(
