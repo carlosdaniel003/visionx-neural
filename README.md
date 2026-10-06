@@ -40,7 +40,8 @@ A aplicação foi pensada para cenários onde uma máquina, câmera ou estação
 ## Principais recursos
 
 - Interface desktop para monitoramento técnico em tempo real.
-- Feedback visual temporário `0 = OK` / `1 = NG` para decisões feitas no teclado do ODIN ou recebidas do teclado físico do Windows XP, sem bloquear a interface.
+- Feedback visual temporário das teclas operacionais: `0 = OK`, `1 = NG` e setas de iluminação `← TOP / ↓ SIDE / → MID`, sem bloquear a interface.
+- Card flutuante persistente de iluminação atual, exibindo continuamente `TOP`, `SIDE` ou `MID` no mesmo padrão visual industrial dos overlays do ODIN.
 - Overlay de estado da IA no canto superior direito, exibindo `FALHA FALSA`, `DEFEITO REAL` ou `REVISÃO OBRIGATÓRIA`, sem porcentagens ou métricas. `FALHA FALSA` usa verde; `DEFEITO REAL` e `REVISÃO OBRIGATÓRIA` usam vermelho. Ele permanece fixo durante a análise e, quando o operador julga com `0/1`, desaparece sincronizado com o fade-out do feedback de tecla. O fundo geral permanece neutro em todos os estados.
 - Comparação entre imagem de **gabarito** e imagem de **teste**.
 - Análise visual com métricas de similaridade e diferença estrutural.
