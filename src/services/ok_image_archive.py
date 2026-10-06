@@ -1,8 +1,8 @@
 """Arquivo opcional de evidências visuais OK confirmadas pelo operador.
 
-Quando habilitado, salva em background exatamente a mesma evidência completa
-resolvida pelo botão "Copiar imagem" para o evento atual. Aceita capturas XP e
-MSS, mas somente decisões humanas OK.
+Para categorias normais, salva a mesma evidência completa de "Copiar imagem".
+Para adesivo multilight, salva separadamente SIDE/TOP/MID da mesma peça.
+A fila elimina imagens pixel a pixel repetidas já existentes no arquivo.
 """
 
 from __future__ import annotations
