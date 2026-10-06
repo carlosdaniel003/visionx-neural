@@ -136,6 +136,44 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         if key in detail
     }
 
+    inverted_fields = (
+        "inverted_active",
+        "inverted_is_defect",
+        "inverted_score",
+        "inverted_tolerance",
+        "inverted_classification",
+        "inverted_signature_strength",
+        "inverted_test_signature_strength",
+        "inverted_direct_similarity",
+        "inverted_witness_retention",
+        "inverted_witness_loss",
+        "inverted_feature_loss",
+        "inverted_extra_structure",
+        "inverted_topology_mismatch",
+        "inverted_orientation_mismatch",
+        "inverted_alternate_face_signal",
+        "inverted_transform_gain",
+        "inverted_best_transform",
+        "inverted_best_transform_similarity",
+        "inverted_relocation_similarity",
+        "inverted_relocation_gain",
+        "inverted_relocation_dx",
+        "inverted_relocation_dy",
+        "inverted_changed_coverage",
+        "inverted_witness_coverage",
+        "inverted_local_global_area_ratio",
+        "inverted_small_witness_roi",
+        "inverted_high_authority",
+        "inverted_corroborated",
+        "inverted_corroboration_reason",
+        "inverted_reason",
+    )
+    inverted = {
+        key: json_safe(detail.get(key))
+        for key in inverted_fields
+        if key in detail
+    }
+
     raw_memory_conflict = bool(
         memory.get(
             "memory_conflict",
@@ -204,6 +242,7 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
             hard_missing_contradicted_by_invariant_ok
         ),
         "missing": missing,
+        "inverted": inverted,
         "memory": {
             "has_memory": bool(
                 memory.get("has_memory", detail.get("has_memory", False))
