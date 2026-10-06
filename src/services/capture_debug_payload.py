@@ -54,6 +54,9 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
     detail = detail if isinstance(detail, dict) else {}
     trace = detail.get("decision_trace", {})
     trace = trace if isinstance(trace, dict) else {}
+    analysis_time_seconds = detail.get("analysis_time_seconds")
+    analysis_time_start_source = detail.get("analysis_time_start_source")
+    analysis_time_contract = detail.get("analysis_time_contract")
     memory = trace.get("memory", {})
     memory = memory if isinstance(memory, dict) else {}
 
@@ -224,6 +227,11 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         "verdict": str(analysis.get("verdict", "") or ""),
         "confidence": json_safe(analysis.get("confidence")),
         "reason": str(analysis.get("reason", "") or ""),
+        "analysis_time_seconds": json_safe(analysis_time_seconds),
+        "analysis_time_start_source": str(
+            analysis_time_start_source or ""
+        ),
+        "analysis_time_contract": str(analysis_time_contract or ""),
         "final_score": json_safe(detail.get("final_score")),
         "physical_score": json_safe(detail.get("physical_score")),
         "fusion_rule": str(detail.get("fusion_rule", "") or ""),
