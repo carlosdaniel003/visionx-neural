@@ -90,9 +90,8 @@ class _LightingExpertLane(QFrame):
         )
 
         self.scroll_content = QWidget()
-        self.scroll_content.setMinimumWidth(
-            EXPERT_MIN_WIDTH * 4 + (10 * 3) + 4
-        )
+        self.scroll_content.setMinimumWidth(EXPERT_MIN_WIDTH + 4)
+        self.scroll_content.setMinimumHeight(EXPERT_MIN_HEIGHT + 8)
         self.scroll_layout = QHBoxLayout(self.scroll_content)
         self.scroll_layout.setContentsMargins(2, 2, 2, 2)
         self.scroll_layout.setSpacing(10)
@@ -132,6 +131,7 @@ class _LightingExpertLane(QFrame):
         self.scroll_layout.addStretch()
 
         self.scroll.setWidget(self.scroll_content)
+        self.scroll.setMinimumHeight(EXPERT_MIN_HEIGHT + 28)
         self.scroll.setVisible(False)
         root.addWidget(self.scroll, stretch=1)
 
@@ -172,6 +172,15 @@ class _LightingExpertLane(QFrame):
 
         # Mantém a mesma semântica do painel original: só aparecem os motores
         # declarados como ativos; o radar é fallback quando não há especialistas.
+        self.scroll_content.setMinimumWidth(
+            max(
+                EXPERT_MIN_WIDTH + 4,
+                visible_count * EXPERT_MIN_WIDTH
+                + max(0, visible_count - 1) * 10
+                + 4,
+            )
+        )
+
         if visible_count <= 0:
             self.status_label.setText(
                 f"Análise {self.mode} recebida, sem especialista visual ativo"
