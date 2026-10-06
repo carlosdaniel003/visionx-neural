@@ -213,7 +213,9 @@ explicitamente visual:
 - o frame auxiliar não cria novo `event_id`;
 - o frame auxiliar não substitui `current_sample`, `current_ng` ou
   `current_analysis`;
-- o frame auxiliar não roda novamente a decisão do MoE;
+- o frame auxiliar executa uma análise MoE isolada da iluminação para alimentar
+  os painéis de especialistas, mas essa análise não substitui
+  `current_analysis` nem participa do resultado final;
 - a iluminação atribuída ao preview vem do estado atual
   `SIDE/TOP/MID` já comandado/confirmado pelo ODIN;
 - ao julgar ou descartar a peça, o modo auxiliar é desligado antes da liberação
