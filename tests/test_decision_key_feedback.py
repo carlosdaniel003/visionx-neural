@@ -217,15 +217,25 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
         events = []
 
         def prepare_verdict():
-            events.append("prepare")
+            events.append("prepare_verdict")
+            return True
+
+        def prepare_lighting():
+            events.append("prepare_lighting")
             return True
 
         def start_verdict_fade():
             events.append("verdict_fade")
             return True
 
+        def start_lighting_fade():
+            events.append("lighting_fade")
+            return True
+
         panel.prepare_ai_verdict_feedback_dismissal = prepare_verdict
+        panel.prepare_lighting_status_feedback_dismissal = prepare_lighting
         panel.start_ai_verdict_feedback_fade_out = start_verdict_fade
+        panel.start_lighting_status_feedback_fade_out = start_lighting_fade
         install_decision_key_feedback(panel)
 
         shown = panel.show_decision_key_feedback(
@@ -233,11 +243,22 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
             source="odin_keyboard",
         )
         self.assertTrue(shown)
-        self.assertEqual(events, ["prepare"])
+        self.assertEqual(
+            events,
+            ["prepare_verdict", "prepare_lighting"],
+        )
 
         panel.decision_key_feedback._start_fade_out()
 
-        self.assertEqual(events, ["prepare", "verdict_fade"])
+        self.assertEqual(
+            events,
+            [
+                "prepare_verdict",
+                "prepare_lighting",
+                "verdict_fade",
+                "lighting_fade",
+            ],
+        )
         self.assertEqual(
             panel.decision_key_feedback._fade_out.duration(),
             FEEDBACK_FADE_OUT_MS,
