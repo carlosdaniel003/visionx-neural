@@ -57,18 +57,10 @@ QLabel#aiVerdictText[tone="ng"] {{
 
 
 def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
-    """Retorna (mensagem, tone) somente para vereditos finais reconhecidos."""
+    """Retorna (mensagem, tone) para decisão final ou revisão obrigatória."""
     if not isinstance(analysis, dict) or not analysis:
         return "", ""
 
-    verdict = str(analysis.get("verdict", "") or "").strip().upper()
-    if verdict == "FALHA FALSA":
-        return "FALHA FALSA", "ok"
-    if verdict in {"DEFEITO REAL", "DEFEITO"}:
-        return "DEFEITO REAL", "ng"
-
-    # Compatibilidade para análises antigas sem texto de veredito, desde que
-    # não exista uma revisão humana pendente.
     detail = analysis.get("detail", {})
     detail = detail if isinstance(detail, dict) else {}
     trace = detail.get("decision_trace", {})
@@ -78,7 +70,22 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
         or trace.get("operator_review_required", False)
         or detail.get("operator_review_required", False)
     )
-    if review_required or "is_defect" not in analysis:
+
+    # Revisão efetiva é um estado operacional próprio. Ela precisa chamar
+    # atenção do operador e nunca deve ser substituída pelo is_defect bruto.
+    if review_required:
+        return "REVISÃO OBRIGATÓRIA", "ng"
+
+    verdict = str(analysis.get("verdict", "") or "").strip().upper()
+    if verdict == "REVISÃO OBRIGATÓRIA":
+        return "REVISÃO OBRIGATÓRIA", "ng"
+    if verdict == "FALHA FALSA":
+        return "FALHA FALSA", "ok"
+    if verdict in {"DEFEITO REAL", "DEFEITO"}:
+        return "DEFEITO REAL", "ng"
+
+    # Compatibilidade para análises antigas sem texto de veredito.
+    if "is_defect" not in analysis:
         return "", ""
 
     return (
