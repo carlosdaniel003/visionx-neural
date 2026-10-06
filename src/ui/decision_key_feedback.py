@@ -1,4 +1,4 @@
-"""Feedback visual temporário para decisões 0/1 do ODIN e do Windows XP.
+"""Feedback visual temporário para teclas operacionais do ODIN e do Windows XP.
 
 É uma camada exclusivamente visual. Não decide, não salva, não envia comandos e
 não altera gate, memória, confiança ou persistência.
@@ -32,6 +32,12 @@ DUPLICATE_SUPPRESSION_SECONDS = 1.5
 FEEDBACK_SIZE = 180
 FEEDBACK_MARGIN = 24
 
+LIGHTING_KEY_PRESENTATION = {
+    "LEFT": ("←", "ESQUERDA"),
+    "DOWN": ("↓", "BAIXO"),
+    "RIGHT": ("→", "DIREITA"),
+}
+
 
 FEEDBACK_STYLESHEET = """
 QFrame#decisionKeyFeedback {
@@ -40,7 +46,8 @@ QFrame#decisionKeyFeedback {
     border-radius: 8px;
 }
 QFrame#decisionKeyFeedback[tone="ok"],
-QFrame#decisionKeyFeedback[tone="ng"] {
+QFrame#decisionKeyFeedback[tone="ng"],
+QFrame#decisionKeyFeedback[tone="light"] {
     border: 1px solid #f5c518;
 }
 QLabel#decisionKeyHeader {
@@ -65,6 +72,10 @@ QLabel#decisionKeyDigit[tone="ng"],
 QLabel#decisionKeyLabel[tone="ng"] {
     color: #ff6262;
 }
+QLabel#decisionKeyDigit[tone="light"],
+QLabel#decisionKeyLabel[tone="light"] {
+    color: #f5c518;
+}
 QLabel#decisionKeyLabel {
     background: transparent;
     border: none;
@@ -84,13 +95,14 @@ QLabel#decisionKeySource {
 
 
 class DecisionKeyFeedbackOverlay(QFrame):
-    """Quadrado leve que confirma visualmente a tecla de julgamento recebida."""
+    """Quadrado leve que confirma visualmente a tecla recebida/enviada."""
 
     def __init__(self, panel):
         super().__init__(panel)
         self.panel = panel
-        self._last_decision = ""
+        self._last_feedback = ""
         self._last_shown_at = 0.0
+        self._sync_verdict_on_exit = False
 
         self.setObjectName("decisionKeyFeedback")
         self.setFixedSize(FEEDBACK_SIZE, FEEDBACK_SIZE)
@@ -105,7 +117,7 @@ class DecisionKeyFeedbackOverlay(QFrame):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(2)
 
-        self.header_label = QLabel("DECISÃO RECEBIDA")
+        self.header_label = QLabel("TECLA PRESSIONADA")
         self.header_label.setObjectName("decisionKeyHeader")
         self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -173,7 +185,18 @@ class DecisionKeyFeedbackOverlay(QFrame):
             return "TECLADO WINDOWS XP"
         if normalized == "odin_keyboard":
             return "TECLADO ODIN"
-        return "DECISÃO MANUAL"
+        if normalized == "odin_control":
+            return "CONTROLE ODIN"
+        return "AÇÃO MANUAL"
+
+    @staticmethod
+    def _header_text(source: str) -> str:
+        normalized = str(source or "").strip().lower()
+        if normalized == "odin_control":
+            return "TECLA ENVIADA"
+        if normalized == "xp_keyboard":
+            return "TECLA RECEBIDA"
+        return "TECLA PRESSIONADA"
 
     @staticmethod
     def _refresh_style(widget) -> None:
@@ -201,50 +224,44 @@ class DecisionKeyFeedbackOverlay(QFrame):
         self._fade_out.setEndValue(0.0)
         self._fade_out.start()
 
-        # O veredito da IA deve sair no mesmo instante e com a mesma curva
-        # temporal do feedback 0/1.
-        start_verdict_fade = getattr(
-            self.panel,
-            "start_ai_verdict_feedback_fade_out",
-            None,
-        )
-        if callable(start_verdict_fade):
-            start_verdict_fade()
+        if self._sync_verdict_on_exit:
+            start_verdict_fade = getattr(
+                self.panel,
+                "start_ai_verdict_feedback_fade_out",
+                None,
+            )
+            if callable(start_verdict_fade):
+                start_verdict_fade()
 
     def _finish_hide(self) -> None:
         self.hide()
         self._opacity_effect.setOpacity(0.0)
+        self._sync_verdict_on_exit = False
 
-    def show_decision(self, decision: str, source: str = "") -> bool:
-        normalized = self._normalize(decision)
-        if not normalized:
-            return False
-
+    def _show_feedback(
+        self,
+        *,
+        signature: str,
+        key_text: str,
+        label_text: str,
+        source: str,
+        tone: str,
+        synchronize_verdict: bool,
+    ) -> bool:
         now = time.monotonic()
         if (
-            normalized == self._last_decision
+            signature == self._last_feedback
             and now - self._last_shown_at < DUPLICATE_SUPPRESSION_SECONDS
         ):
             return False
 
-        self._last_decision = normalized
+        self._last_feedback = signature
         self._last_shown_at = now
+        self._sync_verdict_on_exit = bool(synchronize_verdict)
 
-        # Prepare o card de veredito antes do caminho produtivo consumir a
-        # decisão. Assim resets internos não o apagam antes da animação 0/1.
-        prepare_verdict = getattr(
-            self.panel,
-            "prepare_ai_verdict_feedback_dismissal",
-            None,
-        )
-        if callable(prepare_verdict):
-            prepare_verdict()
-
-        digit = "0" if normalized == "OK" else "1"
-        tone = "ok" if normalized == "OK" else "ng"
-
-        self.digit_label.setText(digit)
-        self.decision_label.setText(normalized)
+        self.header_label.setText(self._header_text(source))
+        self.digit_label.setText(key_text)
+        self.decision_label.setText(label_text)
         self.source_label.setText(self._source_text(source))
 
         for widget in (self, self.digit_label, self.decision_label):
@@ -277,6 +294,46 @@ class DecisionKeyFeedbackOverlay(QFrame):
         self._hide_timer.start(hold_before_fade)
         return True
 
+    def show_decision(self, decision: str, source: str = "") -> bool:
+        normalized = self._normalize(decision)
+        if not normalized:
+            return False
+
+        prepare_verdict = getattr(
+            self.panel,
+            "prepare_ai_verdict_feedback_dismissal",
+            None,
+        )
+        if callable(prepare_verdict):
+            prepare_verdict()
+
+        digit = "0" if normalized == "OK" else "1"
+        tone = "ok" if normalized == "OK" else "ng"
+        return self._show_feedback(
+            signature="decision:{0}".format(normalized),
+            key_text=digit,
+            label_text=normalized,
+            source=source,
+            tone=tone,
+            synchronize_verdict=True,
+        )
+
+    def show_key(self, key_name: str, source: str = "odin_keyboard") -> bool:
+        normalized = str(key_name or "").strip().upper()
+        presentation = LIGHTING_KEY_PRESENTATION.get(normalized)
+        if presentation is None:
+            return False
+
+        key_text, label_text = presentation
+        return self._show_feedback(
+            signature="key:{0}".format(normalized),
+            key_text=key_text,
+            label_text=label_text,
+            source=source,
+            tone="light",
+            synchronize_verdict=False,
+        )
+
 
 def install_decision_key_feedback_hooks(control_panel_cls) -> None:
     """Mostra o feedback quando 0/1 chega fisicamente pelo Windows XP."""
@@ -290,9 +347,6 @@ def install_decision_key_feedback_hooks(control_panel_cls) -> None:
         normalized = str(comando_xp or "").strip().upper()
         had_active_capture = bool(getattr(self, "current_ng", None) is not None)
 
-        # Exibe/prepara antes do handler produtivo para preservar o veredito
-        # durante o reset interno do ciclo. O comportamento funcional do
-        # comando continua delegado integralmente ao handler original.
         if normalized in {"OK", "NG"} and had_active_capture:
             show_feedback = getattr(
                 self,
@@ -309,13 +363,14 @@ def install_decision_key_feedback_hooks(control_panel_cls) -> None:
 
 
 def install_decision_key_feedback(panel) -> None:
-    """Cria uma única instância do overlay e expõe o acionador ao painel."""
+    """Cria uma única instância do overlay e expõe os acionadores ao painel."""
     if getattr(panel, "_decision_key_feedback_installed", False):
         return
 
     overlay = DecisionKeyFeedbackOverlay(panel)
     panel.decision_key_feedback = overlay
     panel.show_decision_key_feedback = overlay.show_decision
+    panel.show_operational_key_feedback = overlay.show_key
     panel._decision_key_feedback_installed = True
 
 
@@ -327,6 +382,7 @@ __all__ = [
     "FEEDBACK_SLIDE_PX",
     "FEEDBACK_SIZE",
     "FEEDBACK_MARGIN",
+    "LIGHTING_KEY_PRESENTATION",
     "DecisionKeyFeedbackOverlay",
     "install_decision_key_feedback",
     "install_decision_key_feedback_hooks",
