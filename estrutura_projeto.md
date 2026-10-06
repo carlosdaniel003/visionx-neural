@@ -639,8 +639,103 @@ corroboração física. O único resultado final esperado para esse conjunto é
 `DEFEITO REAL`, independentemente do veto KNN que anteriormente fazia a
 primeira imagem SIDE encerrar a peça como `FALHA FALSA`.
 
-Esse caso é referência funcional da regra inicial, não calibração definitiva.
-Novos casos reais OK/NG ainda devem ser usados para avaliar limiares.
+Esse caso foi usado como referência funcional da regra inicial. Após a
+implementação da fusão, o operador repetiu o fluxo na AOI real e confirmou que o
+novo julgamento multilight funcionou corretamente. A fusão inicial está,
+portanto, **validada operacionalmente** para esse caso real.
+
+Isso não encerra a calibração estatística: novos casos reais OK/NG ainda devem
+ser usados para avaliar os limiares e reduzir risco de falso positivo/falso
+negativo.
+
+### Detector MID claro — `mid_bright_resin_v1`
+
+A análise real mostrou que a iluminação MID deixava o adesivo visualmente muito
+evidente, porém o motor físico retornava:
+
+```text
+adhesive_score = 0
+adhesive_is_defect = False
+reference_area_pct = 0
+test_area_pct = 0
+```
+
+A causa era fotométrica: o detector original de
+`src/core/experts/adhesive_shift_expert.py` foi construído para material
+quente, saturado e relativamente escuro. Na MID, a mesma película pode aparecer
+quase branca/creme/amarelada e, por isso, desaparecer da máscara antiga.
+
+Foi implementado um segundo perfil, ativado **somente quando
+`lighting_mode == "MID"`**:
+
+```text
+perfil padrão SIDE/TOP = dark_warm_v1
+perfil MID             = mid_bright_resin_v1
+```
+
+O perfil MID não classifica simplesmente pixels claros como adesivo. Ele compara
+gabarito e teste no espaço LAB e exige uma mudança cromática local coerente:
+
+```text
+gabarito MID + teste MID
+        ↓
+ΔE em LAB
+        +
+ganho amarelo/vermelho (b*/a*)
+        +
+presença quente no teste
+        +
+brilho alto
+        -
+supressão de cobre saturado
+        ↓
+mid_bright_resin_witness
+```
+
+A testemunha é **diferencial**: uma região branca estável presente nas duas
+imagens não gera evidência. Uma mudança apenas neutra de brilho também não deve
+ser suficiente. O perfil foi criado para destacar a película clara/creme que
+aparece no TESTE e não está no GABARITO.
+
+Integração com o motor existente:
+
+- o detector escuro/quente original continua funcionando e não foi removido;
+- SIDE e TOP permanecem no perfil legado, sem novos limiares;
+- MID combina o material legado com a nova testemunha clara;
+- o limiar de material da máscara TESTE em MID passa a `0.18`; o gabarito
+  continua usando `0.22`;
+- a cobertura coerente da testemunha MID reforça o `adhesive_score`, mas não
+  substitui as métricas físicas já existentes de excesso, padding, expansão,
+  espalhamento e vazamento;
+- a tolerância final do motor permanece `0.32`.
+
+Novas telemetrias:
+
+```text
+adhesive_lighting_mode
+adhesive_detector_profile
+adhesive_material_threshold
+mid_bright_witness_coverage
+mid_bright_witness_peak
+mid_bright_witness_score
+mid_bright_witness_mask
+```
+
+Esses valores aparecem no **Copiar debug** da iluminação MID e também no painel
+`FLUXO DE ADESIVO`, permitindo verificar se o ODIN realmente passou a enxergar
+a película clara.
+
+Regressões adicionadas:
+
+- película clara/amarelada diferencial em MID deve ser detectada;
+- a mesma aparência clara não ativa o perfil novo em TOP;
+- MID idêntica entre gabarito e teste continua estável;
+- mudança neutra de luminosidade sem ganho amarelo/vermelho não deve virar
+  adesivo;
+- uma MID fisicamente forte pode ser a testemunha dominante da fusão final.
+
+Esta implementação é a primeira versão do detector MID e ainda precisa ser
+validada na AOI real com o mesmo caso e depois com exemplos reais OK/NG.
 
 ### Restrições arquiteturais da melhoria
 
@@ -690,16 +785,21 @@ A melhoria será executada por etapas, sem avançar automaticamente:
 8. **Concluído — debug/evidência multilight:** `Copiar debug` reúne as três
    análises e `Copiar imagem` gera uma única composição SIDE/TOP/MID sem
    sobreposição, vinculada ao mesmo `event_id`.
-9. **Concluído — fusão multilight inicial:** SIDE/TOP/MID formam um único
-   julgamento final físico; TOP/MID fortes têm autoridade, duas iluminações
-   positivas corroboram defeito, caso intermediário exige revisão e o KNN local
-   permanece apenas como auditoria na fusão.
-10. **Etapa futura — detector MID:** melhorar a leitura fotométrica do adesivo
-    claro/branco em MID e calibrar os limiares com amostras reais OK/NG.
+9. **Concluído e validado operacionalmente — fusão multilight inicial:**
+   SIDE/TOP/MID formam um único julgamento final físico; TOP/MID fortes têm
+   autoridade, duas iluminações positivas corroboram defeito, caso intermediário
+   exige revisão e o KNN local permanece apenas como auditoria na fusão.
+10. **Implementado — detector MID claro v1:** o perfil
+    `mid_bright_resin_v1` adiciona testemunha diferencial LAB para película
+    clara/creme/amarelada exclusivamente na iluminação MID, preservando
+    SIDE/TOP no detector legado.
+11. **Próxima validação:** repetir o caso real que antes gerava
+    `adhesive_score = 0` na MID e coletar novos exemplos OK/NG antes de
+    recalibrar qualquer limiar.
 
-A aquisição, as três análises visuais e a primeira fusão final estão
-implementadas. A política precisa agora ser validada em casos reais adicionais,
-sem alterar ainda o detector interno de MID.
+A aquisição, as três análises visuais, a fusão final e a primeira versão do
+detector específico de MID estão implementadas. A próxima etapa é validação
+operacional do novo perfil MID, não uma nova mudança arquitetural.
 
 
 **Arquivo visual NG opcional:**
