@@ -1,19 +1,19 @@
-"""Aquisição, visualização e análise multilight da categoria de adesivo.
+"""Aquisição, visualização, análise e fusão multilight da categoria de adesivo.
 
-A primeira inspeção SIDE continua passando pelo pipeline produtivo normal.
-Frames TOP/MID da mesma peça executam análises independentes dos especialistas
-para alimentar seus painéis, mas não substituem current_analysis, não alteram
-o veredito final e ainda não são fundidos em uma decisão multilight.
+SIDE, TOP e MID pertencem à mesma peça. Cada iluminação mantém sua análise
+independente para auditoria, e o julgamento final só é promovido depois que as
+três análises estão disponíveis.
 """
 
 from __future__ import annotations
 
 from functools import wraps
+import time
 from typing import Any
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEventLoop, Qt
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
@@ -22,12 +22,16 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QVBoxLayout,
     QWidget,
+    QApplication,
 )
 
 from src.core.adhesive_multilight_analysis import (
     analyze_lighting,
     build_lighting_context,
     valid_image,
+)
+from src.core.adhesive_multilight_fusion import (
+    fuse_adhesive_multilight,
 )
 from src.utils.text_normalizer import normalize_aoi_text
 
@@ -382,6 +386,100 @@ def _sync_multilight_debug_controls(panel) -> None:
         print(f"Falha não fatal ao sincronizar debug multilight: {exc}")
 
 
+def _finalize_multilight_decision(panel) -> dict | None:
+    """Promove SIDE/TOP/MID a um único julgamento final de adesivo."""
+    analyses = getattr(panel, "adhesive_multilight_analyses", {})
+    fused = fuse_adhesive_multilight(analyses)
+    if not isinstance(fused, dict):
+        try:
+            panel.update_network_status(
+                "Fusão multilight não executada: SIDE/TOP/MID incompletos."
+            )
+        except Exception:
+            pass
+        return None
+
+    panel.current_analysis = fused
+    panel.adhesive_multilight_final_analysis = fused
+    panel.adhesive_multilight_last_final_analysis = fused
+
+    # O painel principal e os overlays recebem somente a decisão já fundida.
+    try:
+        panel._update_confidence_panel(fused)
+        panel._update_reference_panel(fused)
+    except Exception as exc:
+        print(f"Falha não fatal ao exibir fusão multilight: {exc}")
+
+    QApplication.processEvents(
+        QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+    )
+    completed_at = time.perf_counter()
+    started_at = float(
+        getattr(panel, "capture_start_time", 0.0) or 0.0
+    )
+    elapsed = max(0.0, completed_at - started_at) if started_at > 0.0 else 0.0
+    panel.last_analysis_time_seconds = elapsed
+
+    detail = fused.setdefault("detail", {})
+    detail["analysis_time_seconds"] = float(elapsed)
+    detail["analysis_time_start_source"] = str(
+        getattr(panel, "capture_start_source", "") or ""
+    )
+    detail["analysis_time_contract"] = (
+        "primeira imagem SIDE recebida/capturada -> "
+        "SIDE+TOP+MID analisadas e resultado multilight pintado"
+    )
+
+    try:
+        panel.lbl_timer.setText(f"{elapsed:.2f} s")
+        panel.lbl_timer.setToolTip(
+            "Tempo real da categoria adesivo: do recebimento da SIDE até "
+            "a conclusão das análises SIDE/TOP/MID e da fusão final."
+        )
+    except Exception:
+        pass
+
+    mode = ""
+    try:
+        mode = str(panel.combo_mode.currentText() or "")
+    except Exception:
+        pass
+
+    try:
+        if mode == "Modo Produção":
+            if fused.get("production_review_required", False):
+                panel.update_brain_status(
+                    "REVISÃO OBRIGATÓRIA • fusão multilight concluída.",
+                    True,
+                )
+            else:
+                panel.update_brain_status(
+                    "Análise multilight concluída • emissão autônoma.",
+                    False,
+                )
+        elif mode == "Modo Sombra":
+            panel.update_brain_status(
+                "Fusão multilight concluída • aguardando decisão humana no XP.",
+                True,
+            )
+            panel.btn_start.setEnabled(True)
+            panel.btn_skip.setEnabled(True)
+        else:
+            panel.update_brain_status(
+                "Fusão multilight concluída • aguardando operador.",
+                True,
+            )
+            panel.btn_start.setEnabled(True)
+            panel.btn_save_ok.setEnabled(True)
+            panel.btn_save_ng.setEnabled(True)
+            panel.btn_skip.setEnabled(True)
+    except Exception:
+        pass
+
+    _sync_multilight_debug_controls(panel)
+    return fused
+
+
 def _reset_session(panel, *, show_normal: bool = True) -> None:
     automation = getattr(
         panel,
@@ -480,6 +578,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_primary_event_id = None
         self.adhesive_multilight_pending_start = False
         self.adhesive_multilight_deferred_auto_decision = ""
+        self.adhesive_multilight_final_analysis = None
 
         # Último conjunto multilight completo/parcial permanece disponível para
         # Copiar debug/Copiar imagem mesmo depois que o ciclo produtivo termina.
@@ -487,6 +586,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_last_source_frames = {}
         self.adhesive_multilight_last_event_id = ""
         self.adhesive_multilight_last_category = ""
+        self.adhesive_multilight_last_final_analysis = None
         _switch_inspection_view(self, False)
 
     def handle_network_image(self, img_bgr, ip: str):
@@ -715,6 +815,8 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_last_analyses = {}
         self.adhesive_multilight_last_source_frames = {}
         self.adhesive_multilight_last_category = ADHESIVE_CATEGORY
+        self.adhesive_multilight_final_analysis = None
+        self.adhesive_multilight_last_final_analysis = None
         self.adhesive_multilight_primary_event_id = getattr(
             self,
             "network_intake_last_image_event_id",
@@ -772,6 +874,26 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
 
         _switch_inspection_view(self, True)
         _set_receiver_auxiliary_mode(self, True)
+
+        # SIDE não é mais julgamento final para adesivo. Até TOP/MID terminarem
+        # nenhum botão 0/1 do ODIN deve ficar disponível.
+        try:
+            self.lbl_verdict.setText("ADESIVO • AGUARDANDO TOP/MID")
+            self.lbl_verdict.setStyleSheet(
+                "color: #ffd33d; font-size: 16px; font-weight: bold; "
+                "border: none;"
+            )
+            self.lbl_reason.setText(
+                "SIDE concluída. Coletando TOP e MID para o único "
+                "julgamento final."
+            )
+            self.lbl_timer.setText("Coletando TOP/MID...")
+            self.btn_save_ok.setEnabled(False)
+            self.btn_save_ng.setEnabled(False)
+            self.btn_skip.setEnabled(False)
+        except Exception:
+            pass
+
         _sync_multilight_debug_controls(self)
 
         automation = getattr(
@@ -873,6 +995,9 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
     control_panel_cls.process_aoi_images = process_aoi_images
     control_panel_cls.save_label = save_label
     control_panel_cls.skip_image = skip_image
+    control_panel_cls.finalize_adhesive_multilight_decision = (
+        _finalize_multilight_decision
+    )
     control_panel_cls._adhesive_multilight_inspection_installed = True
 
 
