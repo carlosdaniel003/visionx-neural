@@ -8,7 +8,6 @@ MSS, mas somente decisões humanas OK.
 from __future__ import annotations
 
 from datetime import datetime
-import hashlib
 from pathlib import Path
 from queue import Queue
 from threading import Thread
@@ -20,6 +19,12 @@ from src.config.settings import settings
 from src.services.capture_evidence import (
     current_copy_image_event_id,
     current_copy_image_snapshot,
+)
+from src.services.image_archive_candidates import archive_image_candidates
+from src.services.image_archive_dedup import (
+    image_fingerprint,
+    load_archive_fingerprints,
+    unique_archive_target,
 )
 from src.services.image_archive_naming import (
     build_archive_filename,
@@ -39,16 +44,8 @@ def build_ok_archive_filename(
 
 
 def ok_image_fingerprint(image: np.ndarray) -> str:
-    """Hash determinístico do conteúdo visual exato, independente do nome."""
-    if not isinstance(image, np.ndarray) or image.size == 0:
-        return ""
-
-    array = np.ascontiguousarray(image)
-    digest = hashlib.sha256()
-    digest.update(str(array.dtype).encode("ascii", errors="ignore"))
-    digest.update(str(tuple(array.shape)).encode("ascii", errors="ignore"))
-    digest.update(array.tobytes())
-    return digest.hexdigest()
+    """Alias compatível para a deduplicação visual compartilhada."""
+    return image_fingerprint(image)
 
 
 class OKImageArchiveQueue:
@@ -94,16 +91,9 @@ class OKImageArchiveQueue:
         if self._fingerprints_loaded:
             return
 
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        for path in self.output_dir.glob("*.png"):
-            try:
-                image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-                fingerprint = ok_image_fingerprint(image)
-                if fingerprint:
-                    self._seen_fingerprints.add(fingerprint)
-            except Exception:
-                continue
-
+        self._seen_fingerprints.update(
+            load_archive_fingerprints(self.output_dir)
+        )
         self._fingerprints_loaded = True
 
     def _run(self) -> None:
@@ -124,9 +114,11 @@ class OKImageArchiveQueue:
                     continue
 
                 self.output_dir.mkdir(parents=True, exist_ok=True)
-                target = self.output_dir / build_archive_filename(
-                    category,
-                    timestamp,
+                target = unique_archive_target(
+                    self.output_dir / build_archive_filename(
+                        category,
+                        timestamp,
+                    )
                 )
                 if not cv2.imwrite(str(target), image):
                     print(f"Falha ao salvar arquivo visual OK: {target}")
@@ -234,12 +226,16 @@ def install_ok_image_archive(control_panel_cls) -> None:
             and not duplicate_event
         )
 
-        archive_image = None
-        archive_category = ""
+        archive_images = []
         if should_archive:
-            archive_image = current_copy_image_snapshot(self)
-            archive_category = current_category
-            if archive_image is not None:
+            primary_image = current_copy_image_snapshot(self)
+            archive_images = archive_image_candidates(
+                self,
+                event_id=current_event_id,
+                category=current_category,
+                primary_image=primary_image,
+            )
+            if archive_images:
                 # Reserva antes de concluir a decisão para impedir duplicação
                 # caso o mesmo julgamento retorne pelo hook do XP.
                 self._ok_archive_last_event_id = current_event_id
@@ -251,7 +247,7 @@ def install_ok_image_archive(control_panel_cls) -> None:
             and supported_capture
             and has_live_analysis
             and not duplicate_event
-            and archive_image is None
+            and not archive_images
         ):
             updater = getattr(self, "update_network_status", None)
             if callable(updater):
@@ -273,16 +269,18 @@ def install_ok_image_archive(control_panel_cls) -> None:
             source=source,
         )
 
-        if archive_image is not None:
+        if archive_images:
             submitter = getattr(self, "_ok_archive_submitter", None)
             if callable(submitter):
-                submitter(archive_image, archive_category)
+                for archive_image, archive_category in archive_images:
+                    submitter(archive_image, archive_category)
             else:
                 queue = getattr(self, "_ok_archive_queue", None)
                 if queue is None:
                     queue = OKImageArchiveQueue()
                     self._ok_archive_queue = queue
-                queue.submit(archive_image, archive_category)
+                for archive_image, archive_category in archive_images:
+                    queue.submit(archive_image, archive_category)
 
         return result
 
