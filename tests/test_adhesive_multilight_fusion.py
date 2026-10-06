@@ -106,6 +106,41 @@ class AdhesiveMultiLightFusionTests(unittest.TestCase):
         )
         self.assertAlmostEqual(detail["final_score"], 0.9722685571309425)
 
+    def test_strong_mid_witness_can_confirm_defect_by_itself(self):
+        analyses = {
+            "SIDE": _analysis(
+                "SIDE",
+                adhesive_score=0.05,
+                physical_score=0.20,
+                adhesive_is_defect=False,
+            ),
+            "TOP": _analysis(
+                "TOP",
+                adhesive_score=0.10,
+                physical_score=0.25,
+                adhesive_is_defect=False,
+            ),
+            "MID": _analysis(
+                "MID",
+                adhesive_score=0.88,
+                physical_score=0.90,
+                adhesive_is_defect=True,
+                local_verdict="DEFEITO REAL",
+            ),
+        }
+
+        result = fuse_adhesive_multilight(analyses)
+
+        self.assertEqual(result["verdict"], "DEFEITO REAL")
+        self.assertIn(
+            "MID",
+            result["detail"]["adhesive_multilight_strong_auxiliary_modes"],
+        )
+        self.assertEqual(
+            result["detail"]["adhesive_multilight_dominant_mode"],
+            "MID",
+        )
+
     def test_two_moderate_positive_lights_are_corroborated_defect(self):
         analyses = {
             "SIDE": _analysis(
