@@ -143,7 +143,8 @@ def main():
     install_local_capture_safety(ControlPanel)
     install_qt_button_signal_adapter(ControlPanel)
     install_mode_selector_gate(OperationalControlsPresenter)
-    # Hook visual leve: confirma 0/1 recebidos do XP sem alterar a decisão.
+    # Hooks visuais leves: confirmam 0/1 e teclas de iluminação sem alterar
+    # decisão, gate ou persistência.
     install_decision_key_feedback_hooks(ControlPanel)
     install_lighting_status_feedback_hooks(ControlPanel)
     # O fundo permanece neutro em todos os estados. O veredito final é
