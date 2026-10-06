@@ -16,6 +16,12 @@ import cv2
 import numpy as np
 
 from src.config.settings import settings
+from src.services.image_archive_candidates import archive_image_candidates
+from src.services.image_archive_dedup import (
+    image_fingerprint,
+    load_archive_fingerprints,
+    unique_archive_target,
+)
 from src.services.image_archive_naming import (
     build_archive_filename,
     safe_archive_category,
@@ -40,6 +46,8 @@ class NGImageArchiveQueue:
     def __init__(self, output_dir: Path | None = None):
         self.output_dir = Path(output_dir or settings.NG_ARCHIVE_DIR)
         self._queue: Queue[tuple[np.ndarray, str, datetime] | None] = Queue()
+        self._seen_fingerprints: set[str] = set()
+        self._fingerprints_loaded = False
         self._worker = Thread(
             target=self._run,
             name="VisionXNGImageArchive",
@@ -71,7 +79,20 @@ class NGImageArchiveQueue:
         """Apoio determinístico para testes/manutenção."""
         self._queue.join()
 
+    def _load_existing_fingerprints(self) -> None:
+        if self._fingerprints_loaded:
+            return
+        self._seen_fingerprints.update(
+            load_archive_fingerprints(self.output_dir)
+        )
+        self._fingerprints_loaded = True
+
     def _run(self) -> None:
+        try:
+            self._load_existing_fingerprints()
+        except Exception as exc:
+            print(f"Falha não fatal ao indexar arquivo visual NG: {exc}")
+
         while True:
             item = self._queue.get()
             try:
@@ -79,13 +100,23 @@ class NGImageArchiveQueue:
                     return
 
                 image, category, timestamp = item
+                fingerprint = image_fingerprint(image)
+                if fingerprint and fingerprint in self._seen_fingerprints:
+                    continue
+
                 self.output_dir.mkdir(parents=True, exist_ok=True)
-                target = self.output_dir / build_archive_filename(
-                    category,
-                    timestamp,
+                target = unique_archive_target(
+                    self.output_dir / build_archive_filename(
+                        category,
+                        timestamp,
+                    )
                 )
                 if not cv2.imwrite(str(target), image):
                     print(f"Falha ao salvar arquivo visual NG: {target}")
+                    continue
+
+                if fingerprint:
+                    self._seen_fingerprints.add(fingerprint)
             except Exception as exc:
                 print(f"Falha não fatal ao arquivar imagem NG: {exc}")
             finally:
@@ -183,20 +214,22 @@ def install_ng_image_archive(control_panel_cls) -> None:
             and not duplicate_event
         )
 
-        archive_image = None
-        archive_category = ""
+        archive_images = []
         if should_archive:
-            # Mesma fonte e mesma validação de event_id do botão
-            # "Copiar imagem XP". Não usar current_ng como imagem: ele serve
-            # somente como prova de que ainda existe uma captura ativa.
-            archive_image = network_xp_frame_snapshot(self)
-            archive_category = current_category
+            # Para categoria comum, usa exatamente o frame XP atual. Para
+            # adesivo, resolve SIDE/TOP/MID do mesmo event_id.
+            primary_image = network_xp_frame_snapshot(self)
+            archive_images = archive_image_candidates(
+                self,
+                event_id=current_event_id,
+                category=current_category,
+                primary_image=primary_image,
+            )
 
             # Reserva o evento ANTES de concluir o julgamento. O comando
             # PRESS_1 pode reaparecer pelo hook do XP como CMD_NG depois que a
-            # interface já limpou current_aoi_info. Sem esta trava, o mesmo
-            # frame podia ser salvo uma segunda vez como SEM_CATEGORIA.
-            if archive_image is not None:
+            # interface já limpou current_aoi_info.
+            if archive_images:
                 self._ng_archive_last_event_id = current_event_id
 
         if (
@@ -205,7 +238,7 @@ def install_ng_image_archive(control_panel_cls) -> None:
             and current_cycle_source == "network"
             and has_live_analysis
             and not duplicate_event
-            and archive_image is None
+            and not archive_images
         ):
             updater = getattr(self, "update_network_status", None)
             if callable(updater):
@@ -226,16 +259,18 @@ def install_ng_image_archive(control_panel_cls) -> None:
             source=source,
         )
 
-        if archive_image is not None:
+        if archive_images:
             submitter = getattr(self, "_ng_archive_submitter", None)
             if callable(submitter):
-                submitter(archive_image, archive_category)
+                for archive_image, archive_category in archive_images:
+                    submitter(archive_image, archive_category)
             else:
                 queue = getattr(self, "_ng_archive_queue", None)
                 if queue is None:
                     queue = NGImageArchiveQueue()
                     self._ng_archive_queue = queue
-                queue.submit(archive_image, archive_category)
+                for archive_image, archive_category in archive_images:
+                    queue.submit(archive_image, archive_category)
 
         return result
 
