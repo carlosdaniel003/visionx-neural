@@ -1,4 +1,4 @@
-# agente_industrial_xp.py (V5.2 - FULL DUPLEX C/ KERNEL HOOK + SETAS: COMPATIVEL PYTHON 3.4)
+# agente_industrial_xp.py (V5.3 - FULL DUPLEX C/ KERNEL HOOK + TELEMETRIA DE SETAS: COMPATIVEL PYTHON 3.4)
 # Teste de envio
 import socket
 import win32gui
@@ -246,6 +246,36 @@ def hook_proc(nCode, wParam, lParam):
                 args=("CMD_NG",),
             ).start()
 
+        elif vkCode == VK_LEFT:
+            print(
+                "\n[TECLADO KERNEL] Seta ESQUERDA detectada "
+                "(TOP). Avisando IA..."
+            )
+            threading.Thread(
+                target=enviar_aviso_teclado_ia,
+                args=("CMD_TOP",),
+            ).start()
+
+        elif vkCode == VK_DOWN:
+            print(
+                "\n[TECLADO KERNEL] Seta BAIXO detectada "
+                "(SIDE). Avisando IA..."
+            )
+            threading.Thread(
+                target=enviar_aviso_teclado_ia,
+                args=("CMD_SIDE",),
+            ).start()
+
+        elif vkCode == VK_RIGHT:
+            print(
+                "\n[TECLADO KERNEL] Seta DIREITA detectada "
+                "(MID). Avisando IA..."
+            )
+            threading.Thread(
+                target=enviar_aviso_teclado_ia,
+                args=("CMD_MID",),
+            ).start()
+
     return user32.CallNextHookEx(None, nCode, wParam, lParam)
 
 
@@ -307,9 +337,9 @@ def loop_vigia_tela():
 
 def iniciar_agente():
     print("==========================================")
-    print(">>> AGENTE VISIONX V5.2 - FULL DUPLEX (KERNEL HOOK + SETAS)")
+    print(">>> AGENTE VISIONX V5.3 - FULL DUPLEX (KERNEL HOOK + TELEMETRIA DE SETAS)")
     print(">>> Monitorando Tela, Rede e Teclado Fisico (Global)...")
-    print(">>> Comandos: 0, 1, LEFT, DOWN, RIGHT")
+    print(">>> Comandos: 0, 1, LEFT, DOWN, RIGHT | Retorno: OK, NG, TOP, SIDE, MID")
     print("==========================================")
 
     # 1. Liga o Ouvinte da IA (Porta 5000)
