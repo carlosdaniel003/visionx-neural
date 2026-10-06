@@ -734,8 +734,26 @@ Regressões adicionadas:
   adesivo;
 - uma MID fisicamente forte pode ser a testemunha dominante da fusão final.
 
-Esta implementação é a primeira versão do detector MID e ainda precisa ser
-validada na AOI real com o mesmo caso e depois com exemplos reais OK/NG.
+Esta implementação foi validada operacionalmente na AOI real com o caso que
+antes deixava a iluminação MID matematicamente cega. O operador confirmou que,
+após a inclusão do perfil `mid_bright_resin_v1`, o fluxo passou a funcionar
+corretamente também na MID.
+
+Estado atual validado:
+
+```text
+SIDE → análise física
+TOP  → análise física
+MID  → análise física com mid_bright_resin_v1
+        ↓
+fusão SIDE/TOP/MID
+        ↓
+um único julgamento final
+```
+
+A validação confirma o comportamento funcional do detector MID no caso real
+testado. Isso ainda não substitui uma calibração estatística ampla: novos casos
+OK/NG devem continuar sendo coletados antes de alterar limiares ou pesos.
 
 ### Restrições arquiteturais da melhoria
 
@@ -789,17 +807,19 @@ A melhoria será executada por etapas, sem avançar automaticamente:
    SIDE/TOP/MID formam um único julgamento final físico; TOP/MID fortes têm
    autoridade, duas iluminações positivas corroboram defeito, caso intermediário
    exige revisão e o KNN local permanece apenas como auditoria na fusão.
-10. **Implementado — detector MID claro v1:** o perfil
-    `mid_bright_resin_v1` adiciona testemunha diferencial LAB para película
-    clara/creme/amarelada exclusivamente na iluminação MID, preservando
-    SIDE/TOP no detector legado.
-11. **Próxima validação:** repetir o caso real que antes gerava
-    `adhesive_score = 0` na MID e coletar novos exemplos OK/NG antes de
-    recalibrar qualquer limiar.
+10. **Concluído e validado operacionalmente — detector MID claro v1:** o
+    perfil `mid_bright_resin_v1` adiciona testemunha diferencial LAB para
+    película clara/creme/amarelada exclusivamente na iluminação MID,
+    preservando SIDE/TOP no detector legado. O caso real que antes gerava
+    `adhesive_score = 0` na MID foi repetido e o comportamento foi confirmado
+    como correto pelo operador.
+11. **Próxima etapa — calibração com mais casos reais:** coletar novos exemplos
+    OK/NG de adesivo em SIDE/TOP/MID antes de reajustar qualquer limiar ou peso.
 
-A aquisição, as três análises visuais, a fusão final e a primeira versão do
-detector específico de MID estão implementadas. A próxima etapa é validação
-operacional do novo perfil MID, não uma nova mudança arquitetural.
+A aquisição, as três análises visuais, a fusão final e o detector específico de
+MID estão implementados e validados operacionalmente nos casos reais testados.
+O próximo trabalho recomendado é aumentar a base de validação antes de novas
+mudanças de regra.
 
 
 **Arquivo visual NG opcional:**
