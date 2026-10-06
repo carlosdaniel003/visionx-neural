@@ -1480,8 +1480,9 @@ O estado de revisão:
 
 - não significa OK;
 - não significa NG;
-- não deve disparar o overlay binário `FALHA FALSA / DEFEITO REAL`;
-- deve permanecer amarelo no painel de decisão;
+- não pode ser apresentado como `FALHA FALSA` nem `DEFEITO REAL`;
+- deve exibir no overlay superior a mensagem `REVISÃO OBRIGATÓRIA` em vermelho;
+- deve permanecer amarelo no painel técnico de decisão, distinguindo alerta operacional de veredito NG;
 - mantém `0=OK` e `1=NG` disponíveis para o operador;
 - continua preservando `is_defect` e scores brutos para auditoria interna.
 
@@ -2244,14 +2245,24 @@ do handler produtivo consumir `CMD_OK/CMD_NG`. Isso garante a mesma
 sincronização mesmo quando o processamento do comando encerra o ciclo
 imediatamente.
 
-### Estados inconclusivos
+### Estado de revisão obrigatória
 
-Se a análise estiver em revisão obrigatória ou não possuir um veredito final
-reconhecido, o overlay não deve inventar uma decisão binária.
+Se a análise exigir revisão humana, o overlay não deve inventar uma decisão
+binária. Em vez disso, ele deve comunicar explicitamente o estado operacional:
+
+```text
+operator_review_required = True
+        ↓
+REVISÃO OBRIGATÓRIA
+        ↓
+texto vermelho no card superior direito
+```
 
 Portanto:
 
-- `REVISÃO OBRIGATÓRIA` → não mostrar `FALHA FALSA` nem `DEFEITO REAL`;
+- `REVISÃO OBRIGATÓRIA` → mostrar exatamente `REVISÃO OBRIGATÓRIA` em vermelho;
+- nunca substituir esse estado por `FALHA FALSA` ou `DEFEITO REAL`, mesmo que
+  `is_defect` bruto ainda esteja presente para auditoria;
 - análises legadas sem texto de veredito só podem usar `is_defect` como
   fallback quando não existir revisão humana pendente.
 
@@ -2291,7 +2302,7 @@ Manter testes que garantam:
 - fade-out do veredito e do feedback `0/1` iniciam no mesmo evento;
 - ambos usam aproximadamente `160 ms` e easing `InOutQuad`;
 - comando `CMD_OK/CMD_NG` do XP prepara o feedback antes do handler produtivo;
-- revisão obrigatória não inventa um veredito;
+- revisão obrigatória exibe `REVISÃO OBRIGATÓRIA` em vermelho e não inventa um veredito binário;
 - reset sem feedback `0/1` ativo continua limpando o overlay imediatamente;
 - o fundo permanece neutro durante toda a análise;
 - feedback de tecla continua independente no canto inferior direito;
