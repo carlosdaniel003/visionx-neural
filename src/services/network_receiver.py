@@ -73,9 +73,23 @@ class NetworkReceiver(QThread):
         # como início do "Tempo de análise".
         self.last_delivered_image_received_at = 0.0
 
+        # Frames auxiliares SIDE/TOP/MID da mesma peça podem atravessar a trava
+        # principal somente durante uma sessão visual de adesivo.
+        self._auxiliary_image_mode = False
+        self.last_auxiliary_image_received_at = 0.0
+
     def lock_image_gate(self) -> None:
-        """Impede que uma nova imagem seja emitida para a interface."""
+        """Impede que uma nova imagem principal seja emitida para a interface."""
         self._image_gate.lock()
+
+    def set_auxiliary_image_mode(self, enabled: bool) -> None:
+        """Permite previews da mesma peça sem reabrir o gate principal."""
+        with self._state_lock:
+            self._auxiliary_image_mode = bool(enabled)
+
+    def is_auxiliary_image_mode(self) -> bool:
+        with self._state_lock:
+            return bool(self._auxiliary_image_mode)
 
     def _clear_candidate_locked(self) -> None:
         self._candidate_signature = None
@@ -351,8 +365,15 @@ class NetworkReceiver(QThread):
 
                     tamanho_total = int(cabecalho_str)
 
+                    gate_open = self._image_gate.is_open()
+                    auxiliary_delivery = bool(
+                        not gate_open and self.is_auxiliary_image_mode()
+                    )
+
                     # A captura anterior ainda está em processamento ou revisão.
-                    if not self._image_gate.is_open():
+                    # Exceção controlada: previews multilight de adesivo podem
+                    # atravessar a trava sem se tornarem uma nova peça.
+                    if not gate_open and not auxiliary_delivery:
                         self._discard_payload(conexao, tamanho_total)
                         conexao.close()
                         self._log_ignored_image()
@@ -383,6 +404,16 @@ class NetworkReceiver(QThread):
                         self.log_updated.emit(
                             "Erro ao decodificar a imagem da rede."
                         )
+                        continue
+
+                    if auxiliary_delivery:
+                        self.last_auxiliary_image_received_at = (
+                            payload_received_at
+                        )
+                        self.log_updated.emit(
+                            "Frame auxiliar multilight recebido para a peça ativa."
+                        )
+                        self.image_received.emit(img, ip_origem)
                         continue
 
                     signature = self._frame_signature(img)
