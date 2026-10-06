@@ -15,10 +15,12 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from src.ui.adhesive_multilight_inspection import AdhesiveMultiLightView
 from src.ui.branding import DISPLAY_NAME, MONITOR_WINDOW_TITLE
 from src.ui.network_xp_debug import (
     copy_network_debug_to_clipboard,
@@ -357,6 +359,18 @@ class ControlPanelUI:
             )
         )
 
+        window.inspection_view_stack = QStackedWidget()
+        window.inspection_view_stack.setMinimumWidth(0)
+        window.inspection_view_stack.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+
+        window.normal_inspection_view = QWidget()
+        normal_images_layout = QVBoxLayout(window.normal_inspection_view)
+        normal_images_layout.setContentsMargins(0, 0, 0, 0)
+        normal_images_layout.setSpacing(8)
+
         window.lbl_capture_evidence_preview = _ResponsiveCapturePreview(
             "Aguardando captura"
         )
@@ -369,7 +383,7 @@ class ControlPanelUI:
             "Prévia da mesma imagem completa disponível em Copiar imagem, "
             "seja recebida do Windows XP ou capturada localmente por MSS."
         )
-        images_layout.addWidget(capture_preview_card)
+        normal_images_layout.addWidget(capture_preview_card)
 
         image_grid = QGridLayout()
         image_grid.setHorizontalSpacing(8)
@@ -390,7 +404,16 @@ class ControlPanelUI:
             image_grid.addWidget(card, index // 2, index % 2)
         image_grid.setColumnStretch(0, 1)
         image_grid.setColumnStretch(1, 1)
-        images_layout.addLayout(image_grid, stretch=1)
+        normal_images_layout.addLayout(image_grid, stretch=1)
+
+        window.adhesive_multilight_view = AdhesiveMultiLightView()
+        window.inspection_view_stack.addWidget(window.normal_inspection_view)
+        window.inspection_view_stack.addWidget(window.adhesive_multilight_view)
+        window.inspection_view_stack.setCurrentWidget(
+            window.normal_inspection_view
+        )
+        window._adhesive_inspection_mode = False
+        images_layout.addWidget(window.inspection_view_stack, stretch=1)
 
         window.telemetry_section = QFrame()
         window.telemetry_section.setObjectName("sectionPanel")
@@ -1096,6 +1119,27 @@ class ControlPanelUI:
         for column in range(columns):
             grid.setColumnStretch(column, 1)
 
+    def set_adhesive_inspection_mode(self, window, enabled: bool) -> None:
+        """Alterna somente a área de imagens; demais categorias mantêm o layout atual."""
+        enabled = bool(enabled)
+        window._adhesive_inspection_mode = enabled
+        stack = getattr(window, "inspection_view_stack", None)
+        if stack is not None:
+            target = (
+                window.adhesive_multilight_view
+                if enabled
+                else window.normal_inspection_view
+            )
+            stack.setCurrentWidget(target)
+
+        viewport = getattr(
+            getattr(window, "root_scroll", None),
+            "viewport",
+            lambda: None,
+        )()
+        width = viewport.width() if viewport is not None else window.width()
+        self.apply_layout_profile(window, width, force=True)
+
     def apply_layout_profile(self, window, width: int, force: bool = False) -> None:
         width = max(int(width), 1)
         profile = profile_for_width(width)
@@ -1154,14 +1198,31 @@ class ControlPanelUI:
             wrapper.setMaximumWidth(profile.debugger_max_width)
             wrapper.setMinimumHeight(265 if compact else 300)
 
+        adhesive_mode = bool(
+            getattr(window, "_adhesive_inspection_mode", False)
+        )
+
         if profile.splitter_vertical:
             window.images_section.setMaximumWidth(16777215)
-            window.images_section.setMinimumHeight(320)
+            window.images_section.setMinimumHeight(
+                520 if adhesive_mode else 320
+            )
             window.telemetry_section.setMinimumHeight(330)
-            window.main_splitter.setSizes([340, 430])
+            window.main_splitter.setSizes(
+                [560 if adhesive_mode else 340, 430]
+            )
         else:
-            image_width = 400 if profile.name == "wide" else 340
-            window.images_section.setMaximumWidth(image_width)
+            if adhesive_mode:
+                image_width = min(
+                    max(760, int(width * 0.62)),
+                    max(760, width - 420),
+                )
+            else:
+                image_width = 400 if profile.name == "wide" else 340
+
+            window.images_section.setMaximumWidth(
+                16777215 if adhesive_mode else image_width
+            )
             window.images_section.setMinimumHeight(0)
             window.telemetry_section.setMinimumHeight(360)
             available_for_telemetry = max(1, width - image_width)
