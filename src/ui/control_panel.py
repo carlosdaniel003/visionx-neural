@@ -418,8 +418,16 @@ class ControlPanel(QWidget):
 
         conf_main = int(conf_float * 100)
         conf_opp = 100 - conf_main
-        color_str = "#ff7b72" if is_defect else "#3fb950"
-        def_pct, ok_pct = (conf_main, conf_opp) if is_defect else (conf_opp, conf_main)
+        review_required = str(verdict or "").strip().upper() == "REVISÃO OBRIGATÓRIA"
+        color_str = "#ff7b72" if (is_defect or review_required) else "#3fb950"
+        if review_required:
+            def_pct, ok_pct = 50, 50
+        else:
+            def_pct, ok_pct = (
+                (conf_main, conf_opp)
+                if is_defect
+                else (conf_opp, conf_main)
+            )
 
         self.lbl_verdict.setText(f"{verdict.upper()} • (Defeito: {def_pct}% | Falso: {ok_pct}%)")
         self.lbl_verdict.setStyleSheet(f"color: {color_str}; font-size: 16px; font-weight: bold; border: none;")
@@ -519,7 +527,22 @@ class ControlPanel(QWidget):
 
         img_ng_drawn = ImageRenderer.draw_multilayer_boxes(ng_crop, analysis)
 
-        if not analysis.get("all_boxes") and not analysis.get("is_defect"):
+        multilight_pending = bool(
+            getattr(self, "adhesive_multilight_pending_start", False)
+        )
+        if multilight_pending:
+            # Em adesivo, SIDE é somente a primeira observação. O julgamento
+            # final só existe depois que TOP e MID também forem analisadas.
+            self.lbl_verdict.setText("ADESIVO • AGUARDANDO TOP/MID")
+            self.lbl_verdict.setStyleSheet(
+                "color: #ffd33d; font-size: 16px; font-weight: bold; "
+                "border: none;"
+            )
+            self.lbl_reason.setText(
+                "SIDE concluída. O resultado final será calculado após "
+                "as três iluminações."
+            )
+        elif not analysis.get("all_boxes") and not analysis.get("is_defect"):
              self.lbl_verdict.setText("NENHUMA ANOMALIA DETECTADA")
              self.lbl_verdict.setStyleSheet("color: #3fb950; font-size: 16px; font-weight: bold; border: none;")
              self.lbl_reason.setText("A análise matemática não encontrou diferenças críticas.")
