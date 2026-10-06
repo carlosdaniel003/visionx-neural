@@ -168,6 +168,67 @@ class InvertedFaceExpertTests(unittest.TestCase):
         self.assertLess(result["inverted_score"], result["inverted_tolerance"])
         self.assertGreater(result["inverted_witness_retention"], 0.70)
 
+    def test_real_event_bc8_tiny_witness_without_inversion_corroborator_has_low_authority(self):
+        evidence = self.expert._authority_evidence(
+            (89, 376, 125, 44),
+            {
+                "x": 13,
+                "y": 13,
+                "w": 278,
+                "h": 527,
+                "detected": True,
+            },
+            witness_loss=0.56,
+            feature_loss=0.58,
+            topology_mismatch=0.29,
+            orientation_mismatch=0.04,
+            alternate_face_signal=0.40,
+            relocation_signal=0.10,
+            transform_gain=0.05,
+            best_transform_similarity=0.50,
+        )
+
+        self.assertAlmostEqual(
+            evidence["inverted_local_global_area_ratio"],
+            (125 * 44) / (278 * 527),
+            places=4,
+        )
+        self.assertTrue(evidence["inverted_small_witness_roi"])
+        self.assertFalse(evidence["inverted_corroborated"])
+        self.assertFalse(evidence["inverted_high_authority"])
+        self.assertIn(
+            "sem corroborador forte",
+            evidence["inverted_corroboration_reason"],
+        )
+
+    def test_tiny_witness_with_orientation_and_topology_corroboration_keeps_high_authority(self):
+        evidence = self.expert._authority_evidence(
+            (89, 376, 125, 44),
+            {
+                "x": 13,
+                "y": 13,
+                "w": 278,
+                "h": 527,
+                "detected": True,
+            },
+            witness_loss=0.40,
+            feature_loss=0.42,
+            topology_mismatch=0.35,
+            orientation_mismatch=0.30,
+            alternate_face_signal=0.35,
+            relocation_signal=0.10,
+            transform_gain=0.05,
+            best_transform_similarity=0.50,
+        )
+
+        self.assertTrue(evidence["inverted_small_witness_roi"])
+        self.assertTrue(evidence["inverted_corroborated"])
+        self.assertTrue(evidence["inverted_high_authority"])
+        self.assertIn(
+            "orientação+topologia",
+            evidence["inverted_corroboration_reason"],
+        )
+
     def test_views_and_masks_preserve_exact_roi_dimensions(self):
         result = self.expert.analyze(
             vertical_mark_scene(False),
