@@ -134,6 +134,30 @@ class ControlPanel(QWidget):
             return False
 
         normalized_source = str(source or "").strip().lower()
+
+        # Durante a sequência automática de adesivo, os controles manuais do
+        # próprio ODIN não podem trocar a iluminação no meio de TOP/MID.
+        if (
+            bool(
+                getattr(
+                    self,
+                    "adhesive_multilight_automation_active",
+                    False,
+                )
+            )
+            and normalized_source in {
+                "local",
+                "button",
+                "odin_control",
+                "odin_keyboard",
+            }
+        ):
+            self.update_network_status(
+                "Captura automática SIDE/TOP/MID em andamento; "
+                "controle manual de iluminação temporariamente bloqueado."
+            )
+            return False
+
         if normalized_source in {
             "local",
             "button",
