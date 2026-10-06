@@ -59,20 +59,20 @@ class AdhesivePayloadTests(unittest.TestCase):
         small_box = (100, 90, 70, 60)
         small_crop = test[90:150, 100:170].copy()
 
-        with patch.object(
-            multilight_module,
-            "detect_anomalies",
-            return_value=([], [small_box], large_box, np.array([]), np.array([])),
-        ), patch.object(
-            multilight_module.EpicenterExtractor,
-            "extract_focus",
-            return_value=(
-                [small_box],
-                sample[90:150, 100:170].copy(),
-                small_crop,
-            ),
-        ):
-            payload = build_adhesive_view_payload(sample, test)
+        context = {
+            "valid": True,
+            "raw_anomalies": [],
+            "old_epicenters": [small_box],
+            "global_box_info": large_box,
+            "real_epicenters": [small_box],
+            "focus_gab": sample[90:150, 100:170].copy(),
+            "focus_ng": small_crop,
+        }
+        payload = build_adhesive_view_payload(
+            sample,
+            test,
+            context=context,
+        )
 
         self.assertTrue(np.array_equal(payload["main"], test))
         self.assertEqual(payload["large"].shape[:2], (210, 240))
@@ -86,7 +86,7 @@ class AdhesivePayloadTests(unittest.TestCase):
 
         with patch.object(
             multilight_module,
-            "detect_anomalies",
+            "build_lighting_context",
             side_effect=RuntimeError("visual-only failure"),
         ):
             payload = build_adhesive_view_payload(sample, test)
@@ -159,6 +159,27 @@ class AdhesiveSourceContractTests(unittest.TestCase):
         self.assertIn(
             "window.inspection_view_stack.setCurrentWidget(\n"
             "            window.normal_inspection_view",
+            source,
+        )
+
+    def test_auxiliary_frames_run_visual_experts_before_advancing_automation(self):
+        source = open(
+            "src/ui/adhesive_multilight_inspection.py",
+            encoding="utf-8",
+        ).read()
+
+        analyze_index = source.index("lighting_analysis = analyze_lighting(")
+        render_index = source.index(
+            "analysis_view.set_analysis(\n"
+            "                        aux_mode,"
+        )
+        advance_index = source.index("frame_stored(aux_mode)")
+
+        self.assertLess(analyze_index, render_index)
+        self.assertLess(render_index, advance_index)
+        self.assertIn("adhesive_multilight_analyses", source)
+        self.assertIn(
+            "getattr(self, \"current_aoi_info\", None)",
             source,
         )
 
