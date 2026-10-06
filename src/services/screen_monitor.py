@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 import mss
 import re
+import time
 from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 from src.config.settings import settings
@@ -60,6 +61,9 @@ class ScreenMonitor(QThread):
         super().__init__()
         self.running = True
         self.last_capture_frame = None
+        # Momento monotônico em que o frame MSS aceito terminou de ser
+        # capturado. Usado como início real do Tempo de análise local.
+        self.last_capture_received_at = 0.0
 
     # =================================================================
     # DETECÇÃO DE BARRAS
@@ -500,6 +504,7 @@ class ScreenMonitor(QThread):
 
             while self.running:
                 screenshot = sct.grab(monitor)
+                frame_received_at = time.perf_counter()
                 frame_bgra = np.array(screenshot)
                 frame_bgr = cv2.cvtColor(frame_bgra, cv2.COLOR_BGRA2BGR)
                 frame_h, frame_w = frame_bgr.shape[:2]
@@ -553,6 +558,7 @@ class ScreenMonitor(QThread):
                     aoi_info = self._extract_text_info(
                         frame_bgr, blue_bar, red_bar)
                     self.last_capture_frame = frame_bgr.copy()
+                    self.last_capture_received_at = float(frame_received_at)
 
                     self.layout_detected.emit(
                         crop_sample, crop_ng, aoi_info)
