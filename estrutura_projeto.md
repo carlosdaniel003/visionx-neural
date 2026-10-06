@@ -1342,6 +1342,196 @@ Manter testes que garantam:
 - assinatura e memória continuam isoladas pela categoria original.
 
 
+### Caso observado em 06/10/2026 — ROI testemunha mínima não pode significar inversão por si só
+
+Evento: `bc8b227c749241fcb72fd7e2fd7e0a48`.
+
+A AOI classificou a ocorrência como `INVERTIDO`, porém a peça era OK e deveria
+ser tratada como falha falsa após confirmação do operador.
+
+O debug mostrou que o problema não vinha de `FALTANDO` nem da guarda
+transversal de ausência física:
+
+- `missing_hard_absence=False`;
+- dual-scale executado;
+- contexto não confirmou ausência física forte;
+- similaridade direta contextual ≈ `84,5%`.
+
+A decisão incorreta estava concentrada no motor `INVERTIDO` e na forma como o
+estado de conflito era apresentado:
+
+- caixa global do componente: aproximadamente `278 × 527 px`;
+- ROI testemunha: aproximadamente `125 × 44 px`;
+- a ROI representa apenas ≈ `3,75%` da área global;
+- score bruto do especialista INVERTIDO ≈ `67%`;
+- retenção da marca ≈ `44%`;
+- perda da marca/feature ≈ `58%`;
+- topologia divergente ≈ `29%`;
+- orientação divergente ≈ `4%`;
+- melhor memória OK ≈ `90,01%`;
+- melhor memória NG ≈ `89,36%`;
+- margem ≈ `0,65 p.p.`;
+- conflito de memória efetivo = `True`;
+- revisão obrigatória = `True`.
+
+Apesar disso, o resultado exposto era `DEFEITO REAL`.
+
+#### Causa 1 — piso artificial de 90% no motor INVERTIDO
+
+Na fusão central, qualquer disparo do especialista INVERTIDO era convertido em:
+
+```text
+effective_score = max(90%, inverted_score)
+```
+
+Portanto:
+
+```text
+score bruto ≈ 67%
+        ↓
+motor disparou
+        ↓
+score físico efetivo = 90%
+```
+
+Isso dava autoridade de defeito forte para uma divergência de marca localizada,
+mesmo quando não existia uma segunda evidência clara de inversão.
+
+#### Autoridade da ROI testemunha
+
+O `InvertedWitnessExpert` passa a registrar:
+
+- `inverted_local_global_area_ratio`;
+- `inverted_small_witness_roi`;
+- `inverted_high_authority`;
+- `inverted_corroborated`;
+- `inverted_corroboration_reason`.
+
+Uma ROI é considerada pequena para fins de autoridade quando ocupa no máximo
+`10%` da caixa global detectada.
+
+Uma ROI pequena só mantém a antiga autoridade física elevada quando existe ao
+menos um corroborador forte independente:
+
+1. orientação >= `20%` **e** topologia >= `20%`;
+2. sinal de deslocamento >= `40%`;
+3. ganho de transformação >= `10%` com similaridade transformada >= `56%`;
+4. face alternativa >= `58%`;
+5. perda da marca >= `62%`;
+6. perda estrutural da marca >= `65%`.
+
+Sem esses corroboradores:
+
+```text
+ROI testemunha <= 10% do componente
+        +
+marca local divergiu
+        +
+sem evidência forte independente de inversão
+        ↓
+inverted_high_authority = False
+        ↓
+não aplicar piso físico de 90%
+        ↓
+usar o score bruto real do especialista
+```
+
+Essa regra **não desativa** o motor INVERTIDO. A divergência continua registrada
+e pode participar da fusão. A mudança remove apenas a amplificação automática
+de uma evidência local ambígua.
+
+ROIs maiores continuam com o comportamento anterior. ROIs pequenas com
+corroboração forte também preservam o piso físico existente.
+
+#### Causa 2 — revisão obrigatória não é um veredito binário
+
+A camada de contraste de memória já concluía corretamente:
+
+```text
+fusion_rule = memory_conflict_operator_review
+operator_review_required = True
+confidence = 50%
+```
+
+e a justificativa informava que a decisão automática estava bloqueada.
+
+Mesmo assim, as integrações convertiam `is_defect=True` diretamente em
+`DEFEITO REAL`, criando uma contradição semântica.
+
+Foi criado o contrato:
+
+```text
+operator_review_required = True
+        ↓
+verdict = REVISÃO OBRIGATÓRIA
+```
+
+Somente quando não houver revisão pendente:
+
+```text
+is_defect=True  → DEFEITO REAL
+is_defect=False → FALHA FALSA
+```
+
+A função central `resolved_analysis_verdict()` é a fonte desse mapeamento nas
+integrações de memória e INVERTIDO.
+
+O estado de revisão:
+
+- não significa OK;
+- não significa NG;
+- não deve disparar o overlay binário `FALHA FALSA / DEFEITO REAL`;
+- deve permanecer amarelo no painel de decisão;
+- mantém `0=OK` e `1=NG` disponíveis para o operador;
+- continua preservando `is_defect` e scores brutos para auditoria interna.
+
+No vetor deste evento, a memória continua em conflito por margem inferior a
+`1 p.p.`. Portanto o resultado automático esperado após esta correção é
+**REVISÃO OBRIGATÓRIA**, e não um OK artificial.
+
+Ao o operador confirmar `0=OK`, a ocorrência pode fortalecer a hipótese OK da
+categoria INVERTIDO para recorrências futuras.
+
+#### Debug obrigatório para INVERTIDO
+
+O `Copiar debug` passa a expor explicitamente:
+
+- `inverted_score`;
+- classificação;
+- retenção/perda da testemunha;
+- perda de feature;
+- topologia;
+- orientação;
+- face alternativa;
+- transformação e similaridade;
+- relocação;
+- razão ROI/global;
+- se a ROI é pequena;
+- se possui alta autoridade;
+- se existe corroborador;
+- motivo da autoridade/corroborador.
+
+Isso permite distinguir uma marca local diferente de uma evidência física
+corroborada de face invertida.
+
+#### Regressões obrigatórias
+
+Manter testes que garantam:
+
+- ROI ≈ `3,75%` do componente, orientação ≈ `4%`, perdas moderadas e sem
+  corroborador → `inverted_high_authority=False`;
+- esse vetor não recebe piso físico automático de `90%`;
+- ROI pequena com orientação + topologia fortes mantém alta autoridade;
+- evidência INVERTIDO corroborada continua preservando o piso físico existente;
+- conflito OK × NG sem hard missing efetivo → `REVISÃO OBRIGATÓRIA`;
+- revisão obrigatória nunca é apresentada como `DEFEITO REAL` ou
+  `FALHA FALSA`;
+- hard missing verdadeiro continua tendo precedência e não vira revisão;
+- debug mostra os campos de autoridade do INVERTIDO.
+
+Status em 06/10/2026: **correção implementada; aguardando validação operacional
+nesta mesma peça**.
+
 ## Dual-Scale Presence — epicentro local + contexto físico do componente
 
 ### Motivação
