@@ -391,6 +391,15 @@ def _reset_session(panel, *, show_normal: bool = True) -> None:
     view = getattr(panel, "adhesive_multilight_view", None)
     if view is not None and hasattr(view, "clear_all"):
         view.clear_all()
+
+    analysis_view = getattr(
+        panel,
+        "adhesive_multilight_analysis_view",
+        None,
+    )
+    if analysis_view is not None and hasattr(analysis_view, "clear_all"):
+        analysis_view.clear_all()
+
     if show_normal:
         _switch_inspection_view(panel, False)
 
@@ -524,6 +533,21 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
 
         # Contrato da AOI: a iluminação padrão/primeira recebida é SIDE.
         _store_view(self, "SIDE", sample_crop, ng_crop)
+
+        # Nesta etapa apenas SIDE possui análise real. TOP e MID são exibidos
+        # como posições reservadas, sem executar novamente o MoE.
+        analysis_view = getattr(
+            self,
+            "adhesive_multilight_analysis_view",
+            None,
+        )
+        if analysis_view is not None:
+            analysis_view.clear_all()
+            analysis_view.set_analysis(
+                "SIDE",
+                getattr(self, "current_analysis", None),
+            )
+
         _switch_inspection_view(self, True)
         _set_receiver_auxiliary_mode(self, True)
         return result
