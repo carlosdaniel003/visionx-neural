@@ -253,13 +253,47 @@ Cada grupo já possui a mesma estrutura de especialistas da interface normal:
 - SHIFT • deslocamento;
 - FUSÃO • score final como fallback quando não há motor ativo.
 
-**Contrato desta etapa:** somente `SIDE` recebe o objeto `analysis` produzido
-pelo pipeline monoimagem atual. `TOP` e `MID` aparecem na interface com
-`Aguardando análise da iluminação ...` e não executam o MoE, não inventam
-scores e não reutilizam a análise SIDE.
+**Contrato atual:** `SIDE`, `TOP` e `MID` possuem análises visuais
+independentes. SIDE continua usando o `current_analysis` principal produzido
+pelo fluxo original. Quando os frames auxiliares TOP e MID chegam, cada um
+percorre o mesmo pipeline técnico:
 
-Isso deixa o visual preparado para análises independentes futuras sem misturar
-resultados entre iluminações nesta etapa.
+```text
+detect_anomalies
+        ↓
+EpicenterExtractor.extract_focus
+        ↓
+MoEOrchestrator.inspect
+        ↓
+painéis de especialistas daquela iluminação
+```
+
+O contexto geométrico calculado para TOP/MID é compartilhado entre o preview
+visual e o MoE para evitar executar novamente `detect_anomalies` e
+`EpicenterExtractor` sobre o mesmo frame.
+
+As análises são armazenadas separadamente em
+`adhesive_multilight_analyses["SIDE"|"TOP"|"MID"]`. TOP e MID recebem
+metadados explícitos:
+
+```text
+multilight_visual_analysis = True
+eligible_for_final_decision = False
+lighting_mode = TOP | MID
+```
+
+Portanto, nesta etapa:
+
+- TOP não sobrescreve a análise SIDE;
+- MID não sobrescreve a análise SIDE;
+- TOP e MID não modificam `current_analysis`;
+- os seus `is_defect`, `confidence` e `verdict` internos são apenas saídas
+  locais do MoE necessárias para os painéis, não um resultado final multilight;
+- nenhuma fusão SIDE/TOP/MID é feita;
+- nenhuma decisão 0/1 é alterada por TOP ou MID.
+
+A automação só avança da captura TOP para MID, e de MID para conclusão, depois
+que a imagem **e a análise visual** da iluminação esperada foram concluídas.
 
 A página normal de especialistas permanece como padrão para todas as categorias
 que não sejam adesivo. Imagens multilight e especialistas multilight são
@@ -352,6 +386,24 @@ LEFT  = TOP
 DOWN  = SIDE
 RIGHT = MID
 ```
+
+### Validação operacional da automação
+
+Em 06/10/2026, o fluxo automático de troca de iluminação e recebimento das
+imagens foi testado na AOI real pelo operador e confirmado como funcional.
+
+O comportamento validado foi:
+
+```text
+SIDE inicial
+→ TOP automático + foto recebida
+→ MID automático + foto recebida
+→ retorno automático para SIDE
+```
+
+Essa validação confirma a infraestrutura de aquisição. Ela não valida ainda a
+fusão das três análises em um resultado final, que continua fora do escopo desta
+etapa.
 
 A máquina de estados somente avança após o frame esperado ter sido recortado e
 armazenado. Para cada `TOP` ou `MID`:
@@ -447,15 +499,20 @@ A melhoria será executada por etapas, sem avançar automaticamente:
 5. **Concluído — especialistas por iluminação:** somente para adesivo, a seção
    de especialistas possui SIDE/TOP/MID; SIDE mostra a análise real atual e
    TOP/MID permanecem aguardando análise, sem cálculo artificial.
-6. **Concluído — automação de aquisição:** após SIDE, o ODIN comanda
-   TOP, aguarda a foto, comanda MID, aguarda a foto e restaura SIDE; timeout,
-   repetição única e cancelamento de ciclo são tratados pela máquina de estados.
-7. **Etapa futura — visão:** adaptar o `FLUXO DE ADESIVO` para comparar as
-   três iluminações e calibrar a decisão com amostras reais OK/NG.
+6. **Concluído e validado na AOI — automação de aquisição:** após SIDE, o
+   ODIN comanda TOP, aguarda a foto, comanda MID, aguarda a foto e restaura
+   SIDE; timeout, repetição única e cancelamento de ciclo são tratados pela
+   máquina de estados.
+7. **Concluído — análise visual por iluminação:** SIDE, TOP e MID executam
+   análises independentes dos especialistas e alimentam seus próprios painéis;
+   TOP/MID não substituem `current_analysis` e não entram no veredito final.
+8. **Etapa futura — fusão multilight:** definir como o `FLUXO DE ADESIVO`
+   combinará SIDE/TOP/MID para produzir o resultado final e então calibrar com
+   amostras reais OK/NG.
 
-A aquisição SIDE/TOP/MID está automatizada, mas o julgamento do motor de adesivo
-permanece monoimagem nesta etapa. TOP e MID ainda são aquisição/apresentação
-visual e não participam do score ou do veredito.
+A aquisição SIDE/TOP/MID e as três análises visuais estão fechadas. O julgamento
+final do motor de adesivo continua monoimagem até a etapa de fusão ser
+explicitamente definida.
 
 
 **Arquivo visual NG opcional:**
