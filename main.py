@@ -38,6 +38,9 @@ from src.services.anomaly_learning import install_anomaly_learning
 from src.services.dataset_manager import DatasetManager
 from src.services.ng_image_archive import install_ng_image_archive
 from src.services.ok_image_archive import install_ok_image_archive
+from src.ui.adhesive_multilight_inspection import (
+    install_adhesive_multilight_inspection,
+)
 from src.ui.capture_button_copy import install_capture_button_copy
 from src.ui.control_panel import ControlPanel
 from src.ui.decision_key_feedback import (
@@ -142,6 +145,9 @@ def main():
     install_network_image_cycle_gate(ControlPanel, OperationalControlsPresenter)
     install_network_aoi_intake_filter(ControlPanel)
     install_local_capture_safety(ControlPanel)
+    # Camada externa e somente visual: mantém a primeira SIDE no pipeline
+    # produtivo e usa frames posteriores apenas para preencher TOP/MID.
+    install_adhesive_multilight_inspection(ControlPanel)
     install_qt_button_signal_adapter(ControlPanel)
     install_mode_selector_gate(OperationalControlsPresenter)
     # Hooks visuais leves: confirmam 0/1 e teclas de iluminação sem alterar
