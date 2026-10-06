@@ -296,7 +296,7 @@ class ControlPanelUI:
         window.lbl_parts_value = QLabel("-")
         window.lbl_category_value = QLabel("-")
         window.lbl_value_value = QLabel("-")
-        window.lbl_light_value = QLabel("TOP")
+        window.lbl_light_value = QLabel("SIDE")
 
         self.info_cards = [
             self._create_info_card("Placa / Máquina", window.lbl_board_value),
@@ -551,10 +551,14 @@ class ControlPanelUI:
         self.light_grid.setHorizontalSpacing(8)
         self.light_grid.setVerticalSpacing(8)
 
-        window.btn_light_mid = QPushButton("Luz MID • ←")
+        window.btn_light_top = QPushButton("Luz TOP • ←")
         window.btn_light_side = QPushButton("Luz SIDE • ↓")
-        window.btn_light_top = QPushButton("Luz TOP • →")
-        self.light_buttons = [window.btn_light_mid, window.btn_light_side, window.btn_light_top]
+        window.btn_light_mid = QPushButton("Luz MID • →")
+        self.light_buttons = [
+            window.btn_light_top,
+            window.btn_light_side,
+            window.btn_light_mid,
+        ]
         for button in self.light_buttons:
             button.setObjectName("lightButton")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
