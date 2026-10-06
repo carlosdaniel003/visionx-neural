@@ -71,6 +71,55 @@ Portanto o pré-requisito do lado do XP para comandar as três iluminações est
 concluído. Alterações futuras no agente continuam exigindo atualização manual no
 Windows XP; essa sincronização descreve especificamente o estado de 06/10/2026.
 
+### Controle manual do ODIN compatível com a AOI
+
+Em 06/10/2026, o controle manual de iluminação do ODIN foi corrigido para usar
+o mesmo mapeamento operacional do Windows XP:
+
+```text
+← → TOP  → PRESS_LEFT
+↓ → SIDE → PRESS_DOWN
+→ → MID  → PRESS_RIGHT
+```
+
+O estado inicial exibido pelo ODIN passa a ser `SIDE`, que é a iluminação
+padrão da captura recebida da AOI.
+
+Os três botões de iluminação também seguem a ordem visual e os atalhos corretos:
+
+```text
+Luz TOP  | ←
+Luz SIDE | ↓
+Luz MID  | →
+```
+
+A troca manual só atualiza o estado visual depois que o envio TCP do comando ao
+agente XP retorna com sucesso. Se o comando falhar, o ODIN não deve fingir que a
+iluminação mudou.
+
+O feedback temporário de tecla no canto inferior direito foi ampliado:
+
+- `0/1` continuam exibindo a tecla e `OK/NG`;
+- `←/↓/→` reutilizam o mesmo card e mostram explicitamente qual seta foi
+  pressionada/enviada;
+- feedback de seta não pode disparar o fade-out do veredito da IA.
+
+Existe ainda um terceiro card flutuante, persistente, em
+`src/ui/lighting_status_feedback.py`. Ele fica no canto superior direito,
+abaixo do card de veredito, e mostra continuamente:
+
+```text
+ILUMINAÇÃO ATUAL
+TOP  ←
+SIDE ↓
+MID  →
+```
+
+Esse card é somente de apresentação: não envia comandos, não altera análise,
+gate, KNN, dataset ou decisão. Ele representa a iluminação comandada pelo ODIN.
+Uma mudança feita diretamente no teclado físico do XP só poderá ser refletida
+automaticamente quando existir telemetria explícita desse evento XP → ODIN.
+
 ### Fluxo-alvo da captura mult-iluminação
 
 O fluxo planejado para eventos de adesivo é:
@@ -132,9 +181,11 @@ A melhoria será executada por etapas, sem avançar automaticamente:
 
 1. **Concluído — agente XP:** suporte aos comandos de setas e sincronização da
    V5.2 entre GitHub e Windows XP.
-2. **Próxima etapa — aquisição:** integrar no ODIN a captura segura de
+2. **Concluído — controle manual do ODIN:** mapeamento `← TOP / ↓ SIDE / → MID`,
+   feedback visual da tecla e card persistente da iluminação atual.
+3. **Próxima etapa — aquisição:** integrar no ODIN a captura segura de
    `SIDE/TOP/MID` da mesma peça.
-3. **Etapa posterior — visão:** adaptar o `FLUXO DE ADESIVO` para comparar as
+4. **Etapa posterior — visão:** adaptar o `FLUXO DE ADESIVO` para comparar as
    três iluminações e calibrar a decisão com amostras reais OK/NG.
 
 Até a etapa 2 ser implementada e validada na AOI, o julgamento atual de adesivo
@@ -2092,15 +2143,19 @@ Regressões obrigatórias:
 - um `sectionPanel` permanece em `#0d0d0d` mesmo se alguém tentar aplicar
   estado NG pelo módulo legado.
 
-## Feedback visual temporário de julgamento 0/1
+## Feedback visual temporário de teclas operacionais
 
-O ODIN possui um overlay exclusivamente visual para confirmar imediatamente ao operador quando uma tecla de julgamento foi recebida.
+O ODIN possui um overlay exclusivamente visual para confirmar imediatamente ao
+operador qual tecla operacional foi pressionada ou enviada.
 
 Comportamento:
 
 ```text
 0 → OK
 1 → NG
+← → seta esquerda / TOP
+↓ → seta para baixo / SIDE
+→ → seta direita / MID
 ```
 
 Fontes cobertas:
@@ -2114,7 +2169,7 @@ O visual segue a identidade industrial do ODIN:
 
 - fundo escuro `#101010`;
 - borda-base discreta `#303030`;
-- cabeçalho `DECISÃO RECEBIDA` em amarelo ODIN `#f5c518`;
+- cabeçalho `TECLA PRESSIONADA`, `TECLA ENVIADA` ou `TECLA RECEBIDA` em amarelo ODIN `#f5c518`;
 - `0 / OK`: detalhe, borda e tipografia de estado em verde `#4ade80`;
 - `1 / NG`: detalhe, borda e tipografia de estado em vermelho `#ff6262`;
 - origem exibida como `TECLADO ODIN` ou `TECLADO WINDOWS XP`;
