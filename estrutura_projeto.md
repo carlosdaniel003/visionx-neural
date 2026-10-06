@@ -824,25 +824,30 @@ mudanças de regra.
 
 **Arquivo visual NG opcional:**
 - Toggle **ativado por padrão** em toda inicialização do ODIN. O operador pode desativá-lo manualmente durante a sessão.
-- Ativado: cada evento válido do Windows XP pode gerar **no máximo uma** evidência final `NG` em `public/ng_archive/`, usando exatamente o mesmo frame completo disponibilizado pelo botão `Copiar imagem`.
-- Nome: `YYYY-MM-DD_HHmm_CATEGORIA.png`, por exemplo `2026-10-02_0811_FALTANDO.png`. O formato usa ano, mês, dia, hora e minuto, seguido da categoria normalizada.
-- Para o arquivamento XP, a fonte continua sendo `src/services/network_xp_frame.py`, que valida que o `event_id` do frame preservado é o mesmo do diagnóstico atual. O botão genérico `Copiar imagem` usa essa mesma evidência quando a origem é XP.
-- Não existe fallback para `current_ng` ou outro recorte. Se o frame XP do evento atual não estiver disponível, nenhuma imagem substituta é arquivada.
+- Para categorias comuns, um julgamento final `NG` de captura XP arquiva o frame completo do evento atual em `public/ng_archive/`.
+- Para a categoria canônica `MUITO ADESIVO`, quando SIDE/TOP/MID pertencem ao mesmo `event_id`, o mesmo julgamento pode arquivar **até três imagens completas separadas**:
+  - `..._MUITO_ADESIVO_SIDE.png`
+  - `..._MUITO_ADESIVO_TOP.png`
+  - `..._MUITO_ADESIVO_MID.png`
+- A resolução dessas imagens fica em `src/services/image_archive_candidates.py` e usa `adhesive_multilight_last_source_frames` somente quando o `event_id` do conjunto coincide com o evento julgado.
+- Não existe fallback para `current_ng` ou outro recorte. Se a evidência completa do evento não estiver disponível, nenhuma imagem substituta é arquivada.
 - O arquivo é evidência/auditoria e não participa de treinamento, protótipos ou votação KNN.
 - A gravação é assíncrona para não bloquear o julgamento, o gate de rede nem a próxima imagem da AOI.
-- Deduplicação obrigatória por `event_id`: o mesmo evento XP nunca pode gerar duas imagens de arquivo, mesmo se o `PRESS_1` enviado pelo VisionX reaparecer pelo hook global do XP como `CMD_NG`.
+- Deduplicação de eco por `event_id` continua obrigatória: o mesmo julgamento não pode ser arquivado duas vezes se o comando voltar pelo hook do XP.
+- **Deduplicação persistente por conteúdo visual:** antes de gravar, a fila indexa os PNGs já existentes e calcula SHA-256 do conteúdo visual exato. Se uma imagem pixel a pixel idêntica já existir em `public/ng_archive/`, ela é ignorada mesmo que venha de outro evento ou após reiniciar o ODIN.
+- Imagens realmente diferentes continuam sendo preservadas. Se duas imagens diferentes caírem no mesmo minuto/categoria, o ODIN cria um nome alternativo `_2`, `_3`, etc., em vez de sobrescrever o arquivo anterior.
 - O arquivamento só é permitido enquanto existe uma captura de rede ativa, com análise ativa e categoria AOI não vazia.
-- `SEM_CATEGORIA` não é um nome de arquivo válido para o fluxo automático de evidências NG. Se a categoria já tiver sido limpa, o evento não deve ser salvo novamente.
+- `SEM_CATEGORIA` não é um nome de arquivo válido para o fluxo automático de evidências NG.
 
 
 **Arquivo visual OK opcional:**
 - Existe um segundo toggle **`Salvar imagens OK`**, exibido imediatamente abaixo de **`Salvar imagens NG`**.
 - O toggle inicia **ATIVADO por padrão** em toda abertura do ODIN e o operador pode desativá-lo durante a sessão.
 - Visualmente, o bloco OK deve manter o mesmo layout, dimensões, tipografia, hover, focus e estado checked do bloco NG.
-- Quando ativado, cada julgamento humano final `OK` pode gerar **no máximo uma** evidência em `public/ok_archive/`.
+- Quando ativado, cada julgamento humano final `OK` arquiva a evidência do evento em `public/ok_archive/`; para adesivo multilight, o mesmo julgamento pode gerar SIDE/TOP/MID como três PNGs separados.
 - Julgamentos humanos aceitos: botão/atalho do ODIN (`source="button"`) e teclado físico do XP (`source="xp_keyboard"`).
 - Decisão automática de Produção (`source="auto"`) **não** gera arquivo OK.
-- A imagem salva deve ser **exatamente a mesma evidência completa resolvida por `Copiar imagem`** para aquele evento.
+- Para categoria comum, a imagem salva continua sendo a evidência completa resolvida por `Copiar imagem`. Para adesivo multilight, em vez da composição visual, são preservados os três frames completos individuais SIDE/TOP/MID da mesma peça.
 - O contrato compartilhado de evidência fica em `src/services/capture_evidence.py`, por meio de `current_copy_image_snapshot()` e `current_copy_image_event_id()`.
 - O arquivo OK aceita tanto captura recebida do **Windows XP** quanto captura local **MSS**, desde que exista análise ativa, `event_id` válido e categoria AOI válida.
 - Uma captura local MSS nunca pode usar como fallback um frame XP anterior.
@@ -852,10 +857,10 @@ mudanças de regra.
 - `SEM_CATEGORIA` não é permitido no arquivamento automático OK.
 - A gravação é assíncrona em fila daemon e não pode bloquear julgamento, envio de tecla, limpeza da interface ou recepção da próxima captura.
 - Deduplicação obrigatória por `event_id`: um mesmo evento não pode ser salvo duas vezes caso o julgamento retorne pelo hook do XP.
-- **Deduplicação persistente por conteúdo visual somente para OK:** se uma imagem pixel a pixel idêntica já existir em `public/ok_archive/`, um novo julgamento OK dessa mesma imagem não deve criar outro PNG, mesmo que apareça muitos eventos depois ou após reiniciar o ODIN.
+- **Deduplicação persistente por conteúdo visual em OK e NG:** se uma imagem pixel a pixel idêntica já existir no respectivo arquivo visual, um novo julgamento dessa mesma imagem não cria outro PNG, mesmo que apareça muitos eventos depois ou após reiniciar o ODIN.
 - A verificação é feita pelo conteúdo da imagem, não pelo nome do arquivo nem pelo `event_id`. Portanto arquivos antigos com o padrão de nome legado também contam como duplicatas se contiverem exatamente os mesmos pixels.
 - A fila OK indexa os PNGs já existentes em background para não bloquear o julgamento. Novas imagens realmente diferentes continuam sendo salvas normalmente.
-- Essa deduplicação por conteúdo **não se aplica ao arquivo NG**; o fluxo NG permanece com sua regra atual.
+- O mesmo utilitário compartilhado em `src/services/image_archive_dedup.py` é usado pelas filas OK e NG.
 - O arquivo é somente evidência visual/auditoria e não participa do dataset, KNN, protótipos, score, confiança ou decisão.
 
 Fluxo:
@@ -988,6 +993,50 @@ Foi confirmado que:
 
 Essa configuração passa a ser a referência operacional validada para nomes dos
 arquivos visuais de auditoria.
+
+### Arquivamento multilight de adesivo após julgamento 0/1
+
+Para a categoria de adesivo, o conjunto SIDE/TOP/MID já existe no computador
+novo antes do julgamento final. Ao ocorrer `0 = OK` ou `1 = NG`, e com o
+respectivo arquivo visual habilitado, o ODIN usa o mesmo `event_id` da peça
+para resolver as três evidências completas.
+
+Fluxo:
+
+```text
+SIDE + TOP + MID da mesma peça
+        ↓
+julgamento 0 ou 1
+        ↓
+resolver imagens do mesmo event_id
+        ↓
+para cada imagem:
+  fingerprint SHA-256 do conteúdo
+        ↓
+já existe no arquivo visual?
+   ├── SIM → não salvar novamente
+   └── NÃO → salvar PNG
+```
+
+Os arquivos usam a iluminação no nome:
+
+```text
+YYYY-MM-DD_HHmm_MUITO_ADESIVO_SIDE.png
+YYYY-MM-DD_HHmm_MUITO_ADESIVO_TOP.png
+YYYY-MM-DD_HHmm_MUITO_ADESIVO_MID.png
+```
+
+Se duas imagens realmente diferentes produzirem o mesmo nome base no mesmo
+minuto, a segunda recebe sufixo incremental `_2`, depois `_3`, evitando
+sobrescrita silenciosa.
+
+A deduplicação é exata, por conteúdo pixel a pixel, e é persistente entre
+reinicializações porque os PNGs já existentes são indexados ao iniciar a fila.
+OK e NG mantêm índices separados, pois representam arquivos de auditoria com
+rótulos distintos.
+
+Essa mudança ocorre apenas no computador novo e não exige alteração no agente
+Windows XP.
 
 ### Validação operacional do arquivo visual OK em 02/10/2026
 
