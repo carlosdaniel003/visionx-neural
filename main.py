@@ -38,6 +38,9 @@ from src.services.anomaly_learning import install_anomaly_learning
 from src.services.dataset_manager import DatasetManager
 from src.services.ng_image_archive import install_ng_image_archive
 from src.services.ok_image_archive import install_ok_image_archive
+from src.ui.adhesive_multilight_automation import (
+    install_adhesive_multilight_automation,
+)
 from src.ui.adhesive_multilight_inspection import (
     install_adhesive_multilight_inspection,
 )
@@ -164,6 +167,7 @@ def main():
     install_memory_status_ui(ControlPanel)
 
     panel = ControlPanel()
+    install_adhesive_multilight_automation(panel)
     install_decision_key_feedback(panel)
     install_ai_verdict_feedback(panel)
     install_lighting_status_feedback(panel)
