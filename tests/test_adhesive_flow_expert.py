@@ -23,6 +23,20 @@ class AdhesiveFlowExpertTests(unittest.TestCase):
         image[72:86, 44:58] = (25, 35, 85)
         return image
 
+    @staticmethod
+    def _make_mid_scene() -> np.ndarray:
+        """Cena clara que reproduz o aspecto fotométrico da iluminação MID."""
+        image = np.full((123, 68, 3), 245, dtype=np.uint8)
+
+        # Corpo e lateral do componente dão estrutura suficiente ao alinhamento,
+        # enquanto a região à esquerda permanece quase branca no gabarito.
+        image[18:104, 34:64] = (205, 205, 210)
+        image[28:94, 40:60] = (70, 70, 75)
+
+        # Região estável levemente quente: não pode virar adesivo por si só.
+        image[105:120, 12:60] = (205, 220, 240)
+        return image
+
     def test_motor_is_inactive_outside_adhesive_categories(self):
         reference = self._make_scene()
         result = ShiftExpert().analyze(
@@ -85,6 +99,104 @@ class AdhesiveFlowExpertTests(unittest.TestCase):
         self.assertEqual(cv2.countNonZero(result["excess_mask"]), 0)
         self.assertEqual(cv2.countNonZero(result["padding_overlap_mask"]), 0)
         self.assertLess(result["adhesive_score"], result["tolerance"])
+
+    def test_mid_profile_detects_bright_cream_adhesive_witness(self):
+        reference = self._make_mid_scene()
+        test = reference.copy()
+
+        # Filme claro/amarelado semelhante ao observado na iluminação MID real:
+        # não é escuro o suficiente para o perfil legado, mas diverge do branco.
+        test[38:88, 24:30] = (210, 225, 245)
+
+        result = ShiftExpert().analyze(
+            reference,
+            test,
+            aoi_info={
+                "category": "Much Adhesive",
+                "lighting_mode": "MID",
+            },
+            aoi_epicenters=[(0, 0, 68, 123)],
+        )
+
+        self.assertEqual(
+            result["adhesive_detector_profile"],
+            "mid_bright_resin_v1",
+        )
+        self.assertEqual(result["adhesive_lighting_mode"], "MID")
+        self.assertTrue(result["adhesive_is_defect"])
+        self.assertGreater(
+            result["adhesive_score"],
+            result["adhesive_tolerance"],
+        )
+        self.assertGreater(result["mid_bright_witness_coverage"], 0.01)
+        self.assertGreater(result["mid_bright_witness_peak"], 0.20)
+        self.assertGreater(result["mid_bright_witness_score"], 0.20)
+        self.assertGreater(
+            cv2.countNonZero(result["mid_bright_witness_mask"]),
+            0,
+        )
+
+    def test_same_bright_cream_region_is_not_enabled_for_top_profile(self):
+        reference = self._make_mid_scene()
+        test = reference.copy()
+        test[38:88, 24:30] = (210, 225, 245)
+
+        result = ShiftExpert().analyze(
+            reference,
+            test,
+            aoi_info={
+                "category": "Much Adhesive",
+                "lighting_mode": "TOP",
+            },
+            aoi_epicenters=[(0, 0, 68, 123)],
+        )
+
+        self.assertEqual(
+            result["adhesive_detector_profile"],
+            "dark_warm_v1",
+        )
+        self.assertEqual(result["mid_bright_witness_coverage"], 0.0)
+        self.assertEqual(
+            cv2.countNonZero(result["mid_bright_witness_mask"]),
+            0,
+        )
+
+    def test_mid_identical_bright_scene_remains_stable(self):
+        reference = self._make_mid_scene()
+
+        result = ShiftExpert().analyze(
+            reference,
+            reference.copy(),
+            aoi_info={
+                "category": "Much Adhesive",
+                "lighting_mode": "MID",
+            },
+            aoi_epicenters=[(0, 0, 68, 123)],
+        )
+
+        self.assertFalse(result["adhesive_is_defect"])
+        self.assertEqual(result["mid_bright_witness_coverage"], 0.0)
+        self.assertEqual(result["excess_coverage"], 0.0)
+
+    def test_mid_neutral_brightness_change_is_not_called_resin(self):
+        reference = self._make_mid_scene()
+        test = reference.copy()
+
+        # Diferença luminosa neutra sem ganho amarelo/vermelho.
+        test[38:88, 24:30] = (205, 205, 205)
+
+        result = ShiftExpert().analyze(
+            reference,
+            test,
+            aoi_info={
+                "category": "Much Adhesive",
+                "lighting_mode": "MID",
+            },
+            aoi_epicenters=[(0, 0, 68, 123)],
+        )
+
+        self.assertEqual(result["mid_bright_witness_coverage"], 0.0)
+        self.assertFalse(result["adhesive_is_defect"])
 
     def test_views_preserve_the_exact_roi_dimensions(self):
         reference = self._make_scene()
