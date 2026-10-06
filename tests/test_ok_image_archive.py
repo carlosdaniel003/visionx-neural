@@ -123,6 +123,45 @@ class OKArchiveDecisionTests(unittest.TestCase):
         self.assertEqual(image.shape, (20, 30, 3))
         self.assertEqual(category, "Muito Adesivo")
 
+    def test_adhesive_ok_archives_side_top_mid_individually(self):
+        panel = FakeOKPanel()
+        panel.adhesive_multilight_last_event_id = "evt-ok-001"
+        panel.adhesive_multilight_last_source_frames = {
+            "SIDE": np.full((20, 30, 3), (10, 20, 30), dtype=np.uint8),
+            "TOP": np.full((20, 30, 3), (40, 50, 60), dtype=np.uint8),
+            "MID": np.full((20, 30, 3), (70, 80, 90), dtype=np.uint8),
+        }
+
+        panel.save_label("OK", source="button")
+
+        self.assertEqual(len(panel.archived), 3)
+        self.assertEqual(
+            [category for _image, category in panel.archived],
+            [
+                "Muito Adesivo_SIDE",
+                "Muito Adesivo_TOP",
+                "Muito Adesivo_MID",
+            ],
+        )
+        self.assertTrue(
+            np.array_equal(
+                panel.archived[0][0],
+                panel.adhesive_multilight_last_source_frames["SIDE"],
+            )
+        )
+        self.assertTrue(
+            np.array_equal(
+                panel.archived[1][0],
+                panel.adhesive_multilight_last_source_frames["TOP"],
+            )
+        )
+        self.assertTrue(
+            np.array_equal(
+                panel.archived[2][0],
+                panel.adhesive_multilight_last_source_frames["MID"],
+            )
+        )
+
     def test_local_mss_ok_archives_exact_copy_image_evidence(self):
         panel = FakeOKPanel()
         panel.capture_cycle_source = "local"
@@ -255,6 +294,28 @@ class OKArchiveQueueTests(unittest.TestCase):
             self.assertEqual(
                 files[0].name,
                 "2026-10-02_0816_FALTANDO.png",
+            )
+
+    def test_different_images_same_minute_do_not_overwrite_each_other(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            queue = OKImageArchiveQueue(Path(temp_dir))
+            image_a = np.full((20, 30, 3), (10, 20, 30), dtype=np.uint8)
+            image_b = np.full((20, 30, 3), (40, 50, 60), dtype=np.uint8)
+            stamp = datetime(2026, 10, 6, 18, 30)
+
+            queue.submit(image_a, "Muito Adesivo_SIDE", stamp)
+            queue.submit(image_b, "Muito Adesivo_SIDE", stamp)
+            queue.wait_until_idle()
+
+            files = sorted(Path(temp_dir).glob("*.png"))
+            self.assertEqual(len(files), 2)
+            self.assertEqual(
+                files[0].name,
+                "2026-10-06_1830_MUITO_ADESIVO_SIDE.png",
+            )
+            self.assertEqual(
+                files[1].name,
+                "2026-10-06_1830_MUITO_ADESIVO_SIDE_2.png",
             )
 
     def test_existing_legacy_named_png_blocks_same_image_after_restart(self):
