@@ -222,10 +222,11 @@ explicitamente visual:
 Assim, quando novas imagens chegarem após o operador mudar a iluminação, elas
 preenchem o card correspondente sem transformar TOP/MID em novas peças.
 
-Esta etapa **não automatiza ainda a sequência de teclas**. Ela apenas mostra e
-alimenta visualmente SIDE/TOP/MID à medida que os frames são recebidos. A
-automação completa da sequência e a fusão das três iluminações na decisão
-continuam separadas.
+A alimentação visual agora está conectada à automação de aquisição. Depois que a
+primeira inspeção válida de adesivo em `SIDE` termina, o ODIN inicia uma máquina
+de estados não bloqueante em `src/ui/adhesive_multilight_automation.py`. A
+fusão das três iluminações na decisão continua separada e ainda não foi
+implementada.
 
 #### Análise dos especialistas por iluminação
 
@@ -295,43 +296,122 @@ Ao sair da categoria de adesivo, o splitter e as páginas normais voltam ao
 comportamento responsivo anterior. Portanto a mudança não altera visualmente as
 outras categorias.
 
-### Fluxo-alvo da captura mult-iluminação
+### Automação implementada da captura mult-iluminação
 
-O fluxo planejado para eventos de adesivo é:
+A aquisição automática de imagens para adesivo está implementada em:
+
+```text
+src/ui/adhesive_multilight_automation.py
+```
+
+Fluxo atual:
 
 ```text
 mesma peça / mesmo ciclo
         ↓
-SIDE recebido inicialmente
+SIDE recebido e analisado pelo pipeline atual
         ↓
-categoria de adesivo?
+categoria canônica = MUITO ADESIVO?
    ├── NÃO → fluxo normal atual
    └── SIM
         ↓
 preservar SIDE
         ↓
+habilitar recepção auxiliar sem reabrir o gate principal
+        ↓
 PRESS_LEFT
         ↓
-capturar TOP
+AOI seleciona TOP
         ↓
-PRESS_DOWN
+aguardar frame TOP
         ↓
-retornar SIDE
+armazenar TOP na mesma sessão
         ↓
 PRESS_RIGHT
         ↓
-capturar MID
+AOI seleciona MID
+        ↓
+aguardar frame MID
+        ↓
+armazenar MID na mesma sessão
+        ↓
+fechar recepção auxiliar
         ↓
 PRESS_DOWN
         ↓
 restaurar SIDE
         ↓
-analisar SIDE + TOP + MID como um único conjunto
+captura automática concluída
 ```
+
+Não existe retorno intermediário para SIDE entre TOP e MID, porque as setas da
+AOI são tratadas como seletores absolutos:
+
+```text
+LEFT  = TOP
+DOWN  = SIDE
+RIGHT = MID
+```
+
+A máquina de estados somente avança após o frame esperado ter sido recortado e
+armazenado. Para cada `TOP` ou `MID`:
+
+- timeout: `8000 ms`;
+- após o primeiro timeout, o mesmo seletor absoluto é enviado uma vez novamente;
+- após uma segunda falha, a automação é interrompida, SIDE é restaurada e o
+  status de rede informa a falha;
+- em falha automática, a recepção auxiliar permanece disponível para fallback
+  manual da mesma peça.
+
+Enquanto a sequência está ativa, os botões/setas de iluminação do próprio ODIN
+não podem trocar manualmente o modo no meio de TOP/MID. Isso evita que uma foto
+seja armazenada sob a iluminação errada.
+
+Ao julgar ou descartar a peça antes da conclusão, qualquer timer pendente é
+cancelado, a recepção auxiliar é fechada e a AOI é devolvida para SIDE antes do
+próximo ciclo.
+
+#### Modo Produção durante a automação
+
+O pipeline SIDE continua calculando seu resultado normalmente. Entretanto, em
+`Modo Produção`, o `PRESS_0/PRESS_1` automático não pode avançar a AOI antes
+das fotos auxiliares terminarem.
+
+Contrato:
+
+```text
+resultado SIDE calculado
+        ↓
+decisão automática OK/NG pronta
+        ↓
+guardar decisão em memória
+        ↓
+capturar TOP
+        ↓
+capturar MID
+        ↓
+restaurar SIDE
+        ↓
+somente então executar save_label(..., source="auto")
+        ↓
+PRESS_0 / PRESS_1
+```
+
+Assim a mesma peça permanece na tela durante toda a coleta. Em `Modo Teste` ou
+`Modo Sombra`, ações de julgamento iniciadas no próprio ODIN são recusadas
+enquanto a automação está ativa, com mensagem para aguardar a sequência.
+
+O teclado físico do Windows XP continua sendo um controle externo à aplicação;
+o operador não deve julgar a peça fisicamente com `0/1` enquanto a sequência
+automática TOP/MID estiver em andamento, pois a própria AOI pode avançar antes
+que o ODIN consiga impedir a ação.
+
+Nesta etapa, TOP e MID são **somente imagens auxiliares**. Elas ainda não
+executam o MoE e não alteram o veredito calculado a partir de SIDE.
 
 ### Restrições arquiteturais da melhoria
 
-A implementação futura deve preservar os seguintes contratos:
+A implementação atual e as próximas etapas devem preservar os seguintes contratos:
 
 - `SIDE`, `TOP` e `MID` pertencem à mesma peça e não podem virar três
   inspeções independentes;
@@ -367,14 +447,15 @@ A melhoria será executada por etapas, sem avançar automaticamente:
 5. **Concluído — especialistas por iluminação:** somente para adesivo, a seção
    de especialistas possui SIDE/TOP/MID; SIDE mostra a análise real atual e
    TOP/MID permanecem aguardando análise, sem cálculo artificial.
-6. **Etapa futura — automação de aquisição:** comandar a sequência
-   SIDE → TOP → SIDE → MID → SIDE com confirmação segura do estado.
+6. **Concluído — automação de aquisição:** após SIDE, o ODIN comanda
+   TOP, aguarda a foto, comanda MID, aguarda a foto e restaura SIDE; timeout,
+   repetição única e cancelamento de ciclo são tratados pela máquina de estados.
 7. **Etapa futura — visão:** adaptar o `FLUXO DE ADESIVO` para comparar as
    três iluminações e calibrar a decisão com amostras reais OK/NG.
 
-Até as etapas futuras de automação/fusão serem implementadas, o julgamento do
-motor de adesivo permanece monoimagem. O multilight atual é somente
-aquisição/apresentação visual.
+A aquisição SIDE/TOP/MID está automatizada, mas o julgamento do motor de adesivo
+permanece monoimagem nesta etapa. TOP e MID ainda são aquisição/apresentação
+visual e não participam do score ou do veredito.
 
 
 **Arquivo visual NG opcional:**
