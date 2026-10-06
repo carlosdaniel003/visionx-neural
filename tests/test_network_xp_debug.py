@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.services.capture_debug_payload import decision_record
+from src.services.network_receiver import NetworkReceiver
 from src.ui.decision_background import (
     apply_decision_background,
     decision_background_state,
@@ -29,6 +30,141 @@ from src.ui.network_xp_debug import (
     network_debug_image_snapshot,
     sync_network_debug_controls,
 )
+
+
+class AnalysisTimingContractTests(unittest.TestCase):
+    def test_network_candidate_preserves_payload_received_monotonic_timestamp(self):
+        receiver = NetworkReceiver(port=0)
+        image = np.zeros((24, 32, 3), dtype=np.uint8)
+        signature = receiver._frame_signature(image)
+
+        count = receiver._stage_latest_candidate(
+            image,
+            signature,
+            "169.254.95.200",
+            received_at=123.456,
+        )
+
+        self.assertEqual(count, 1)
+        self.assertAlmostEqual(receiver._candidate_received_at, 123.456)
+
+    def test_source_contract_is_receive_to_render_and_monotonic(self):
+        panel_source = open(
+            "src/ui/control_panel.py",
+            encoding="utf-8",
+        ).read()
+        receiver_source = open(
+            "src/services/network_receiver.py",
+            encoding="utf-8",
+        ).read()
+        monitor_source = open(
+            "src/services/screen_monitor.py",
+            encoding="utf-8",
+        ).read()
+        ui_source = open(
+            "src/ui/control_panel_ui.py",
+            encoding="utf-8",
+        ).read()
+
+        self.assertIn(
+            "payload_received_at = time.perf_counter()",
+            receiver_source,
+        )
+        self.assertIn(
+            "last_delivered_image_received_at",
+            receiver_source,
+        )
+        self.assertIn(
+            '"network_payload_received"',
+            panel_source,
+        )
+        self.assertIn(
+            "frame_received_at = time.perf_counter()",
+            monitor_source,
+        )
+        self.assertIn(
+            '"local_mss_frame_received"',
+            panel_source,
+        )
+        self.assertIn(
+            "QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents",
+            panel_source,
+        )
+        self.assertLess(
+            panel_source.index(
+                "QApplication.processEvents(\n"
+                "            QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents"
+            ),
+            panel_source.index(
+                "analysis_displayed_at = time.perf_counter()"
+            ),
+        )
+        self.assertIn(
+            '"imagem recebida/capturada -> resultado pintado na interface"',
+            panel_source,
+        )
+        self.assertNotIn(
+            "time.time() - self.capture_start_time",
+            panel_source,
+        )
+        self.assertIn(
+            'latency_title = QLabel("TEMPO DE ANÁLISE")',
+            ui_source,
+        )
+        self.assertIn('window.lbl_timer = QLabel("0.00 s")', ui_source)
+
+    def test_decision_debug_carries_analysis_time_contract(self):
+        analysis = {
+            "is_defect": False,
+            "verdict": "FALHA FALSA",
+            "confidence": 0.99,
+            "detail": {
+                "analysis_time_seconds": 1.234,
+                "analysis_time_start_source": "network_payload_received",
+                "analysis_time_contract": (
+                    "imagem recebida/capturada -> resultado pintado na interface"
+                ),
+                "decision_trace": {
+                    "operator_review_required": False,
+                    "memory": {},
+                },
+            },
+        }
+
+        decision = decision_record(
+            analysis,
+            {"category": "INVERTIDO"},
+        )
+        self.assertEqual(decision["analysis_time_seconds"], 1.234)
+        self.assertEqual(
+            decision["analysis_time_start_source"],
+            "network_payload_received",
+        )
+
+        record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "timing-001",
+            "timestamp": "2026-10-06T09:00:00.000",
+            "source_ip": "169.254.95.200",
+            "stage": "aoi_intake_validation",
+            "mode": "Modo Teste",
+            "transport": {"image": {"valid": True}},
+            "cycle": {},
+            "validation_message": "epicentro válido",
+            "validation": {"valid": True, "reason": "valid_epicenter"},
+            "decision": decision,
+        }
+        report = format_network_debug_report(record)
+        self.assertIn("Tempo de análise: 1.234 s", report)
+        self.assertIn(
+            "Início do tempo: network_payload_received",
+            report,
+        )
+        self.assertIn(
+            "Contrato do tempo: imagem recebida/capturada -> "
+            "resultado pintado na interface",
+            report,
+        )
 
 
 class NetworkXPDebugFormatTests(unittest.TestCase):
