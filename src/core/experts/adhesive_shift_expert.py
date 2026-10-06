@@ -14,6 +14,9 @@ class ShiftExpert:
 
     MODE = "adhesive_flow"
     TERMS = ("MUCH ADHESIVE", "ADHESIVE", "ADESIVO", "COLA", "GLUE")
+    MID_PROFILE = "mid_bright_resin_v1"
+    LEGACY_PROFILE = "dark_warm_v1"
+    MID_MATERIAL_THRESHOLD = 0.18
 
     @classmethod
     def _is_adhesive_context(cls, info: dict | None) -> bool:
@@ -40,6 +43,13 @@ class ShiftExpert:
             "tolerance": 0.32,
             "adhesive_tolerance": 0.32,
             "adhesive_score": 0.0,
+            "adhesive_lighting_mode": "",
+            "adhesive_detector_profile": ShiftExpert.LEGACY_PROFILE,
+            "adhesive_material_threshold": 0.22,
+            "mid_bright_witness_coverage": 0.0,
+            "mid_bright_witness_peak": 0.0,
+            "mid_bright_witness_score": 0.0,
+            "mid_bright_witness_mask": None,
             "excess_coverage": 0.0,
             "padding_overlap": 0.0,
             "area_growth_ratio": 0.0,
@@ -184,6 +194,60 @@ class ShiftExpert:
         )
 
     @staticmethod
+    def _lighting_mode(aoi_info: dict | None) -> str:
+        info = aoi_info if isinstance(aoi_info, dict) else {}
+        mode = str(info.get("lighting_mode", "") or "").strip().upper()
+        return mode if mode in {"SIDE", "TOP", "MID"} else "SIDE"
+
+    @classmethod
+    def _mid_bright_resin_witness(
+        cls,
+        reference: np.ndarray,
+        test: np.ndarray,
+    ) -> np.ndarray:
+        """Detecta a película clara/amarelada que aparece sob iluminação MID.
+
+        O perfil legado depende de adesivo quente + escuro. Em MID, o mesmo
+        material pode ficar quase branco/creme e desaparecer dessa máscara.
+        Esta testemunha é diferencial: exige mudança cromática coerente entre
+        gabarito e teste, favorece ganho amarelo/vermelho e brilho alto, e
+        reduz cobre saturado. Assim material estável claro não vira adesivo.
+        """
+        lab_ref = cv2.cvtColor(reference, cv2.COLOR_BGR2LAB).astype(np.float32)
+        lab_test = cv2.cvtColor(test, cv2.COLOR_BGR2LAB).astype(np.float32)
+        hsv_test = cv2.cvtColor(test, cv2.COLOR_BGR2HSV).astype(np.float32)
+
+        delta = lab_test - lab_ref
+        delta_e = np.linalg.norm(delta, axis=2)
+        color_delta = np.clip((delta_e - 5.0) / 24.0, 0.0, 1.0)
+
+        test_red = np.clip((lab_test[:, :, 1] - 128.0) / 24.0, 0.0, 1.0)
+        test_yellow = np.clip((lab_test[:, :, 2] - 128.0) / 20.0, 0.0, 1.0)
+        red_gain = np.clip((delta[:, :, 1] - 2.0) / 12.0, 0.0, 1.0)
+        yellow_gain = np.clip((delta[:, :, 2] - 2.0) / 12.0, 0.0, 1.0)
+
+        warm_presence = np.maximum(test_yellow, 0.75 * test_red)
+        warm_gain = np.maximum(yellow_gain, 0.80 * red_gain)
+        chroma_witness = np.clip(
+            0.45 * warm_presence + 0.55 * warm_gain,
+            0.0,
+            1.0,
+        )
+
+        _hue, _saturation, value = cv2.split(hsv_test)
+        bright = np.clip((value - 150.0) / 90.0, 0.0, 1.0)
+        copper = cls._copper(test)
+
+        return np.clip(
+            color_delta
+            * (0.15 + 0.85 * chroma_witness)
+            * (0.45 + 0.55 * bright)
+            * (1.0 - 0.55 * copper),
+            0.0,
+            1.0,
+        )
+
+    @staticmethod
     def _clean(mask: np.ndarray, min_area: int):
         binary = (mask > 0).astype(np.uint8)
         count, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
@@ -308,7 +372,28 @@ class ShiftExpert:
                 return self._empty(True, "ROI muito pequena para analisar adesivo")
 
             aligned, align_shift, align_score = self._align(ref, test)
-            ref_prob, test_prob = self._material(aligned), self._material(test)
+            lighting_mode = self._lighting_mode(aoi_info)
+            detector_profile = (
+                self.MID_PROFILE
+                if lighting_mode == "MID"
+                else self.LEGACY_PROFILE
+            )
+
+            ref_prob = self._material(aligned)
+            test_prob = self._material(test)
+            mid_witness_prob = np.zeros(ref.shape[:2], dtype=np.float32)
+            material_threshold = 0.22
+            if lighting_mode == "MID":
+                mid_witness_prob = self._mid_bright_resin_witness(
+                    aligned,
+                    test,
+                )
+                # A testemunha MID só adiciona evidência diferencial ao TESTE.
+                # O gabarito permanece no perfil legado, evitando transformar
+                # fundo branco estável em material adesivo esperado.
+                test_prob = np.maximum(test_prob, mid_witness_prob)
+                material_threshold = self.MID_MATERIAL_THRESHOLD
+
             copper_ref = self._copper(aligned)
 
             lab_ref = cv2.cvtColor(aligned, cv2.COLOR_BGR2LAB).astype(np.float32)
@@ -319,8 +404,21 @@ class ShiftExpert:
             )
 
             min_area = max(3, int(h * w * 0.0007))
-            ref_mask = self._clean((ref_prob >= 0.22).astype(np.uint8) * 255, min_area)
-            test_mask = self._clean((test_prob >= 0.22).astype(np.uint8) * 255, min_area)
+            ref_mask = self._clean(
+                (ref_prob >= 0.22).astype(np.uint8) * 255,
+                min_area,
+            )
+            test_mask = self._clean(
+                (test_prob >= material_threshold).astype(np.uint8) * 255,
+                min_area,
+            )
+            mid_witness_mask = self._clean(
+                (
+                    mid_witness_prob >= self.MID_MATERIAL_THRESHOLD
+                ).astype(np.uint8)
+                * 255,
+                min_area,
+            )
             ref_tolerant = cv2.dilate(
                 ref_mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
             )
@@ -342,6 +440,13 @@ class ShiftExpert:
             test_area = float(cv2.countNonZero(test_mask))
             excess_area = float(cv2.countNonZero(excess))
             padding_area = float(cv2.countNonZero(on_padding))
+            mid_witness_area = float(cv2.countNonZero(mid_witness_mask))
+            mid_witness_coverage = mid_witness_area / pixels
+            mid_witness_peak = (
+                float(np.max(mid_witness_prob))
+                if mid_witness_prob.size
+                else 0.0
+            )
 
             ref_mass = ref_prob * (ref_mask.astype(np.float32) / 255.0)
             test_mass = test_prob * (test_mask.astype(np.float32) / 255.0)
@@ -365,7 +470,7 @@ class ShiftExpert:
                 if excess_area > 0 else 0.0
             )
 
-            score = float(np.clip(
+            base_score = float(np.clip(
                 0.40 * min(1.0, excess_coverage / 0.10)
                 + 0.27 * min(1.0, padding_overlap / 0.045)
                 + 0.18 * min(1.0, area_growth / 1.0)
@@ -373,6 +478,32 @@ class ShiftExpert:
                 + 0.05 * lower_ratio,
                 0.0, 1.0,
             ))
+
+            mid_witness_score = 0.0
+            score = base_score
+            if lighting_mode == "MID" and mid_witness_coverage > 0.0:
+                coverage_strength = min(
+                    1.0,
+                    mid_witness_coverage / 0.040,
+                )
+                mid_witness_score = float(np.clip(
+                    coverage_strength
+                    * (0.55 + 0.45 * mid_witness_peak),
+                    0.0,
+                    1.0,
+                ))
+                # Não substitui a física existente. Reforça somente MID quando
+                # existe uma região clara/creme coerente e diferencial.
+                score = max(
+                    base_score,
+                    float(np.clip(
+                        0.60 * base_score
+                        + 0.40 * mid_witness_score,
+                        0.0,
+                        1.0,
+                    )),
+                )
+
             tolerance = 0.32
             is_defect = bool(
                 score > tolerance
@@ -395,10 +526,15 @@ class ShiftExpert:
 
             direction = self._direction(dx, dy)
             if is_defect:
+                mid_text = (
+                    f", testemunha MID {mid_witness_coverage:.1%}"
+                    if lighting_mode == "MID"
+                    else ""
+                )
                 reason = (
                     f"ADESIVO EXCEDENTE ({score:.0%}): excesso {excess_coverage:.1%}, "
                     f"padding {padding_overlap:.1%}, expansão {area_growth:.0%}, "
-                    f"fluxo {direction}"
+                    f"fluxo {direction}{mid_text}"
                 )
             elif excess_coverage > 0:
                 reason = (
@@ -424,6 +560,13 @@ class ShiftExpert:
                 "tolerance": tolerance,
                 "adhesive_tolerance": tolerance,
                 "adhesive_score": score,
+                "adhesive_lighting_mode": lighting_mode,
+                "adhesive_detector_profile": detector_profile,
+                "adhesive_material_threshold": float(material_threshold),
+                "mid_bright_witness_coverage": float(mid_witness_coverage),
+                "mid_bright_witness_peak": float(mid_witness_peak),
+                "mid_bright_witness_score": float(mid_witness_score),
+                "mid_bright_witness_mask": mid_witness_mask,
                 "excess_coverage": float(excess_coverage),
                 "padding_overlap": float(padding_overlap),
                 "area_growth_ratio": float(area_growth),
