@@ -238,14 +238,14 @@ class OperationalControlsPresenter:
         panel.btn_save_ng.setToolTip(
             "Confirma defeito NG. Só fica disponível após a análise."
         )
-        panel.btn_light_mid.setToolTip(
-            "Seleciona a iluminação MID. Atalho: seta para a esquerda."
+        panel.btn_light_top.setToolTip(
+            "Seleciona a iluminação TOP. Atalho: seta para a esquerda."
         )
         panel.btn_light_side.setToolTip(
             "Seleciona a iluminação SIDE. Atalho: seta para baixo."
         )
-        panel.btn_light_top.setToolTip(
-            "Seleciona a iluminação TOP. Atalho: seta para a direita."
+        panel.btn_light_mid.setToolTip(
+            "Seleciona a iluminação MID. Atalho: seta para a direita."
         )
 
         panel.btn_skip.setEnabled(False)
@@ -367,9 +367,9 @@ class OperationalControlsPresenter:
         self._set_text(self.panel.btn_skip, "Descartar captura")
         self._set_text(self.panel.btn_save_ok, "Aprovar como OK")
         self._set_text(self.panel.btn_save_ng, "Confirmar defeito NG")
-        self._set_text(self.panel.btn_light_mid, "Luz MID  |  ←")
+        self._set_text(self.panel.btn_light_top, "Luz TOP  |  ←")
         self._set_text(self.panel.btn_light_side, "Luz SIDE  |  ↓")
-        self._set_text(self.panel.btn_light_top, "Luz TOP  |  →")
+        self._set_text(self.panel.btn_light_mid, "Luz MID  |  →")
         if hasattr(self.panel, "btn_clear_dataset"):
             self._set_text(
                 self.panel.btn_clear_dataset,
