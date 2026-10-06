@@ -227,24 +227,73 @@ alimenta visualmente SIDE/TOP/MID à medida que os frames são recebidos. A
 automação completa da sequência e a fusão das três iluminações na decisão
 continuam separadas.
 
+#### Análise dos especialistas por iluminação
+
+A categoria de adesivo também possui uma página visual própria na seção
+`ANÁLISE DOS ESPECIALISTAS`, implementada em:
+
+```text
+src/ui/adhesive_multilight_analysis.py
+```
+
+Ela apresenta três grupos independentes:
+
+```text
+ANÁLISE SIDE ↓
+ANÁLISE TOP  ←
+ANÁLISE MID  →
+```
+
+Cada grupo já possui a mesma estrutura de especialistas da interface normal:
+
+- SSIM • textura e calor;
+- XOR • tinta e epicentro;
+- DNA • assinatura semântica;
+- SHIFT • deslocamento;
+- FUSÃO • score final como fallback quando não há motor ativo.
+
+**Contrato desta etapa:** somente `SIDE` recebe o objeto `analysis` produzido
+pelo pipeline monoimagem atual. `TOP` e `MID` aparecem na interface com
+`Aguardando análise da iluminação ...` e não executam o MoE, não inventam
+scores e não reutilizam a análise SIDE.
+
+Isso deixa o visual preparado para análises independentes futuras sem misturar
+resultados entre iluminações nesta etapa.
+
+A página normal de especialistas permanece como padrão para todas as categorias
+que não sejam adesivo. Imagens multilight e especialistas multilight são
+trocados juntos através do mesmo modo condicional de adesivo.
+
 #### Responsividade
 
-A área usa `QStackedWidget`: o painel antigo permanece como página padrão e a
-página multilight só é selecionada para adesivo.
+As áreas de imagens e especialistas usam páginas empilhadas: o painel antigo
+permanece como página padrão e as páginas multilight só são selecionadas para
+adesivo.
 
-O layout multilight refluí:
+O layout multilight refluí em dois níveis:
 
-- largura abaixo de `1000 px`: uma iluminação por linha;
-- largura a partir de `1000 px`: SIDE, TOP e MID em três colunas;
-- em perfil compacto/notebook, o splitter principal permanece vertical e a
-  seção de imagens ganha altura adicional;
-- em monitores standard/wide, a seção de imagens pode usar aproximadamente
-  `62%` da largura, preservando espaço para os especialistas à direita;
-- todos os nove viewports preservam proporção com
+**Imagens**
+
+- largura interna abaixo de `1000 px`: uma iluminação por linha;
+- largura interna a partir de `1000 px`: SIDE, TOP e MID em três colunas;
+- os nove viewports preservam proporção com
   `KeepAspectRatio + SmoothTransformation`.
 
-O objetivo é funcionar tanto em notebooks quanto em monitores grandes sem
-tamanhos fixos de imagem e sem alterar o layout das outras categorias.
+**Especialistas**
+
+- abaixo de `1500 px`: SIDE, TOP e MID ficam empilhados verticalmente;
+- a partir de `1500 px`: SIDE, TOP e MID ficam em três colunas;
+- dentro de cada iluminação, os especialistas usam scroll horizontal para não
+  serem comprimidos abaixo de uma largura útil.
+
+Durante uma inspeção de adesivo o splitter principal fica vertical, dando a
+largura inteira primeiro para as imagens e depois para os especialistas. Em
+notebooks o conteúdo cresce verticalmente dentro do `root_scroll`; em
+monitores grandes a largura adicional é aproveitada para três colunas.
+
+Ao sair da categoria de adesivo, o splitter e as páginas normais voltam ao
+comportamento responsivo anterior. Portanto a mudança não altera visualmente as
+outras categorias.
 
 ### Fluxo-alvo da captura mult-iluminação
 
@@ -315,9 +364,12 @@ A melhoria será executada por etapas, sem avançar automaticamente:
 4. **Concluído — Etapa B visual:** SIDE usa a primeira inspeção normal e frames
    auxiliares recebidos depois podem preencher TOP/MID sem criar nova peça nem
    substituir a análise ativa.
-5. **Etapa futura — automação de aquisição:** comandar a sequência
+5. **Concluído — especialistas por iluminação:** somente para adesivo, a seção
+   de especialistas possui SIDE/TOP/MID; SIDE mostra a análise real atual e
+   TOP/MID permanecem aguardando análise, sem cálculo artificial.
+6. **Etapa futura — automação de aquisição:** comandar a sequência
    SIDE → TOP → SIDE → MID → SIDE com confirmação segura do estado.
-6. **Etapa futura — visão:** adaptar o `FLUXO DE ADESIVO` para comparar as
+7. **Etapa futura — visão:** adaptar o `FLUXO DE ADESIVO` para comparar as
    três iluminações e calibrar a decisão com amostras reais OK/NG.
 
 Até as etapas futuras de automação/fusão serem implementadas, o julgamento do
