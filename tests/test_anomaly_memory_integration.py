@@ -8,6 +8,7 @@ from src.core.anomaly_memory_integration import (
     HARD_MISSING_EXACT_OK_SIMILARITY,
     _dynamic_fusion,
     install_anomaly_memory_integration,
+    resolved_analysis_verdict,
 )
 from src.core.anomaly_signature import valid_anomaly_signature
 
@@ -99,6 +100,27 @@ class _FakeOrchestrator:
             "fusion_rule": "weighted_physical",
         }
         return 0.93, True, 0.90, "fusão", trace
+
+
+class AnalysisVerdictStateTests(unittest.TestCase):
+    def test_operator_review_is_not_exposed_as_binary_defect_verdict(self):
+        self.assertEqual(
+            resolved_analysis_verdict(
+                True,
+                {"operator_review_required": True},
+            ),
+            "REVISÃO OBRIGATÓRIA",
+        )
+
+    def test_final_binary_verdicts_remain_unchanged_without_review(self):
+        self.assertEqual(
+            resolved_analysis_verdict(True, {}),
+            "DEFEITO REAL",
+        )
+        self.assertEqual(
+            resolved_analysis_verdict(False, {}),
+            "FALHA FALSA",
+        )
 
 
 class AnomalyMemoryIntegrationTests(unittest.TestCase):
