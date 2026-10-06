@@ -987,8 +987,8 @@ class ControlPanelUI:
             QSizePolicy.Policy.Fixed,
         )
         window.btn_copy_network_debug.setToolTip(
-            "Copia o relatório técnico da última captura analisada, seja ela "
-            "recebida do Windows XP ou feita localmente por MSS."
+            "Copia o relatório técnico da última captura analisada. Em adesivo, "
+            "o mesmo relatório inclui as análises independentes SIDE, TOP e MID."
         )
         window.btn_copy_network_debug.clicked.connect(
             lambda _checked=False: copy_network_debug_to_clipboard(window)
@@ -1003,8 +1003,9 @@ class ControlPanelUI:
             QSizePolicy.Policy.Fixed,
         )
         window.btn_copy_network_image.setToolTip(
-            "Copia exatamente a imagem de origem vinculada ao diagnóstico atual: "
-            "frame recebido do Windows XP ou frame completo capturado por MSS."
+            "Copia a evidência visual do diagnóstico atual. Em adesivo, gera uma "
+            "única imagem com os frames completos SIDE, TOP e MID lado a lado, "
+            "sem sobreposição."
         )
         window.btn_copy_network_image.clicked.connect(
             lambda _checked=False: copy_network_image_to_clipboard(window)
