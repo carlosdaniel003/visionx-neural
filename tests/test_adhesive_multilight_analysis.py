@@ -44,7 +44,7 @@ class AdhesiveMultiLightAnalysisViewTests(unittest.TestCase):
                 f"Aguardando análise da iluminação {mode}",
                 lane.status_label.text(),
             )
-            self.assertFalse(lane.scroll.isVisible())
+            self.assertTrue(lane.scroll.isHidden())
 
     def test_only_side_can_be_filled_without_touching_top_mid(self):
         view = AdhesiveMultiLightAnalysisView()
@@ -63,10 +63,10 @@ class AdhesiveMultiLightAnalysisViewTests(unittest.TestCase):
         top = view.lanes["TOP"]
         mid = view.lanes["MID"]
 
-        self.assertTrue(side.scroll.isVisible())
+        self.assertFalse(side.scroll.isHidden())
         self.assertIn("Análise SIDE disponível", side.status_label.text())
-        self.assertFalse(top.scroll.isVisible())
-        self.assertFalse(mid.scroll.isVisible())
+        self.assertTrue(top.scroll.isHidden())
+        self.assertTrue(mid.scroll.isHidden())
         self.assertIn("Aguardando análise", top.status_label.text())
         self.assertIn("Aguardando análise", mid.status_label.text())
 
