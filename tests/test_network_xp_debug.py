@@ -1128,6 +1128,21 @@ class AdhesiveMultiLightDebugTests(unittest.TestCase):
             "TOP": cls._analysis("TOP", 0.6),
             "MID": cls._analysis("MID", 0.7),
         }
+        panel.adhesive_multilight_last_final_analysis = {
+            "verdict": "DEFEITO REAL",
+            "is_defect": True,
+            "confidence": 0.93,
+            "reason": "fusão física multilight",
+            "detail": {
+                "final_score": 0.93,
+                "physical_score": 0.91,
+                "fusion_rule": "adhesive_multilight_strong_auxiliary",
+                "adhesive_multilight_dominant_mode": "TOP",
+                "adhesive_multilight_positive_modes": ["SIDE", "TOP"],
+                "adhesive_multilight_strong_auxiliary_modes": ["TOP"],
+                "adhesive_multilight_memory_role": "audit_only",
+            },
+        }
         panel.adhesive_multilight_last_source_frames = {
             "SIDE": np.full((10, 20, 3), (10, 20, 30), dtype=np.uint8),
             "TOP": np.full((10, 24, 3), (40, 50, 60), dtype=np.uint8),
@@ -1207,10 +1222,14 @@ class AdhesiveMultiLightDebugTests(unittest.TestCase):
         self.assertIn("Score final local: 0.2", report)
         self.assertIn("Score final local: 0.6", report)
         self.assertIn("Score final local: 0.7", report)
+        self.assertIn("JULGAMENTO FINAL MULTILIGHT", report)
+        self.assertIn("Veredito final: DEFEITO REAL", report)
         self.assertIn(
-            "Fusão SIDE/TOP/MID para resultado final: NÃO DEFINIDA",
+            "Regra de fusão: adhesive_multilight_strong_auxiliary",
             report,
         )
+        self.assertIn("Iluminação dominante: TOP", report)
+        self.assertIn("Papel da memória KNN: audit_only", report)
         self.assertIn('"shape": [', report)
         self.assertNotIn("0.6000000238418579, 0.6000000238418579", report)
 
