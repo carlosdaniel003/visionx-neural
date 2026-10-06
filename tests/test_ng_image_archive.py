@@ -102,6 +102,27 @@ class NGArchiveDecisionTests(unittest.TestCase):
         self.assertNotEqual(image.shape, crop.shape)
         self.assertEqual(category, "Muito Adesivo")
 
+    def test_adhesive_ng_archives_side_top_mid_individually(self):
+        panel = FakePanel()
+        panel.adhesive_multilight_last_event_id = "evt-001"
+        panel.adhesive_multilight_last_source_frames = {
+            "SIDE": np.full((20, 30, 3), (10, 20, 30), dtype=np.uint8),
+            "TOP": np.full((20, 30, 3), (40, 50, 60), dtype=np.uint8),
+            "MID": np.full((20, 30, 3), (70, 80, 90), dtype=np.uint8),
+        }
+
+        panel.save_label("NG", source="button")
+
+        self.assertEqual(len(panel.archived), 3)
+        self.assertEqual(
+            [category for _image, category in panel.archived],
+            [
+                "Muito Adesivo_SIDE",
+                "Muito Adesivo_TOP",
+                "Muito Adesivo_MID",
+            ],
+        )
+
     def test_automatic_ng_is_archived_when_toggle_is_enabled(self):
         panel = FakePanel()
         panel.set_ng_archive_enabled(True)
@@ -212,6 +233,68 @@ class NGArchiveQueueTests(unittest.TestCase):
             self.assertTrue(np.array_equal(loaded, image))
 
 
+    def test_same_image_submitted_again_is_saved_only_once(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            queue = NGImageArchiveQueue(Path(temp_dir))
+            image = np.full((20, 30, 3), (15, 70, 190), dtype=np.uint8)
+
+            queue.submit(
+                image,
+                "Faltando",
+                datetime(2026, 10, 6, 18, 31),
+            )
+            queue.submit(
+                image.copy(),
+                "Faltando",
+                datetime(2026, 10, 6, 18, 32),
+            )
+            queue.wait_until_idle()
+
+            files = list(Path(temp_dir).glob("*.png"))
+            self.assertEqual(len(files), 1)
+
+    def test_existing_png_blocks_duplicate_after_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            image = np.full((20, 30, 3), (25, 90, 180), dtype=np.uint8)
+            existing = output_dir / "legacy_any_name.png"
+            self.assertTrue(cv2.imwrite(str(existing), image))
+
+            queue = NGImageArchiveQueue(output_dir)
+            queue.submit(
+                image.copy(),
+                "Faltando",
+                datetime(2026, 10, 6, 18, 33),
+            )
+            queue.wait_until_idle()
+
+            files = list(output_dir.glob("*.png"))
+            self.assertEqual(len(files), 1)
+            self.assertEqual(files[0].name, existing.name)
+
+    def test_different_images_same_minute_are_both_saved(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            queue = NGImageArchiveQueue(Path(temp_dir))
+            image_a = np.full((20, 30, 3), (10, 20, 30), dtype=np.uint8)
+            image_b = np.full((20, 30, 3), (40, 50, 60), dtype=np.uint8)
+            stamp = datetime(2026, 10, 6, 18, 34)
+
+            queue.submit(image_a, "Muito Adesivo_TOP", stamp)
+            queue.submit(image_b, "Muito Adesivo_TOP", stamp)
+            queue.wait_until_idle()
+
+            files = sorted(Path(temp_dir).glob("*.png"))
+            self.assertEqual(len(files), 2)
+            self.assertEqual(
+                files[0].name,
+                "2026-10-06_1834_MUITO_ADESIVO_TOP.png",
+            )
+            self.assertEqual(
+                files[1].name,
+                "2026-10-06_1834_MUITO_ADESIVO_TOP_2.png",
+            )
+
+
 class NGArchiveSourceContractTests(unittest.TestCase):
     def test_archive_wrapper_is_inside_production_confidence_gate(self):
         source = Path("main.py").read_text(encoding="utf-8")
@@ -232,6 +315,9 @@ class NGArchiveSourceContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("network_xp_frame_snapshot", archive_source)
+        self.assertIn("archive_image_candidates", archive_source)
+        self.assertIn("image_fingerprint", archive_source)
+        self.assertIn("load_archive_fingerprints", archive_source)
         self.assertIn("network_xp_frame_snapshot", debug_source)
         self.assertNotIn("archive_image = self.current_ng.copy()", archive_source)
 
