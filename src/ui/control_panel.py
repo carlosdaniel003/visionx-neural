@@ -102,31 +102,59 @@ class ControlPanel(QWidget):
         self.ui_builder.setup_ui(self)
         
         if hasattr(self, 'btn_light_mid'):
-            self.btn_light_mid.clicked.connect(lambda: self.change_lighting("MID", "local"))
-            self.btn_light_side.clicked.connect(lambda: self.change_lighting("SIDE", "local"))
-            self.btn_light_top.clicked.connect(lambda: self.change_lighting("TOP", "local"))
+            self.btn_light_mid.clicked.connect(
+                lambda: self.change_lighting("MID", "odin_control")
+            )
+            self.btn_light_side.clicked.connect(
+                lambda: self.change_lighting("SIDE", "odin_control")
+            )
+            self.btn_light_top.clicked.connect(
+                lambda: self.change_lighting("TOP", "odin_control")
+            )
         
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def keyPressEvent(self, event):
         super().keyPressEvent(event)
         if event.key() == Qt.Key.Key_Left:
-            self.change_lighting("MID", "local")
+            self.change_lighting("TOP", "odin_keyboard")
         elif event.key() == Qt.Key.Key_Down:
-            self.change_lighting("SIDE", "local")
+            self.change_lighting("SIDE", "odin_keyboard")
         elif event.key() == Qt.Key.Key_Right:
-            self.change_lighting("TOP", "local")
+            self.change_lighting("MID", "odin_keyboard")
 
     def change_lighting(self, light_mode: str, source: str):
+        light_mode = str(light_mode or "").strip().upper()
+        command_by_light = {
+            "TOP": "LEFT",
+            "SIDE": "DOWN",
+            "MID": "RIGHT",
+        }
+        command = command_by_light.get(light_mode)
+        if command is None:
+            self.update_network_status(
+                f"Falha ao ajustar iluminação: modo inválido '{light_mode}'."
+            )
+            return False
+
+        normalized_source = str(source or "").strip().lower()
+        if normalized_source in {
+            "local",
+            "button",
+            "odin_control",
+            "odin_keyboard",
+        }:
+            if not self.send_command_to_xp(command):
+                return False
+
         if hasattr(self, 'lbl_light_value'):
             self.lbl_light_value.setText(light_mode)
-            
-        self.update_brain_status(f"💡 Iluminação ajustada: {light_mode}", False)
 
-        if source == "local":
-            if light_mode == "MID": self.send_command_to_xp("LEFT")
-            elif light_mode == "SIDE": self.send_command_to_xp("DOWN")
-            elif light_mode == "TOP": self.send_command_to_xp("RIGHT")
+        self.update_brain_status(
+            f"Iluminação ajustada: {light_mode}",
+            False,
+        )
+        return True
 
     def update_network_status(self, message: str):
         if hasattr(self.ui_builder, 'lbl_status_network'):
