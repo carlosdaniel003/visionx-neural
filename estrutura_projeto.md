@@ -48,16 +48,15 @@ inicial e referência de contexto.
 
 ### Estado do agente Windows XP
 
-Em 06/10/2026, o agente foi atualizado para:
+Em 06/10/2026, a V5.2 foi copiada manualmente para o Windows XP e validada para
+os comandos enviados pelo ODIN. Depois disso, a referência da branch `central`
+evoluiu para:
 
 ```text
-agente_industrial_xp.py V5.2
+agente_industrial_xp.py V5.3
 ```
 
-A versão operacional que está rodando no Windows XP foi informada pelo operador
-como **igual à versão da branch `central` no GitHub**.
-
-Ela já aceita:
+A V5.3 mantém:
 
 ```text
 PRESS_0
@@ -67,9 +66,11 @@ PRESS_DOWN
 PRESS_RIGHT
 ```
 
-Portanto o pré-requisito do lado do XP para comandar as três iluminações está
-concluído. Alterações futuras no agente continuam exigindo atualização manual no
-Windows XP; essa sincronização descreve especificamente o estado de 06/10/2026.
+e acrescenta a telemetria XP → ODIN das setas físicas por
+`CMD_TOP/CMD_SIDE/CMD_MID`.
+
+Até nova confirmação operacional, o estado documentado é: **GitHub em V5.3 e
+Windows XP ainda precisa receber manualmente essa versão e reiniciar o agente**.
 
 ### Controle manual do ODIN compatível com a AOI
 
