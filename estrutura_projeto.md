@@ -116,9 +116,30 @@ MID  →
 ```
 
 Esse card é somente de apresentação: não envia comandos, não altera análise,
-gate, KNN, dataset ou decisão. Ele representa a iluminação comandada pelo ODIN.
-Uma mudança feita diretamente no teclado físico do XP só poderá ser refletida
-automaticamente quando existir telemetria explícita desse evento XP → ODIN.
+gate, KNN, dataset ou decisão.
+
+Após o primeiro teste operacional em 06/10/2026 foram encontrados dois pontos:
+
+- os botões `Luz TOP/SIDE/MID` funcionaram e a AOI respondeu corretamente;
+- as setas do teclado do próprio ODIN não disparavam de forma confiável porque
+  dependiam de `keyPressEvent` do painel e o foco podia estar em widgets filhos;
+- as setas físicas do Windows XP mudavam a AOI, mas o agente V5.2 não enviava
+  essa mudança de volta ao ODIN.
+
+Correção implementada:
+
+- `src/ui/lighting_shortcuts.py` instala `QShortcut` com
+  `WindowShortcut`, tornando `←/↓/→` válidas em toda a janela do ODIN e
+  preservando as travas dos botões;
+- o agente foi evoluído para V5.3 e passa a enviar `CMD_TOP`, `CMD_SIDE` e
+  `CMD_MID` quando as setas são detectadas pelo hook global;
+- comandos recebidos da rede atualizam o card fixo e mostram o mesmo feedback
+  temporário de tecla, com origem `TECLADO WINDOWS XP`;
+- o eco de uma seta que foi originalmente enviada pelo ODIN continua coberto
+  pela supressão temporal do feedback.
+
+A correção do ODIN está implementada. A telemetria XP → ODIN depende de copiar a
+V5.3 do `agente_industrial_xp.py` para o Windows XP e reiniciar o agente.
 
 ### Fluxo-alvo da captura mult-iluminação
 
@@ -181,8 +202,10 @@ A melhoria será executada por etapas, sem avançar automaticamente:
 
 1. **Concluído — agente XP:** suporte aos comandos de setas e sincronização da
    V5.2 entre GitHub e Windows XP.
-2. **Concluído — controle manual do ODIN:** mapeamento `← TOP / ↓ SIDE / → MID`,
-   feedback visual da tecla e card persistente da iluminação atual.
+2. **Correção implementada — controle manual do ODIN:** botões validados;
+   setas locais migradas para `QShortcut`; agente V5.3 preparado para devolver
+   `CMD_TOP/CMD_SIDE/CMD_MID`. Aguardando nova validação operacional após
+   atualização manual do agente no XP.
 3. **Próxima etapa — aquisição:** integrar no ODIN a captura segura de
    `SIDE/TOP/MID` da mesma peça.
 4. **Etapa posterior — visão:** adaptar o `FLUXO DE ADESIVO` para comparar as
