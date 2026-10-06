@@ -299,6 +299,13 @@ A V5.3 é útil porque devolve `CMD_TOP/CMD_SIDE/CMD_MID` para telemetria visual
 mas a sequência automática de captura depende principalmente dos comandos
 `PRESS_LEFT/PRESS_RIGHT/PRESS_DOWN`, já existentes desde a V5.2 validada.
 
+Em 06/10/2026, o operador confirmou em teste real que a automação do ODIN
+conseguiu trocar TOP/MID, receber as fotos correspondentes e restaurar SIDE com
+o agente operacional existente. A etapa seguinte passa a ocorrer inteiramente
+no computador novo: cada frame recebido é analisado pelos especialistas de forma
+independente por iluminação. Isso também não exige novo protocolo ou alteração
+no agente XP.
+
 Nenhuma alteração foi feita em `agente_industrial_xp.py` nesta etapa de
 automação. Portanto, se o XP já possui uma versão que aceita os três comandos de
 seta, não é necessário substituir novamente o agente apenas para esta mudança do
