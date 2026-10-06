@@ -1,17 +1,40 @@
-"""Overlay persistente da iluminação atual e ponte visual dos controles de luz."""
+"""Overlay da iluminação atual sincronizado com o resultado final da análise."""
 
 from __future__ import annotations
 
 from functools import wraps
 
-from PyQt6.QtCore import QEvent, QPoint, Qt, QTimer
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
+from PyQt6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPoint,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+)
+from PyQt6.QtWidgets import (
+    QFrame,
+    QGraphicsOpacityEffect,
+    QHBoxLayout,
+    QLabel,
+    QVBoxLayout,
+)
+
+from src.ui.decision_verdict_feedback import (
+    VERDICT_FEEDBACK_FADE_IN_MS,
+    VERDICT_FEEDBACK_FADE_OUT_MS,
+    VERDICT_FEEDBACK_SLIDE_PX,
+    verdict_feedback_state,
+)
 
 
 LIGHTING_STATUS_WIDTH = 300
 LIGHTING_STATUS_HEIGHT = 88
 LIGHTING_STATUS_MARGIN = 24
 LIGHTING_STATUS_TOP_OFFSET = 184
+LIGHTING_STATUS_FADE_IN_MS = VERDICT_FEEDBACK_FADE_IN_MS
+LIGHTING_STATUS_FADE_OUT_MS = VERDICT_FEEDBACK_FADE_OUT_MS
+LIGHTING_STATUS_SLIDE_PX = VERDICT_FEEDBACK_SLIDE_PX
 
 LIGHTING_COMMAND_BY_MODE = {
     "TOP": "LEFT",
@@ -58,12 +81,13 @@ QLabel#lightingStatusKey {
 
 
 class LightingStatusOverlay(QFrame):
-    """Card fixo que mantém a iluminação atual visível para o operador."""
+    """Card da iluminação que acompanha o ciclo visual do veredito final."""
 
     def __init__(self, panel):
         super().__init__(panel)
         self.panel = panel
         self.current_mode = ""
+        self._decision_dismiss_pending = False
 
         self.setObjectName("lightingStatusFeedback")
         self.setFixedSize(LIGHTING_STATUS_WIDTH, LIGHTING_STATUS_HEIGHT)
@@ -106,7 +130,36 @@ class LightingStatusOverlay(QFrame):
         root.addWidget(header)
         root.addLayout(body, 1)
 
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self._opacity_effect.setOpacity(0.0)
+        self.setGraphicsEffect(self._opacity_effect)
+
+        self._fade_in = QPropertyAnimation(
+            self._opacity_effect,
+            b"opacity",
+            self,
+        )
+        self._fade_in.setDuration(LIGHTING_STATUS_FADE_IN_MS)
+        self._fade_in.setStartValue(0.0)
+        self._fade_in.setEndValue(1.0)
+        self._fade_in.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self._slide_in = QPropertyAnimation(self, b"pos", self)
+        self._slide_in.setDuration(LIGHTING_STATUS_FADE_IN_MS)
+        self._slide_in.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self._fade_out = QPropertyAnimation(
+            self._opacity_effect,
+            b"opacity",
+            self,
+        )
+        self._fade_out.setDuration(LIGHTING_STATUS_FADE_OUT_MS)
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._fade_out.finished.connect(self._finish_hide)
+
         self.panel.installEventFilter(self)
+        self.hide()
 
     @staticmethod
     def _normalize(mode: str) -> str:
@@ -125,7 +178,8 @@ class LightingStatusOverlay(QFrame):
 
     def reposition(self) -> None:
         self.move(self._top_right_position())
-        self.raise_()
+        if not self.isHidden():
+            self.raise_()
 
     def eventFilter(self, watched, event):
         if watched is self.panel and event.type() in {
@@ -135,7 +189,18 @@ class LightingStatusOverlay(QFrame):
             QTimer.singleShot(0, self.reposition)
         return super().eventFilter(watched, event)
 
+    def _stop_motion(self) -> None:
+        self._fade_in.stop()
+        self._slide_in.stop()
+        self._fade_out.stop()
+
+    def _finish_hide(self) -> None:
+        self.hide()
+        self._opacity_effect.setOpacity(0.0)
+        self._decision_dismiss_pending = False
+
     def set_lighting(self, mode: str) -> bool:
+        """Atualiza o estado conhecido sem tornar o card visível por si só."""
         normalized = self._normalize(mode)
         if not normalized:
             return False
@@ -143,17 +208,92 @@ class LightingStatusOverlay(QFrame):
         self.current_mode = normalized
         self.value_label.setText(normalized)
         self.key_label.setText(LIGHTING_KEY_SYMBOL[normalized])
-        self.reposition()
+
+        if not self.isHidden():
+            self.reposition()
+        return True
+
+    def show_analysis(self, analysis: dict | None) -> bool:
+        """Mostra a iluminação somente quando existe um veredito final válido."""
+        message, _tone = verdict_feedback_state(analysis)
+        if not message:
+            return False
+
+        mode = self.current_mode
+        if not mode and hasattr(self.panel, "lbl_light_value"):
+            mode = self.panel.lbl_light_value.text().strip().upper()
+        if not self.set_lighting(mode):
+            return False
+
+        self._decision_dismiss_pending = False
+        self._stop_motion()
+
+        target = self._top_right_position()
+        max_x = max(0, self.panel.width() - self.width())
+        start = QPoint(
+            min(max_x, target.x() + LIGHTING_STATUS_SLIDE_PX),
+            target.y(),
+        )
+
+        self._opacity_effect.setOpacity(0.0)
+        self.move(start)
+        self._slide_in.setStartValue(start)
+        self._slide_in.setEndValue(target)
+
+        self.raise_()
         self.show()
+        self._fade_in.start()
+        self._slide_in.start()
+        return True
+
+    def prepare_decision_dismissal(self) -> bool:
+        """Preserva o card até o mesmo fade-out usado pelo resultado e 0/1."""
+        if self.isHidden() or not self.current_mode:
+            return False
+        self._decision_dismiss_pending = True
+        return True
+
+    def start_synchronized_fade_out(self) -> bool:
+        """Inicia a saída junto com o veredito e o feedback de decisão."""
+        if (
+            not self._decision_dismiss_pending
+            or self.isHidden()
+            or not self.current_mode
+        ):
+            return False
+
+        self._fade_out.stop()
+        self._fade_out.setStartValue(self._opacity_effect.opacity())
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.start()
+        return True
+
+    def clear_status(self, force: bool = False) -> bool:
+        """Oculta em resets normais, mas respeita uma saída 0/1 pendente."""
+        if self._decision_dismiss_pending and not force:
+            return False
+
+        self._stop_motion()
+        self._finish_hide()
         return True
 
 
 def install_lighting_status_feedback_hooks(control_panel_cls) -> None:
-    """Atualiza os overlays somente quando a troca de iluminação foi aceita."""
+    """Sincroniza iluminação, resultado final e reset sem alterar a decisão."""
     if getattr(control_panel_cls, "_lighting_status_feedback_hooks", False):
         return
 
     original_change_lighting = control_panel_cls.change_lighting
+    original_reference_update = getattr(
+        control_panel_cls,
+        "_update_reference_panel",
+        None,
+    )
+    original_reset = getattr(
+        control_panel_cls,
+        "_reset_confidence_panel",
+        None,
+    )
 
     @wraps(original_change_lighting)
     def change_lighting(self, light_mode: str, source: str):
@@ -194,17 +334,56 @@ def install_lighting_status_feedback_hooks(control_panel_cls) -> None:
         return result
 
     control_panel_cls.change_lighting = change_lighting
+
+    if callable(original_reference_update):
+        @wraps(original_reference_update)
+        def wrapped_reference_update(self, analysis):
+            result = original_reference_update(self, analysis)
+            show_status = getattr(
+                self,
+                "show_lighting_status_feedback",
+                None,
+            )
+            if callable(show_status):
+                show_status(analysis)
+            return result
+
+        control_panel_cls._update_reference_panel = wrapped_reference_update
+
+    if callable(original_reset):
+        @wraps(original_reset)
+        def wrapped_reset(self):
+            result = original_reset(self)
+            clear_status = getattr(
+                self,
+                "clear_lighting_status_feedback",
+                None,
+            )
+            if callable(clear_status):
+                clear_status()
+            return result
+
+        control_panel_cls._reset_confidence_panel = wrapped_reset
+
     control_panel_cls._lighting_status_feedback_hooks = True
 
 
 def install_lighting_status_feedback(panel) -> None:
-    """Cria o card persistente e o inicia no estado conhecido da interface."""
+    """Cria o card oculto e mantém apenas o estado atual até a análise terminar."""
     if getattr(panel, "_lighting_status_feedback_installed", False):
         return
 
     overlay = LightingStatusOverlay(panel)
     panel.lighting_status_feedback = overlay
     panel.update_lighting_status_feedback = overlay.set_lighting
+    panel.show_lighting_status_feedback = overlay.show_analysis
+    panel.clear_lighting_status_feedback = overlay.clear_status
+    panel.prepare_lighting_status_feedback_dismissal = (
+        overlay.prepare_decision_dismissal
+    )
+    panel.start_lighting_status_feedback_fade_out = (
+        overlay.start_synchronized_fade_out
+    )
     panel._lighting_status_feedback_installed = True
 
     current = "SIDE"
@@ -216,8 +395,11 @@ def install_lighting_status_feedback(panel) -> None:
 __all__ = [
     "LIGHTING_COMMAND_BY_MODE",
     "LIGHTING_KEY_SYMBOL",
+    "LIGHTING_STATUS_FADE_IN_MS",
+    "LIGHTING_STATUS_FADE_OUT_MS",
     "LIGHTING_STATUS_HEIGHT",
     "LIGHTING_STATUS_MARGIN",
+    "LIGHTING_STATUS_SLIDE_PX",
     "LIGHTING_STATUS_TOP_OFFSET",
     "LIGHTING_STATUS_WIDTH",
     "LightingStatusOverlay",
