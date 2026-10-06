@@ -35,6 +35,17 @@ class DebuggerCanonicalROIContractTests(unittest.TestCase):
         )
         self.assertIn("def _first_array", source)
 
+    def test_adhesive_widget_exposes_mid_bright_resin_telemetry(self):
+        source = (
+            ROOT / "src" / "ui" / "widgets" / "shift_debugger.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("mid_bright_witness_coverage", source)
+        self.assertIn("mid_bright_witness_peak", source)
+        self.assertIn("mid_bright_witness_score", source)
+        self.assertIn("adhesive_detector_profile", source)
+        self.assertIn("MID claro", source)
+
     def test_missing_widget_exposes_hard_absence_evidence(self):
         source = (
             ROOT / "src" / "ui" / "widgets" / "missing_debugger.py"
