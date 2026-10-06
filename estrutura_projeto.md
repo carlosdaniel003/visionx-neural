@@ -2341,6 +2341,105 @@ A sincronização de saída está **implementada e aguardando validação operac
 na interface real**. A validação anterior do fundo neutro permanece válida.
 
 
+## Tempo de análise end-to-end
+
+O card `TEMPO DE ANÁLISE` mede o tempo operacional percebido entre a entrada
+da imagem no ODIN e o resultado já atualizado visualmente na interface.
+
+### Contrato
+
+Para imagem recebida do Windows XP:
+
+```text
+payload completo terminou de chegar ao ODIN
+        ↓
+descompressão / decode
+        ↓
+confirmação de estabilidade
+        ↓
+validação da AOI / epicentro
+        ↓
+extração / OCR / normalização
+        ↓
+motores físicos + memória + fusão
+        ↓
+widgets de resultado atualizados
+        ↓
+Qt processa a pintura pendente
+        ↓
+fim do Tempo de análise
+```
+
+O marco inicial da rede usa `time.perf_counter()` imediatamente após o payload
+completo ser recebido, antes de descompressão e `cv2.imdecode()`.
+
+O `NetworkReceiver` associa esse timestamp ao candidato estável efetivamente
+entregue ao painel através de `last_delivered_image_received_at`.
+
+Para captura local MSS:
+
+```text
+frame MSS terminou de ser capturado
+        ↓
+detecção da interface / recortes / OCR
+        ↓
+análise
+        ↓
+resultado pintado
+        ↓
+fim do Tempo de análise
+```
+
+O clique em `Capturar local (MSS)` e a espera anterior ao primeiro frame válido
+não fazem parte do tempo de análise.
+
+### Relógio
+
+Usar exclusivamente relógio monotônico de alta resolução (`time.perf_counter()`)
+para duração. `time.time()` não deve ser usado para calcular esse intervalo,
+porque alterações no relógio do sistema podem distorcer a duração.
+
+### Momento final
+
+Depois de atualizar veredito, motivo, imagens, painéis técnicos e overlay, o
+ODIN chama `QApplication.processEvents()` com input do operador excluído.
+Somente depois desse processamento de pintura é registrado
+`analysis_displayed_at`.
+
+Assim, o valor não termina apenas quando a IA retorna: inclui a preparação e a
+entrega visual do resultado ao operador.
+
+### Telemetria
+
+`analysis["detail"]` registra:
+
+- `analysis_time_seconds`;
+- `analysis_time_start_source`;
+- `analysis_time_contract`.
+
+Origens válidas:
+
+- `network_payload_received`;
+- `local_mss_frame_received`;
+- `process_entry_fallback` apenas como proteção de compatibilidade.
+
+O `Copiar debug` também deve exibir esses campos para auditoria.
+
+### Regra de apresentação
+
+O título permanece `TEMPO DE ANÁLISE` e o valor é mostrado em segundos, por
+exemplo:
+
+```text
+1.27 s
+```
+
+Não rotular esse valor como simples `Latência`, pois ele representa o ciclo
+end-to-end descrito acima.
+
+Status em 06/10/2026: **contrato corrigido e implementação concluída;
+aguardando validação operacional com medições reais no ODIN**.
+
 ## Diagnóstico e cópia de evidência por origem
 
 Os controles visuais:
