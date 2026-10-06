@@ -128,5 +128,42 @@ class LightingStatusHookTests(unittest.TestCase):
         )
 
 
+
+
+class LightingControlSourceContractTests(unittest.TestCase):
+    def test_control_panel_uses_real_aoi_mapping(self):
+        source = open("src/ui/control_panel.py", encoding="utf-8").read()
+
+        self.assertIn('Qt.Key.Key_Left: ("TOP", "btn_light_top")', source)
+        self.assertIn('Qt.Key.Key_Down: ("SIDE", "btn_light_side")', source)
+        self.assertIn('Qt.Key.Key_Right: ("MID", "btn_light_mid")', source)
+        self.assertIn('"TOP": "LEFT"', source)
+        self.assertIn('"SIDE": "DOWN"', source)
+        self.assertIn('"MID": "RIGHT"', source)
+
+    def test_ui_starts_in_side_and_displays_correct_arrows(self):
+        ui_source = open("src/ui/control_panel_ui.py", encoding="utf-8").read()
+        controls_source = open(
+            "src/ui/operational_controls.py",
+            encoding="utf-8",
+        ).read()
+
+        self.assertIn('window.lbl_light_value = QLabel("SIDE")', ui_source)
+        self.assertIn('QPushButton("Luz TOP • ←")', ui_source)
+        self.assertIn('QPushButton("Luz SIDE • ↓")', ui_source)
+        self.assertIn('QPushButton("Luz MID • →")', ui_source)
+        self.assertIn('"Luz TOP  |  ←"', controls_source)
+        self.assertIn('"Luz SIDE  |  ↓"', controls_source)
+        self.assertIn('"Luz MID  |  →"', controls_source)
+
+    def test_main_installs_lighting_hook_and_persistent_overlay(self):
+        source = open("main.py", encoding="utf-8").read()
+        hook = source.index("install_lighting_status_feedback_hooks(ControlPanel)")
+        panel = source.index("panel = ControlPanel()")
+        overlay = source.index("install_lighting_status_feedback(panel)")
+
+        self.assertLess(hook, panel)
+        self.assertLess(panel, overlay)
+
 if __name__ == "__main__":
     unittest.main()
