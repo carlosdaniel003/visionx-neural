@@ -22,6 +22,11 @@ class ShiftDebuggerWidget(QWidget):
         self.reason = ""
         self.adhesive_score = 0.0
         self.tolerance = 0.32
+        self.lighting_mode = ""
+        self.detector_profile = ""
+        self.mid_bright_witness_coverage = 0.0
+        self.mid_bright_witness_peak = 0.0
+        self.mid_bright_witness_score = 0.0
         self.excess_coverage = 0.0
         self.padding_overlap = 0.0
         self.area_growth_ratio = 0.0
@@ -57,6 +62,21 @@ class ShiftDebuggerWidget(QWidget):
         self.reason = str(detail.get("adhesive_reason", ""))
         self.adhesive_score = float(detail.get("adhesive_score", 0.0))
         self.tolerance = float(detail.get("adhesive_tolerance", 0.32))
+        self.lighting_mode = str(
+            detail.get("adhesive_lighting_mode", "") or ""
+        ).strip().upper()
+        self.detector_profile = str(
+            detail.get("adhesive_detector_profile", "") or ""
+        )
+        self.mid_bright_witness_coverage = float(
+            detail.get("mid_bright_witness_coverage", 0.0)
+        )
+        self.mid_bright_witness_peak = float(
+            detail.get("mid_bright_witness_peak", 0.0)
+        )
+        self.mid_bright_witness_score = float(
+            detail.get("mid_bright_witness_score", 0.0)
+        )
         self.excess_coverage = float(detail.get("excess_coverage", 0.0))
         self.padding_overlap = float(detail.get("padding_overlap", 0.0))
         self.area_growth_ratio = float(detail.get("area_growth_ratio", 0.0))
@@ -264,6 +284,14 @@ class ShiftDebuggerWidget(QWidget):
         )
 
         painter.setPen(status_color)
+        mid_metrics = ""
+        if self.lighting_mode == "MID":
+            mid_metrics = (
+                f" • MID claro {self.mid_bright_witness_coverage:.1%} "
+                f"(pico {self.mid_bright_witness_peak:.0%}, "
+                f"score {self.mid_bright_witness_score:.0%})"
+            )
+
         metrics = (
             f"Score {self.adhesive_score:.0%}/{self.tolerance:.0%} • "
             f"Excesso {self.excess_coverage:.1%} • "
@@ -271,6 +299,7 @@ class ShiftDebuggerWidget(QWidget):
             f"Área {self.reference_area_pct:.1%}→{self.test_area_pct:.1%} • "
             f"Expansão {self.area_growth_ratio:.0%} • "
             f"Espalhamento {self.spread_growth_ratio:.0%}"
+            f"{mid_metrics}"
         )
         painter.drawText(
             padding,
@@ -279,11 +308,16 @@ class ShiftDebuggerWidget(QWidget):
         )
 
         painter.setPen(QColor("#f5c518"))
+        profile = (
+            f" • perfil {self.detector_profile}"
+            if self.detector_profile
+            else ""
+        )
         flow = (
             f"Fluxo {self.direction} • centro X:{self.dx:+.1f}px Y:{self.dy:+.1f}px "
             f"({self.shift_pixels:.1f}px) • vazamento inferior "
             f"{self.lower_leakage_ratio:.0%} • alinhamento "
-            f"{self.alignment_score:.2f}"
+            f"{self.alignment_score:.2f}{profile}"
         )
         painter.drawText(
             padding,
