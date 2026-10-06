@@ -304,9 +304,6 @@ class OperationalControlsPresenter:
             (self.panel.btn_skip, "Captura atual descartada."),
             (self.panel.btn_save_ok, "Decisão OK registrada."),
             (self.panel.btn_save_ng, "Decisão NG registrada."),
-            (self.panel.btn_light_mid, "Iluminação MID selecionada."),
-            (self.panel.btn_light_side, "Iluminação SIDE selecionada."),
-            (self.panel.btn_light_top, "Iluminação TOP selecionada."),
         )
         if hasattr(self.panel, "btn_clear_dataset"):
             bindings += (
