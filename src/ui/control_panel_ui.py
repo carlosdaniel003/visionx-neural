@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.ui.adhesive_multilight_analysis import AdhesiveMultiLightAnalysisView
 from src.ui.adhesive_multilight_inspection import AdhesiveMultiLightView
 from src.ui.branding import DISPLAY_NAME, MONITOR_WINDOW_TITLE
 from src.ui.network_xp_debug import (
@@ -448,6 +449,18 @@ class ControlPanelUI:
             )
         )
 
+        window.telemetry_view_stack = _CurrentPageStack()
+        window.telemetry_view_stack.setMinimumWidth(0)
+        window.telemetry_view_stack.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+
+        window.normal_telemetry_view = QWidget()
+        normal_telemetry_layout = QVBoxLayout(window.normal_telemetry_view)
+        normal_telemetry_layout.setContentsMargins(0, 0, 0, 0)
+        normal_telemetry_layout.setSpacing(0)
+
         window.scroll_area = QScrollArea()
         window.scroll_area.setWidgetResizable(True)
         window.scroll_area.setMinimumWidth(0)
@@ -476,7 +489,19 @@ class ControlPanelUI:
             window.scroll_layout.addWidget(self._wrap_debug_widget(label, widget))
         window.scroll_layout.addStretch()
         window.scroll_area.setWidget(window.scroll_content)
-        telemetry_layout.addWidget(window.scroll_area, stretch=1)
+        normal_telemetry_layout.addWidget(window.scroll_area, stretch=1)
+
+        window.adhesive_multilight_analysis_view = (
+            AdhesiveMultiLightAnalysisView()
+        )
+        window.telemetry_view_stack.addWidget(window.normal_telemetry_view)
+        window.telemetry_view_stack.addWidget(
+            window.adhesive_multilight_analysis_view
+        )
+        window.telemetry_view_stack.setCurrentWidget(
+            window.normal_telemetry_view
+        )
+        telemetry_layout.addWidget(window.telemetry_view_stack, stretch=1)
 
         window.main_splitter.addWidget(window.images_section)
         window.main_splitter.addWidget(window.telemetry_section)
@@ -1151,6 +1176,19 @@ class ControlPanelUI:
                 else window.normal_inspection_view
             )
             stack.setCurrentWidget(target)
+
+        telemetry_stack = getattr(
+            window,
+            "telemetry_view_stack",
+            None,
+        )
+        if telemetry_stack is not None:
+            telemetry_target = (
+                window.adhesive_multilight_analysis_view
+                if enabled
+                else window.normal_telemetry_view
+            )
+            telemetry_stack.setCurrentWidget(telemetry_target)
 
         viewport = getattr(
             getattr(window, "root_scroll", None),
