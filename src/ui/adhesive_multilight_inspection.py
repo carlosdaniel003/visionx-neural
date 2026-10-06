@@ -24,8 +24,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.core.epicenter_extractor import EpicenterExtractor
-from src.core.inspection import detect_anomalies
+from src.core.adhesive_multilight_analysis import (
+    analyze_lighting,
+    build_lighting_context,
+    valid_image,
+)
 from src.utils.text_normalizer import normalize_aoi_text
 
 
@@ -58,11 +61,7 @@ def is_adhesive_category(aoi_info: dict | None) -> bool:
 
 
 def _valid_image(value: Any) -> bool:
-    return bool(
-        isinstance(value, np.ndarray)
-        and value.size > 0
-        and value.ndim >= 2
-    )
+    return valid_image(value)
 
 
 def _crop_box(image: np.ndarray, box: Any) -> np.ndarray:
@@ -95,15 +94,12 @@ def _crop_box(image: np.ndarray, box: Any) -> np.ndarray:
 def build_adhesive_view_payload(
     sample_crop: np.ndarray,
     ng_crop: np.ndarray,
+    context: dict | None = None,
 ) -> dict:
     """Monta as três imagens visuais de uma iluminação.
 
-    main:
-        imagem TESTE recebida da AOI.
-    large:
-        recorte da maior caixa verde detectada.
-    small:
-        recorte do epicentro/menor caixa verde selecionada pelo radar.
+    O contexto geométrico pode ser compartilhado com a análise dos especialistas
+    para evitar repetir detect_anomalies/EpicenterExtractor no mesmo frame.
     """
     payload = {
         "main": ng_crop.copy() if _valid_image(ng_crop) else np.array([]),
@@ -116,20 +112,17 @@ def build_adhesive_view_payload(
         return payload
 
     try:
-        (
-            _raw_anomalies,
-            old_epicenters,
-            global_box_info,
-            _gab_focus,
-            _test_focus,
-        ) = detect_anomalies(sample_crop, ng_crop)
-
-        real_epicenters, _focus_gab, focus_ng = EpicenterExtractor.extract_focus(
-            sample_crop,
-            ng_crop,
-            old_epicenters,
-            global_box_info,
+        frame_context = (
+            context
+            if isinstance(context, dict)
+            else build_lighting_context(sample_crop, ng_crop)
         )
+        if not frame_context.get("valid", False):
+            return payload
+
+        global_box_info = frame_context.get("global_box_info", {})
+        real_epicenters = frame_context.get("real_epicenters", [])
+        focus_ng = frame_context.get("focus_ng", np.array([]))
 
         large = _crop_box(ng_crop, global_box_info)
         if _valid_image(large):
@@ -143,8 +136,6 @@ def build_adhesive_view_payload(
                     int(value) for value in real_epicenters[0]
                 )
     except Exception as exc:
-        # O recurso é visual. Uma falha de preview nunca pode interromper
-        # a inspeção produtiva que continua no pipeline original.
         print(f"Falha não fatal ao montar preview multilight de adesivo: {exc}")
 
     return payload
@@ -394,6 +385,7 @@ def _reset_session(panel, *, show_normal: bool = True) -> None:
     panel.adhesive_multilight_active = False
     panel.adhesive_multilight_aux_mode = None
     panel.adhesive_multilight_views = {}
+    panel.adhesive_multilight_analyses = {}
     panel.adhesive_multilight_primary_event_id = None
     panel.adhesive_multilight_pending_start = False
     panel.adhesive_multilight_deferred_auto_decision = ""
@@ -415,12 +407,22 @@ def _reset_session(panel, *, show_normal: bool = True) -> None:
         _switch_inspection_view(panel, False)
 
 
-def _store_view(panel, mode: str, sample_crop, ng_crop) -> bool:
+def _store_view(
+    panel,
+    mode: str,
+    sample_crop,
+    ng_crop,
+    context: dict | None = None,
+) -> bool:
     normalized = str(mode or "").strip().upper()
     if normalized not in LIGHTING_ORDER:
         return False
 
-    payload = build_adhesive_view_payload(sample_crop, ng_crop)
+    payload = build_adhesive_view_payload(
+        sample_crop,
+        ng_crop,
+        context=context,
+    )
     panel.adhesive_multilight_views[normalized] = payload
 
     view = getattr(panel, "adhesive_multilight_view", None)
@@ -458,6 +460,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_active = False
         self.adhesive_multilight_aux_mode = None
         self.adhesive_multilight_views = {}
+        self.adhesive_multilight_analyses = {}
         self.adhesive_multilight_primary_event_id = None
         self.adhesive_multilight_pending_start = False
         self.adhesive_multilight_deferred_auto_decision = ""
@@ -513,15 +516,64 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         if aux_mode in LIGHTING_ORDER and bool(
             getattr(self, "adhesive_multilight_active", False)
         ):
-            stored = _store_view(
-                self,
-                aux_mode,
-                sample_crop,
-                ng_crop,
-            )
-            if stored:
+            try:
+                frame_context = build_lighting_context(
+                    sample_crop,
+                    ng_crop,
+                )
+                if not frame_context.get("valid", False):
+                    return False
+
+                stored = _store_view(
+                    self,
+                    aux_mode,
+                    sample_crop,
+                    ng_crop,
+                    context=frame_context,
+                )
+                if not stored:
+                    return False
+
+                # TOP/MID passam pelo mesmo conjunto de especialistas usado por
+                # SIDE, mas o resultado fica isolado por iluminação e não toca
+                # current_analysis nem o veredito final da peça.
+                lighting_analysis = analyze_lighting(
+                    getattr(self, "orchestrator", None),
+                    sample_crop,
+                    ng_crop,
+                    getattr(self, "current_aoi_info", None),
+                    aux_mode,
+                    context=frame_context,
+                )
+                if not isinstance(lighting_analysis, dict):
+                    try:
+                        self.update_network_status(
+                            f"Falha na análise visual {aux_mode}; "
+                            "aguardando nova captura da mesma iluminação."
+                        )
+                    except Exception:
+                        pass
+                    return False
+
+                self.adhesive_multilight_analyses[aux_mode] = (
+                    lighting_analysis
+                )
+
+                analysis_view = getattr(
+                    self,
+                    "adhesive_multilight_analysis_view",
+                    None,
+                )
+                if analysis_view is not None:
+                    analysis_view.set_analysis(
+                        aux_mode,
+                        lighting_analysis,
+                    )
+
                 _switch_inspection_view(self, True)
 
+                # A automação só avança depois que a imagem e sua análise
+                # visual foram concluídas para a iluminação esperada.
                 automation = getattr(
                     self,
                     "adhesive_multilight_automation",
@@ -537,12 +589,20 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
 
                 try:
                     self.update_brain_status(
-                        f"Imagem {aux_mode} recebida para visão multilight de adesivo.",
+                        f"Imagem e análise {aux_mode} concluídas.",
                         False,
                     )
                 except Exception:
                     pass
-            return stored
+                return True
+            except Exception as exc:
+                try:
+                    self.update_network_status(
+                        f"Falha na análise multilight {aux_mode}: {exc}"
+                    )
+                except Exception:
+                    pass
+                return False
 
         adhesive = is_adhesive_category(aoi_info)
         if not adhesive:
@@ -579,6 +639,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_active = True
         self.adhesive_multilight_aux_mode = None
         self.adhesive_multilight_views = {}
+        self.adhesive_multilight_analyses = {}
         self.adhesive_multilight_primary_event_id = getattr(
             self,
             "network_intake_last_image_event_id",
@@ -588,8 +649,14 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         # Contrato da AOI: a iluminação padrão/primeira recebida é SIDE.
         _store_view(self, "SIDE", sample_crop, ng_crop)
 
-        # Nesta etapa apenas SIDE possui análise real. TOP e MID são exibidos
-        # como posições reservadas, sem executar novamente o MoE.
+        # SIDE preserva a análise principal existente. TOP/MID serão analisados
+        # separadamente quando seus frames auxiliares chegarem.
+        self.adhesive_multilight_analyses["SIDE"] = getattr(
+            self,
+            "current_analysis",
+            None,
+        )
+
         analysis_view = getattr(
             self,
             "adhesive_multilight_analysis_view",
