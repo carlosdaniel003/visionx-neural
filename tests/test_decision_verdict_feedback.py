@@ -35,7 +35,7 @@ class AIVerdictFeedbackStateTests(unittest.TestCase):
             ("DEFEITO REAL", "ng"),
         )
 
-    def test_review_state_does_not_invent_binary_verdict(self):
+    def test_review_state_is_shown_as_red_mandatory_review(self):
         analysis = {
             "is_defect": False,
             "verdict": "REVISÃO OBRIGATÓRIA",
@@ -45,7 +45,26 @@ class AIVerdictFeedbackStateTests(unittest.TestCase):
                 }
             },
         }
-        self.assertEqual(verdict_feedback_state(analysis), ("", ""))
+        self.assertEqual(
+            verdict_feedback_state(analysis),
+            ("REVISÃO OBRIGATÓRIA", "ng"),
+        )
+
+    def test_effective_review_overrides_stale_binary_verdict_text(self):
+        analysis = {
+            "is_defect": True,
+            "verdict": "DEFEITO REAL",
+            "production_review_required": True,
+            "detail": {
+                "decision_trace": {
+                    "operator_review_required": True,
+                }
+            },
+        }
+        self.assertEqual(
+            verdict_feedback_state(analysis),
+            ("REVISÃO OBRIGATÓRIA", "ng"),
+        )
 
     def test_legacy_analysis_without_verdict_can_still_map_when_final(self):
         self.assertEqual(
@@ -106,6 +125,29 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
             overlay._slide_in.startValue().x(),
             target.x() + VERDICT_FEEDBACK_SLIDE_PX,
         )
+
+    def test_mandatory_review_uses_red_state_text(self):
+        panel = self._panel()
+
+        shown = panel.show_ai_verdict_feedback(
+            {
+                "verdict": "REVISÃO OBRIGATÓRIA",
+                "production_review_required": True,
+                "detail": {
+                    "decision_trace": {
+                        "operator_review_required": True,
+                    }
+                },
+            }
+        )
+
+        overlay = panel.ai_verdict_feedback
+        self.assertTrue(shown)
+        self.assertEqual(
+            overlay.verdict_label.text(),
+            "REVISÃO OBRIGATÓRIA",
+        )
+        self.assertEqual(overlay.verdict_label.property("tone"), "ng")
 
     def test_real_defect_uses_red_state_text(self):
         panel = self._panel()
