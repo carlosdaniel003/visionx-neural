@@ -284,15 +284,17 @@ eligible_for_final_decision = False
 lighting_mode = TOP | MID
 ```
 
-Portanto, nesta etapa:
+Contrato atual:
 
-- TOP não sobrescreve a análise SIDE;
-- MID não sobrescreve a análise SIDE;
-- TOP e MID não modificam `current_analysis`;
-- os seus `is_defect`, `confidence` e `verdict` internos são apenas saídas
-  locais do MoE necessárias para os painéis, não um resultado final multilight;
-- nenhuma fusão SIDE/TOP/MID é feita;
-- nenhuma decisão 0/1 é alterada por TOP ou MID.
+- TOP não sobrescreve a análise SIDE durante a coleta;
+- MID não sobrescreve a análise SIDE durante a coleta;
+- os `is_defect`, `confidence` e `verdict` locais continuam sendo saídas
+  auditáveis de cada iluminação;
+- depois que SIDE, TOP e MID terminam, uma quarta análise lógica é criada:
+  `AdhesiveMultiLightFusion`;
+- somente essa análise fundida recebe `eligible_for_final_decision = True` e
+  substitui `current_analysis` para o julgamento da peça;
+- a decisão 0/1 automática de Produção usa exclusivamente o resultado fundido.
 
 A automação só avança da captura TOP para MID, e de MID para conclusão, depois
 que a imagem **e a análise visual** da iluminação esperada foram concluídas.
@@ -334,11 +336,9 @@ Arrays NumPy são resumidos por `shape`, `dtype`, mínimo, máximo e média, e
 listas muito grandes são resumidas. Isso mantém o debug técnico copiável sem
 perder a estrutura necessária para diagnóstico.
 
-O relatório declara explicitamente:
-
-```text
-Fusão SIDE/TOP/MID para resultado final: NÃO DEFINIDA nesta etapa.
-```
+O relatório agora inclui também uma seção `JULGAMENTO FINAL MULTILIGHT`
+com veredito, score final, score físico máximo, regra de fusão, iluminação
+dominante, iluminações positivas, auxiliares fortes e o papel da memória KNN.
 
 **Copiar imagem**
 
@@ -479,9 +479,9 @@ SIDE inicial
 → retorno automático para SIDE
 ```
 
-Essa validação confirma a infraestrutura de aquisição. Ela não valida ainda a
-fusão das três análises em um resultado final, que continua fora do escopo desta
-etapa.
+Essa validação confirma a infraestrutura de aquisição na AOI real. A fusão
+multilight foi implementada depois dessa validação operacional e ainda precisa
+ser validada em novos casos reais OK/NG antes de qualquer calibração adicional.
 
 A máquina de estados somente avança após o frame esperado ter sido recortado e
 armazenado. Para cada `TOP` ou `MID`:
@@ -510,21 +510,25 @@ das fotos auxiliares terminarem.
 Contrato:
 
 ```text
-resultado SIDE calculado
+resultado local SIDE calculado
         ↓
-decisão automática OK/NG pronta
+não promover SIDE a julgamento final
         ↓
-guardar decisão em memória
+capturar + analisar TOP
         ↓
-capturar TOP
-        ↓
-capturar MID
+capturar + analisar MID
         ↓
 restaurar SIDE
         ↓
-somente então executar save_label(..., source="auto")
+AdhesiveMultiLightFusion(SIDE, TOP, MID)
         ↓
-PRESS_0 / PRESS_1
+resultado final único
+        ↓
+Modo Produção sem revisão?
+        ├── NÃO → REVISÃO OBRIGATÓRIA, sem PRESS_0/PRESS_1 automático
+        └── SIM → save_label(resultado fundido, source="auto")
+                    ↓
+                 PRESS_0 / PRESS_1
 ```
 
 Assim a mesma peça permanece na tela durante toda a coleta. Em `Modo Teste` ou
@@ -536,8 +540,75 @@ o operador não deve julgar a peça fisicamente com `0/1` enquanto a sequência
 automática TOP/MID estiver em andamento, pois a própria AOI pode avançar antes
 que o ODIN consiga impedir a ação.
 
-Nesta etapa, TOP e MID são **somente imagens auxiliares**. Elas ainda não
-executam o MoE e não alteram o veredito calculado a partir de SIDE.
+### Fusão final multilight de adesivo
+
+A primeira política de fusão está implementada em:
+
+```text
+src/core/adhesive_multilight_fusion.py
+```
+
+Ela é exclusiva da categoria canônica `MUITO ADESIVO` e não usa votação
+majoritária nem média simples entre SIDE/TOP/MID.
+
+Motivo: uma iluminação pode ocultar o adesivo sem isso significar que o adesivo
+não existe. Portanto um resultado local negativo não tem o mesmo significado de
+uma evidência física positiva forte.
+
+Política inicial:
+
+```text
+TOP ou MID com:
+  adhesive_is_defect = True
+  adhesive_score >= 0.80
+  physical_score >= 0.80
+        ↓
+DEFEITO REAL
+
+ou
+
+duas iluminações com adhesive_score >= tolerância do motor
+        ↓
+DEFEITO REAL
+
+ou
+
+somente uma iluminação positiva, sem força auxiliar suficiente
+        ↓
+REVISÃO OBRIGATÓRIA
+
+ou
+
+nenhuma das três com evidência física positiva
+        ↓
+FALHA FALSA
+```
+
+TOP e MID são as testemunhas fotométricas prioritárias; SIDE continua útil como
+testemunha contextual/corroboradora. O KNN de cada iluminação é preservado para
+auditoria, mas a memória local recebe papel `audit_only` na fusão e não pode
+vetar evidência física multilight forte.
+
+A análise dominante da fusão é a iluminação com maior `adhesive_score`, usando
+`physical_score` e prioridade auxiliar como desempate. O resultado final
+registra:
+
+- `lighting_mode = MULTILIGHT`;
+- `multilight_final = True`;
+- `eligible_for_final_decision = True`;
+- `adhesive_multilight_positive_modes`;
+- `adhesive_multilight_strong_auxiliary_modes`;
+- `adhesive_multilight_dominant_mode`;
+- `fusion_rule`;
+- `memory_role = audit_only`.
+
+O tempo de análise de adesivo também passa a terminar somente após SIDE, TOP e
+MID terem sido analisadas, a fusão final ter sido calculada e o resultado ter
+sido pintado na interface.
+
+A etapa seguinte continua separada: melhorar a capacidade específica do motor de
+adesivo na iluminação MID. A política de fusão não modifica internamente o
+detector MID.
 
 ### Restrições arquiteturais da melhoria
 
@@ -554,11 +625,11 @@ A implementação atual e as próximas etapas devem preservar os seguintes contr
   uma iluminação inesperada;
 - falha ao obter `TOP` ou `MID` não deve fabricar evidência ausente nem
   reutilizar silenciosamente um frame anterior;
-- o motor `FLUXO DE ADESIVO` atual ainda é monoimagem. A fusão visual
-  mult-iluminação é uma etapa posterior e não deve ser introduzida junto com a
-  infraestrutura de aquisição;
-- a memória KNN e o julgamento final não devem ser recalibrados implicitamente
-  durante a primeira etapa de captura.
+- cada motor local continua monoimagem e auditável; a fusão acontece em uma
+  camada posterior, sem alterar os cálculos internos de SIDE/TOP/MID;
+- a memória KNN local permanece disponível para diagnóstico, mas não pode vetar
+  evidência física multilight forte;
+- a política atual não recalibra ainda o detector específico da iluminação MID.
 
 ### Ordem de trabalho
 
@@ -587,13 +658,16 @@ A melhoria será executada por etapas, sem avançar automaticamente:
 8. **Concluído — debug/evidência multilight:** `Copiar debug` reúne as três
    análises e `Copiar imagem` gera uma única composição SIDE/TOP/MID sem
    sobreposição, vinculada ao mesmo `event_id`.
-9. **Etapa futura — fusão multilight:** definir como o `FLUXO DE ADESIVO`
-   combinará SIDE/TOP/MID para produzir o resultado final e então calibrar com
-   amostras reais OK/NG.
+9. **Concluído — fusão multilight inicial:** SIDE/TOP/MID formam um único
+   julgamento final físico; TOP/MID fortes têm autoridade, duas iluminações
+   positivas corroboram defeito, caso intermediário exige revisão e o KNN local
+   permanece apenas como auditoria na fusão.
+10. **Etapa futura — detector MID:** melhorar a leitura fotométrica do adesivo
+    claro/branco em MID e calibrar os limiares com amostras reais OK/NG.
 
-A aquisição SIDE/TOP/MID e as três análises visuais estão fechadas. O julgamento
-final do motor de adesivo continua monoimagem até a etapa de fusão ser
-explicitamente definida.
+A aquisição, as três análises visuais e a primeira fusão final estão
+implementadas. A política precisa agora ser validada em casos reais adicionais,
+sem alterar ainda o detector interno de MID.
 
 
 **Arquivo visual NG opcional:**
