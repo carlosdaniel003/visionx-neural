@@ -12,6 +12,14 @@ from src.ui.adhesive_multilight_automation import (
 )
 
 
+class _FakeCombo:
+    def __init__(self, value="Modo Teste"):
+        self.value = value
+
+    def currentText(self):
+        return self.value
+
+
 class _FakeReceiver:
     def __init__(self):
         self.enabled = False
@@ -32,6 +40,13 @@ class _FakePanel(QWidget):
         self.brain_status = []
         self.network_status = []
         self.saved_labels = []
+        self.combo_mode = _FakeCombo()
+        self.fused_analysis = {
+            "is_defect": False,
+            "verdict": "FALHA FALSA",
+            "production_review_required": False,
+        }
+        self.finalize_calls = 0
         self.adhesive_multilight_automation_active = False
         self.adhesive_multilight_deferred_auto_decision = ""
 
@@ -52,6 +67,10 @@ class _FakePanel(QWidget):
     def save_label(self, decision, source="button"):
         self.saved_labels.append((str(decision), str(source)))
         return True
+
+    def finalize_adhesive_multilight_decision(self):
+        self.finalize_calls += 1
+        return dict(self.fused_analysis)
 
 
 class AdhesiveMultiLightAutomationTests(unittest.TestCase):
@@ -106,8 +125,14 @@ class AdhesiveMultiLightAutomationTests(unittest.TestCase):
             {"SIDE", "TOP", "MID"},
         )
 
-    def test_deferred_production_decision_runs_only_after_mid(self):
-        self.panel.adhesive_multilight_deferred_auto_decision = "NG"
+    def test_production_uses_fused_decision_not_deferred_side_decision(self):
+        self.panel.combo_mode.value = "Modo Produção"
+        self.panel.adhesive_multilight_deferred_auto_decision = "OK"
+        self.panel.fused_analysis = {
+            "is_defect": True,
+            "verdict": "DEFEITO REAL",
+            "production_review_required": False,
+        }
 
         self.assertTrue(self.automation.start())
         self.assertEqual(self.panel.saved_labels, [])
@@ -120,11 +145,30 @@ class AdhesiveMultiLightAutomationTests(unittest.TestCase):
         self._flush_events()
         self._flush_events()
 
+        self.assertEqual(self.panel.finalize_calls, 1)
         self.assertEqual(self.panel.saved_labels, [("NG", "auto")])
         self.assertEqual(
             self.panel.adhesive_multilight_deferred_auto_decision,
             "",
         )
+
+    def test_production_review_never_sends_zero_or_one_automatically(self):
+        self.panel.combo_mode.value = "Modo Produção"
+        self.panel.fused_analysis = {
+            "is_defect": False,
+            "verdict": "REVISÃO OBRIGATÓRIA",
+            "production_review_required": True,
+        }
+
+        self.assertTrue(self.automation.start())
+        self.assertTrue(self.automation.frame_stored("TOP"))
+        self._flush_events()
+        self.assertTrue(self.automation.frame_stored("MID"))
+        self._flush_events()
+        self._flush_events()
+
+        self.assertEqual(self.panel.finalize_calls, 1)
+        self.assertEqual(self.panel.saved_labels, [])
 
     def test_unexpected_frame_does_not_advance_state(self):
         self.assertTrue(self.automation.start())
@@ -207,6 +251,33 @@ class AdhesiveAutomationSourceContractTests(unittest.TestCase):
         self.assertIn(
             "Decisão automática pronta; aguardando fotos TOP/MID.",
             source,
+        )
+
+    def test_finish_promotes_only_multilight_fusion_to_final_decision(self):
+        automation_source = open(
+            "src/ui/adhesive_multilight_automation.py",
+            encoding="utf-8",
+        ).read()
+        inspection_source = open(
+            "src/ui/adhesive_multilight_inspection.py",
+            encoding="utf-8",
+        ).read()
+
+        self.assertIn(
+            "finalize_adhesive_multilight_decision",
+            automation_source,
+        )
+        self.assertIn(
+            "fuse_adhesive_multilight(analyses)",
+            inspection_source,
+        )
+        self.assertIn(
+            "self.current_analysis = fused",
+            inspection_source,
+        )
+        self.assertIn(
+            "ADESIVO • AGUARDANDO TOP/MID",
+            inspection_source,
         )
 
     def test_manual_odin_lighting_is_blocked_during_sequence(self):
