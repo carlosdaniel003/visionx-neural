@@ -382,6 +382,15 @@ def _switch_inspection_view(panel, adhesive: bool) -> None:
 
 
 def _reset_session(panel, *, show_normal: bool = True) -> None:
+    automation = getattr(
+        panel,
+        "adhesive_multilight_automation",
+        None,
+    )
+    cancel_cycle = getattr(automation, "cancel_for_cycle_end", None)
+    if callable(cancel_cycle):
+        cancel_cycle()
+
     panel.adhesive_multilight_active = False
     panel.adhesive_multilight_aux_mode = None
     panel.adhesive_multilight_views = {}
@@ -461,7 +470,27 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 getattr(self, "current_aoi_info", None)
             )
         ):
-            mode = _current_lighting(self)
+            automation = getattr(
+                self,
+                "adhesive_multilight_automation",
+                None,
+            )
+            expected_mode = ""
+            expected_getter = getattr(
+                automation,
+                "expected_frame_mode",
+                None,
+            )
+            if callable(expected_getter):
+                expected_mode = str(
+                    expected_getter() or ""
+                ).strip().upper()
+
+            mode = (
+                expected_mode
+                if expected_mode in LIGHTING_ORDER
+                else _current_lighting(self)
+            )
             self.last_xp_ip = str(ip)
             self.adhesive_multilight_aux_mode = mode
             try:
@@ -488,6 +517,20 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             )
             if stored:
                 _switch_inspection_view(self, True)
+
+                automation = getattr(
+                    self,
+                    "adhesive_multilight_automation",
+                    None,
+                )
+                frame_stored = getattr(
+                    automation,
+                    "frame_stored",
+                    None,
+                )
+                if callable(frame_stored):
+                    frame_stored(aux_mode)
+
                 try:
                     self.update_brain_status(
                         f"Imagem {aux_mode} recebida para visão multilight de adesivo.",
@@ -550,9 +593,28 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
 
         _switch_inspection_view(self, True)
         _set_receiver_auxiliary_mode(self, True)
+
+        automation = getattr(
+            self,
+            "adhesive_multilight_automation",
+            None,
+        )
+        start_automation = getattr(automation, "start", None)
+        if callable(start_automation):
+            start_automation()
+
         return result
 
     def save_label(self, *args, **kwargs):
+        automation = getattr(
+            self,
+            "adhesive_multilight_automation",
+            None,
+        )
+        cancel_cycle = getattr(automation, "cancel_for_cycle_end", None)
+        if callable(cancel_cycle):
+            cancel_cycle()
+
         # Fecha primeiro a passagem de previews para não haver corrida com a
         # liberação do gate da próxima peça.
         _set_receiver_auxiliary_mode(self, False)
@@ -562,6 +624,15 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         return result
 
     def skip_image(self, *args, **kwargs):
+        automation = getattr(
+            self,
+            "adhesive_multilight_automation",
+            None,
+        )
+        cancel_cycle = getattr(automation, "cancel_for_cycle_end", None)
+        if callable(cancel_cycle):
+            cancel_cycle()
+
         _set_receiver_auxiliary_mode(self, False)
         result = original_skip_image(self, *args, **kwargs)
         if not bool(getattr(self, "is_locked", False)):
