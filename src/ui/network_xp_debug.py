@@ -98,8 +98,10 @@ def format_network_debug_report(record: dict | None) -> str:
     decision = data.get("decision", {})
     if isinstance(decision, dict) and decision:
         missing = decision.get("missing", {})
+        inverted = decision.get("inverted", {})
         memory = decision.get("memory", {})
         missing = missing if isinstance(missing, dict) else {}
+        inverted = inverted if isinstance(inverted, dict) else {}
         memory = memory if isinstance(memory, dict) else {}
         lines.extend(
             [
@@ -182,6 +184,25 @@ def format_network_debug_report(record: dict | None) -> str:
                 f"Dual-scale hard absence: {missing.get('missing_context_hard_absence', '-')}",
                 f"Dual-scale motivo: {missing.get('missing_context_hard_reason', '-')}",
                 f"Dual-scale suporte físico: {missing.get('missing_context_physical_support', '-')}",
+                f"INVERTIDO ativo: {inverted.get('inverted_active', '-')}",
+                f"INVERTIDO defeito bruto: {inverted.get('inverted_is_defect', '-')}",
+                f"INVERTIDO score: {inverted.get('inverted_score', '-')}",
+                f"INVERTIDO classe: {inverted.get('inverted_classification', '-')}",
+                f"INVERTIDO retenção testemunha: {inverted.get('inverted_witness_retention', '-')}",
+                f"INVERTIDO perda testemunha: {inverted.get('inverted_witness_loss', '-')}",
+                f"INVERTIDO perda feature: {inverted.get('inverted_feature_loss', '-')}",
+                f"INVERTIDO topologia: {inverted.get('inverted_topology_mismatch', '-')}",
+                f"INVERTIDO orientação: {inverted.get('inverted_orientation_mismatch', '-')}",
+                f"INVERTIDO face alternativa: {inverted.get('inverted_alternate_face_signal', '-')}",
+                f"INVERTIDO transformação ganho: {inverted.get('inverted_transform_gain', '-')}",
+                f"INVERTIDO melhor transformação: {inverted.get('inverted_best_transform', '-')}",
+                f"INVERTIDO transformação similaridade: {inverted.get('inverted_best_transform_similarity', '-')}",
+                f"INVERTIDO relocação ganho: {inverted.get('inverted_relocation_gain', '-')}",
+                f"INVERTIDO razão ROI/global: {inverted.get('inverted_local_global_area_ratio', '-')}",
+                f"INVERTIDO ROI pequena: {inverted.get('inverted_small_witness_roi', '-')}",
+                f"INVERTIDO alta autoridade: {inverted.get('inverted_high_authority', '-')}",
+                f"INVERTIDO corroborado: {inverted.get('inverted_corroborated', '-')}",
+                f"INVERTIDO corroborador: {inverted.get('inverted_corroboration_reason', '-')}",
                 f"KNN melhor rótulo: {memory.get('best_match_label', '-')}",
                 f"KNN similaridade: {memory.get('best_similarity', '-')}",
                 f"KNN conflito efetivo: {memory.get('memory_conflict', '-')}",
