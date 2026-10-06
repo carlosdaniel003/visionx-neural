@@ -79,6 +79,26 @@ class _ResponsiveCapturePreview(QLabel):
         self._render_source()
 
 
+class _CurrentPageStack(QStackedWidget):
+    """Evita que a página multilight altere o sizeHint das categorias normais."""
+
+    def sizeHint(self):
+        current = self.currentWidget()
+        return current.sizeHint() if current is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        current = self.currentWidget()
+        return (
+            current.minimumSizeHint()
+            if current is not None
+            else super().minimumSizeHint()
+        )
+
+    def setCurrentWidget(self, widget):
+        super().setCurrentWidget(widget)
+        self.updateGeometry()
+
+
 class _ResponsiveEventFilter(QObject):
     """Reaplica o perfil visual apenas quando o breakpoint muda."""
 
@@ -359,7 +379,7 @@ class ControlPanelUI:
             )
         )
 
-        window.inspection_view_stack = QStackedWidget()
+        window.inspection_view_stack = _CurrentPageStack()
         window.inspection_view_stack.setMinimumWidth(0)
         window.inspection_view_stack.setSizePolicy(
             QSizePolicy.Policy.Expanding,
