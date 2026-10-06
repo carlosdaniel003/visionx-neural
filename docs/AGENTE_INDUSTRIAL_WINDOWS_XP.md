@@ -257,10 +257,52 @@ Os atalhos do VisionX reutilizam exatamente os mesmos botões e travas da interf
 Eles não ignoram estados de segurança: se OK/NG estiver indisponível para o ciclo
 atual, pressionar 0/1 não força uma decisão.
 
-Essa função é implementada no computador novo. O agente XP V5.2 mantém suporte
-`PRESS_0` e `PRESS_1` e acrescenta `PRESS_LEFT`, `PRESS_DOWN` e `PRESS_RIGHT`.
-No marco operacional de 06/10/2026, essa V5.2 já foi copiada manualmente para o
-Windows XP e informada como a versão em execução.
+Essa função é implementada no computador novo. A referência atual do agente no
+GitHub é V5.3; ela mantém `PRESS_0`, `PRESS_1`, `PRESS_LEFT`,
+`PRESS_DOWN` e `PRESS_RIGHT`. O último estado operacional confirmado pelo
+operador permanece V5.2 no XP até nova confirmação de atualização manual para
+V5.3.
+
+## Automação de iluminação para adesivo no ODIN
+
+A automação de captura `SIDE/TOP/MID` foi implementada no computador novo e
+**não exige um novo comando no agente XP**. Ela reutiliza os seletores que o
+agente já aceita na porta `5000`.
+
+Sequência enviada pelo ODIN:
+
+```text
+SIDE inicial já recebido
+        ↓
+PRESS_LEFT  → TOP
+        ↓
+ODIN aguarda a próxima foto enviada pelo agente
+        ↓
+PRESS_RIGHT → MID
+        ↓
+ODIN aguarda a próxima foto enviada pelo agente
+        ↓
+PRESS_DOWN  → restaura SIDE
+```
+
+O agente continua responsável por monitorar o gatilho visual e enviar as imagens
+pela porta `5001`. A automação do ODIN não cria um protocolo paralelo de
+imagem e não solicita uma captura por um novo comando: ela troca a iluminação e
+aguarda o próximo frame normal do vigia do XP.
+
+A pausa de aproximadamente 3 segundos existente no `loop_vigia_tela()` do
+agente permanece inalterada. Por isso o ODIN usa timeout de 8 segundos por
+iluminação e permite uma única repetição do mesmo seletor absoluto se a foto não
+chegar.
+
+A V5.3 é útil porque devolve `CMD_TOP/CMD_SIDE/CMD_MID` para telemetria visual,
+mas a sequência automática de captura depende principalmente dos comandos
+`PRESS_LEFT/PRESS_RIGHT/PRESS_DOWN`, já existentes desde a V5.2 validada.
+
+Nenhuma alteração foi feita em `agente_industrial_xp.py` nesta etapa de
+automação. Portanto, se o XP já possui uma versão que aceita os três comandos de
+seta, não é necessário substituir novamente o agente apenas para esta mudança do
+ODIN.
 
 ## Regra do ciclo rápido após julgamento
 
