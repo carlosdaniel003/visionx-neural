@@ -247,6 +247,7 @@ class DecisionKeyFeedbackOverlay(QFrame):
         source: str,
         tone: str,
         synchronize_verdict: bool,
+        before_show=None,
     ) -> bool:
         now = time.monotonic()
         if (
@@ -254,6 +255,9 @@ class DecisionKeyFeedbackOverlay(QFrame):
             and now - self._last_shown_at < DUPLICATE_SUPPRESSION_SECONDS
         ):
             return False
+
+        if callable(before_show):
+            before_show()
 
         self._last_feedback = signature
         self._last_shown_at = now
@@ -304,8 +308,6 @@ class DecisionKeyFeedbackOverlay(QFrame):
             "prepare_ai_verdict_feedback_dismissal",
             None,
         )
-        if callable(prepare_verdict):
-            prepare_verdict()
 
         digit = "0" if normalized == "OK" else "1"
         tone = "ok" if normalized == "OK" else "ng"
@@ -316,6 +318,7 @@ class DecisionKeyFeedbackOverlay(QFrame):
             source=source,
             tone=tone,
             synchronize_verdict=True,
+            before_show=prepare_verdict,
         )
 
     def show_key(self, key_name: str, source: str = "odin_keyboard") -> bool:
