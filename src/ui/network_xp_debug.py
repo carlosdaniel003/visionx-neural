@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from src.services.capture_evidence import (
+    capture_debug_event_id,
     capture_debug_record,
     capture_debug_source,
     capture_image_available,
@@ -241,6 +242,233 @@ def _debug_record(panel) -> dict:
     return dict(legacy) if isinstance(legacy, dict) else {}
 
 
+MULTILIGHT_DEBUG_ORDER = ("SIDE", "TOP", "MID")
+
+
+def _compact_debug_value(value: Any, *, list_limit: int = 40):
+    """Mantém o debug técnico legível sem despejar matrizes/imagens inteiras."""
+    if isinstance(value, np.ndarray):
+        if value.size == 0:
+            return {
+                "type": "ndarray",
+                "shape": list(value.shape),
+                "dtype": str(value.dtype),
+                "empty": True,
+            }
+        summary = {
+            "type": "ndarray",
+            "shape": list(value.shape),
+            "dtype": str(value.dtype),
+            "min": float(np.min(value)),
+            "max": float(np.max(value)),
+            "mean": float(np.mean(value)),
+        }
+        return summary
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, dict):
+        return {
+            str(key): _compact_debug_value(item, list_limit=list_limit)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        if len(value) > list_limit:
+            sample = [
+                _compact_debug_value(item, list_limit=list_limit)
+                for item in value[: min(5, len(value))]
+            ]
+            return {
+                "type": type(value).__name__,
+                "length": len(value),
+                "sample": sample,
+            }
+        return [
+            _compact_debug_value(item, list_limit=list_limit)
+            for item in value
+        ]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _multilight_event_matches(panel) -> bool:
+    event_id = str(capture_debug_event_id(panel) or "")
+    last_event_id = str(
+        getattr(panel, "adhesive_multilight_last_event_id", "") or ""
+    )
+    category = str(
+        getattr(panel, "adhesive_multilight_last_category", "") or ""
+    ).strip().upper()
+    return bool(
+        event_id
+        and last_event_id
+        and event_id == last_event_id
+        and category == "MUITO ADESIVO"
+    )
+
+
+def _multilight_counts(panel) -> tuple[int, int]:
+    analyses = getattr(panel, "adhesive_multilight_last_analyses", {})
+    frames = getattr(panel, "adhesive_multilight_last_source_frames", {})
+    analysis_count = sum(
+        1
+        for mode in MULTILIGHT_DEBUG_ORDER
+        if isinstance(analyses, dict) and isinstance(analyses.get(mode), dict)
+    )
+    frame_count = sum(
+        1
+        for mode in MULTILIGHT_DEBUG_ORDER
+        if (
+            isinstance(frames, dict)
+            and isinstance(frames.get(mode), np.ndarray)
+            and frames.get(mode).size > 0
+        )
+    )
+    return analysis_count, frame_count
+
+
+def format_multilight_debug_report(panel) -> str:
+    """Acrescenta SIDE/TOP/MID ao debug somente para o evento de adesivo."""
+    if not _multilight_event_matches(panel):
+        return ""
+
+    analyses = getattr(panel, "adhesive_multilight_last_analyses", {})
+    if not isinstance(analyses, dict):
+        analyses = {}
+
+    lines = [
+        "",
+        "ANÁLISES MULTILIGHT - ADESIVO",
+        "=" * 72,
+        "Escopo: diagnóstico técnico independente por iluminação.",
+        "Fusão SIDE/TOP/MID para resultado final: NÃO DEFINIDA nesta etapa.",
+        f"Evento multilight: {getattr(panel, 'adhesive_multilight_last_event_id', '-')}",
+    ]
+
+    for mode in MULTILIGHT_DEBUG_ORDER:
+        analysis = analyses.get(mode)
+        lines.extend(
+            [
+                "",
+                f"ILUMINAÇÃO {mode}",
+                "-" * 72,
+            ]
+        )
+        if not isinstance(analysis, dict):
+            lines.append("Análise disponível: False")
+            continue
+
+        detail = analysis.get("detail", {})
+        detail = detail if isinstance(detail, dict) else {}
+        active_engines = list(analysis.get("active_engines", []) or [])
+        lines.extend(
+            [
+                "Análise disponível: True",
+                f"Motores ativos: {active_engines}",
+                f"Veredito local (não final multilight): {analysis.get('verdict', '-')}",
+                f"Defeito local: {analysis.get('is_defect', '-')}",
+                f"Confiança local: {analysis.get('confidence', '-')}",
+                f"Score final local: {detail.get('final_score', '-')}",
+                f"Score físico local: {detail.get('physical_score', '-')}",
+                f"Regra de fusão local: {detail.get('fusion_rule', '-')}",
+                f"Motor dominante local: {detail.get('dominant_engine', '-')}",
+                f"Motivo local: {analysis.get('reason', '-')}",
+                "Elegível para resultado final multilight: False",
+                "Detalhes técnicos compactos (JSON):",
+                json.dumps(
+                    _compact_debug_value(analysis),
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+            ]
+        )
+
+    return "\n".join(lines)
+
+
+def _normalize_composite_frame(image: Any) -> np.ndarray | None:
+    if not isinstance(image, np.ndarray) or image.size == 0:
+        return None
+
+    array = np.ascontiguousarray(image)
+    if array.dtype != np.uint8:
+        array = np.clip(array, 0, 255).astype(np.uint8)
+
+    if array.ndim == 2:
+        import cv2
+
+        return cv2.cvtColor(array, cv2.COLOR_GRAY2BGR)
+    if array.ndim != 3:
+        return None
+    if array.shape[2] == 3:
+        return array.copy()
+    if array.shape[2] == 4:
+        import cv2
+
+        return cv2.cvtColor(array, cv2.COLOR_BGRA2BGR)
+    return None
+
+
+def build_multilight_composite(frames: dict | None) -> np.ndarray | None:
+    """Junta SIDE/TOP/MID lado a lado, sem redimensionar nem sobrepor."""
+    source = frames if isinstance(frames, dict) else {}
+    normalized = []
+    for mode in MULTILIGHT_DEBUG_ORDER:
+        frame = _normalize_composite_frame(source.get(mode))
+        if frame is None:
+            return None
+        normalized.append((mode, frame))
+
+    header_height = 44
+    separator_width = 8
+    max_height = max(frame.shape[0] for _mode, frame in normalized)
+    total_width = (
+        sum(frame.shape[1] for _mode, frame in normalized)
+        + separator_width * (len(normalized) - 1)
+    )
+
+    canvas = np.full(
+        (header_height + max_height, total_width, 3),
+        16,
+        dtype=np.uint8,
+    )
+
+    import cv2
+
+    x = 0
+    for index, (mode, frame) in enumerate(normalized):
+        height, width = frame.shape[:2]
+        y = header_height + max(0, (max_height - height) // 2)
+        canvas[y : y + height, x : x + width] = frame
+
+        label = f"{mode}"
+        cv2.putText(
+            canvas,
+            label,
+            (x + 14, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.78,
+            (245, 197, 24),
+            2,
+            cv2.LINE_AA,
+        )
+
+        x += width
+        if index < len(normalized) - 1:
+            canvas[:, x : x + separator_width] = 48
+            x += separator_width
+
+    return canvas
+
+
+def multilight_copy_image_snapshot(panel) -> np.ndarray | None:
+    if not _multilight_event_matches(panel):
+        return None
+    frames = getattr(panel, "adhesive_multilight_last_source_frames", {})
+    return build_multilight_composite(frames)
+
+
 def _legacy_xp_image_fallback_allowed(panel) -> bool:
     """Impede reutilizar frame XP quando o diagnóstico atual é local MSS."""
     return capture_debug_source(panel).strip().lower() != "local_mss"
@@ -248,6 +476,8 @@ def _legacy_xp_image_fallback_allowed(panel) -> bool:
 
 def network_debug_image_available(panel) -> bool:
     """Aceita a evidência do evento atual sem misturar origens."""
+    if _multilight_event_matches(panel):
+        return multilight_copy_image_snapshot(panel) is not None
     if capture_image_available(panel):
         return True
     if not _legacy_xp_image_fallback_allowed(panel):
@@ -283,7 +513,12 @@ def copy_network_debug_to_clipboard(panel) -> bool:
 
     from PyQt6.QtWidgets import QApplication
 
-    QApplication.clipboard().setText(format_network_debug_report(record))
+    report = format_network_debug_report(record)
+    multilight_report = format_multilight_debug_report(panel)
+    if multilight_report:
+        report = report + "\n" + multilight_report
+
+    QApplication.clipboard().setText(report)
     _set_button_feedback(
         getattr(panel, "btn_copy_network_debug", None),
         "Debug copiado",
@@ -392,7 +627,10 @@ def _sync_capture_image_preview(panel) -> None:
 
 
 def copy_network_image_to_clipboard(panel) -> bool:
-    image = network_debug_image_snapshot(panel)
+    if _multilight_event_matches(panel):
+        image = multilight_copy_image_snapshot(panel)
+    else:
+        image = network_debug_image_snapshot(panel)
     if image is None:
         return False
 
@@ -441,7 +679,23 @@ def sync_network_debug_controls(panel) -> None:
             source_ip = str(record.get("source_ip", "") or "") if isinstance(record, dict) else ""
             source = str(record.get("source", "") or "").strip().lower() if isinstance(record, dict) else ""
 
-            if (
+            multilight_match = _multilight_event_matches(panel)
+            analysis_count, frame_count = _multilight_counts(panel)
+
+            if multilight_match:
+                if analysis_count == 3 and frame_count == 3:
+                    state_label.setText(
+                        "Adesivo multilight completo • 3 análises + "
+                        "imagem composta SIDE/TOP/MID"
+                    )
+                    state_label.setProperty("state", "ready")
+                else:
+                    state_label.setText(
+                        "Adesivo multilight em coleta • "
+                        f"análises {analysis_count}/3 • imagens {frame_count}/3"
+                    )
+                    state_label.setProperty("state", "partial")
+            elif (
                 debug_available
                 and image_available
                 and source == "local_mss"
@@ -500,9 +754,13 @@ def set_network_debug_available(panel, available: bool = True) -> None:
 
 __all__ = [
     "DEBUG_SCHEMA",
+    "MULTILIGHT_DEBUG_ORDER",
+    "build_multilight_composite",
     "copy_network_debug_to_clipboard",
     "copy_network_image_to_clipboard",
+    "format_multilight_debug_report",
     "format_network_debug_report",
+    "multilight_copy_image_snapshot",
     "network_debug_image_available",
     "network_debug_image_snapshot",
     "set_network_debug_available",
