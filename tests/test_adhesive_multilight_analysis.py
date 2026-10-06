@@ -46,29 +46,30 @@ class AdhesiveMultiLightAnalysisViewTests(unittest.TestCase):
             )
             self.assertTrue(lane.scroll.isHidden())
 
-    def test_only_side_can_be_filled_without_touching_top_mid(self):
+    def test_side_top_mid_can_receive_independent_analyses(self):
         view = AdhesiveMultiLightAnalysisView()
-        analysis = {
-            "active_engines": ["ssim_expert.py"],
-            "detail": {
-                "heat_map_raw": None,
-                "local_score": 0.0,
-                "ctx_score": 0.0,
-            },
-        }
 
-        self.assertTrue(view.set_analysis("SIDE", analysis))
+        def analysis(score):
+            return {
+                "active_engines": ["ssim_expert.py"],
+                "detail": {
+                    "heat_map_raw": None,
+                    "local_score": score,
+                    "ctx_score": score,
+                },
+            }
 
-        side = view.lanes["SIDE"]
-        top = view.lanes["TOP"]
-        mid = view.lanes["MID"]
+        self.assertTrue(view.set_analysis("SIDE", analysis(0.1)))
+        self.assertTrue(view.set_analysis("TOP", analysis(0.2)))
+        self.assertTrue(view.set_analysis("MID", analysis(0.3)))
 
-        self.assertFalse(side.scroll.isHidden())
-        self.assertIn("Análise SIDE disponível", side.status_label.text())
-        self.assertTrue(top.scroll.isHidden())
-        self.assertTrue(mid.scroll.isHidden())
-        self.assertIn("Aguardando análise", top.status_label.text())
-        self.assertIn("Aguardando análise", mid.status_label.text())
+        for mode in ("SIDE", "TOP", "MID"):
+            lane = view.lanes[mode]
+            self.assertFalse(lane.scroll.isHidden())
+            self.assertIn(
+                f"Análise {mode} disponível",
+                lane.status_label.text(),
+            )
 
     def test_each_lane_has_same_specialist_structure(self):
         view = AdhesiveMultiLightAnalysisView()
@@ -117,7 +118,7 @@ class AdhesiveSpecialistSourceContractTests(unittest.TestCase):
             source,
         )
 
-    def test_current_stage_populates_side_analysis_only(self):
+    def test_current_stage_populates_side_and_auxiliary_lighting_analyses(self):
         source = open(
             "src/ui/adhesive_multilight_inspection.py",
             encoding="utf-8",
@@ -128,12 +129,21 @@ class AdhesiveSpecialistSourceContractTests(unittest.TestCase):
             '                "SIDE",',
             source,
         )
-        self.assertNotIn(
-            'analysis_view.set_analysis("TOP"',
+        self.assertIn(
+            "lighting_analysis = analyze_lighting(",
             source,
         )
-        self.assertNotIn(
-            'analysis_view.set_analysis("MID"',
+        self.assertIn(
+            "analysis_view.set_analysis(\n"
+            "                        aux_mode,",
+            source,
+        )
+        self.assertIn(
+            'self.adhesive_multilight_analyses["SIDE"]',
+            source,
+        )
+        self.assertIn(
+            "self.adhesive_multilight_analyses[aux_mode]",
             source,
         )
 
