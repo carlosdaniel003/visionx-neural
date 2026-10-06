@@ -225,13 +225,17 @@ class DecisionKeyFeedbackOverlay(QFrame):
         self._fade_out.start()
 
         if self._sync_verdict_on_exit:
-            start_verdict_fade = getattr(
-                self.panel,
+            for callback_name in (
                 "start_ai_verdict_feedback_fade_out",
-                None,
-            )
-            if callable(start_verdict_fade):
-                start_verdict_fade()
+                "start_lighting_status_feedback_fade_out",
+            ):
+                start_result_fade = getattr(
+                    self.panel,
+                    callback_name,
+                    None,
+                )
+                if callable(start_result_fade):
+                    start_result_fade()
 
     def _finish_hide(self) -> None:
         self.hide()
@@ -303,11 +307,20 @@ class DecisionKeyFeedbackOverlay(QFrame):
         if not normalized:
             return False
 
-        prepare_verdict = getattr(
-            self.panel,
-            "prepare_ai_verdict_feedback_dismissal",
-            None,
-        )
+        def prepare_result_overlays():
+            prepared = False
+            for callback_name in (
+                "prepare_ai_verdict_feedback_dismissal",
+                "prepare_lighting_status_feedback_dismissal",
+            ):
+                prepare_overlay = getattr(
+                    self.panel,
+                    callback_name,
+                    None,
+                )
+                if callable(prepare_overlay):
+                    prepared = bool(prepare_overlay()) or prepared
+            return prepared
 
         digit = "0" if normalized == "OK" else "1"
         tone = "ok" if normalized == "OK" else "ng"
@@ -318,7 +331,7 @@ class DecisionKeyFeedbackOverlay(QFrame):
             source=source,
             tone=tone,
             synchronize_verdict=True,
-            before_show=prepare_verdict,
+            before_show=prepare_result_overlays,
         )
 
     def show_key(self, key_name: str, source: str = "odin_keyboard") -> bool:
