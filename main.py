@@ -136,8 +136,9 @@ def main():
     # 4. trava geral de uma única imagem ativa;
     # 5. filtro de rede: dois frames estáveis + epicentro válido;
     # 6. supervisão externa do MSS e recuperação de exceções;
-    # 7. adaptador final que consome o checked(bool) dos QPushButtons;
-    # 8. seletor de modo bloqueado durante o ciclo ativo.
+    # 7. visão multilight de adesivo, externa ao gate produtivo;
+    # 8. adaptador final que consome o checked(bool) dos QPushButtons;
+    # 9. seletor de modo bloqueado durante o ciclo ativo.
     install_anomaly_learning(ControlPanel)
     install_ng_image_archive(ControlPanel)
     install_ok_image_archive(ControlPanel)
