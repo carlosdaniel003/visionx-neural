@@ -52,6 +52,7 @@ from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
 from src.ui.inverted_face_panel import install_inverted_face_panel
 from src.ui.local_capture_safety import install_local_capture_safety
+from src.ui.lighting_shortcuts import install_lighting_shortcuts
 from src.ui.lighting_status_feedback import (
     install_lighting_status_feedback,
     install_lighting_status_feedback_hooks,
@@ -165,6 +166,7 @@ def main():
     install_test_mode_dataset_controls(panel)
     install_operational_controls(panel)
     install_svg_iconography(panel)
+    install_lighting_shortcuts(panel)
     install_xp_decision_shortcuts(panel)
     panel.show()
 
