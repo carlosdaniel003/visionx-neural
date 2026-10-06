@@ -52,6 +52,10 @@ from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
 from src.ui.inverted_face_panel import install_inverted_face_panel
 from src.ui.local_capture_safety import install_local_capture_safety
+from src.ui.lighting_status_feedback import (
+    install_lighting_status_feedback,
+    install_lighting_status_feedback_hooks,
+)
 from src.ui.memory_status_ui import install_memory_status_ui
 from src.ui.missing_component_panel import install_missing_component_panel
 from src.ui.mode_selector_gate import install_mode_selector_gate
@@ -141,6 +145,7 @@ def main():
     install_mode_selector_gate(OperationalControlsPresenter)
     # Hook visual leve: confirma 0/1 recebidos do XP sem alterar a decisão.
     install_decision_key_feedback_hooks(ControlPanel)
+    install_lighting_status_feedback_hooks(ControlPanel)
     # O fundo permanece neutro em todos os estados. O veredito final é
     # comunicado somente pelo overlay persistente no canto superior direito.
     install_ai_verdict_feedback_hooks(ControlPanel)
@@ -152,6 +157,7 @@ def main():
     panel = ControlPanel()
     install_decision_key_feedback(panel)
     install_ai_verdict_feedback(panel)
+    install_lighting_status_feedback(panel)
     install_missing_component_panel(panel)
     install_inverted_face_panel(panel)
     install_decision_panel(panel)
