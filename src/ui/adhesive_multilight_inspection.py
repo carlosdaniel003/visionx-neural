@@ -1,9 +1,9 @@
-"""Visão mult-iluminação da categoria de adesivo.
+"""Aquisição, visualização e análise multilight da categoria de adesivo.
 
-Esta camada é exclusivamente de aquisição/visualização. Ela não altera o motor
-FLUXO DE ADESIVO, score, memória, KNN ou decisão final. A primeira inspeção
-SIDE continua passando pelo pipeline normal; frames posteriores da mesma peça
-podem preencher TOP/MID sem substituir a análise ativa.
+A primeira inspeção SIDE continua passando pelo pipeline produtivo normal.
+Frames TOP/MID da mesma peça executam análises independentes dos especialistas
+para alimentar seus painéis, mas não substituem current_analysis, não alteram
+o veredito final e ainda não são fundidos em uma decisão multilight.
 """
 
 from __future__ import annotations
