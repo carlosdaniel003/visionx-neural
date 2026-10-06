@@ -1,8 +1,9 @@
 """Arquivo opcional de evidências visuais NG.
 
-Quando habilitado pelo operador, salva em background exatamente o mesmo frame
-completo do Windows XP que o botão "Copiar imagem XP" disponibiliza para o
-evento atual. Este arquivo é independente do dataset/KNN.
+Para categorias normais, salva o frame completo XP do evento atual. Para
+adesivo multilight, salva separadamente SIDE/TOP/MID da mesma peça. A fila
+elimina imagens pixel a pixel repetidas já existentes no arquivo.
+Este arquivo é independente do dataset/KNN.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ def build_ng_archive_filename(
 
 
 class NGImageArchiveQueue:
-    """Fila serial daemon para não bloquear julgamento nem recepção da AOI."""
+    """Fila daemon com deduplicação persistente por conteúdo visual."""
 
     def __init__(self, output_dir: Path | None = None):
         self.output_dir = Path(output_dir or settings.NG_ARCHIVE_DIR)
