@@ -21,6 +21,7 @@ on:
       - "src/services/anomaly_learning.py"
       - "src/services/decision_persistence.py"
       - "src/services/network_xp_frame.py"
+      - "src/services/network_receiver.py"
       - "src/services/capture_evidence.py"
       - "src/services/capture_debug_payload.py"
       - "src/core/experts/missing_component_expert.py"
