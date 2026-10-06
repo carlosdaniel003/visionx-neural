@@ -24,8 +24,12 @@ from src.ui.decision_background import (
 from src.ui.theme import APP_STYLESHEET
 from src.ui.network_xp_debug import (
     DEBUG_SCHEMA,
+    build_multilight_composite,
+    copy_network_debug_to_clipboard,
     copy_network_image_to_clipboard,
+    format_multilight_debug_report,
     format_network_debug_report,
+    multilight_copy_image_snapshot,
     network_debug_image_available,
     network_debug_image_snapshot,
     sync_network_debug_controls,
@@ -1065,6 +1069,169 @@ class NetworkXPImageClipboardTests(unittest.TestCase):
         self.assertEqual(pixel.red(), 230)
         self.assertEqual(pixel.green(), 20)
         self.assertEqual(pixel.blue(), 10)
+
+
+class AdhesiveMultiLightDebugTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _analysis(mode, score):
+        return {
+            "lighting_mode": mode,
+            "multilight_visual_analysis": mode != "SIDE",
+            "eligible_for_final_decision": False,
+            "verdict": "DEFEITO REAL" if score >= 0.5 else "FALHA FALSA",
+            "is_defect": score >= 0.5,
+            "confidence": 0.8,
+            "reason": f"diagnóstico {mode}",
+            "active_engines": [
+                "shift_expert.py",
+                "silk_expert.py",
+                "semantic_expert.py",
+                "ssim_expert.py",
+                "knn_expert.py",
+            ],
+            "detail": {
+                "final_score": score,
+                "physical_score": score,
+                "fusion_rule": f"local_{mode.lower()}",
+                "dominant_engine": "shift",
+                "heat_map_raw": np.full((4, 5), score, dtype=np.float32),
+            },
+        }
+
+    @classmethod
+    def _panel(cls, event_id="adh-001"):
+        class Panel:
+            pass
+
+        panel = Panel()
+        panel.capture_debug_last_record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": event_id,
+            "source": "windows_xp",
+            "source_ip": "169.254.95.200",
+            "validation": {"valid": True, "reason": "valid_epicenter"},
+        }
+        panel.capture_debug_last_image_event_id = event_id
+        panel.capture_debug_last_image = np.full(
+            (12, 18, 3),
+            (1, 2, 3),
+            dtype=np.uint8,
+        )
+        panel.adhesive_multilight_last_event_id = event_id
+        panel.adhesive_multilight_last_category = "MUITO ADESIVO"
+        panel.adhesive_multilight_last_analyses = {
+            "SIDE": cls._analysis("SIDE", 0.2),
+            "TOP": cls._analysis("TOP", 0.6),
+            "MID": cls._analysis("MID", 0.7),
+        }
+        panel.adhesive_multilight_last_source_frames = {
+            "SIDE": np.full((10, 20, 3), (10, 20, 30), dtype=np.uint8),
+            "TOP": np.full((10, 24, 3), (40, 50, 60), dtype=np.uint8),
+            "MID": np.full((10, 22, 3), (70, 80, 90), dtype=np.uint8),
+        }
+        panel.btn_copy_network_debug = QPushButton("Copiar debug")
+        panel.btn_copy_network_image = QPushButton("Copiar imagem")
+        return panel
+
+    def test_composite_joins_three_images_without_overlap_or_resize(self):
+        frames = {
+            "SIDE": np.full((10, 20, 3), (10, 20, 30), dtype=np.uint8),
+            "TOP": np.full((10, 24, 3), (40, 50, 60), dtype=np.uint8),
+            "MID": np.full((10, 22, 3), (70, 80, 90), dtype=np.uint8),
+        }
+
+        composite = build_multilight_composite(frames)
+
+        self.assertIsNotNone(composite)
+        self.assertEqual(composite.shape, (54, 82, 3))
+        self.assertTrue(
+            np.array_equal(composite[44, 0], np.array([10, 20, 30]))
+        )
+        self.assertTrue(
+            np.array_equal(composite[44, 28], np.array([40, 50, 60]))
+        )
+        self.assertTrue(
+            np.array_equal(composite[44, 60], np.array([70, 80, 90]))
+        )
+
+    def test_copy_image_uses_single_side_top_mid_composite_for_adhesive(self):
+        panel = self._panel()
+
+        self.assertTrue(network_debug_image_available(panel))
+        snapshot = multilight_copy_image_snapshot(panel)
+        self.assertIsNotNone(snapshot)
+        self.assertEqual(snapshot.shape, (54, 82, 3))
+
+        self.assertTrue(copy_network_image_to_clipboard(panel))
+        copied = QApplication.clipboard().image()
+        self.assertEqual(copied.width(), 82)
+        self.assertEqual(copied.height(), 54)
+
+        side_pixel = copied.pixelColor(0, 44)
+        top_pixel = copied.pixelColor(28, 44)
+        mid_pixel = copied.pixelColor(60, 44)
+        self.assertEqual(
+            (side_pixel.blue(), side_pixel.green(), side_pixel.red()),
+            (10, 20, 30),
+        )
+        self.assertEqual(
+            (top_pixel.blue(), top_pixel.green(), top_pixel.red()),
+            (40, 50, 60),
+        )
+        self.assertEqual(
+            (mid_pixel.blue(), mid_pixel.green(), mid_pixel.red()),
+            (70, 80, 90),
+        )
+
+    def test_incomplete_adhesive_set_disables_copy_image(self):
+        panel = self._panel()
+        panel.adhesive_multilight_last_source_frames.pop("MID")
+
+        self.assertFalse(network_debug_image_available(panel))
+        self.assertIsNone(multilight_copy_image_snapshot(panel))
+        self.assertFalse(copy_network_image_to_clipboard(panel))
+
+    def test_debug_text_contains_three_independent_lighting_analyses(self):
+        panel = self._panel()
+
+        report = format_multilight_debug_report(panel)
+
+        self.assertIn("ANÁLISES MULTILIGHT - ADESIVO", report)
+        self.assertIn("ILUMINAÇÃO SIDE", report)
+        self.assertIn("ILUMINAÇÃO TOP", report)
+        self.assertIn("ILUMINAÇÃO MID", report)
+        self.assertIn("Score final local: 0.2", report)
+        self.assertIn("Score final local: 0.6", report)
+        self.assertIn("Score final local: 0.7", report)
+        self.assertIn(
+            "Fusão SIDE/TOP/MID para resultado final: NÃO DEFINIDA",
+            report,
+        )
+        self.assertIn('"shape": [', report)
+        self.assertNotIn("0.6000000238418579, 0.6000000238418579", report)
+
+    def test_copy_debug_appends_multilight_section_to_existing_report(self):
+        panel = self._panel()
+
+        self.assertTrue(copy_network_debug_to_clipboard(panel))
+        copied = QApplication.clipboard().text()
+
+        self.assertIn("Evento: adh-001", copied)
+        self.assertIn("ANÁLISES MULTILIGHT - ADESIVO", copied)
+        self.assertIn("ILUMINAÇÃO SIDE", copied)
+        self.assertIn("ILUMINAÇÃO TOP", copied)
+        self.assertIn("ILUMINAÇÃO MID", copied)
+
+    def test_event_mismatch_never_reuses_previous_multilight_evidence(self):
+        panel = self._panel("adh-new")
+        panel.adhesive_multilight_last_event_id = "adh-old"
+
+        self.assertEqual(format_multilight_debug_report(panel), "")
+        self.assertIsNone(multilight_copy_image_snapshot(panel))
 
 
 class NeutralDecisionBackgroundTests(unittest.TestCase):
