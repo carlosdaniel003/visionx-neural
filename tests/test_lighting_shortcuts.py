@@ -62,6 +62,9 @@ class LightingShortcutTests(unittest.TestCase):
         self.assertIn("Left", sequences)
         self.assertIn("Down", sequences)
         self.assertIn("Right", sequences)
+        self.assertTrue(
+            all(not shortcut.autoRepeat() for shortcut in panel._lighting_shortcuts)
+        )
 
 
 class LightingShortcutSourceContractTests(unittest.TestCase):
