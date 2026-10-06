@@ -11,7 +11,7 @@ import time
 import socket
 import os
 from PyQt6.QtWidgets import QWidget, QApplication
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QEventLoop, Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap
 
 try:
@@ -79,6 +79,8 @@ class ControlPanel(QWidget):
         self.current_analysis = None
         self._inspection_images_visible = False
         self.capture_start_time = 0.0
+        self.capture_start_source = "idle"
+        self.last_analysis_time_seconds = 0.0
         self.orchestrator = MoEOrchestrator()
         self.is_locked = False 
         self.last_xp_ip = None 
@@ -178,14 +180,25 @@ class ControlPanel(QWidget):
 
     def handle_network_image(self, img_bgr: np.ndarray, ip: str):
         self.is_locked = True
-        self.last_xp_ip = ip 
-        self.capture_start_time = time.time()
+        self.last_xp_ip = ip
+        received_at = float(
+            getattr(
+                self.network_receiver,
+                "last_delivered_image_received_at",
+                0.0,
+            )
+            or 0.0
+        )
+        self.capture_start_time = (
+            received_at if received_at > 0.0 else time.perf_counter()
+        )
+        self.capture_start_source = "network_payload_received"
         
         self._safe_maximize()
         
         self.update_brain_status("🧠 Recebendo da Rede...", True)
         
-        self.lbl_timer.setText("Latencia: Analisando Rede...")
+        self.lbl_timer.setText("Analisando...")
         self.btn_start.setEnabled(False)
         self.btn_save_ok.setEnabled(False)
         self.btn_save_ng.setEnabled(False)
@@ -234,12 +247,15 @@ class ControlPanel(QWidget):
 
     def start_monitoring(self):
         self.is_locked = True
-        self.last_xp_ip = None 
-        self.capture_start_time = time.time()
+        self.last_xp_ip = None
+        # O clique do operador não faz parte do tempo de análise. O cronômetro
+        # começa somente quando um frame MSS válido foi realmente capturado.
+        self.capture_start_time = 0.0
+        self.capture_start_source = "local_capture_pending"
         
         self.update_brain_status("🧠 Capturando Tela (Local)...", True)
         
-        self.lbl_timer.setText("Latencia: Calculando...")
+        self.lbl_timer.setText("Aguardando captura...")
         self.btn_start.setEnabled(False)
         self.btn_save_ok.setEnabled(False)
         self.btn_save_ng.setEnabled(False)
@@ -396,6 +412,22 @@ class ControlPanel(QWidget):
     def process_aoi_images(self, sample_crop: np.ndarray, ng_crop: np.ndarray, aoi_info: dict):
         if sample_crop.size == 0 or ng_crop.size == 0: return
 
+        # Para MSS, o início real é o frame que acabou de ser capturado, não o
+        # clique em "Capturar local". Para rede, o receptor já registrou o
+        # término do recebimento do payload completo antes de emitir o frame.
+        if str(getattr(self, "capture_cycle_source", "") or "") == "local":
+            monitor = getattr(self, "monitor", None)
+            received_at = float(
+                getattr(monitor, "last_capture_received_at", 0.0) or 0.0
+            )
+            self.capture_start_time = (
+                received_at if received_at > 0.0 else time.perf_counter()
+            )
+            self.capture_start_source = "local_mss_frame_received"
+        elif float(getattr(self, "capture_start_time", 0.0) or 0.0) <= 0.0:
+            self.capture_start_time = time.perf_counter()
+            self.capture_start_source = "process_entry_fallback"
+
         self._inspection_images_visible = True
         self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)
 
@@ -452,8 +484,34 @@ class ControlPanel(QWidget):
         if self.lbl_ng.width() > 0 and self.lbl_ng.height() > 0:
             self.lbl_ng.setPixmap(px_ng.scaled(self.lbl_ng.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
-        elapsed_time = time.time() - self.capture_start_time
-        self.lbl_timer.setText(f"Latência: {elapsed_time:.2f}s")
+        # "Tempo de análise" termina quando o resultado já foi entregue aos
+        # widgets e o Qt processou a pintura pendente. Excluímos input do
+        # operador para não introduzir ações humanas dentro da medição.
+        QApplication.processEvents(
+            QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+        )
+        analysis_displayed_at = time.perf_counter()
+        elapsed_time = max(
+            0.0,
+            analysis_displayed_at
+            - float(getattr(self, "capture_start_time", 0.0) or 0.0),
+        )
+        self.last_analysis_time_seconds = elapsed_time
+
+        detail = analysis.setdefault("detail", {})
+        detail["analysis_time_seconds"] = float(elapsed_time)
+        detail["analysis_time_start_source"] = str(
+            getattr(self, "capture_start_source", "") or ""
+        )
+        detail["analysis_time_contract"] = (
+            "imagem recebida/capturada -> resultado pintado na interface"
+        )
+
+        self.lbl_timer.setText(f"{elapsed_time:.2f} s")
+        self.lbl_timer.setToolTip(
+            "Tempo real desde o recebimento/captura do frame até o resultado "
+            "estar atualizado na interface."
+        )
         self.lbl_timer.setStyleSheet("font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #3fb950;")
 
         current_mode = self.combo_mode.currentText()
@@ -516,7 +574,7 @@ class ControlPanel(QWidget):
         self.btn_start.setText("Capturar Local (MSS)")
         self.btn_start.setEnabled(True)
 
-        self.lbl_timer.setText("Latência: aguardando próxima imagem da AOI")
+        self.lbl_timer.setText("Aguardando imagem...")
         self.update_brain_status("Aguardando próxima imagem da AOI...", True)
 
     def save_label(self, user_decision: str, source="button"):
