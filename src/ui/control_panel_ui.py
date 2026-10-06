@@ -1232,9 +1232,12 @@ class ControlPanelUI:
             self._layout_network_debug(window, compact=compact)
             self._layout_status_bar(window, compact=compact)
 
+        adhesive_mode = bool(
+            getattr(window, "_adhesive_inspection_mode", False)
+        )
         orientation = (
             Qt.Orientation.Vertical
-            if profile.splitter_vertical
+            if adhesive_mode or profile.splitter_vertical
             else Qt.Orientation.Horizontal
         )
         window.main_splitter.setOrientation(orientation)
@@ -1256,33 +1259,41 @@ class ControlPanelUI:
             wrapper.setMaximumWidth(profile.debugger_max_width)
             wrapper.setMinimumHeight(265 if compact else 300)
 
-        adhesive_mode = bool(
-            getattr(window, "_adhesive_inspection_mode", False)
-        )
-
-        if profile.splitter_vertical:
+        if adhesive_mode:
+            # Para adesivo, imagens e especialistas usam a largura inteira.
+            # Em notebook o conteúdo cresce verticalmente dentro do root_scroll;
+            # em monitores grandes os próprios painéis internos refluem em colunas.
+            window.main_splitter.setStretchFactor(0, 1)
+            window.main_splitter.setStretchFactor(1, 1)
             window.images_section.setMaximumWidth(16777215)
             window.images_section.setMinimumHeight(
-                520 if adhesive_mode else 320
+                540 if compact else 500
             )
-            window.telemetry_section.setMinimumHeight(330)
+            window.telemetry_section.setMinimumHeight(
+                760 if compact else 420
+            )
+            window.main_splitter.setMinimumHeight(
+                1320 if compact else 960
+            )
             window.main_splitter.setSizes(
-                [560 if adhesive_mode else 340, 430]
+                [560 if compact else 500, 760 if compact else 460]
             )
+        elif profile.splitter_vertical:
+            window.main_splitter.setStretchFactor(0, 1)
+            window.main_splitter.setStretchFactor(1, 3)
+            window.images_section.setMaximumWidth(16777215)
+            window.images_section.setMinimumHeight(320)
+            window.telemetry_section.setMinimumHeight(330)
+            window.main_splitter.setMinimumHeight(0)
+            window.main_splitter.setSizes([340, 430])
         else:
-            if adhesive_mode:
-                image_width = min(
-                    max(760, int(width * 0.62)),
-                    max(760, width - 420),
-                )
-            else:
-                image_width = 400 if profile.name == "wide" else 340
-
-            window.images_section.setMaximumWidth(
-                16777215 if adhesive_mode else image_width
-            )
+            window.main_splitter.setStretchFactor(0, 1)
+            window.main_splitter.setStretchFactor(1, 3)
+            image_width = 400 if profile.name == "wide" else 340
+            window.images_section.setMaximumWidth(image_width)
             window.images_section.setMinimumHeight(0)
             window.telemetry_section.setMinimumHeight(360)
+            window.main_splitter.setMinimumHeight(0)
             available_for_telemetry = max(1, width - image_width)
             window.main_splitter.setSizes(
                 [image_width, available_for_telemetry]
