@@ -19,6 +19,19 @@ class InvertedWitnessExpert:
     ORIENTATION_BINS = 12
     GRID_SIDE = 8
 
+    # Uma ROI extremamente pequena em relação ao componente inteiro não deve
+    # ganhar automaticamente autoridade física de 90% apenas por perda de
+    # textura/marca. Nesses casos exigimos corroboradores independentes.
+    SMALL_WITNESS_MAX_GLOBAL_AREA_RATIO = 0.10
+    CORROBORATED_ORIENTATION_MIN = 0.20
+    CORROBORATED_TOPOLOGY_MIN = 0.20
+    CORROBORATED_RELOCATION_MIN = 0.40
+    CORROBORATED_TRANSFORM_GAIN_MIN = 0.10
+    CORROBORATED_TRANSFORM_SIMILARITY_MIN = 0.56
+    CORROBORATED_ALTERNATE_FACE_MIN = 0.58
+    CORROBORATED_WITNESS_LOSS_MIN = 0.62
+    CORROBORATED_FEATURE_LOSS_MIN = 0.65
+
     @classmethod
     def _is_active_category(cls, info: dict | None) -> bool:
         if not isinstance(info, dict):
@@ -61,6 +74,11 @@ class InvertedWitnessExpert:
             "inverted_observed_orientation_strength": 0.0,
             "inverted_changed_coverage": 0.0,
             "inverted_witness_coverage": 0.0,
+            "inverted_local_global_area_ratio": 1.0,
+            "inverted_small_witness_roi": False,
+            "inverted_high_authority": True,
+            "inverted_corroborated": False,
+            "inverted_corroboration_reason": "",
             "inverted_orientation_hist_reference": zeros_hist,
             "inverted_orientation_hist_test": zeros_hist,
             "inverted_edge_grid_reference": zeros_grid,
@@ -543,6 +561,96 @@ class InvertedWitnessExpert:
             return "MARCA ESPERADA AUSENTE"
         return "ASSINATURA DA FACE DIVERGENTE"
 
+    @classmethod
+    def _authority_evidence(
+        cls,
+        roi_box,
+        global_box_info,
+        witness_loss: float,
+        feature_loss: float,
+        topology_mismatch: float,
+        orientation_mismatch: float,
+        alternate_face_signal: float,
+        relocation_signal: float,
+        transform_gain: float,
+        best_transform_similarity: float,
+    ) -> dict:
+        """Mede se uma ROI local possui corroboradores para alta autoridade."""
+        ratio = 1.0
+        global_detected = bool(
+            isinstance(global_box_info, dict)
+            and global_box_info.get("detected", False)
+        )
+        if global_detected:
+            try:
+                _, _, roi_width, roi_height = roi_box
+                global_width = max(
+                    1.0,
+                    float(global_box_info.get("w", 0.0) or 0.0),
+                )
+                global_height = max(
+                    1.0,
+                    float(global_box_info.get("h", 0.0) or 0.0),
+                )
+                ratio = float(
+                    (float(roi_width) * float(roi_height))
+                    / (global_width * global_height)
+                )
+            except Exception:
+                ratio = 1.0
+
+        small_roi = bool(
+            global_detected
+            and ratio <= cls.SMALL_WITNESS_MAX_GLOBAL_AREA_RATIO
+        )
+
+        reasons = []
+        if (
+            orientation_mismatch >= cls.CORROBORATED_ORIENTATION_MIN
+            and topology_mismatch >= cls.CORROBORATED_TOPOLOGY_MIN
+        ):
+            reasons.append("orientação+topologia")
+        if relocation_signal >= cls.CORROBORATED_RELOCATION_MIN:
+            reasons.append("deslocamento")
+        if (
+            transform_gain >= cls.CORROBORATED_TRANSFORM_GAIN_MIN
+            and best_transform_similarity
+            >= cls.CORROBORATED_TRANSFORM_SIMILARITY_MIN
+        ):
+            reasons.append("transformação")
+        if alternate_face_signal >= cls.CORROBORATED_ALTERNATE_FACE_MIN:
+            reasons.append("face alternativa")
+        if witness_loss >= cls.CORROBORATED_WITNESS_LOSS_MIN:
+            reasons.append("perda forte da marca")
+        if feature_loss >= cls.CORROBORATED_FEATURE_LOSS_MIN:
+            reasons.append("perda estrutural forte da marca")
+
+        corroborated = bool(reasons)
+        high_authority = bool(not small_roi or corroborated)
+
+        if not small_roi:
+            authority_reason = (
+                "ROI representa parcela suficiente do componente "
+                "ou caixa global indisponível"
+            )
+        elif corroborated:
+            authority_reason = (
+                "ROI pequena corroborada por " + ", ".join(reasons)
+            )
+        else:
+            authority_reason = (
+                "ROI pequena com divergência local sem corroborador forte "
+                "de inversão"
+            )
+
+        return {
+            "inverted_local_global_area_ratio": float(ratio),
+            "inverted_small_witness_roi": small_roi,
+            "inverted_high_authority": high_authority,
+            "inverted_corroborated": corroborated,
+            "inverted_corroboration_reason": authority_reason,
+        }
+
     @staticmethod
     def _paint(image, mask, color, alpha):
         output = image.astype(np.float32).copy()
@@ -837,6 +945,18 @@ class InvertedWitnessExpert:
                 transform_gain,
                 best_transform_similarity,
             )
+            authority = self._authority_evidence(
+                roi_box,
+                global_box_info,
+                witness_loss,
+                feature_loss,
+                topology_mismatch,
+                orientation_mismatch,
+                alternate_face_signal,
+                relocation_signal,
+                transform_gain,
+                best_transform_similarity,
+            )
 
             residual = np.clip(
                 0.60 * (1.0 - retention_map)
@@ -923,6 +1043,7 @@ class InvertedWitnessExpert:
                 "inverted_observed_orientation_strength": observed_strength,
                 "inverted_changed_coverage": changed_coverage,
                 "inverted_witness_coverage": witness_coverage,
+                **authority,
                 "inverted_orientation_hist_reference": reference_hist.tolist(),
                 "inverted_orientation_hist_test": test_hist.tolist(),
                 "inverted_edge_grid_reference": reference_edge_grid.tolist(),
