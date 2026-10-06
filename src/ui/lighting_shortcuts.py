@@ -41,6 +41,7 @@ def install_lighting_shortcuts(panel) -> None:
     for sequence, light_mode, button_name in LIGHTING_SHORTCUTS:
         shortcut = QShortcut(QKeySequence(sequence), panel)
         shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        shortcut.setAutoRepeat(False)
         shortcut.activated.connect(
             lambda selected=light_mode, control=button_name: _activate_lighting(
                 panel,
