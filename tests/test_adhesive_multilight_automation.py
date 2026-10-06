@@ -31,7 +31,9 @@ class _FakePanel(QWidget):
         self.visual_modes = []
         self.brain_status = []
         self.network_status = []
+        self.saved_labels = []
         self.adhesive_multilight_automation_active = False
+        self.adhesive_multilight_deferred_auto_decision = ""
 
     def send_command_to_xp(self, command):
         self.commands.append(str(command))
@@ -46,6 +48,10 @@ class _FakePanel(QWidget):
 
     def update_network_status(self, message):
         self.network_status.append(str(message))
+
+    def save_label(self, decision, source="button"):
+        self.saved_labels.append((str(decision), str(source)))
+        return True
 
 
 class AdhesiveMultiLightAutomationTests(unittest.TestCase):
@@ -98,6 +104,26 @@ class AdhesiveMultiLightAutomationTests(unittest.TestCase):
         self.assertEqual(
             self.automation.captured_modes,
             {"SIDE", "TOP", "MID"},
+        )
+
+    def test_deferred_production_decision_runs_only_after_mid(self):
+        self.panel.adhesive_multilight_deferred_auto_decision = "NG"
+
+        self.assertTrue(self.automation.start())
+        self.assertEqual(self.panel.saved_labels, [])
+
+        self.assertTrue(self.automation.frame_stored("TOP"))
+        self._flush_events()
+        self.assertEqual(self.panel.saved_labels, [])
+
+        self.assertTrue(self.automation.frame_stored("MID"))
+        self._flush_events()
+        self._flush_events()
+
+        self.assertEqual(self.panel.saved_labels, [("NG", "auto")])
+        self.assertEqual(
+            self.panel.adhesive_multilight_deferred_auto_decision,
+            "",
         )
 
     def test_unexpected_frame_does_not_advance_state(self):
@@ -166,6 +192,22 @@ class AdhesiveAutomationSourceContractTests(unittest.TestCase):
         self.assertIn("expected_frame_mode", source)
         self.assertIn("frame_stored(aux_mode)", source)
         self.assertIn("start_automation()", source)
+
+    def test_production_auto_decision_is_deferred_while_multilight_starts(self):
+        source = open(
+            "src/ui/adhesive_multilight_inspection.py",
+            encoding="utf-8",
+        ).read()
+
+        self.assertIn("adhesive_multilight_pending_start", source)
+        self.assertIn(
+            "adhesive_multilight_deferred_auto_decision",
+            source,
+        )
+        self.assertIn(
+            "Decisão automática pronta; aguardando fotos TOP/MID.",
+            source,
+        )
 
     def test_manual_odin_lighting_is_blocked_during_sequence(self):
         source = open(
