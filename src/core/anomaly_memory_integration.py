@@ -308,8 +308,24 @@ def _dynamic_fusion(
                 raw > threshold,
             )
         )
-        effective = max(0.90, min(1.0, raw)) if triggered else 0.0
+        high_authority = bool(
+            detail.get("inverted_high_authority", True)
+        )
+        effective = (
+            (
+                max(0.90, min(1.0, raw))
+                if high_authority
+                else min(1.0, raw)
+            )
+            if triggered
+            else 0.0
+        )
         summary = str(detail.get("inverted_reason", ""))
+        if triggered and not high_authority:
+            summary = (
+                f"{summary} • evidência local sem corroborador forte; "
+                "sem piso físico de 90%"
+            ).strip(" •")
         _append_engine(
             orchestrator,
             engines,
@@ -619,6 +635,17 @@ def _dynamic_fusion(
     return final_score, is_defect, confidence, reason, decision_trace
 
 
+def resolved_analysis_verdict(
+    is_defect: bool,
+    decision_trace: dict | None,
+) -> str:
+    """Retorna o estado final visível sem transformar revisão em decisão."""
+    trace = decision_trace if isinstance(decision_trace, dict) else {}
+    if bool(trace.get("operator_review_required", False)):
+        return "REVISÃO OBRIGATÓRIA"
+    return "DEFEITO REAL" if bool(is_defect) else "FALHA FALSA"
+
+
 def install_anomaly_memory_integration(orchestrator_cls) -> None:
     """Executa motores por categoria e consulta o KNN após a anomalia existir."""
     if getattr(orchestrator_cls, "_anomaly_memory_installed", False):
@@ -763,7 +790,13 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
 
         analysis["is_defect"] = is_defect
         analysis["confidence"] = confidence
-        analysis["verdict"] = "DEFEITO REAL" if is_defect else "FALHA FALSA"
+        analysis["verdict"] = resolved_analysis_verdict(
+            is_defect,
+            decision_trace,
+        )
+        analysis["production_review_required"] = bool(
+            decision_trace.get("operator_review_required", False)
+        )
         analysis["reason"] = reason
 
         detail.update(knn_result)
@@ -801,4 +834,5 @@ __all__ = [
     "HARD_MISSING_INVARIANT_OK_SIMILARITY",
     "_hard_missing_exact_ok_witness",
     "_hard_missing_invariant_presence_ok_witness",
+    "resolved_analysis_verdict",
 ]
