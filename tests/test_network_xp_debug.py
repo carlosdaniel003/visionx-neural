@@ -370,6 +370,109 @@ class NetworkXPDebugFormatTests(unittest.TestCase):
         self.assertIn("Dual-scale razão local/global:", report)
         self.assertIn("KNN melhor rótulo: OK", report)
 
+    def test_report_exposes_inverted_tiny_witness_review_state(self):
+        analysis = {
+            "is_defect": True,
+            "verdict": "REVISÃO OBRIGATÓRIA",
+            "confidence": 0.50,
+            "production_review_required": True,
+            "reason": (
+                "MARCA TESTEMUNHA DIVERGENTE || CONFLITO DE MEMÓRIA"
+            ),
+            "detail": {
+                "inverted_active": True,
+                "inverted_is_defect": True,
+                "inverted_score": 0.67,
+                "inverted_tolerance": 0.43,
+                "inverted_classification": "MARCA ESPERADA AUSENTE",
+                "inverted_witness_retention": 0.44,
+                "inverted_witness_loss": 0.56,
+                "inverted_feature_loss": 0.58,
+                "inverted_topology_mismatch": 0.29,
+                "inverted_orientation_mismatch": 0.04,
+                "inverted_alternate_face_signal": 0.40,
+                "inverted_transform_gain": 0.05,
+                "inverted_best_transform": "none",
+                "inverted_best_transform_similarity": 0.50,
+                "inverted_relocation_gain": 0.10,
+                "inverted_local_global_area_ratio": (
+                    (125 * 44) / (278 * 527)
+                ),
+                "inverted_small_witness_roi": True,
+                "inverted_high_authority": False,
+                "inverted_corroborated": False,
+                "inverted_corroboration_reason": (
+                    "ROI pequena com divergência local sem corroborador forte "
+                    "de inversão"
+                ),
+                "final_score": 0.85,
+                "physical_score": 0.85,
+                "fusion_rule": "memory_conflict_operator_review",
+                "dominant_engine": "structural",
+                "decision_trace": {
+                    "operator_review_required": True,
+                    "operator_review_reason": "memory_hypothesis_conflict",
+                    "fusion_rule": "memory_conflict_operator_review",
+                    "hard_missing_evidence": False,
+                    "raw_hard_missing_evidence": False,
+                    "memory": {
+                        "has_memory": False,
+                        "memory_available": True,
+                        "best_match_label": "OK",
+                        "best_similarity": 0.9001361273229123,
+                        "best_ok_similarity": 0.9001361273229123,
+                        "best_ng_similarity": 0.8936140367388726,
+                        "memory_conflict": True,
+                        "operator_review_required": True,
+                        "suppressed_by_hard_missing": False,
+                        "role": "CONFLITO DE MEMÓRIA",
+                    },
+                },
+            },
+        }
+
+        decision = decision_record(
+            analysis,
+            {"category": "INVERTIDO"},
+        )
+        record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "bc8b227c749241fcb72fd7e2fd7e0a48",
+            "timestamp": "2026-10-06T08:22:18.379",
+            "source_ip": "169.254.95.200",
+            "stage": "aoi_intake_validation",
+            "mode": "Modo Teste",
+            "transport": {"image": {"valid": True}},
+            "cycle": {},
+            "validation_message": "epicentro válido",
+            "validation": {
+                "valid": True,
+                "reason": "valid_epicenter",
+                "global_box_info": {
+                    "x": 13,
+                    "y": 13,
+                    "w": 278,
+                    "h": 527,
+                    "detected": True,
+                },
+                "focus_box": [89, 376, 125, 44],
+            },
+            "decision": decision,
+        }
+
+        report = format_network_debug_report(record)
+
+        self.assertIn("Categoria: INVERTIDO", report)
+        self.assertIn("Veredito: REVISÃO OBRIGATÓRIA", report)
+        self.assertIn("Revisão obrigatória: True", report)
+        self.assertIn("INVERTIDO score: 0.67", report)
+        self.assertIn("INVERTIDO orientação: 0.04", report)
+        self.assertIn("INVERTIDO ROI pequena: True", report)
+        self.assertIn("INVERTIDO alta autoridade: False", report)
+        self.assertIn("INVERTIDO corroborado: False", report)
+        self.assertIn("KNN melhor rótulo: OK", report)
+        self.assertIn("KNN conflito efetivo: True", report)
+
     def test_report_distinguishes_raw_hard_missing_from_exact_ok_witness(self):
         analysis = {
             "is_defect": False,
