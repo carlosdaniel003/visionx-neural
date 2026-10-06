@@ -44,8 +44,16 @@ def _render_panel(panel, analysis: dict | None) -> None:
     panel.lbl_db_info.setText(primary)
     panel.lbl_memory_role.setText(role)
 
+    review_required = bool(
+        trace.get("operator_review_required", False)
+        or (analysis or {}).get("production_review_required", False)
+    )
     is_defect = bool((analysis or {}).get("is_defect", False))
-    verdict_color = "#ff6262" if is_defect else "#4ade80"
+    verdict_color = (
+        "#f5c518"
+        if review_required
+        else ("#ff6262" if is_defect else "#4ade80")
+    )
     panel.lbl_verdict.setStyleSheet(
         f"color: {verdict_color}; font-size: 17px; "
         "font-weight: 800; border: none; background: transparent;"
