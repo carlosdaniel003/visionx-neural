@@ -1230,6 +1230,10 @@ class AdhesiveMultiLightDebugTests(unittest.TestCase):
         )
         self.assertIn("Iluminação dominante: TOP", report)
         self.assertIn("Papel da memória KNN: audit_only", report)
+        self.assertIn("Perfil de adesivo:", report)
+        self.assertIn("Testemunha MID clara - cobertura:", report)
+        self.assertIn("Testemunha MID clara - pico:", report)
+        self.assertIn("Testemunha MID clara - score:", report)
         self.assertIn('"shape": [', report)
         self.assertNotIn("0.6000000238418579, 0.6000000238418579", report)
 
