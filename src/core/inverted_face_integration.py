@@ -9,6 +9,7 @@ from src.core.anomaly_memory_integration import (
     _focus_box,
     _normalize_knn_memory_categories,
     canonical_category_key,
+    resolved_analysis_verdict,
 )
 from src.core.anomaly_signature import build_anomaly_signature
 from src.core.experts.inverted_face_expert import InvertedFaceExpert
@@ -145,7 +146,13 @@ def install_inverted_face_integration(orchestrator_cls) -> None:
         )
         analysis["is_defect"] = is_defect
         analysis["confidence"] = confidence
-        analysis["verdict"] = "DEFEITO REAL" if is_defect else "FALHA FALSA"
+        analysis["verdict"] = resolved_analysis_verdict(
+            is_defect,
+            trace,
+        )
+        analysis["production_review_required"] = bool(
+            trace.get("operator_review_required", False)
+        )
         analysis["reason"] = reason
         detail.update(knn_result)
         detail.update(
