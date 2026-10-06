@@ -166,6 +166,11 @@ def install_lighting_status_feedback_hooks(control_panel_cls) -> None:
         if callable(update_status):
             update_status(normalized_mode)
 
+        presenter = getattr(self, "_operational_controls", None)
+        note_action = getattr(presenter, "note_action", None)
+        if callable(note_action):
+            note_action("Iluminação {0} selecionada.".format(normalized_mode))
+
         normalized_source = str(source or "").strip().lower()
         if normalized_source in {
             "local",
