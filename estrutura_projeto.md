@@ -291,7 +291,7 @@ Contrato atual:
 - os `is_defect`, `confidence` e `verdict` locais continuam sendo saídas
   auditáveis de cada iluminação;
 - depois que SIDE, TOP e MID terminam, uma quarta análise lógica é criada:
-  `AdhesiveMultiLightFusion`;
+  a fusão final de `src/core/adhesive_multilight_fusion.py`;
 - somente essa análise fundida recebe `eligible_for_final_decision = True` e
   substitui `current_analysis` para o julgamento da peça;
 - a decisão 0/1 automática de Produção usa exclusivamente o resultado fundido.
@@ -520,7 +520,7 @@ capturar + analisar MID
         ↓
 restaurar SIDE
         ↓
-AdhesiveMultiLightFusion(SIDE, TOP, MID)
+fuse_adhesive_multilight(SIDE, TOP, MID)
         ↓
 resultado final único
         ↓
@@ -609,6 +609,38 @@ sido pintado na interface.
 A etapa seguinte continua separada: melhorar a capacidade específica do motor de
 adesivo na iluminação MID. A política de fusão não modifica internamente o
 detector MID.
+
+#### Caso real usado como referência da primeira política
+
+No teste de 06/10/2026 que motivou esta fusão, a mesma peça apresentou:
+
+```text
+SIDE
+  veredito local = FALHA FALSA
+  adhesive_score ≈ 0.792
+  physical_score = 0.85
+  motor de adesivo físico = positivo
+  KNN = OK ≈ 96.4%
+
+TOP
+  veredito local = DEFEITO REAL
+  adhesive_score ≈ 0.972
+  physical_score ≈ 0.972
+  KNN = NG 100%
+
+MID
+  veredito local = FALHA FALSA
+  adhesive_score = 0.0
+  physical_score ≈ 0.190
+```
+
+Pela nova fusão, TOP é uma testemunha auxiliar forte e SIDE também fornece
+corroboração física. O único resultado final esperado para esse conjunto é
+`DEFEITO REAL`, independentemente do veto KNN que anteriormente fazia a
+primeira imagem SIDE encerrar a peça como `FALHA FALSA`.
+
+Esse caso é referência funcional da regra inicial, não calibração definitiva.
+Novos casos reais OK/NG ainda devem ser usados para avaliar limiares.
 
 ### Restrições arquiteturais da melhoria
 
