@@ -297,6 +297,82 @@ Portanto, nesta etapa:
 A automação só avança da captura TOP para MID, e de MID para conclusão, depois
 que a imagem **e a análise visual** da iluminação esperada foram concluídas.
 
+#### Debug técnico e Copiar imagem para adesivo
+
+O diagnóstico copiável também passa a respeitar o contrato multilight somente
+quando o evento atual pertence à categoria canônica `MUITO ADESIVO`.
+
+**Copiar debug**
+
+O relatório técnico original do evento SIDE é preservado e recebe uma seção
+adicional:
+
+```text
+ANÁLISES MULTILIGHT - ADESIVO
+
+ILUMINAÇÃO SIDE
+ILUMINAÇÃO TOP
+ILUMINAÇÃO MID
+```
+
+Para cada iluminação são registrados, entre outros:
+
+- motores ativos;
+- veredito local do MoE, identificado explicitamente como não sendo o resultado
+  final multilight;
+- flag local de defeito;
+- confiança local;
+- score final local;
+- score físico local;
+- regra de fusão local;
+- motor dominante local;
+- motivo local;
+- detalhes técnicos compactos em JSON.
+
+Matrizes e imagens internas não são despejadas pixel a pixel no clipboard.
+Arrays NumPy são resumidos por `shape`, `dtype`, mínimo, máximo e média, e
+listas muito grandes são resumidas. Isso mantém o debug técnico copiável sem
+perder a estrutura necessária para diagnóstico.
+
+O relatório declara explicitamente:
+
+```text
+Fusão SIDE/TOP/MID para resultado final: NÃO DEFINIDA nesta etapa.
+```
+
+**Copiar imagem**
+
+Para o mesmo `event_id` de adesivo, o ODIN preserva também os frames completos
+de origem de cada iluminação:
+
+```text
+SIDE | TOP | MID
+```
+
+O botão `Copiar imagem` só considera o conjunto multilight pronto quando os
+três frames estão disponíveis. Em vez de copiar apenas SIDE, ele cria uma única
+imagem composta:
+
+```text
+┌────────────┬────────────┬────────────┐
+│    SIDE    │    TOP     │    MID     │
+├────────────┼────────────┼────────────┤
+│ frame SIDE │ frame TOP  │ frame MID  │
+└────────────┴────────────┴────────────┘
+```
+
+As imagens ficam lado a lado, com separadores próprios e sem sobreposição.
+Os frames não são redimensionados para montar a composição; o canvas apenas
+acomoda as alturas e larguras originais e adiciona um cabeçalho externo com o
+nome da iluminação.
+
+A evidência multilight persistida para debug é vinculada ao `event_id` da
+captura SIDE original. Se o evento atual mudar, um conjunto multilight antigo
+não pode ser reutilizado por `Copiar debug` ou `Copiar imagem`.
+
+Essa mudança é exclusiva do computador novo e não altera
+`agente_industrial_xp.py`.
+
 A página normal de especialistas permanece como padrão para todas as categorias
 que não sejam adesivo. Imagens multilight e especialistas multilight são
 trocados juntos através do mesmo modo condicional de adesivo.
@@ -508,7 +584,10 @@ A melhoria será executada por etapas, sem avançar automaticamente:
 7. **Concluído — análise visual por iluminação:** SIDE, TOP e MID executam
    análises independentes dos especialistas e alimentam seus próprios painéis;
    TOP/MID não substituem `current_analysis` e não entram no veredito final.
-8. **Etapa futura — fusão multilight:** definir como o `FLUXO DE ADESIVO`
+8. **Concluído — debug/evidência multilight:** `Copiar debug` reúne as três
+   análises e `Copiar imagem` gera uma única composição SIDE/TOP/MID sem
+   sobreposição, vinculada ao mesmo `event_id`.
+9. **Etapa futura — fusão multilight:** definir como o `FLUXO DE ADESIVO`
    combinará SIDE/TOP/MID para produzir o resultado final e então calibrar com
    amostras reais OK/NG.
 
