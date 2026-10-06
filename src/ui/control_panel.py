@@ -115,19 +115,8 @@ class ControlPanel(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def keyPressEvent(self, event):
-        lighting_shortcuts = {
-            Qt.Key.Key_Left: ("TOP", "btn_light_top"),
-            Qt.Key.Key_Down: ("SIDE", "btn_light_side"),
-            Qt.Key.Key_Right: ("MID", "btn_light_mid"),
-        }
-        selected = lighting_shortcuts.get(event.key())
-        if selected is not None:
-            light_mode, button_name = selected
-            button = getattr(self, button_name, None)
-            if button is None or button.isEnabled():
-                self.change_lighting(light_mode, "odin_keyboard")
-            event.accept()
-            return
+        # As setas de iluminação usam QShortcut em nível de janela.
+        # keyPressEvent permanece somente como fallback padrão do QWidget.
         super().keyPressEvent(event)
 
     def change_lighting(self, light_mode: str, source: str):
