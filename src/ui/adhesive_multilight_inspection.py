@@ -395,6 +395,8 @@ def _reset_session(panel, *, show_normal: bool = True) -> None:
     panel.adhesive_multilight_aux_mode = None
     panel.adhesive_multilight_views = {}
     panel.adhesive_multilight_primary_event_id = None
+    panel.adhesive_multilight_pending_start = False
+    panel.adhesive_multilight_deferred_auto_decision = ""
     _set_receiver_auxiliary_mode(panel, False)
 
     view = getattr(panel, "adhesive_multilight_view", None)
@@ -457,6 +459,8 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_aux_mode = None
         self.adhesive_multilight_views = {}
         self.adhesive_multilight_primary_event_id = None
+        self.adhesive_multilight_pending_start = False
+        self.adhesive_multilight_deferred_auto_decision = ""
         _switch_inspection_view(self, False)
 
     def handle_network_image(self, img_bgr, ip: str):
@@ -551,18 +555,25 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             )
 
         # A primeira imagem SIDE continua usando o pipeline atual integralmente.
-        # Só depois do resultado pronto ativamos a visualização auxiliar.
-        result = original_process_aoi_images(
-            self,
-            sample_crop,
-            ng_crop,
-            aoi_info,
-        )
+        # Em Produção, save_label(auto) pode ocorrer dentro desse processamento;
+        # por isso marcamos a futura sessão multilight e adiamos somente o envio
+        # automático 0/1 até TOP/MID serem recebidas.
+        self.adhesive_multilight_pending_start = True
+        try:
+            result = original_process_aoi_images(
+                self,
+                sample_crop,
+                ng_crop,
+                aoi_info,
+            )
+        finally:
+            self.adhesive_multilight_pending_start = False
 
         if (
             getattr(self, "current_analysis", None) is None
             or not _valid_image(getattr(self, "current_ng", None))
         ):
+            self.adhesive_multilight_deferred_auto_decision = ""
             return result
 
         self.adhesive_multilight_active = True
@@ -606,11 +617,60 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         return result
 
     def save_label(self, *args, **kwargs):
+        decision = ""
+        if args:
+            decision = str(args[0] or "").strip().upper()
+        elif "user_decision" in kwargs:
+            decision = str(
+                kwargs.get("user_decision") or ""
+            ).strip().upper()
+
+        source = str(kwargs.get("source", "button") or "button").strip().lower()
         automation = getattr(
             self,
             "adhesive_multilight_automation",
             None,
         )
+        automation_active = bool(
+            getattr(automation, "active", False)
+        )
+        pending_start = bool(
+            getattr(
+                self,
+                "adhesive_multilight_pending_start",
+                False,
+            )
+        )
+
+        # A peça precisa permanecer na AOI até TOP e MID chegarem. Em Produção
+        # guardamos a decisão automática já calculada; em ações do ODIN apenas
+        # recusamos o julgamento enquanto a sequência estiver ativa.
+        if (
+            is_adhesive_category(
+                getattr(self, "current_aoi_info", None)
+            )
+            and (pending_start or automation_active)
+        ):
+            if source == "auto" and decision in {"OK", "NG"}:
+                self.adhesive_multilight_deferred_auto_decision = decision
+                try:
+                    self.update_brain_status(
+                        "Decisão automática pronta; aguardando fotos TOP/MID.",
+                        True,
+                    )
+                except Exception:
+                    pass
+                return False
+
+            try:
+                self.update_brain_status(
+                    "Aguarde a captura automática SIDE/TOP/MID antes de julgar.",
+                    True,
+                )
+            except Exception:
+                pass
+            return False
+
         cancel_cycle = getattr(automation, "cancel_for_cycle_end", None)
         if callable(cancel_cycle):
             cancel_cycle()
