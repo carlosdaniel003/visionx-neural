@@ -64,7 +64,14 @@ class NetworkReceiver(QThread):
         self._candidate_image: np.ndarray | None = None
         self._candidate_ip = ""
         self._candidate_stable_frames = 0
+        self._candidate_received_at = 0.0
+        self._candidate_received_at = 0.0
         self._reserved_signature: np.ndarray | None = None
+
+        # Instante monotônico em que o payload COMPLETO do frame finalmente
+        # entregue à UI terminou de chegar pela rede. O painel usa esse marco
+        # como início do "Tempo de análise".
+        self.last_delivered_image_received_at = 0.0
 
     def lock_image_gate(self) -> None:
         """Impede que uma nova imagem seja emitida para a interface."""
@@ -191,6 +198,7 @@ class NetworkReceiver(QThread):
         image: np.ndarray,
         signature: np.ndarray,
         ip: str,
+        received_at: float | None = None,
     ) -> int:
         """Mantém só o frame mais recente e retorna sua estabilidade atual."""
         with self._state_lock:
@@ -202,6 +210,11 @@ class NetworkReceiver(QThread):
             self._candidate_signature = signature.copy()
             self._candidate_image = image.copy()
             self._candidate_ip = str(ip)
+            self._candidate_received_at = float(
+                received_at
+                if received_at is not None
+                else time.perf_counter()
+            )
             return int(self._candidate_stable_frames)
 
     def _candidate_snapshot(self):
@@ -357,6 +370,11 @@ class NetworkReceiver(QThread):
                         )
                         continue
 
+                    # Marco inicial do tempo de análise: o frame completo já
+                    # está no ODIN. Descompressão, decode, estabilidade,
+                    # validação, IA e renderização ficam dentro da medição.
+                    payload_received_at = time.perf_counter()
+
                     dados_originais = zlib.decompress(buffer)
                     nparr = np.frombuffer(dados_originais, np.uint8)
                     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -384,6 +402,7 @@ class NetworkReceiver(QThread):
                         img,
                         signature,
                         ip_origem,
+                        received_at=payload_received_at,
                     )
                     if stable_count < self.STABLE_REQUIRED_FRAMES:
                         self._log_waiting_stability(stable_count)
@@ -404,6 +423,10 @@ class NetworkReceiver(QThread):
                     if candidate is None:
                         continue
                     candidate_image, candidate_signature, candidate_ip = candidate
+                    with self._state_lock:
+                        candidate_received_at = float(
+                            self._candidate_received_at or 0.0
+                        )
 
                     # Reserva atomicamente antes de emitir o sinal Qt.
                     if not self._image_gate.try_reserve():
@@ -414,6 +437,11 @@ class NetworkReceiver(QThread):
                     self._require_image_change = False
                     self._duplicate_frames = 0
                     self._rejected_frames = 0
+                    self.last_delivered_image_received_at = (
+                        candidate_received_at
+                        if candidate_received_at > 0.0
+                        else time.perf_counter()
+                    )
                     self.log_updated.emit(
                         "Frame estável encaminhado para validação do epicentro."
                     )
