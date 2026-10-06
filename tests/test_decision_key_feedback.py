@@ -106,7 +106,7 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
             encoding="utf-8",
         ).read()
 
-        self.assertEqual(overlay.header_label.text(), "DECISÃO RECEBIDA")
+        self.assertEqual(overlay.header_label.text(), "TECLA PRESSIONADA")
         self.assertIn("rgba(13, 13, 13, 248)", source)
         self.assertIn("border: 1px solid #f5c518", source)
         self.assertIn("#f5c518", source)
@@ -167,6 +167,49 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
             )
         )
         self.assertEqual(panel.decision_key_feedback.digit_label.text(), "1")
+
+    def test_arrow_feedback_reuses_card_without_dismissing_verdict(self):
+        panel = QWidget()
+        panel.resize(1000, 700)
+        events = []
+
+        def start_verdict_fade():
+            events.append("verdict_fade")
+            return True
+
+        panel.start_ai_verdict_feedback_fade_out = start_verdict_fade
+        install_decision_key_feedback(panel)
+
+        shown = panel.show_operational_key_feedback(
+            "LEFT",
+            source="odin_keyboard",
+        )
+
+        overlay = panel.decision_key_feedback
+        self.assertTrue(shown)
+        self.assertEqual(overlay.header_label.text(), "TECLA PRESSIONADA")
+        self.assertEqual(overlay.digit_label.text(), "←")
+        self.assertEqual(overlay.decision_label.text(), "ESQUERDA")
+        self.assertEqual(overlay.source_label.text(), "TECLADO ODIN")
+        self.assertEqual(overlay.property("tone"), "light")
+
+        overlay._start_fade_out()
+        self.assertEqual(events, [])
+
+    def test_lighting_button_feedback_identifies_sent_key(self):
+        panel = self._panel()
+
+        shown = panel.show_operational_key_feedback(
+            "RIGHT",
+            source="odin_control",
+        )
+
+        overlay = panel.decision_key_feedback
+        self.assertTrue(shown)
+        self.assertEqual(overlay.header_label.text(), "TECLA ENVIADA")
+        self.assertEqual(overlay.digit_label.text(), "→")
+        self.assertEqual(overlay.decision_label.text(), "DIREITA")
+        self.assertEqual(overlay.source_label.text(), "CONTROLE ODIN")
 
     def test_key_feedback_prepares_and_starts_verdict_fade_in_same_exit_event(self):
         panel = QWidget()
