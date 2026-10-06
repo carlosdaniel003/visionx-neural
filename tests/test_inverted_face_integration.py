@@ -89,6 +89,56 @@ class InvertedFaceIntegrationTests(unittest.TestCase):
         self.assertNotIn("adhesive", ids)
         self.assertNotIn("missing", ids)
 
+    def test_tiny_uncorroborated_witness_does_not_receive_90_percent_floor(self):
+        inverted = {
+            "inverted_active": True,
+            "inverted_score": 0.67,
+            "inverted_tolerance": 0.43,
+            "inverted_is_defect": True,
+            "inverted_high_authority": False,
+            "inverted_reason": "MARCA TESTEMUNHA DIVERGENTE",
+        }
+
+        _score, _defect, _confidence, _reason, trace = _fusion_with_inverted(
+            self.orchestrator,
+            standard_detail(),
+            inverted,
+            self.no_memory,
+        )
+
+        engine = next(
+            item for item in trace["engines"]
+            if item["id"] == "inverted"
+        )
+        self.assertAlmostEqual(engine["raw_score"], 0.67)
+        self.assertAlmostEqual(engine["effective_score"], 0.67)
+        self.assertIn("sem piso físico de 90%", engine["summary"])
+        self.assertEqual(trace["dominant_engine"], "structural")
+
+    def test_corroborated_inverted_witness_keeps_existing_90_percent_floor(self):
+        inverted = {
+            "inverted_active": True,
+            "inverted_score": 0.67,
+            "inverted_tolerance": 0.43,
+            "inverted_is_defect": True,
+            "inverted_high_authority": True,
+            "inverted_reason": "ORIENTAÇÃO DA MARCA DIVERGENTE",
+        }
+
+        _score, _defect, _confidence, _reason, trace = _fusion_with_inverted(
+            self.orchestrator,
+            standard_detail(),
+            inverted,
+            self.no_memory,
+        )
+
+        engine = next(
+            item for item in trace["engines"]
+            if item["id"] == "inverted"
+        )
+        self.assertAlmostEqual(engine["effective_score"], 0.90)
+        self.assertEqual(trace["dominant_engine"], "inverted")
+
     def test_influence_rows_show_face_signature_as_dominant(self):
         _, _, _, _, trace = _fusion_with_inverted(
             self.orchestrator,
