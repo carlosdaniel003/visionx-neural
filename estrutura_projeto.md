@@ -104,9 +104,9 @@ O feedback temporário de tecla no canto inferior direito foi ampliado:
   pressionada/enviada;
 - feedback de seta não pode disparar o fade-out do veredito da IA.
 
-Existe ainda um terceiro card flutuante, persistente, em
+Existe ainda um terceiro card flutuante em
 `src/ui/lighting_status_feedback.py`. Ele fica no canto superior direito,
-abaixo do card de veredito, e mostra continuamente:
+abaixo do card de veredito, e mostra:
 
 ```text
 ILUMINAÇÃO ATUAL
@@ -114,6 +114,15 @@ TOP  ←
 SIDE ↓
 MID  →
 ```
+
+O estado de iluminação é atualizado internamente durante os comandos, mas o
+card **permanece oculto enquanto a análise ainda não terminou**. Ele só aparece
+quando existe um veredito final válido, no mesmo evento visual em que o card
+`FALHA FALSA / DEFEITO REAL / REVISÃO OBRIGATÓRIA` é exibido.
+
+Ao ocorrer o julgamento `0/1`, o card de iluminação é preservado durante o
+reset produtivo e inicia o mesmo fade-out sincronizado do veredito e do feedback
+de tecla. Portanto os três elementos encerram juntos o ciclo visual da peça.
 
 Esse card é somente de apresentação: não envia comandos, não altera análise,
 gate, KNN, dataset ou decisão.
