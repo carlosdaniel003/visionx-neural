@@ -177,15 +177,18 @@ def install_lighting_status_feedback_hooks(control_panel_cls) -> None:
             "button",
             "odin_control",
             "odin_keyboard",
+            "network",
+            "xp_keyboard",
         }:
             show_key = getattr(self, "show_operational_key_feedback", None)
             command = LIGHTING_COMMAND_BY_MODE.get(normalized_mode)
             if callable(show_key) and command:
-                visual_source = (
-                    "odin_keyboard"
-                    if normalized_source == "odin_keyboard"
-                    else "odin_control"
-                )
+                if normalized_source in {"network", "xp_keyboard"}:
+                    visual_source = "xp_keyboard"
+                elif normalized_source == "odin_keyboard":
+                    visual_source = "odin_keyboard"
+                else:
+                    visual_source = "odin_control"
                 show_key(command, source=visual_source)
 
         return result
