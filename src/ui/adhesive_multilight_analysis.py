@@ -212,8 +212,8 @@ class AdhesiveMultiLightAnalysisView(QWidget):
         root.setSpacing(7)
 
         hint = QLabel(
-            "ADESIVO • especialistas separados por iluminação. "
-            "Nesta etapa somente SIDE possui análise calculada."
+            "ADESIVO • análise independente dos especialistas em "
+            "SIDE / TOP / MID • sem fusão de resultado final nesta etapa."
         )
         hint.setObjectName("sectionHint")
         hint.setWordWrap(True)
