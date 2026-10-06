@@ -8,17 +8,31 @@ Este documento registra o papel do arquivo `agente_industrial_xp.py` dentro da a
 
 Quando uma alteração nesse agente for necessária, o usuário deve ser informado de que precisa **atualizar manualmente o arquivo no Windows XP** antes que a mudança passe a valer na AOI.
 
-## Estado operacional validado em 06/10/2026 — agente V5.2 sincronizado
+## Estado operacional em 06/10/2026 — V5.3 aguardando atualização no XP
 
-O agente operacional do Windows XP foi atualizado manualmente pelo operador em
-06/10/2026. Neste marco, o arquivo realmente em execução na AOI foi informado
-como **igual ao arquivo `agente_industrial_xp.py` da branch `central` no GitHub**.
+O agente V5.2 foi atualizado manualmente no Windows XP e validado pelo operador:
+os comandos enviados pelo ODIN para `LEFT`, `DOWN` e `RIGHT` alteraram
+corretamente a iluminação da AOI.
 
-Versão de referência atual:
+Após esse teste foi identificado que o hook do XP ainda não devolvia ao ODIN as
+setas pressionadas fisicamente no próprio teclado da AOI. Por isso a referência
+do GitHub foi evoluída para:
 
 ```text
-V5.2 - FULL DUPLEX C/ KERNEL HOOK + SETAS
+V5.3 - FULL DUPLEX C/ KERNEL HOOK + TELEMETRIA DE SETAS
 ```
+
+A V5.3 mantém todos os comandos da V5.2 e acrescenta o retorno XP → ODIN:
+
+```text
+seta ← física/injetada → CMD_TOP
+seta ↓ física/injetada → CMD_SIDE
+seta → física/injetada → CMD_MID
+```
+
+**Estado atual:** o GitHub está em V5.3, mas essa nova versão precisa ser copiada
+manualmente para o Windows XP e o agente precisa ser reiniciado antes da
+telemetria das setas passar a funcionar na AOI.
 
 Comandos aceitos pelo servidor do agente na porta `5000`:
 
@@ -182,20 +196,26 @@ win32api.keybd_event(...)
 
 O agente instala um hook global de teclado no Windows XP.
 
-Ele intercepta:
+Na V5.3 ele intercepta:
 
 ```text
 0
 1
 Numpad 0
 Numpad 1
+←
+↓
+→
 ```
 
-Quando o operador pressiona:
+Quando o operador — ou o próprio ODIN por `keybd_event` — aciona:
 
 ```text
 0 → CMD_OK
 1 → CMD_NG
+← → CMD_TOP
+↓ → CMD_SIDE
+→ → CMD_MID
 ```
 
 o agente abre uma conexão com:
@@ -213,6 +233,9 @@ XP → VisionX
 
 0 → CMD_OK → OK
 1 → CMD_NG → NG
+← → CMD_TOP → TOP
+↓ → CMD_SIDE → SIDE
+→ → CMD_MID → MID
 
 
 VisionX → XP
@@ -605,7 +628,7 @@ Abaixo está a versão informada como base operacional atual.
 > **Atenção:** este bloco é documentação. Ele não substitui automaticamente o arquivo que está no Windows XP.
 
 ```python
-# agente_industrial_xp.py (V5.2 - FULL DUPLEX C/ KERNEL HOOK + SETAS: COMPATIVEL PYTHON 3.4)
+# agente_industrial_xp.py (V5.3 - FULL DUPLEX C/ KERNEL HOOK + TELEMETRIA DE SETAS: COMPATIVEL PYTHON 3.4)
 # Teste de envio
 import socket
 import win32gui
@@ -853,6 +876,36 @@ def hook_proc(nCode, wParam, lParam):
                 args=("CMD_NG",),
             ).start()
 
+        elif vkCode == VK_LEFT:
+            print(
+                "\n[TECLADO KERNEL] Seta ESQUERDA detectada "
+                "(TOP). Avisando IA..."
+            )
+            threading.Thread(
+                target=enviar_aviso_teclado_ia,
+                args=("CMD_TOP",),
+            ).start()
+
+        elif vkCode == VK_DOWN:
+            print(
+                "\n[TECLADO KERNEL] Seta BAIXO detectada "
+                "(SIDE). Avisando IA..."
+            )
+            threading.Thread(
+                target=enviar_aviso_teclado_ia,
+                args=("CMD_SIDE",),
+            ).start()
+
+        elif vkCode == VK_RIGHT:
+            print(
+                "\n[TECLADO KERNEL] Seta DIREITA detectada "
+                "(MID). Avisando IA..."
+            )
+            threading.Thread(
+                target=enviar_aviso_teclado_ia,
+                args=("CMD_MID",),
+            ).start()
+
     return user32.CallNextHookEx(None, nCode, wParam, lParam)
 
 
@@ -914,9 +967,9 @@ def loop_vigia_tela():
 
 def iniciar_agente():
     print("==========================================")
-    print(">>> AGENTE VISIONX V5.2 - FULL DUPLEX (KERNEL HOOK + SETAS)")
+    print(">>> AGENTE VISIONX V5.3 - FULL DUPLEX (KERNEL HOOK + TELEMETRIA DE SETAS)")
     print(">>> Monitorando Tela, Rede e Teclado Fisico (Global)...")
-    print(">>> Comandos: 0, 1, LEFT, DOWN, RIGHT")
+    print(">>> Comandos: 0, 1, LEFT, DOWN, RIGHT | Retorno: OK, NG, TOP, SIDE, MID")
     print("==========================================")
 
     # 1. Liga o Ouvinte da IA (Porta 5000)
@@ -958,6 +1011,11 @@ Antes de considerar uma mudança concluída:
 - [ ] Testar `PRESS_LEFT` e confirmar seta `←` / iluminação `TOP`.
 - [ ] Testar `PRESS_DOWN` e confirmar seta `↓` / iluminação `SIDE`.
 - [ ] Testar `PRESS_RIGHT` e confirmar seta `→` / iluminação `MID`.
+- [ ] Pressionar fisicamente `←` no XP e confirmar `CMD_TOP` no ODIN.
+- [ ] Pressionar fisicamente `↓` no XP e confirmar `CMD_SIDE` no ODIN.
+- [ ] Pressionar fisicamente `→` no XP e confirmar `CMD_MID` no ODIN.
+- [ ] Confirmar que o card fixo de iluminação acompanha TOP/SIDE/MID.
+- [ ] Confirmar que o feedback temporário mostra a seta recebida sem duplicar o eco do comando enviado pelo ODIN.
 
 ---
 
@@ -975,7 +1033,7 @@ VISIONX / PC NOVO:
 
 XP → VisionX:
 porta 5001
-imagem + CMD_OK / CMD_NG
+imagem + CMD_OK / CMD_NG / CMD_TOP / CMD_SIDE / CMD_MID
 
 VisionX → XP:
 porta 5000
