@@ -372,6 +372,16 @@ def _switch_inspection_view(panel, adhesive: bool) -> None:
         method(panel, bool(adhesive))
 
 
+def _sync_multilight_debug_controls(panel) -> None:
+    """Atualiza Copiar debug/Copiar imagem sem criar dependência de import cíclica."""
+    try:
+        from src.ui.network_xp_debug import sync_network_debug_controls
+
+        sync_network_debug_controls(panel)
+    except Exception as exc:
+        print(f"Falha não fatal ao sincronizar debug multilight: {exc}")
+
+
 def _reset_session(panel, *, show_normal: bool = True) -> None:
     automation = getattr(
         panel,
@@ -386,6 +396,9 @@ def _reset_session(panel, *, show_normal: bool = True) -> None:
     panel.adhesive_multilight_aux_mode = None
     panel.adhesive_multilight_views = {}
     panel.adhesive_multilight_analyses = {}
+    panel.adhesive_multilight_source_frames = {}
+    panel.adhesive_multilight_pending_source_frame = None
+    panel.adhesive_multilight_pending_source_mode = ""
     panel.adhesive_multilight_primary_event_id = None
     panel.adhesive_multilight_pending_start = False
     panel.adhesive_multilight_deferred_auto_decision = ""
@@ -461,9 +474,19 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_aux_mode = None
         self.adhesive_multilight_views = {}
         self.adhesive_multilight_analyses = {}
+        self.adhesive_multilight_source_frames = {}
+        self.adhesive_multilight_pending_source_frame = None
+        self.adhesive_multilight_pending_source_mode = ""
         self.adhesive_multilight_primary_event_id = None
         self.adhesive_multilight_pending_start = False
         self.adhesive_multilight_deferred_auto_decision = ""
+
+        # Último conjunto multilight completo/parcial permanece disponível para
+        # Copiar debug/Copiar imagem mesmo depois que o ciclo produtivo termina.
+        self.adhesive_multilight_last_analyses = {}
+        self.adhesive_multilight_last_source_frames = {}
+        self.adhesive_multilight_last_event_id = ""
+        self.adhesive_multilight_last_category = ""
         _switch_inspection_view(self, False)
 
     def handle_network_image(self, img_bgr, ip: str):
@@ -500,6 +523,12 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             )
             self.last_xp_ip = str(ip)
             self.adhesive_multilight_aux_mode = mode
+            self.adhesive_multilight_pending_source_mode = mode
+            self.adhesive_multilight_pending_source_frame = (
+                img_bgr.copy()
+                if _valid_image(img_bgr)
+                else None
+            )
             try:
                 self.processor_monitor.process_external_image(img_bgr)
                 return True
@@ -508,6 +537,8 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 # neste caminho. Se falhar antes do sinal, não deixamos estado
                 # auxiliar pendurado para a próxima peça.
                 self.adhesive_multilight_aux_mode = None
+                self.adhesive_multilight_pending_source_mode = ""
+                self.adhesive_multilight_pending_source_frame = None
 
         return original_handle_network_image(self, img_bgr, ip)
 
@@ -559,6 +590,44 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     lighting_analysis
                 )
 
+                pending_source_mode = str(
+                    getattr(
+                        self,
+                        "adhesive_multilight_pending_source_mode",
+                        "",
+                    )
+                    or ""
+                ).strip().upper()
+                pending_source_frame = getattr(
+                    self,
+                    "adhesive_multilight_pending_source_frame",
+                    None,
+                )
+                if (
+                    pending_source_mode == aux_mode
+                    and _valid_image(pending_source_frame)
+                ):
+                    source_copy = pending_source_frame.copy()
+                    self.adhesive_multilight_source_frames[aux_mode] = (
+                        source_copy
+                    )
+                    self.adhesive_multilight_last_source_frames[aux_mode] = (
+                        source_copy.copy()
+                    )
+
+                self.adhesive_multilight_last_analyses[aux_mode] = (
+                    lighting_analysis
+                )
+                self.adhesive_multilight_last_event_id = str(
+                    getattr(
+                        self,
+                        "adhesive_multilight_primary_event_id",
+                        "",
+                    )
+                    or ""
+                )
+                self.adhesive_multilight_last_category = ADHESIVE_CATEGORY
+
                 analysis_view = getattr(
                     self,
                     "adhesive_multilight_analysis_view",
@@ -586,6 +655,8 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 )
                 if callable(frame_stored):
                     frame_stored(aux_mode)
+
+                _sync_multilight_debug_controls(self)
 
                 try:
                     self.update_brain_status(
@@ -640,11 +711,36 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_aux_mode = None
         self.adhesive_multilight_views = {}
         self.adhesive_multilight_analyses = {}
+        self.adhesive_multilight_source_frames = {}
+        self.adhesive_multilight_last_analyses = {}
+        self.adhesive_multilight_last_source_frames = {}
+        self.adhesive_multilight_last_category = ADHESIVE_CATEGORY
         self.adhesive_multilight_primary_event_id = getattr(
             self,
             "network_intake_last_image_event_id",
             None,
         )
+        self.adhesive_multilight_last_event_id = str(
+            self.adhesive_multilight_primary_event_id or ""
+        )
+
+        side_source = getattr(
+            self,
+            "network_intake_last_image",
+            None,
+        )
+        if not _valid_image(side_source):
+            side_source = getattr(
+                self,
+                "capture_debug_last_image",
+                None,
+            )
+        if _valid_image(side_source):
+            side_copy = side_source.copy()
+            self.adhesive_multilight_source_frames["SIDE"] = side_copy
+            self.adhesive_multilight_last_source_frames["SIDE"] = (
+                side_copy.copy()
+            )
 
         # Contrato da AOI: a iluminação padrão/primeira recebida é SIDE.
         _store_view(self, "SIDE", sample_crop, ng_crop)
@@ -652,6 +748,11 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         # SIDE preserva a análise principal existente. TOP/MID serão analisados
         # separadamente quando seus frames auxiliares chegarem.
         self.adhesive_multilight_analyses["SIDE"] = getattr(
+            self,
+            "current_analysis",
+            None,
+        )
+        self.adhesive_multilight_last_analyses["SIDE"] = getattr(
             self,
             "current_analysis",
             None,
@@ -671,6 +772,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
 
         _switch_inspection_view(self, True)
         _set_receiver_auxiliary_mode(self, True)
+        _sync_multilight_debug_controls(self)
 
         automation = getattr(
             self,
