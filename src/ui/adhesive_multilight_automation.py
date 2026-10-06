@@ -283,9 +283,17 @@ class AdhesiveMultiLightAutomation(QObject):
         return was_active
 
     def cancel_for_cycle_end(self) -> None:
-        """Cancela timer/estado quando a peça é julgada ou descartada."""
+        """Cancela timer/estado e devolve a AOI para SIDE antes do próximo ciclo."""
+        was_active = self.active
         self._timeout.stop()
         self.expected_mode = ""
+
+        # Se o operador encerrou a peça no meio de TOP/MID, restauramos SIDE
+        # antes de liberar o próximo ciclo. Em uma automação já concluída,
+        # SIDE já foi restaurada e não reenviamos a tecla.
+        if was_active:
+            self._restore_side()
+
         self.active = False
         self.completed = False
         self.captured_modes = set()
