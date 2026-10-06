@@ -33,6 +33,11 @@ from src.core.adhesive_multilight_analysis import (
 from src.core.adhesive_multilight_fusion import (
     fuse_adhesive_multilight,
 )
+from src.services.capture_debug_payload import decision_record
+from src.services.capture_evidence import (
+    capture_debug_record,
+    update_capture_debug_record,
+)
 from src.utils.text_normalizer import normalize_aoi_text
 
 
@@ -438,6 +443,19 @@ def _finalize_multilight_decision(panel) -> dict | None:
         )
     except Exception:
         pass
+
+    # O debug principal deixa de apontar para a decisão provisória SIDE.
+    # Mantemos o mesmo event_id e apenas promovemos a decisão final já fundida.
+    try:
+        debug_record = capture_debug_record(panel)
+        if debug_record:
+            debug_record["decision"] = decision_record(
+                fused,
+                getattr(panel, "current_aoi_info", None),
+            )
+            update_capture_debug_record(panel, debug_record)
+    except Exception as exc:
+        print(f"Falha não fatal ao atualizar debug da fusão multilight: {exc}")
 
     mode = ""
     try:
