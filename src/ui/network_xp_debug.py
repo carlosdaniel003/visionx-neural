@@ -336,14 +336,46 @@ def format_multilight_debug_report(panel) -> str:
     if not isinstance(analyses, dict):
         analyses = {}
 
+    final_analysis = getattr(
+        panel,
+        "adhesive_multilight_last_final_analysis",
+        None,
+    )
+    final_analysis = (
+        final_analysis if isinstance(final_analysis, dict) else {}
+    )
+    final_detail = final_analysis.get("detail", {})
+    final_detail = final_detail if isinstance(final_detail, dict) else {}
+
     lines = [
         "",
         "ANÁLISES MULTILIGHT - ADESIVO",
         "=" * 72,
         "Escopo: diagnóstico técnico independente por iluminação.",
-        "Fusão SIDE/TOP/MID para resultado final: NÃO DEFINIDA nesta etapa.",
         f"Evento multilight: {getattr(panel, 'adhesive_multilight_last_event_id', '-')}",
+        "",
+        "JULGAMENTO FINAL MULTILIGHT",
+        "-" * 72,
     ]
+
+    if final_analysis:
+        lines.extend(
+            [
+                f"Veredito final: {final_analysis.get('verdict', '-')}",
+                f"Defeito final: {final_analysis.get('is_defect', '-')}",
+                f"Confiança final: {final_analysis.get('confidence', '-')}",
+                f"Score final: {final_detail.get('final_score', '-')}",
+                f"Score físico máximo: {final_detail.get('physical_score', '-')}",
+                f"Regra de fusão: {final_detail.get('fusion_rule', '-')}",
+                f"Iluminação dominante: {final_detail.get('adhesive_multilight_dominant_mode', '-')}",
+                f"Iluminações positivas: {final_detail.get('adhesive_multilight_positive_modes', [])}",
+                f"Auxiliares fortes: {final_detail.get('adhesive_multilight_strong_auxiliary_modes', [])}",
+                f"Papel da memória KNN: {final_detail.get('adhesive_multilight_memory_role', '-')}",
+                f"Motivo final: {final_analysis.get('reason', '-')}",
+            ]
+        )
+    else:
+        lines.append("Julgamento final: aguardando SIDE/TOP/MID.")
 
     for mode in MULTILIGHT_DEBUG_ORDER:
         analysis = analyses.get(mode)
