@@ -18,6 +18,129 @@
 - mss (Captura de tela ultrarrápida)
 - PyQt6 (Criação do HUD transparente)
 
+
+## Melhoria em andamento — inspeção mult-iluminação para adesivo
+
+### Objetivo
+
+A próxima melhoria do ODIN para a categoria de excesso de adesivo passa a usar
+as três iluminações disponíveis na AOI sobre a **mesma peça**.
+
+A motivação visual observada é:
+
+```text
+SIDE → adesivo pouco evidente; útil como base geométrica/contextual
+TOP  → adesivo muito escuro e bem marcado
+MID  → adesivo muito claro/branco e bem marcado
+```
+
+A hipótese de trabalho é que `TOP` e `MID` fornecem evidências fotométricas
+complementares do adesivo, enquanto `SIDE` continua servindo como imagem
+inicial e referência de contexto.
+
+### Mapeamento operacional confirmado da AOI
+
+```text
+← seta esquerda → TOP
+↓ seta para baixo → SIDE
+→ seta direita → MID
+```
+
+### Estado do agente Windows XP
+
+Em 06/10/2026, o agente foi atualizado para:
+
+```text
+agente_industrial_xp.py V5.2
+```
+
+A versão operacional que está rodando no Windows XP foi informada pelo operador
+como **igual à versão da branch `central` no GitHub**.
+
+Ela já aceita:
+
+```text
+PRESS_0
+PRESS_1
+PRESS_LEFT
+PRESS_DOWN
+PRESS_RIGHT
+```
+
+Portanto o pré-requisito do lado do XP para comandar as três iluminações está
+concluído. Alterações futuras no agente continuam exigindo atualização manual no
+Windows XP; essa sincronização descreve especificamente o estado de 06/10/2026.
+
+### Fluxo-alvo da captura mult-iluminação
+
+O fluxo planejado para eventos de adesivo é:
+
+```text
+mesma peça / mesmo ciclo
+        ↓
+SIDE recebido inicialmente
+        ↓
+categoria de adesivo?
+   ├── NÃO → fluxo normal atual
+   └── SIM
+        ↓
+preservar SIDE
+        ↓
+PRESS_LEFT
+        ↓
+capturar TOP
+        ↓
+PRESS_DOWN
+        ↓
+retornar SIDE
+        ↓
+PRESS_RIGHT
+        ↓
+capturar MID
+        ↓
+PRESS_DOWN
+        ↓
+restaurar SIDE
+        ↓
+analisar SIDE + TOP + MID como um único conjunto
+```
+
+### Restrições arquiteturais da melhoria
+
+A implementação futura deve preservar os seguintes contratos:
+
+- `SIDE`, `TOP` e `MID` pertencem à mesma peça e não podem virar três
+  inspeções independentes;
+- as capturas auxiliares não podem ganhar `event_id` de peças diferentes;
+- o gate de rede precisa distinguir imagens auxiliares da sessão
+  mult-iluminação de uma nova peça real;
+- não confiar apenas na ordem temporal; uma captura precisa corresponder ao
+  estado de iluminação solicitado antes de ser aceita;
+- o ODIN deve restaurar `SIDE` ao final da sequência para não deixar a AOI em
+  uma iluminação inesperada;
+- falha ao obter `TOP` ou `MID` não deve fabricar evidência ausente nem
+  reutilizar silenciosamente um frame anterior;
+- o motor `FLUXO DE ADESIVO` atual ainda é monoimagem. A fusão visual
+  mult-iluminação é uma etapa posterior e não deve ser introduzida junto com a
+  infraestrutura de aquisição;
+- a memória KNN e o julgamento final não devem ser recalibrados implicitamente
+  durante a primeira etapa de captura.
+
+### Ordem de trabalho
+
+A melhoria será executada por etapas, sem avançar automaticamente:
+
+1. **Concluído — agente XP:** suporte aos comandos de setas e sincronização da
+   V5.2 entre GitHub e Windows XP.
+2. **Próxima etapa — aquisição:** integrar no ODIN a captura segura de
+   `SIDE/TOP/MID` da mesma peça.
+3. **Etapa posterior — visão:** adaptar o `FLUXO DE ADESIVO` para comparar as
+   três iluminações e calibrar a decisão com amostras reais OK/NG.
+
+Até a etapa 2 ser implementada e validada na AOI, o julgamento atual de adesivo
+permanece inalterado.
+
+
 **Arquivo visual NG opcional:**
 - Toggle **ativado por padrão** em toda inicialização do ODIN. O operador pode desativá-lo manualmente durante a sessão.
 - Ativado: cada evento válido do Windows XP pode gerar **no máximo uma** evidência final `NG` em `public/ng_archive/`, usando exatamente o mesmo frame completo disponibilizado pelo botão `Copiar imagem`.
