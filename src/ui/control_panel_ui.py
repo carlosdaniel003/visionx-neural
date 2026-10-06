@@ -1270,13 +1270,13 @@ class ControlPanelUI:
                 540 if compact else 500
             )
             window.telemetry_section.setMinimumHeight(
-                760 if compact else 420
+                520 if compact else 420
             )
             window.main_splitter.setMinimumHeight(
-                1320 if compact else 960
+                1080 if compact else 960
             )
             window.main_splitter.setSizes(
-                [560 if compact else 500, 760 if compact else 460]
+                [540 if compact else 500, 540 if compact else 460]
             )
         elif profile.splitter_vertical:
             window.main_splitter.setStretchFactor(0, 1)
