@@ -13,7 +13,57 @@ def _image_snapshot(value):
     return value
 
 
+LIGHTING_ORDER = ("SIDE", "TOP", "MID")
+
+
+def _multilight_learning_snapshot(panel) -> list[dict]:
+    """Copia SIDE/TOP/MID antes de a interface limpar a peça julgada."""
+    samples = getattr(
+        panel,
+        "adhesive_multilight_learning_samples",
+        {},
+    )
+    if not isinstance(samples, dict):
+        return []
+
+    resolved = []
+    for mode in LIGHTING_ORDER:
+        item = samples.get(mode)
+        if not isinstance(item, dict):
+            return []
+
+        sample_image = item.get("sample_image")
+        test_image = item.get("test_image")
+        analysis = item.get("analysis")
+        if (
+            not isinstance(sample_image, np.ndarray)
+            or sample_image.size == 0
+            or not isinstance(test_image, np.ndarray)
+            or test_image.size == 0
+            or not isinstance(analysis, dict)
+        ):
+            return []
+
+        resolved.append(
+            {
+                "lighting_mode": mode,
+                "sample_image": sample_image.copy(),
+                "test_image": test_image.copy(),
+                "source_frame": _image_snapshot(item.get("source_frame")),
+                "analysis": analysis,
+            }
+        )
+    return resolved
+
+
 def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dict:
+    event_id = str(
+        getattr(panel, "adhesive_multilight_primary_event_id", "")
+        or getattr(panel, "adhesive_multilight_last_event_id", "")
+        or ""
+    ).strip()
+    multilight_samples = _multilight_learning_snapshot(panel)
+
     return {
         "ng_image": _image_snapshot(getattr(panel, "current_ng", None)),
         "label": normalized,
@@ -23,6 +73,8 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
         "save_images": bool(ai_decision != normalized),
         "source": source,
         "ai_decision": ai_decision,
+        "event_id": event_id,
+        "multilight_samples": multilight_samples,
     }
 
 
@@ -120,7 +172,9 @@ def install_anomaly_learning(control_panel_cls) -> None:
 
 
 __all__ = [
+    "LIGHTING_ORDER",
     "_decision_task",
+    "_multilight_learning_snapshot",
     "_finish_operator_decision_ui",
     "_submit_decision_persistence",
     "install_anomaly_learning",
