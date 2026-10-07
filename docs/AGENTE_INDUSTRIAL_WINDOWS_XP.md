@@ -8,6 +8,27 @@ Este documento registra o papel do arquivo `agente_industrial_xp.py` dentro da a
 
 Quando uma alteração nesse agente for necessária, o usuário deve ser informado de que precisa **atualizar manualmente o arquivo no Windows XP** antes que a mudança passe a valer na AOI.
 
+## Atualização de escopo em 07/10/2026 — multilight geral no ODIN
+
+O ODIN da branch `central` passou a reutilizar a sequência já existente
+`SIDE → TOP → MID → SIDE` para **todas as categorias AOI válidas recebidas pela
+rede**, e não apenas para adesivo.
+
+Esta generalização acontece integralmente no computador novo. **Não exige nova
+alteração do `agente_industrial_xp.py`**, porque o agente já expõe os seletores
+absolutos necessários:
+
+```text
+PRESS_LEFT  → TOP
+PRESS_DOWN  → SIDE
+PRESS_RIGHT → MID
+```
+
+A regra de manutenção continua válida: se o arquivo do agente for alterado no
+futuro, a cópia no Windows XP precisa ser atualizada manualmente.
+
+---
+
 ## Estado operacional em 06/10/2026 — V5.3 aguardando atualização no XP
 
 O agente V5.2 foi atualizado manualmente no Windows XP e validado pelo operador:
