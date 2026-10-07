@@ -147,6 +147,8 @@ def _show_pending_message(panel) -> None:
 def enter_production_review(
     panel,
     analysis: dict | None = None,
+    *,
+    verdict_override: str = "",
 ) -> dict[str, Any]:
     """Congela a peça e libera somente 0/1 humano."""
     target = analysis if isinstance(analysis, dict) else getattr(
@@ -155,6 +157,20 @@ def enter_production_review(
         None,
     )
     policy = production_decision_policy(target)
+
+    override = str(verdict_override or "").strip().upper()
+    if override:
+        if override not in {"DEFEITO REAL", "REVISÃO OBRIGATÓRIA"}:
+            override = "REVISÃO OBRIGATÓRIA"
+        policy = {
+            **policy,
+            "verdict": override,
+            "auto_allowed": False,
+            "operator_review_required": True,
+            "proposed_decision": "NG" if override == "DEFEITO REAL" else "",
+            "reason": "forced_manual_intervention",
+        }
+
     panel.production_review_pending = True
     panel.is_locked = True
     _record_policy(panel, policy, resolution="pending")
