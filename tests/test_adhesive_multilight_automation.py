@@ -281,7 +281,7 @@ class AdhesiveAutomationSourceContractTests(unittest.TestCase):
             automation_source,
         )
         self.assertIn(
-            "fuse_adhesive_multilight(analyses)",
+            "fuse_multilight(analyses, category)",
             inspection_source,
         )
         self.assertIn(
@@ -289,7 +289,7 @@ class AdhesiveAutomationSourceContractTests(unittest.TestCase):
             inspection_source,
         )
         self.assertIn(
-            "ADESIVO • AGUARDANDO TOP/MID",
+            "MULTILIGHT • AGUARDANDO TOP/MID",
             inspection_source,
         )
 
