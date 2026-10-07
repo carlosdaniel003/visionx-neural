@@ -493,6 +493,14 @@ class ControlPanel(QWidget):
             self.capture_start_time = time.perf_counter()
             self.capture_start_source = "process_entry_fallback"
 
+        notify_cycle = getattr(
+            self,
+            "notify_production_cycle_started",
+            None,
+        )
+        if callable(notify_cycle):
+            notify_cycle()
+
         self._inspection_images_visible = True
         self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)
 
