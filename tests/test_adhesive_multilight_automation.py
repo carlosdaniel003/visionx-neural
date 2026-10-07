@@ -49,7 +49,6 @@ class _FakePanel(QWidget):
         }
         self.finalize_calls = 0
         self.adhesive_multilight_automation_active = False
-        self.adhesive_multilight_deferred_auto_decision = ""
 
     def send_command_to_xp(self, command):
         self.commands.append(str(command))
@@ -132,7 +131,6 @@ class AdhesiveMultiLightAutomationTests(unittest.TestCase):
 
     def test_production_delivers_fused_result_to_autonomy_controller(self):
         self.panel.combo_mode.value = "Modo Produção"
-        self.panel.adhesive_multilight_deferred_auto_decision = "OK"
         self.panel.fused_analysis = {
             "is_defect": True,
             "verdict": "DEFEITO REAL",
@@ -156,10 +154,6 @@ class AdhesiveMultiLightAutomationTests(unittest.TestCase):
         self.assertEqual(
             self.panel.production_ready[0]["verdict"],
             "DEFEITO REAL",
-        )
-        self.assertEqual(
-            self.panel.adhesive_multilight_deferred_auto_decision,
-            "",
         )
 
     def test_production_review_never_sends_zero_or_one_automatically(self):
