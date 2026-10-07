@@ -23,33 +23,83 @@ def normalize_board_ocr(value: str) -> str:
     return strip_ocr_field_noise(value)
 
 
+_NUMERIC_OCR_TRANSLATION = str.maketrans(
+    {
+        "I": "1",
+        "i": "1",
+        "L": "1",
+        "l": "1",
+        "|": "1",
+        "O": "0",
+        "o": "0",
+        "Q": "0",
+        "q": "0",
+        "S": "5",
+        "s": "5",
+        "$": "5",
+        "Z": "2",
+        "z": "2",
+        "G": "6",
+        "g": "6",
+        "B": "8",
+        "b": "8",
+    }
+)
+
+
+def _normalize_numeric_operand(value: str) -> str:
+    """Normaliza um token somente quando a gramática exige número."""
+    token = str(value or "").strip().translate(_NUMERIC_OCR_TRANSLATION)
+    token = re.sub(r"[^0-9.,+\-]", "", token)
+    token = token.replace(",", ".")
+    token = re.sub(r"\.{2,}", ".", token)
+    return token.strip(".")
+
+
 def normalize_value_ocr(value: str) -> str:
-    """Corrige I/l/O somente quando formam o primeiro número comparativo."""
+    """Normaliza operandos numéricos de expressões comparativas da AOI."""
     text = strip_ocr_field_noise(value)
     match = re.match(
-        r"^([0-9IiLlOo]{1,4})(\s*(?:<=|>=|<|>|=))",
+        r"^(.+?)\s*(<=|>=|<|>)\s*(.+?)\s*(<=|>=|<|>)\s*([^\s]+)(.*)$",
         text,
     )
-    if match:
-        translated = match.group(1).translate(
-            str.maketrans(
-                {
-                    "I": "1",
-                    "i": "1",
-                    "L": "1",
-                    "l": "1",
-                    "O": "0",
-                    "o": "0",
-                }
-            )
-        )
-        if translated.isdigit():
-            text = translated + text[match.end(1):]
-    return re.sub(r"\s+", " ", text).strip()
+    if not match:
+        return re.sub(r"\s+", " ", text).strip()
+
+    left = _normalize_numeric_operand(match.group(1))
+    middle = _normalize_numeric_operand(match.group(3))
+    right = _normalize_numeric_operand(match.group(5))
+    if not left or not middle or not right:
+        return re.sub(r"\s+", " ", text).strip()
+
+    suffix = re.sub(r"\s+", " ", match.group(6)).strip()
+    normalized = (
+        f"{left} {match.group(2)} {middle} "
+        f"{match.group(4)} {right}"
+    )
+    if suffix:
+        normalized += f" {suffix}"
+    return normalized.strip()
 
 
 def normalize_parts_ocr(value: str) -> str:
-    return re.sub(r"\s+", "", strip_ocr_field_noise(value))
+    """Normaliza somente a parte numérica de uma referência de componente."""
+    text = re.sub(r"\s+", "", strip_ocr_field_noise(value)).upper()
+    if not text:
+        return text
+
+    first_digit = re.search(r"\d", text)
+    if first_digit:
+        index = first_digit.start()
+        prefix = text[:index]
+        suffix = text[index:].translate(_NUMERIC_OCR_TRANSLATION)
+        suffix = re.sub(r"[^0-9~\-/,.]", "", suffix)
+        candidate = prefix + suffix
+        if candidate:
+            return candidate
+
+    # Sem dígito explícito (ex.: RI~5), a releitura dirigida decide o número.
+    return text
 
 
 def looks_like_component_reference(value: str) -> bool:
@@ -84,6 +134,24 @@ def _prepare_binary(image, scale: int = 3):
 
 def _token_key(value: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+
+
+def _field_token_matches(token: str, target: str) -> bool:
+    """Tolera pequenas deformações OCR no próprio rótulo da AOI."""
+    token_key = _token_key(token)
+    target_key = _token_key(target)
+    if token_key == target_key:
+        return True
+    if len(token_key) < 3 or len(target_key) < 3:
+        return False
+
+    import difflib
+
+    return difflib.SequenceMatcher(
+        None,
+        token_key,
+        target_key,
+    ).ratio() >= 0.72
 
 
 def _find_field_crop(text_zone, field_name: str, pytesseract_module):
@@ -139,19 +207,23 @@ def _find_field_crop(text_zone, field_name: str, pytesseract_module):
     for words in rows.values():
         words = sorted(words, key=lambda item: item["left"])
         keys = [item["key"] for item in words]
-        if target not in keys:
+        matching_indexes = [
+            index
+            for index, item in enumerate(words)
+            if _field_token_matches(item["text"], field_name)
+        ]
+        if not matching_indexes:
             continue
         if target == "PARTS" and "KIND" in keys:
             continue
-        candidate_rows.append(words)
+        candidate_rows.append((words, matching_indexes[0]))
 
     if not candidate_rows:
         return None
 
-    words = min(candidate_rows, key=lambda row: min(w["top"] for w in row))
-    anchor_index = next(
-        index for index, word in enumerate(words)
-        if word["key"] == target
+    words, anchor_index = min(
+        candidate_rows,
+        key=lambda item: min(w["top"] for w in item[0]),
     )
     anchor = words[anchor_index]
 
