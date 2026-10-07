@@ -4263,3 +4263,123 @@ Valor / OCR:     10 <= 2 <= 80 FALTANDO
 Essa alteração afeta metadados OCR e apresentação dos dados da AOI. Não altera
 a classificação visual dos especialistas, a fusão, o KNN, o protocolo XP ou a
 política do Modo Produção.
+
+
+## Ajuste de 07/10/2026 — imagens sem divisor manual e segundo refinamento do OCR
+
+### IMAGENS DA INSPEÇÃO
+
+Foi identificado que o QSplitter entre IMAGENS DA INSPEÇÃO e ANÁLISE DOS
+ESPECIALISTAS ainda permitia arraste manual. Em notebook, especialmente quando
+o splitter estava na orientação vertical, arrastar a barra alterava
+continuamente a área das imagens e dava a impressão de "zoom infinito".
+
+O contrato foi alterado:
+
+~~~text
+antes
+QSplitter visível e arrastável
+↓
+operador podia aumentar/reduzir indefinidamente a seção
+
+agora
+QSplitter continua existindo apenas como mecanismo interno de reflow
+↓
+handle com largura 0
+↓
+handle desabilitado
+↓
+tamanhos definidos pelo perfil responsivo
+~~~
+
+No perfil compact/notebook:
+
+~~~text
+IMAGENS DA INSPEÇÃO  mínimo 560 px
+ANÁLISE ESPECIALISTAS mínimo 430 px
+estágio completo      mínimo 1000 px
+~~~
+
+O root_scroll da página absorve a altura adicional. Portanto não é necessário
+sacrificar metade das imagens nem arrastar a antiga divisória.
+
+Em telas standard/wide, a largura de IMAGENS DA INSPEÇÃO passa a acompanhar a
+largura da janela de forma limitada:
+
+~~~text
+28% da largura disponível
+mínimo 420 px
+máximo 520 px
+~~~
+
+Os pixmaps continuam usando KeepAspectRatio e são redesenhados a partir da
+imagem-fonte quando o viewport muda de tamanho.
+
+### Segundo caso real de OCR
+
+Outra captura real apresentou:
+
+~~~text
+Componente
+OCR:      u2~s
+correto:  U2~5
+
+Valor / OCR
+OCR:      fo <= $4.872 <= 10 FALTANDO
+correto:  0 <= 54.872 <= 10 FALTANDO
+~~~
+
+O debug confirmou que esses valores já estavam presentes no aoi_info após a
+leitura geral do Tesseract.
+
+#### Parts
+
+A normalização de Parts passou a separar prefixo alfabético e corpo numérico
+somente quando existe um dígito explícito.
+
+Exemplo:
+
+~~~text
+u2~s
+↓
+prefixo = U
+corpo numérico = 2~s
+↓
+s em posição numérica → 5
+↓
+U2~5
+~~~
+
+Se não existe um dígito explícito confiável antes do separador, como RI~5, a
+normalização não inventa o número e mantém a releitura dirigida da célula.
+
+#### Value
+
+A normalização não trata apenas o primeiro número. Quando o campo possui duas
+comparações, os três operandos são analisados como números e somente eles
+recebem correções OCR.
+
+Mapeamentos numéricos atuais incluem:
+
+~~~text
+I / i / L / l / | → 1
+O / o / Q / q     → 0
+S / s / $         → 5
+Z / z             → 2
+G / g             → 6
+B / b             → 8
+~~~
+
+Caracteres sem significado numérico são descartados somente dentro do operando
+numérico. Assim:
+
+~~~text
+fo <= $4.872 <= 10 FALTANDO
+↓
+0 <= 54.872 <= 10 FALTANDO
+~~~
+
+O sufixo textual FALTANDO permanece intacto.
+
+Esses dois refinamentos estão implementados e aguardam nova validação
+operacional na AOI real.
