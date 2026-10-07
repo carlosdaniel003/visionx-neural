@@ -71,6 +71,27 @@ class ResponsiveInspectionSourceContractTests(unittest.TestCase):
         ):
             self.assertIn(declaration, source)
 
+    def test_main_stage_splitter_is_not_user_draggable(self):
+        source = (
+            ROOT / "src" / "ui" / "control_panel_ui.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("window.main_splitter.setHandleWidth(0)", source)
+        self.assertIn("splitter_handle.setEnabled(False)", source)
+        self.assertIn("window.images_section.setMinimumHeight(560)", source)
+        self.assertIn("window.main_splitter.setMinimumHeight(1000)", source)
+
+    def test_wide_image_section_uses_bounded_responsive_width(self):
+        source = (
+            ROOT / "src" / "ui" / "control_panel_ui.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "image_width = min(520, max(420, int(width * 0.28)))",
+            source,
+        )
+        self.assertIn("window.main_splitter.setMinimumHeight(560)", source)
+
     def test_controller_passes_original_pixmaps_to_responsive_views(self):
         source = (
             ROOT / "src" / "ui" / "control_panel.py"
