@@ -40,6 +40,7 @@ class _FakePanel(QWidget):
         self.brain_status = []
         self.network_status = []
         self.saved_labels = []
+        self.production_ready = []
         self.combo_mode = _FakeCombo()
         self.fused_analysis = {
             "is_defect": False,
@@ -71,6 +72,10 @@ class _FakePanel(QWidget):
     def finalize_adhesive_multilight_decision(self):
         self.finalize_calls += 1
         return dict(self.fused_analysis)
+
+    def notify_production_analysis_ready(self, analysis):
+        self.production_ready.append(dict(analysis))
+        return True
 
 
 class AdhesiveMultiLightAutomationTests(unittest.TestCase):
@@ -125,7 +130,7 @@ class AdhesiveMultiLightAutomationTests(unittest.TestCase):
             {"SIDE", "TOP", "MID"},
         )
 
-    def test_production_uses_fused_decision_not_deferred_side_decision(self):
+    def test_production_delivers_fused_result_to_autonomy_controller(self):
         self.panel.combo_mode.value = "Modo Produção"
         self.panel.adhesive_multilight_deferred_auto_decision = "OK"
         self.panel.fused_analysis = {
@@ -139,14 +144,19 @@ class AdhesiveMultiLightAutomationTests(unittest.TestCase):
 
         self.assertTrue(self.automation.frame_stored("TOP"))
         self._flush_events()
-        self.assertEqual(self.panel.saved_labels, [])
+        self.assertEqual(self.panel.production_ready, [])
 
         self.assertTrue(self.automation.frame_stored("MID"))
         self._flush_events()
         self._flush_events()
 
         self.assertEqual(self.panel.finalize_calls, 1)
-        self.assertEqual(self.panel.saved_labels, [("NG", "auto")])
+        self.assertEqual(self.panel.saved_labels, [])
+        self.assertEqual(len(self.panel.production_ready), 1)
+        self.assertEqual(
+            self.panel.production_ready[0]["verdict"],
+            "DEFEITO REAL",
+        )
         self.assertEqual(
             self.panel.adhesive_multilight_deferred_auto_decision,
             "",
@@ -169,6 +179,11 @@ class AdhesiveMultiLightAutomationTests(unittest.TestCase):
 
         self.assertEqual(self.panel.finalize_calls, 1)
         self.assertEqual(self.panel.saved_labels, [])
+        self.assertEqual(len(self.panel.production_ready), 1)
+        self.assertEqual(
+            self.panel.production_ready[0]["verdict"],
+            "REVISÃO OBRIGATÓRIA",
+        )
 
     def test_unexpected_frame_does_not_advance_state(self):
         self.assertTrue(self.automation.start())
@@ -237,20 +252,24 @@ class AdhesiveAutomationSourceContractTests(unittest.TestCase):
         self.assertIn("frame_stored(aux_mode)", source)
         self.assertIn("start_automation()", source)
 
-    def test_production_auto_decision_is_deferred_while_multilight_starts(self):
-        source = open(
-            "src/ui/adhesive_multilight_inspection.py",
+    def test_side_never_notifies_production_before_multilight_finishes(self):
+        inspection_source = open(
+            "src/ui/control_panel.py",
+            encoding="utf-8",
+        ).read()
+        automation_source = open(
+            "src/ui/adhesive_multilight_automation.py",
             encoding="utf-8",
         ).read()
 
-        self.assertIn("adhesive_multilight_pending_start", source)
+        self.assertIn("adhesive_multilight_pending_start", inspection_source)
         self.assertIn(
-            "adhesive_multilight_deferred_auto_decision",
-            source,
+            "notify_production_analysis_ready",
+            automation_source,
         )
         self.assertIn(
-            "Decisão automática pronta; aguardando fotos TOP/MID.",
-            source,
+            "finalize_adhesive_multilight_decision",
+            automation_source,
         )
 
     def test_finish_promotes_only_multilight_fusion_to_final_decision(self):
