@@ -48,8 +48,400 @@ Regras obrigatórias:
 - nenhuma mudança no `agente_industrial_xp.py` é necessária: os comandos
   LEFT/DOWN/RIGHT já existentes são reutilizados.
 
+### Implementação concluída — generalização do padrão de adesivo
+
+A implementação foi concluída na branch `central` usando como base o fluxo que
+já estava validado para `MUITO ADESIVO`. Em vez de criar um segundo mecanismo
+de aquisição, a máquina de estados existente foi reaproveitada e generalizada.
+
+O ciclo de uma peça recebida pela rede passa a ser:
+
+```text
+1. AOI envia a imagem SIDE
+2. ODIN valida a captura e identifica a categoria
+3. ODIN executa a análise completa da SIDE
+4. ODIN envia PRESS_LEFT ao XP
+5. AOI muda para TOP
+6. XP envia a imagem TOP da mesma peça
+7. ODIN executa a análise completa da TOP
+8. ODIN envia PRESS_RIGHT ao XP
+9. AOI muda para MID
+10. XP envia a imagem MID da mesma peça
+11. ODIN executa a análise completa da MID
+12. ODIN envia PRESS_DOWN ao XP
+13. AOI volta para SIDE
+14. ODIN funde SIDE + TOP + MID
+15. somente a fusão recebe autoridade de julgamento final
+```
+
+As três imagens compartilham obrigatoriamente:
+
+```text
+mesma peça
+mesmo event_id
+mesma categoria AOI
+mesmo ciclo operacional
+```
+
+TOP e MID são frames auxiliares do ciclo ativo. Eles **não podem** abrir uma nova
+peça, liberar o gate principal ou produzir uma decisão autônoma isolada.
+
+#### Análise por iluminação
+
+Cada iluminação usa o mesmo pipeline técnico da categoria:
+
+```text
+imagem
+  ↓
+detect_anomalies
+  ↓
+EpicenterExtractor
+  ↓
+MoEOrchestrator.inspect
+  ↓
+especialistas roteados pela categoria
+  ↓
+análise local SIDE / TOP / MID
+```
+
+Cada resultado local permanece disponível para auditoria, mas contém:
+
+```text
+eligible_for_final_decision = False
+```
+
+enquanto ainda for somente uma análise isolada.
+
+Somente o objeto produzido pela fusão das três iluminações recebe:
+
+```text
+lighting_mode = MULTILIGHT
+multilight_final = True
+eligible_for_final_decision = True
+```
+
+#### Política de fusão geral
+
+Foi criado:
+
+```text
+src/core/multilight_fusion.py
+```
+
+Esse módulo é responsável por decidir qual política de fusão deve ser utilizada
+sem misturar regras específicas entre categorias.
+
+Para categorias diferentes de `MUITO ADESIVO`:
+
+```text
+1 evidência local forte
+        → DEFEITO REAL
+
+2 ou mais iluminações positivas
+        → DEFEITO REAL
+
+1 única iluminação positiva moderada
+        → REVISÃO OBRIGATÓRIA
+
+nenhuma positiva, mas alguma análise pediu revisão
+        → REVISÃO OBRIGATÓRIA
+
+SIDE + TOP + MID sem defeito
+        → FALHA FALSA
+```
+
+A decisão final registra também:
+
+- iluminação dominante;
+- iluminações positivas;
+- iluminações com evidência forte;
+- iluminações que exigiram revisão;
+- score final;
+- score físico;
+- regra de fusão aplicada;
+- telemetria local das três análises.
+
+A memória/KNN continua pertencendo à análise individual de cada iluminação e não
+é transformada em uma memória compartilhada entre SIDE/TOP/MID.
+
+#### Exceção preservada — MUITO ADESIVO
+
+`MUITO ADESIVO` **não foi migrado para a política genérica**.
+
+A categoria continua delegando para:
+
+```text
+src/core/adhesive_multilight_fusion.py
+fuse_adhesive_multilight(...)
+```
+
+e mantém:
+
+- regras físicas já validadas para excesso de adesivo;
+- telemetria `adhesive_multilight_*`;
+- perfil MID `mid_bright_resin_v1`;
+- testemunha clara/creme da iluminação MID;
+- comportamento anteriormente validado em produção.
+
+`src/core/multilight_fusion.py` apenas detecta que a categoria é
+`MUITO ADESIVO` e delega a decisão para a fusão especializada.
+
+#### Interface multilight geral
+
+A visualização que antes era exclusiva de adesivo passou a ser utilizada durante
+qualquer ciclo multilight recebido da AOI.
+
+A tela apresenta, para a mesma peça:
+
+```text
+SIDE
+  - imagem recebida
+  - caixa maior
+  - epicentro
+
+TOP
+  - imagem recebida
+  - caixa maior
+  - epicentro
+
+MID
+  - imagem recebida
+  - caixa maior
+  - epicentro
+```
+
+O painel de especialistas também exibe as três análises em paralelo.
+
+Os textos visuais foram generalizados de `ADESIVO` para `MULTILIGHT`, sem
+remover os nomes internos legados `adhesive_multilight_*` quando eles são
+necessários para compatibilidade com módulos e testes antigos.
+
+Durante a coleta:
+
+```text
+MULTILIGHT • AGUARDANDO TOP/MID
+```
+
+é mostrado no lugar de um veredito prematuro da SIDE.
+
+#### Copiar debug
+
+`Copiar debug` passou a anexar ao relatório técnico, para qualquer categoria
+multilight:
+
+```text
+categoria
+event_id
+
+ILUMINAÇÃO SIDE
+  análise local completa
+
+ILUMINAÇÃO TOP
+  análise local completa
+
+ILUMINAÇÃO MID
+  análise local completa
+
+JULGAMENTO FINAL MULTILIGHT
+  veredito
+  score
+  score físico
+  regra de fusão
+  iluminação dominante
+  iluminações positivas
+  iluminações fortes
+  iluminações em revisão
+  papel da memória
+```
+
+O relatório só reutiliza uma sessão multilight quando o `event_id` coincide com
+o evento atual, impedindo que imagens ou análises da peça anterior apareçam no
+debug da peça seguinte.
+
+#### Copiar imagem
+
+`Copiar imagem` usa os três frames originais:
+
+```text
+SIDE | TOP | MID
+```
+
+em uma única imagem composta.
+
+Os frames não são redimensionados nem sobrepostos. O compositor apenas cria uma
+área comum e posiciona as três imagens lado a lado, preservando a evidência
+original de cada iluminação.
+
+Se SIDE/TOP/MID não pertencem ao mesmo `event_id` ou o conjunto não está
+completo, a composição multilight não é considerada válida.
+
+#### Arquivo visual OK/NG
+
+O resolvedor compartilhado:
+
+```text
+src/services/image_archive_candidates.py
+```
+
+também foi generalizado.
+
+Quando existe uma sessão multilight completa para o evento atual, um único
+julgamento OK ou NG pode persistir três arquivos independentes:
+
+```text
+<CATEGORIA>_SIDE
+<CATEGORIA>_TOP
+<CATEGORIA>_MID
+```
+
+Exemplo para `FALTANDO`:
+
+```text
+..._FALTANDO_SIDE.png
+..._FALTANDO_TOP.png
+..._FALTANDO_MID.png
+```
+
+Isso vale para:
+
+```text
+public/ng_archive/
+public/ok_archive/
+```
+
+A deduplicação visual por conteúdo continua ativa.
+
+Um conjunto multilight incompleto nunca é arquivado parcialmente como se fosse
+um conjunto completo. Nessa situação, o resolvedor retorna para a evidência
+monoimagem disponível do ciclo.
+
+#### Captura local MSS
+
+A generalização é aplicada ao fluxo que vem da AOI pela rede.
+
+A captura local MSS permanece:
+
+```text
+1 captura
+1 análise
+1 evidência
+```
+
+porque o MSS não possui a máquina de estados que solicita ao Windows XP/AOI a
+troca física entre SIDE, TOP e MID.
+
+Portanto não existe espera artificial por TOP/MID em uma captura local.
+
+#### Agente Windows XP
+
+Nenhuma alteração adicional foi necessária no agente XP.
+
+A implementação reutiliza os comandos já existentes:
+
+```text
+PRESS_LEFT  → TOP
+PRESS_DOWN  → SIDE
+PRESS_RIGHT → MID
+```
+
+e o modo auxiliar já usado pelo adesivo permite que TOP/MID atravessem o receptor
+sem abrirem um novo ciclo principal.
+
+#### Arquivos centrais envolvidos
+
+A generalização alterou ou passou a depender diretamente de:
+
+```text
+src/core/multilight_fusion.py
+src/core/adhesive_multilight_fusion.py
+src/core/adhesive_multilight_analysis.py
+
+src/ui/adhesive_multilight_automation.py
+src/ui/adhesive_multilight_inspection.py
+src/ui/adhesive_multilight_analysis.py
+src/ui/network_xp_debug.py
+src/ui/control_panel.py
+src/ui/control_panel_ui.py
+
+src/services/image_archive_candidates.py
+src/services/ng_image_archive.py
+src/services/ok_image_archive.py
+```
+
+Os nomes `adhesive_multilight_*` foram mantidos onde necessário para evitar uma
+renomeação transversal de alto risco. O comportamento, porém, passou a ser geral.
+
+#### Testes e validação
+
+Foi criado o workflow:
+
+```text
+.github/workflows/multilight-generalization-tests.yml
+```
+
+e o teste dedicado:
+
+```text
+tests/test_multilight_generalization.py
+```
+
+A suíte específica valida:
+
+- máquina SIDE → TOP → MID → SIDE;
+- TOP/MID como frames auxiliares;
+- uma única decisão final;
+- fusão geral para categoria não adesiva;
+- defeito forte em uma iluminação;
+- defeito corroborado por duas iluminações;
+- revisão para evidência isolada moderada;
+- FALHA FALSA quando as três iluminações estão limpas;
+- preservação da política especializada de `MUITO ADESIVO`;
+- três imagens independentes no arquivo visual;
+- bloqueio de conjunto multilight incompleto;
+- debug com SIDE/TOP/MID;
+- composição de `Copiar imagem`.
+
+Resultado da validação específica em 07/10/2026:
+
+```text
+General Multilight Tests
+43 testes executados
+resultado: SUCCESS
+```
+
+O workflow amplo `Network XP Debug Tests` possui contratos antigos que já
+estavam incompatíveis com mudanças anteriores do projeto — principalmente UI
+responsiva, gate de imagens, arquivo OK, Produção e uma expectativa antiga de
+`FALTANDO`. Essas falhas foram separadas da validação desta implementação para
+não confundir regressões preexistentes com a generalização multilight.
+
+### Estado final desta atualização
+
+```text
+ADESIVO
+  → continua multilight especializado
+
+FALTANDO
+DESLOCADO
+EMBORCADO
+INVERTIDO
+e demais categorias AOI válidas
+  → passam a usar multilight geral
+
+SIDE/TOP/MID
+  → mesma peça
+  → mesmo event_id
+  → três análises independentes
+  → uma fusão final
+  → um único julgamento
+```
+
+A partir desta atualização, o padrão arquitetural do ODIN para imagens recebidas
+da AOI é **multilight por padrão**, e não mais uma exceção exclusiva de adesivo.
+
 
 **Módulos Existentes:**
+- `src/core/multilight_fusion.py`: Fusão final SIDE/TOP/MID para categorias AOI gerais, delegando `MUITO ADESIVO` à política especializada existente.
 - `src/config/settings.py`: Centralização de todas as variáveis de ambiente, caminhos e constantes mágicas.
 - `src/services/ng_image_archive.py`: Arquivo visual opcional de decisões finais NG em fila de background, independente do dataset e da memória KNN.
 - `src/services/ok_image_archive.py`: Arquivo visual opcional de decisões humanas OK em fila de background, usando a mesma evidência de `Copiar imagem`.
