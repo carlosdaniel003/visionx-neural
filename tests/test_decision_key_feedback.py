@@ -114,6 +114,27 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
         self.assertIn("#ff6262", source)
         self.assertIn("_bottom_right_position", source)
 
+    def test_production_auto_feedback_identifies_automatic_origin(self):
+        panel = self._panel()
+
+        shown = panel.show_decision_key_feedback(
+            "OK",
+            source="production_auto",
+        )
+
+        overlay = panel.decision_key_feedback
+        self.assertTrue(shown)
+        self.assertEqual(
+            overlay.header_label.text(),
+            "TECLA ENVIADA AUTOMATICAMENTE",
+        )
+        self.assertEqual(overlay.digit_label.text(), "0")
+        self.assertEqual(overlay.decision_label.text(), "OK")
+        self.assertEqual(
+            overlay.source_label.text(),
+            "ODIN • MODO PRODUÇÃO",
+        )
+
     def test_ng_feedback_is_red_one(self):
         panel = self._panel()
 
