@@ -15,6 +15,7 @@ from src.ui.adhesive_multilight_inspection import (
     build_adhesive_view_payload,
     category_from_aoi_info,
     is_adhesive_category,
+    is_multilight_category,
 )
 from src.utils.text_normalizer import normalize_aoi_text
 
@@ -48,6 +49,13 @@ class AdhesiveCategoryTests(unittest.TestCase):
             category_from_aoi_info({"value": "ADESIVO"}),
             "MUITO ADESIVO",
         )
+
+    def test_every_known_aoi_category_is_multilight_eligible(self):
+        self.assertTrue(is_multilight_category({"value": "MISSING"}))
+        self.assertTrue(is_multilight_category({"category": "INVERTIDO"}))
+        self.assertTrue(is_multilight_category({"category": "DESLOCADO"}))
+        self.assertTrue(is_multilight_category({"value": "ADESIVO"}))
+        self.assertFalse(is_multilight_category({"category": "Unknown"}))
 
 
 class AdhesivePayloadTests(unittest.TestCase):
