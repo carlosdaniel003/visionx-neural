@@ -960,7 +960,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             source_frame=side_source,
         )
 
-        analysis_view = getattr
+        analysis_view = getattr(
             self,
             "adhesive_multilight_analysis_view",
             None,
