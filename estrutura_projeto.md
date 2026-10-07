@@ -3624,7 +3624,7 @@ autônomas ou julgamento automático adicional.
 
 ### Objetivo
 
-Status: **implementação concluída na branch `central`; aguardando validação operacional na AOI real.**
+Status: **implementação concluída e validada operacionalmente na AOI real em 07/10/2026.**
 
 O ODIN poderá julgar peças automaticamente, mas o processo deve continuar
 visível para o operador. A prioridade desta fase não é velocidade; é permitir
@@ -3960,6 +3960,39 @@ julgamento manual, possibilidade de substituir/descartar capturas, limpeza do
 dataset e controles já existentes.
 
 O **Modo Sombra também mantém o contrato anterior**.
+
+### Validação operacional em 07/10/2026
+
+O operador executou o novo **Modo Produção autônomo v1** em uso real e confirmou
+que o fluxo funcionou corretamente.
+
+Foram validados operacionalmente:
+
+- análise completa antes do julgamento automático;
+- renderização do resultado antes da tomada de decisão;
+- scroll automático da interface até a parte inferior;
+- envio automático de `0 = OK` para `FALHA FALSA`;
+- bloqueio de decisão automática para `DEFEITO REAL/NG`;
+- bloqueio de decisão automática para `REVISÃO OBRIGATÓRIA`;
+- decisão manual pelo operador quando há intervenção;
+- retomada automática do fluxo na peça seguinte, sem botão extra;
+- pausa do processo automático com a barra de espaço;
+- retomada do mesmo estágio ao pressionar espaço novamente;
+- atualização visual do estado `PRODUÇÃO PAUSADA`;
+- contador `OK AUTO / NG AUTO / MANUAL / ANÁLISES`;
+- cálculo da precisão autônoma com penalização de julgamentos manuais;
+- atualização da média do tempo de análise;
+- tooltip dinâmico com fórmula da precisão e contrato temporal;
+- card da sessão visível somente enquanto existe peça ativa;
+- preservação do comportamento existente do **Modo Teste**.
+
+Com essa confirmação, pausa/retomada, métricas da sessão e política conservadora
+de intervenção passam a ser consideradas **validadas operacionalmente** para a
+versão atual.
+
+A validação operacional não libera `NG AUTO`. Nesta fase, qualquer
+`DEFEITO REAL/NG` ou `REVISÃO OBRIGATÓRIA` continua exigindo julgamento
+humano e conta como intervenção manual na precisão da sessão.
 
 ### Aprendizado e persistência
 
