@@ -1,7 +1,7 @@
 """Arquivo opcional de evidências visuais NG.
 
-Para categorias normais, salva o frame completo XP do evento atual. Para
-adesivo multilight, salva separadamente SIDE/TOP/MID da mesma peça. A fila
+Para um ciclo monoimagem, salva o frame completo XP do evento atual. Para
+qualquer ciclo multilight completo, salva separadamente SIDE/TOP/MID da mesma peça. A fila
 elimina imagens pixel a pixel repetidas já existentes no arquivo.
 Este arquivo é independente do dataset/KNN.
 """
@@ -218,7 +218,7 @@ def install_ng_image_archive(control_panel_cls) -> None:
         archive_images = []
         if should_archive:
             # Para categoria comum, usa exatamente o frame XP atual. Para
-            # adesivo, resolve SIDE/TOP/MID do mesmo event_id.
+            # multilight, resolve SIDE/TOP/MID do mesmo event_id.
             primary_image = network_xp_frame_snapshot(self)
             archive_images = archive_image_candidates(
                 self,
