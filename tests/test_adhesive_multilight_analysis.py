@@ -71,6 +71,43 @@ class AdhesiveMultiLightAnalysisViewTests(unittest.TestCase):
                 lane.status_label.text(),
             )
 
+    def test_adhesive_has_one_master_horizontal_scroll(self):
+        view = AdhesiveMultiLightAnalysisView()
+        view.resize(720, 1100)
+        view.show()
+        self.app.processEvents()
+
+        analysis = {
+            "active_engines": [
+                "ssim_expert.py",
+                "silk_expert.py",
+                "semantic_expert.py",
+                "shift_expert.py",
+            ],
+            "detail": {},
+        }
+        for mode in ("SIDE", "TOP", "MID"):
+            self.assertTrue(view.set_analysis(mode, analysis))
+
+        self.app.processEvents()
+        view._sync_master_scroll_range()
+
+        self.assertEqual(
+            view.horizontal_scroll.objectName(),
+            "adhesiveExpertHorizontalScroll",
+        )
+        self.assertGreater(view.horizontal_scroll.maximum(), 0)
+        self.assertTrue(view.horizontal_scroll.isEnabled())
+        self.assertEqual(view.horizontal_scroll_bars(), [view.horizontal_scroll])
+
+        # As barras internas existem para o QScrollArea, mas ficam ocultas:
+        # o operador usa uma única barra mestre para as três iluminações.
+        for lane in view.lanes.values():
+            self.assertTrue(
+                lane.scroll.horizontalScrollBar().isHidden()
+                or not lane.scroll.horizontalScrollBar().isVisible()
+            )
+
     def test_each_lane_has_same_specialist_structure(self):
         view = AdhesiveMultiLightAnalysisView()
 
