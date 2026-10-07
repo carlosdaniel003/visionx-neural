@@ -43,11 +43,12 @@ def _lighting_key(value: str) -> str:
 
 def _record_scope(record: dict) -> tuple[str, str, str, str, str]:
     signature = record.get("anomaly_signature") or {}
-    scale = (
-        "dual"
-        if valid_context_signature(signature.get("context_signature", {}))
-        else "legacy"
-    )
+    if valid_context_signature(signature.get("full_frame_signature", {})):
+        scale = "full_frame"
+    elif valid_context_signature(signature.get("context_signature", {})):
+        scale = "dual"
+    else:
+        scale = "legacy"
     return (
         canonical_memory_category(record.get("category", "")),
         _clean_key(record.get("board", "")),
@@ -167,6 +168,14 @@ def _ok_merge_eligible(
     similarity, breakdown = _compare(comparator, first, second)
     first_dual = valid_context_signature(first.get("context_signature", {}))
     second_dual = valid_context_signature(second.get("context_signature", {}))
+    first_full = valid_context_signature(first.get("full_frame_signature", {}))
+    second_full = valid_context_signature(second.get("full_frame_signature", {}))
+
+    # Não deixa um protótipo antigo sem quadro completo absorver uma memória
+    # nova mais rica. Ambos continuam comparáveis no KNN, mas não são
+    # compactados persistentemente entre gerações diferentes.
+    if first_full != second_full:
+        return False, similarity, breakdown
 
     # A terceira escala envolve o breakdown dual-scale dentro de "previous".
     # Os limiares de compactação continuam avaliando epicentro + contexto.
