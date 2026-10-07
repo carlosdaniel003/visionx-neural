@@ -12,7 +12,10 @@ class LayoutProfile:
     section_spacing: int
     info_columns: int
     footer_columns: int
+    controls_columns: int
+    light_columns: int
     action_columns: int
+    debug_action_columns: int
     splitter_vertical: bool
     image_min_height: int
     debugger_min_width: int
@@ -28,7 +31,10 @@ def profile_for_width(width: int) -> LayoutProfile:
             section_spacing=8,
             info_columns=2,
             footer_columns=1,
+            controls_columns=1,
+            light_columns=3,
             action_columns=2,
+            debug_action_columns=1,
             splitter_vertical=True,
             image_min_height=105,
             debugger_min_width=280,
@@ -42,7 +48,10 @@ def profile_for_width(width: int) -> LayoutProfile:
             section_spacing=10,
             info_columns=3,
             footer_columns=2,
+            controls_columns=2,
+            light_columns=3,
             action_columns=4,
+            debug_action_columns=2,
             splitter_vertical=False,
             image_min_height=120,
             debugger_min_width=380,
@@ -55,7 +64,10 @@ def profile_for_width(width: int) -> LayoutProfile:
         section_spacing=12,
         info_columns=5,
         footer_columns=3,
+        controls_columns=2,
+        light_columns=3,
         action_columns=4,
+        debug_action_columns=2,
         splitter_vertical=False,
         image_min_height=145,
         debugger_min_width=480,
