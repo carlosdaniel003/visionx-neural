@@ -43,6 +43,11 @@ def canonical_memory_category(value: str) -> str:
     return CATEGORY_ALIASES.get(compact, compact)
 
 
+def canonical_memory_lighting(value: str) -> str:
+    normalized = str(value or "").strip().upper()
+    return normalized if normalized in {"SIDE", "TOP", "MID"} else "SIDE"
+
+
 def install_strict_category_memory(knn_expert_cls) -> None:
     if getattr(knn_expert_cls, "_strict_category_memory_installed", False):
         return
@@ -59,6 +64,9 @@ def install_strict_category_memory(knn_expert_cls) -> None:
     ):
         info = aoi_info if isinstance(aoi_info, dict) else {}
         target_category = canonical_memory_category(info.get("category", ""))
+        target_lighting = canonical_memory_lighting(
+            info.get("lighting_mode", "")
+        )
 
         if not target_category or not valid_anomaly_signature(anomaly_signature):
             result = self._empty_result(
@@ -72,6 +80,7 @@ def install_strict_category_memory(knn_expert_cls) -> None:
                 {
                     "memory_scope": "categoria",
                     "memory_category": target_category,
+                    "memory_lighting": target_lighting,
                     "memory_candidate_count": 0,
                     "memory_filter_strict": True,
                     "memory_mode": "anomaly",
@@ -99,6 +108,10 @@ def install_strict_category_memory(knn_expert_cls) -> None:
             if record.get("mode") == "anomaly"
             and canonical_memory_category(record.get("category", ""))
             == target_category
+            and canonical_memory_lighting(
+                record.get("lighting_mode", "")
+            )
+            == target_lighting
         ]
         all_ng = [
             record
@@ -106,6 +119,10 @@ def install_strict_category_memory(knn_expert_cls) -> None:
             if record.get("mode") == "anomaly"
             and canonical_memory_category(record.get("category", ""))
             == target_category
+            and canonical_memory_lighting(
+                record.get("lighting_mode", "")
+            )
+            == target_lighting
         ]
         candidate_count = len(all_ok) + len(all_ng)
 
@@ -121,7 +138,8 @@ def install_strict_category_memory(knn_expert_cls) -> None:
                     "memory_filter_strict": True,
                     "memory_mode": "anomaly",
                     "memory_reason": (
-                        f"Nenhum JSON de anomalia da categoria {target_category}"
+                        f"Nenhum JSON de anomalia da categoria {target_category} "
+                        f"na iluminação {target_lighting}"
                     ),
                 }
             )
@@ -137,11 +155,12 @@ def install_strict_category_memory(knn_expert_cls) -> None:
         result.update(
             {
                 "memory_category": target_category,
+                "memory_lighting": target_lighting,
                 "memory_candidate_count": candidate_count,
                 "memory_filter_strict": True,
                 "memory_reason": (
                     f"Consulta restrita a {candidate_count} JSON(s) de "
-                    f"{target_category}"
+                    f"{target_category} em {target_lighting}"
                 ),
             }
         )
@@ -153,5 +172,6 @@ def install_strict_category_memory(knn_expert_cls) -> None:
 
 __all__ = [
     "canonical_memory_category",
+    "canonical_memory_lighting",
     "install_strict_category_memory",
 ]
