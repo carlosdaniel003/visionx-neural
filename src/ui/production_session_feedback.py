@@ -1,13 +1,22 @@
-"""Overlays do Modo Produção: desempenho da sessão e intervenção humana.
+"""Overlays do Modo Produção: desempenho diário e intervenção humana.
 
-Camada visual. Não classifica, não envia comandos e não altera a análise.
+As métricas do card de Produção persistem durante todo o dia operacional,
+mesmo se o ODIN for fechado, o modo for alterado ou o código for atualizado.
+A persistência fica fora do repositório e só inicia uma nova sessão quando a
+data local do computador muda.
 """
 
 from __future__ import annotations
 
+from datetime import date
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout
 
+from src.services.production_daily_session_store import (
+    ProductionDailySessionStore,
+    normalize_metrics,
+)
 from src.ui.theme import ACCENT, DANGER, SUCCESS, SURFACE
 
 
@@ -105,11 +114,17 @@ QLabel#productionInterventionHint {{
 
 
 class ProductionSessionFeedbackOverlay(QFrame):
-    """Métricas persistentes da sessão, visíveis apenas com peça ativa."""
+    """Métricas diárias persistentes, visíveis somente com peça ativa."""
 
-    def __init__(self, panel):
+    def __init__(
+        self,
+        panel,
+        daily_store: ProductionDailySessionStore | None = None,
+    ):
         super().__init__(panel)
         self.panel = panel
+        self.daily_store = daily_store or ProductionDailySessionStore()
+
         self.auto_ok = 0
         self.auto_ng = 0
         self.manual_judgments = 0
@@ -117,6 +132,10 @@ class ProductionSessionFeedbackOverlay(QFrame):
         self.analysis_time_total = 0.0
         self.analysis_time_count = 0
         self.paused = False
+
+        self._session_date = ""
+        self._storage_path = ""
+        self._last_persist_error = ""
 
         self.setObjectName("productionSessionFeedback")
         self.setFixedSize(SESSION_WIDTH, SESSION_HEIGHT)
@@ -131,7 +150,7 @@ class ProductionSessionFeedbackOverlay(QFrame):
         layout.setContentsMargins(15, 11, 15, 11)
         layout.setSpacing(3)
 
-        self.header_label = QLabel("MODO PRODUÇÃO • SESSÃO")
+        self.header_label = QLabel("MODO PRODUÇÃO • DIA")
         self.header_label.setObjectName("productionSessionHeader")
         self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -170,7 +189,7 @@ class ProductionSessionFeedbackOverlay(QFrame):
         ):
             layout.addWidget(widget)
 
-        self._refresh()
+        self.restore_daily_session()
         self.hide()
 
     @property
@@ -194,13 +213,73 @@ class ProductionSessionFeedbackOverlay(QFrame):
             return None
         return self.analysis_time_total / float(self.analysis_time_count)
 
+    @staticmethod
+    def _display_date(value: str) -> str:
+        try:
+            parsed = date.fromisoformat(str(value))
+            return parsed.strftime("%d/%m/%Y")
+        except (TypeError, ValueError):
+            return str(value or "-")
+
+    def _metrics_payload(self) -> dict:
+        return {
+            "auto_ok": self.auto_ok,
+            "auto_ng": self.auto_ng,
+            "manual_judgments": self.manual_judgments,
+            "analysis_count": self.analysis_count,
+            "analysis_time_total": self.analysis_time_total,
+            "analysis_time_count": self.analysis_time_count,
+            "accuracy_percent": self.accuracy_percent,
+            "average_analysis_time_seconds": self.average_analysis_time,
+        }
+
+    def _apply_metrics(self, metrics: dict | None) -> None:
+        data = normalize_metrics(metrics)
+        self.auto_ok = int(data["auto_ok"])
+        self.auto_ng = int(data["auto_ng"])
+        self.manual_judgments = int(data["manual_judgments"])
+        self.analysis_count = int(data["analysis_count"])
+        self.analysis_time_total = float(data["analysis_time_total"])
+        self.analysis_time_count = int(data["analysis_time_count"])
+
     def _position(self) -> None:
         x = SESSION_MARGIN
         max_y = max(0, self.panel.height() - self.height())
         y = min(SESSION_TOP_OFFSET, max_y)
         self.move(x, y)
 
+    def _ensure_current_day(self) -> None:
+        current_day = self.daily_store.today_key()
+        if current_day != self._session_date:
+            self.restore_daily_session()
+
+    def restore_daily_session(self) -> None:
+        """Restaura o arquivo de hoje sem zerar ao trocar de modo."""
+        state = self.daily_store.load_today()
+        self._session_date = str(state.get("date", "") or "")
+        self._storage_path = str(state.get("path", "") or "")
+        self._apply_metrics(state.get("metrics"))
+        self._last_persist_error = ""
+        self._refresh()
+
+    def _persist(self) -> bool:
+        """Grava atomicamente depois de cada alteração de métrica."""
+        try:
+            path = self.daily_store.save_today(self._metrics_payload())
+            self._session_date = self.daily_store.today_key()
+            self._storage_path = str(path)
+            self._last_persist_error = ""
+            return True
+        except OSError as exc:
+            # Persistência nunca pode interromper a inspeção produtiva.
+            self._last_persist_error = str(exc)
+            return False
+
     def _refresh(self) -> None:
+        display_day = self._display_date(self._session_date)
+        self.header_label.setText(
+            f"MODO PRODUÇÃO • DIA {display_day}"
+        )
         self.state_label.setText(
             "AUTOMAÇÃO PAUSADA • ESPAÇO PARA CONTINUAR"
             if self.paused
@@ -220,8 +299,17 @@ class ProductionSessionFeedbackOverlay(QFrame):
         average_text = "—" if average is None else f"{average:.2f} s"
         self.time_label.setText(f"MÉDIA ANÁLISE     {average_text}")
 
+        persistence_line = (
+            f"Dados diários persistidos em: {self._storage_path}"
+            if not self._last_persist_error
+            else (
+                "ATENÇÃO: a última gravação da sessão diária falhou: "
+                f"{self._last_persist_error}"
+            )
+        )
+
         tooltip = (
-            "Desempenho da sessão atual do Modo Produção.\n\n"
+            f"Desempenho diário do Modo Produção • {display_day}.\n\n"
             f"Análises finalizadas: {self.analysis_count}\n"
             f"Julgamentos automáticos: {self.automatic_judgments}\n"
             f"Julgamentos manuais: {self.manual_judgments}\n"
@@ -229,11 +317,15 @@ class ProductionSessionFeedbackOverlay(QFrame):
             f"Tempo médio de análise: {average_text}\n\n"
             "Precisão = julgamentos automáticos / julgamentos concluídos. "
             "Toda análise que exige decisão humana é contabilizada como falha "
-            "da autonomia nesta sessão.\n\n"
+            "da autonomia no dia.\n\n"
             "O tempo médio usa o mesmo tempo exibido em 'Tempo de análise': "
             "do recebimento/captura da imagem até o resultado final "
             "FALHA FALSA, DEFEITO REAL ou REVISÃO OBRIGATÓRIA estar renderizado. "
-            "Scroll, pausas e tempo de decisão do operador não entram na média."
+            "Scroll, pausas e tempo de decisão do operador não entram na média.\n\n"
+            "Os números permanecem durante todo o mesmo dia, inclusive após "
+            "fechar o ODIN, trocar de modo ou atualizar o código. "
+            "Uma nova sessão começa somente quando a data local muda.\n"
+            f"{persistence_line}"
         )
         self.setToolTip(tooltip)
         for child in (
@@ -247,18 +339,8 @@ class ProductionSessionFeedbackOverlay(QFrame):
         ):
             child.setToolTip(tooltip)
 
-    def reset_session(self) -> None:
-        self.auto_ok = 0
-        self.auto_ng = 0
-        self.manual_judgments = 0
-        self.analysis_count = 0
-        self.analysis_time_total = 0.0
-        self.analysis_time_count = 0
-        self.paused = False
-        self._refresh()
-        self.hide()
-
     def record_analysis(self, elapsed_seconds: float) -> None:
+        self._ensure_current_day()
         self.analysis_count += 1
         try:
             elapsed = float(elapsed_seconds)
@@ -267,9 +349,11 @@ class ProductionSessionFeedbackOverlay(QFrame):
         if elapsed > 0.0:
             self.analysis_time_total += elapsed
             self.analysis_time_count += 1
+        self._persist()
         self._refresh()
 
     def record_automatic(self, decision: str) -> None:
+        self._ensure_current_day()
         normalized = str(decision or "").strip().upper()
         if normalized == "OK":
             self.auto_ok += 1
@@ -277,20 +361,25 @@ class ProductionSessionFeedbackOverlay(QFrame):
             self.auto_ng += 1
         else:
             return
+        self._persist()
         self._refresh()
 
     def record_manual(self, decision: str) -> None:
+        self._ensure_current_day()
         normalized = str(decision or "").strip().upper()
         if normalized not in {"OK", "NG"}:
             return
         self.manual_judgments += 1
+        self._persist()
         self._refresh()
 
     def set_paused(self, paused: bool) -> None:
+        # Pausa é estado operacional transitório; as métricas diárias persistem.
         self.paused = bool(paused)
         self._refresh()
 
     def show_active(self) -> None:
+        self._ensure_current_day()
         self._position()
         self.raise_()
         self.show()
@@ -371,7 +460,9 @@ def install_production_session_feedback(panel) -> None:
 
     panel.production_session_feedback = session
     panel.production_intervention_feedback = intervention
-    panel.reset_production_session_feedback = session.reset_session
+    panel.restore_production_daily_session_feedback = (
+        session.restore_daily_session
+    )
     panel.show_production_session_feedback = session.show_active
     panel.hide_production_session_feedback = session.hide_active
     panel.record_production_analysis_feedback = session.record_analysis
