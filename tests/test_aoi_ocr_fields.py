@@ -54,6 +54,19 @@ class AOIOCRFieldNormalizationTests(unittest.TestCase):
             "10 <= 2 <= 80 FALTANDO",
         )
 
+    def test_value_recovers_decimal_case_from_real_aoi(self):
+        self.assertEqual(
+            normalize_value_ocr("fo <= $4.872 <= 10 FALTANDO"),
+            "0 <= 54.872 <= 10 FALTANDO",
+        )
+
+    def test_parts_recovers_u2_range_from_contextual_numeric_suffix(self):
+        self.assertEqual(
+            normalize_parts_ocr("u2~s"),
+            "U2~5",
+        )
+        self.assertTrue(looks_like_component_reference("U2~5"))
+
     def test_value_does_not_replace_letters_outside_numeric_prefix(self):
         self.assertEqual(
             normalize_value_ocr("FALTANDO"),
