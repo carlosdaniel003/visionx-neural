@@ -306,6 +306,7 @@ class ProductionAutonomyController(QObject):
             return
 
         self.state = "emitting_auto_ok"
+        self.panel.last_decision_command_success = None
         try:
             result = self.panel.save_label(
                 "OK",
@@ -327,7 +328,7 @@ class ProductionAutonomyController(QObject):
             "last_decision_command_success",
             None,
         )
-        if result is False or command_success is False:
+        if result is False or command_success is not True:
             self.state = "operator_review"
             # Se o envio falhou, a análise original continua sendo FALHA FALSA,
             # mas operacionalmente a peça precisa de intervenção humana.
