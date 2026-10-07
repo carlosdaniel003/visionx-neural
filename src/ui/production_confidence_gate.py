@@ -114,7 +114,8 @@ def _record_policy(panel, policy: dict, resolution: str = "pending") -> None:
             "resolution": str(resolution),
         }
         analysis["production_review_required"] = bool(
-            policy.get("operator_review_required", False)
+            str(policy.get("verdict", "") or "").strip().upper()
+            == "REVISÃO OBRIGATÓRIA"
             and resolution == "pending"
         )
 
