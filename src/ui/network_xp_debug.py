@@ -188,6 +188,8 @@ def format_network_debug_report(record: dict | None) -> str:
                 f"Dual-scale hard absence: {missing.get('missing_context_hard_absence', '-')}",
                 f"Dual-scale motivo: {missing.get('missing_context_hard_reason', '-')}",
                 f"Dual-scale suporte físico: {missing.get('missing_context_physical_support', '-')}",
+                f"FALTANDO footprint dedicado: {missing.get('missing_dedicated_footprint_absence', '-')}",
+                f"FALTANDO footprint motivo: {missing.get('missing_dedicated_footprint_reason', '-')}",
                 f"INVERTIDO ativo: {inverted.get('inverted_active', '-')}",
                 f"INVERTIDO defeito bruto: {inverted.get('inverted_is_defect', '-')}",
                 f"INVERTIDO score: {inverted.get('inverted_score', '-')}",
