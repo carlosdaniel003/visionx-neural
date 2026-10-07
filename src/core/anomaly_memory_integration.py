@@ -114,6 +114,19 @@ def _hard_missing_invariant_presence_ok_witness(
         return False
     if not isinstance(missing_result, dict):
         return False
+
+    # A rota dedicada de footprint existe exatamente para o caso em que pads,
+    # cobre e massa escura global permanecem semelhantes apesar de o corpo do
+    # componente ter desaparecido. Nessa situação a presença invariável não
+    # pode voltar a entregar autoridade ao KNN.
+    if bool(
+        missing_result.get(
+            "missing_dedicated_footprint_absence",
+            False,
+        )
+    ):
+        return False
+
     if not bool(
         missing_result.get(
             "missing_global_envelope_invariant_support",
