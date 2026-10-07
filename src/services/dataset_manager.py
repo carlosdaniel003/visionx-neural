@@ -48,9 +48,14 @@ class DatasetManager:
         ).strip()
         return category or "Unknown"
 
+    @staticmethod
+    def _lighting_key(value: str) -> str:
+        normalized = str(value or "").strip().upper()
+        return normalized if normalized in {"SIDE", "TOP", "MID"} else "SIDE"
+
     @classmethod
     def _fingerprint_index(cls, target_folder: Path) -> dict[str, str]:
-        """Indexa memórias existentes, incluindo PNGs legados sem fingerprint."""
+        """Indexa memórias por iluminação + conteúdo visual exato."""
         key = str(Path(target_folder).resolve())
         with cls._fingerprint_lock:
             cached = cls._folder_fingerprint_cache.get(key)
@@ -69,8 +74,15 @@ class DatasetManager:
                     fingerprint = str(
                         storage.get("test_image_fingerprint", "") or ""
                     ).strip()
+                    info = data.get("aoi_info", {}) or {}
+                    lighting = cls._lighting_key(
+                        info.get("lighting_mode", "")
+                    )
                     if fingerprint:
-                        index.setdefault(fingerprint, str(json_path))
+                        index.setdefault(
+                            f"{lighting}:{fingerprint}",
+                            str(json_path),
+                        )
                 except Exception:
                     continue
 
@@ -87,8 +99,26 @@ class DatasetManager:
                         continue
                     base_name = image_path.name[:-9]
                     json_path = image_path.with_name(f"{base_name}.json")
-                    index[fingerprint] = (
-                        str(json_path) if json_path.exists() else ""
+                    lighting = "SIDE"
+                    if json_path.exists():
+                        try:
+                            with open(
+                                json_path,
+                                "r",
+                                encoding="utf-8",
+                            ) as file:
+                                legacy_data = json.load(file)
+                            lighting = cls._lighting_key(
+                                (legacy_data.get("aoi_info", {}) or {}).get(
+                                    "lighting_mode",
+                                    "",
+                                )
+                            )
+                        except Exception:
+                            lighting = "SIDE"
+                    index.setdefault(
+                        f"{lighting}:{fingerprint}",
+                        str(json_path) if json_path.exists() else "",
                     )
                 except Exception:
                     continue
@@ -102,12 +132,14 @@ class DatasetManager:
         target_folder: Path,
         fingerprint: str,
         json_path: Path,
+        lighting_mode: str = "",
     ) -> None:
         if not fingerprint:
             return
         index = cls._fingerprint_index(target_folder)
+        lighting = cls._lighting_key(lighting_mode)
         with cls._fingerprint_lock:
-            index[fingerprint] = str(json_path)
+            index[f"{lighting}:{fingerprint}"] = str(json_path)
 
     @staticmethod
     def _upgrade_duplicate_record(
@@ -245,9 +277,13 @@ class DatasetManager:
 
         fingerprint = image_fingerprint(ng_image)
         if fingerprint:
+            fingerprint_key = (
+                f"{DatasetManager._lighting_key(normalized_lighting)}:"
+                f"{fingerprint}"
+            )
             existing = DatasetManager._fingerprint_index(
                 target_folder
-            ).get(fingerprint)
+            ).get(fingerprint_key)
             if existing is not None:
                 return DatasetManager._upgrade_duplicate_record(
                     existing,
@@ -595,5 +631,6 @@ class DatasetManager:
             target_folder,
             fingerprint,
             filepath_json,
+            normalized_lighting,
         )
         return str(filepath_json)
