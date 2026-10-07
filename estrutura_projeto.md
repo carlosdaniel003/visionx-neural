@@ -3712,29 +3712,49 @@ Depois que o operador decidir `0` ou `1`, o ciclo é encerrado normalmente e
 a autonomia fica automaticamente habilitada novamente para a **próxima peça**.
 Não deve existir uma etapa manual extra de "retomar automação".
 
-### Contador da sessão de Produção
+### Métricas da sessão de Produção
 
-O Modo Produção deve possuir um overlay/card visível durante a sessão com, no
-mínimo:
+A sessão é zerada ao entrar em `Modo Produção`, mas o card permanece oculto
+enquanto não existe uma peça ativa. Ele aparece quando uma imagem entra no ciclo
+de análise e desaparece novamente depois que essa peça é julgada.
+
+Conteúdo atual:
 
 ```text
 MODO PRODUÇÃO • SESSÃO
+AUTOMAÇÃO ATIVA / PAUSADA
 
-OK AUTO   N
-NG AUTO   N
+OK AUTO        N
+NG AUTO        N
+MANUAL         N   •   ANÁLISES N
+PRECISÃO       N%
+MÉDIA ANÁLISE  N.NN s
 ```
 
 Regras:
 
 - `OK AUTO` incrementa somente quando o ODIN realmente envia `0`
   automaticamente;
-- `NG AUTO` conta somente decisões `1` enviadas automaticamente pelo ODIN;
-- nesta primeira fase, `NG AUTO` deve permanecer em zero porque NG não será
-  automatizado;
-- decisões humanas, mesmo realizadas enquanto o Modo Produção está ativo, não
-  incrementam os contadores automáticos;
-- os contadores pertencem à sessão atual do Modo Produção;
-- sair do Modo Produção e entrar novamente inicia uma nova sessão em zero.
+- `NG AUTO` existe para manter o contrato futuro, mas permanece em zero nesta
+  fase porque NG não é automatizado;
+- `MANUAL` incrementa quando uma peça que exigiu intervenção é finalmente
+  julgada pelo operador, seja pelo XP ou pelo ODIN;
+- uma decisão manual representa falha da autonomia para a métrica desta sessão;
+- a precisão exibida é
+  `julgamentos automáticos / julgamentos concluídos × 100`;
+- portanto, 100 julgamentos concluídos com 98 automáticos e 2 manuais resultam
+  em `98,0%`;
+- `ANÁLISES` conta resultados finais renderizados;
+- a média usa `last_analysis_time_seconds` de cada resultado final;
+- para categoria comum, o tempo termina quando
+  `FALHA FALSA/DEFEITO REAL/REVISÃO OBRIGATÓRIA` está renderizado;
+- para adesivo, termina somente quando SIDE/TOP/MID e a fusão final estão
+  concluídos e renderizados;
+- scroll, espera de apresentação, pausa pela barra de espaço e tempo de decisão
+  humana **não entram** no tempo médio;
+- o tooltip do card é atualizado junto com os números e explica a fórmula da
+  precisão e o contrato temporal;
+- sair de `Modo Produção` e entrar novamente inicia uma nova sessão em zero.
 
 ### Feedback visual da decisão automática
 
@@ -3820,12 +3840,15 @@ Responsabilidades atuais:
 ```text
 ProductionAutonomyController
 ├── esperar a renderização final
+├── registrar o tempo final da análise na sessão
 ├── posicionar a interface no topo
 ├── executar scroll visível e não bloqueante
+├── pausar/retomar o fluxo pela barra de espaço
 ├── aplicar pausa final
 ├── avaliar o veredito final
 ├── enviar somente 0/OK autorizado
 ├── pausar em NG/revisão
+├── contar julgamentos automáticos e manuais
 ├── observar decisão humana
 └── manter o ciclo pronto para a próxima peça
 ```
@@ -3863,19 +3886,41 @@ de aproximadamente `1200 ms` antes de aplicar a política.
 Todo o fluxo usa `QTimer` e `QPropertyAnimation`; não existe `sleep` na
 thread da interface.
 
-### Contador e overlays
+### Pausa pela barra de espaço e overlays
 
-Ao entrar em `Modo Produção`, a sessão é zerada:
+O atalho `Space` é um `QShortcut` de janela habilitado **somente no Modo
+Produção**. No Modo Teste e no Modo Sombra ele fica desabilitado e não altera o
+uso normal da barra de espaço.
+
+Contrato:
 
 ```text
-MODO PRODUÇÃO • SESSÃO
-OK AUTO     0
-NG AUTO     0
+ESPAÇO durante Modo Produção
+        ↓
+pausa timers da apresentação
+pausa a animação de scroll no ponto atual
+bloqueia o envio automático 0
+        ↓
+ESPAÇO novamente
+        ↓
+retoma o estágio pendente
+continua o scroll do ponto atual
+ou continua a espera/decisão pendente
 ```
 
+A pausa é da **autonomia de julgamento/apresentação**. Uma análise matemática
+que já está executando pode terminar e renderizar normalmente; o controlador
+fica aguardando até o operador despausar. Isso evita interromper o pipeline de
+visão no meio de uma inferência ou da coleta multilight.
+
+A barra operacional e o card da sessão passam a mostrar
+`PRODUÇÃO PAUSADA / ESPAÇO PARA CONTINUAR`. Se a pausa ocorrer antes de uma
+nova peça, o card continua oculto; quando a peça entrar, ele aparece já no estado
+pausado e o resultado aguarda a retomada.
+
 Somente um comando automático realmente confirmado como enviado ao XP incrementa
-o contador. Se o envio de `0` falhar, a placa **não é contabilizada** e o ODIN
-converte o estado operacional para intervenção/revisão humana.
+`OK AUTO/NG AUTO`. Se o envio de `0` falhar, a placa não é contabilizada como
+automática e passa para intervenção humana.
 
 O feedback de tecla automática reutiliza o card existente:
 
@@ -3886,7 +3931,8 @@ OK
 ODIN • MODO PRODUÇÃO
 ```
 
-Decisões humanas em Produção não incrementam os contadores automáticos.
+Decisões humanas em Produção incrementam `MANUAL`, não os contadores
+automáticos. Essa intervenção reduz a precisão autônoma calculada da sessão.
 
 ### Intervenção humana
 
