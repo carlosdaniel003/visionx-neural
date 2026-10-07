@@ -195,7 +195,16 @@ class ControlPanel(QWidget):
     def update_history_status(self, label: str, source: str):
         if hasattr(self.ui_builder, 'lbl_status_history'):
             color = "#ff7b72" if label == "NG" else "#3fb950"
-            src_text = "Autônomo" if source == "auto" else ("Operador IA" if source == "button" else "Operador AOI")
+            normalized_source = str(source or "").strip().lower()
+            src_text = (
+                "Autônomo"
+                if normalized_source in {"auto", "production_auto"}
+                else (
+                    "Operador IA"
+                    if normalized_source == "button"
+                    else "Operador AOI"
+                )
+            )
             msg = f"💾 Última Peça: {label} ({src_text})"
             self.ui_builder.lbl_status_history.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: bold; border: none;")
             self.ui_builder.lbl_status_history.setText(msg)
