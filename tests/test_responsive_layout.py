@@ -9,7 +9,10 @@ class ResponsiveLayoutProfileTests(unittest.TestCase):
         self.assertEqual(profile.name, "compact")
         self.assertTrue(profile.splitter_vertical)
         self.assertEqual(profile.info_columns, 2)
+        self.assertEqual(profile.controls_columns, 1)
+        self.assertEqual(profile.light_columns, 3)
         self.assertEqual(profile.action_columns, 2)
+        self.assertEqual(profile.debug_action_columns, 1)
 
     def test_common_notebook_widths_remain_compact(self):
         for width in (1280, 1366, 1440, 1499):
@@ -25,12 +28,18 @@ class ResponsiveLayoutProfileTests(unittest.TestCase):
         self.assertFalse(profile.splitter_vertical)
         self.assertEqual(profile.info_columns, 3)
         self.assertEqual(profile.footer_columns, 2)
+        self.assertEqual(profile.controls_columns, 2)
+        self.assertEqual(profile.debug_action_columns, 2)
 
     def test_wide_profile_for_desktop_monitor(self):
         profile = profile_for_width(1920)
         self.assertEqual(profile.name, "wide")
         self.assertEqual(profile.info_columns, 5)
         self.assertEqual(profile.footer_columns, 3)
+        self.assertEqual(profile.controls_columns, 2)
+        self.assertEqual(profile.light_columns, 3)
+        self.assertEqual(profile.action_columns, 4)
+        self.assertEqual(profile.debug_action_columns, 2)
         self.assertGreater(profile.debugger_min_width, 450)
 
     def test_breakpoints_are_stable(self):
