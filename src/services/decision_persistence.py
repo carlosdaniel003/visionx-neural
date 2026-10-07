@@ -14,6 +14,24 @@ from typing import Any
 from src.services.dataset_manager import DatasetManager
 
 
+LIGHTING_ORDER = ("SIDE", "TOP", "MID")
+
+
+def _complete_multilight_samples(task: dict) -> list[dict]:
+    samples = task.get("multilight_samples", [])
+    if not isinstance(samples, list) or len(samples) != len(LIGHTING_ORDER):
+        return []
+
+    by_mode = {
+        str(item.get("lighting_mode", "")).strip().upper(): item
+        for item in samples
+        if isinstance(item, dict)
+    }
+    if any(mode not in by_mode for mode in LIGHTING_ORDER):
+        return []
+    return [by_mode[mode] for mode in LIGHTING_ORDER]
+
+
 class DecisionPersistenceQueue:
     """Fila serial daemon para salvar aprendizado e atualizar a memória."""
 
@@ -38,6 +56,57 @@ class DecisionPersistenceQueue:
         """Apoio determinístico para testes/manutenção; não usar no ciclo produtivo."""
         self._queue.join()
 
+    def _reload_memory_once(self) -> None:
+        if self.orchestrator is None:
+            return
+        reload_memory = getattr(
+            self.orchestrator,
+            "reload_memory",
+            None,
+        )
+        if callable(reload_memory):
+            reload_memory()
+
+    def _persist_multilight(self, task: dict, samples: list[dict]) -> bool:
+        """Persiste três observações da mesma peça sob um único rótulo humano."""
+        base_info = dict(task.get("aoi_info", {}) or {})
+        final_analysis = task.get("analysis", {}) or {}
+        label = str(task.get("label", "") or "")
+        source = str(task.get("source", "") or "")
+        event_id = str(task.get("event_id", "") or "")
+
+        persisted = False
+        for item in samples:
+            mode = str(item.get("lighting_mode", "") or "").strip().upper()
+            local_analysis = item.get("analysis", {}) or {}
+            local_ai_decision = (
+                "NG"
+                if bool(local_analysis.get("is_defect", False))
+                else "OK"
+            )
+            info = dict(base_info)
+            info["lighting_mode"] = mode
+
+            json_path = self.dataset_manager.save_sample(
+                ng_image=item.get("test_image"),
+                label=label,
+                sample_image=item.get("sample_image"),
+                aoi_info=info,
+                analysis=local_analysis,
+                # Multilight é material de aprendizado explícito: preserva as
+                # imagens completas de cada iluminação mesmo quando IA e
+                # operador concordam. A deduplicação impede repetição.
+                save_images=True,
+                source=source,
+                ai_decision=local_ai_decision,
+                lighting_mode=mode,
+                event_id=event_id,
+                source_frame=item.get("source_frame"),
+                final_analysis=final_analysis,
+            )
+            persisted = bool(json_path) or persisted
+        return persisted
+
     def _run(self) -> None:
         while True:
             task = self._queue.get()
@@ -45,15 +114,20 @@ class DecisionPersistenceQueue:
                 if task is None:
                     return
 
-                json_path = self.dataset_manager.save_sample(**task)
-                if json_path and self.orchestrator is not None:
-                    reload_memory = getattr(
-                        self.orchestrator,
-                        "reload_memory",
-                        None,
-                    )
-                    if callable(reload_memory):
-                        reload_memory()
+                work = dict(task)
+                samples = _complete_multilight_samples(work)
+                if samples:
+                    persisted = self._persist_multilight(work, samples)
+                else:
+                    # Campos de orquestração não pertencem ao contrato legado
+                    # do DatasetManager quando a captura é monoimagem.
+                    work.pop("multilight_samples", None)
+                    work.pop("event_id", None)
+                    json_path = self.dataset_manager.save_sample(**work)
+                    persisted = bool(json_path)
+
+                if persisted:
+                    self._reload_memory_once()
             except Exception as exc:
                 print(
                     "Falha não fatal na persistência assíncrona da decisão: "
@@ -63,4 +137,8 @@ class DecisionPersistenceQueue:
                 self._queue.task_done()
 
 
-__all__ = ["DecisionPersistenceQueue"]
+__all__ = [
+    "DecisionPersistenceQueue",
+    "LIGHTING_ORDER",
+    "_complete_multilight_samples",
+]
