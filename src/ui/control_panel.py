@@ -588,9 +588,24 @@ class ControlPanel(QWidget):
         current_mode = self.combo_mode.currentText()
 
         if current_mode == "Modo Produção":
-            self.update_brain_status("✅ Análise Concluída (Emissão Autônoma)", False)
-            auto_decision = "NG" if analysis.get("is_defect", False) else "OK"
-            self.save_label(auto_decision, source="auto")
+            # O Modo Produção v1 não decide no mesmo instante em que a análise
+            # termina. Primeiro toda a interface é renderizada; depois o
+            # ProductionAutonomyController percorre a tela e só então aplica a
+            # política: FALHA FALSA -> 0 automático; NG/revisão -> operador.
+            self.update_brain_status(
+                "Análise concluída • preparando apresentação do Modo Produção.",
+                True,
+            )
+            if not bool(
+                getattr(self, "adhesive_multilight_pending_start", False)
+            ):
+                notify = getattr(
+                    self,
+                    "notify_production_analysis_ready",
+                    None,
+                )
+                if callable(notify):
+                    notify(analysis)
             
         elif current_mode == "Modo Sombra":
             self.update_brain_status("⏳ Aguardando Decisão Humana no Teclado XP...", True)
@@ -652,7 +667,7 @@ class ControlPanel(QWidget):
         if self.current_ng is None: return
         
         # Envia ordem para a máquina avançar, independentemente de salvar a foto
-        if source == "button" or source == "auto":
+        if source in {"button", "auto", "production_auto"}:
             if user_decision == "OK": self.send_command_to_xp("0")
             elif user_decision == "NG": self.send_command_to_xp("1")
 
