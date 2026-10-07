@@ -146,6 +146,10 @@ class ProductionGateIntegrationContractTests(unittest.TestCase):
             source,
         )
         self.assertIn("callback(user_decision, source=source)", source)
+        self.assertIn(
+            'and not bool(getattr(self, "is_locked", False))',
+            source,
+        )
 
 
 if __name__ == "__main__":
