@@ -319,6 +319,162 @@ class MissingComponentExpertTests(unittest.TestCase):
             self.assertFalse(result["missing_body_presence_veto"])
             self.assertTrue(result["missing_is_defect"])
 
+    def test_real_event_6a45_footprint_geometry_promotes_missing(self):
+        """Regressão do falso negativo FALTANDO de 07/10/2026."""
+        reference = np.zeros((459, 570, 3), dtype=np.uint8)
+        test = reference.copy()
+
+        observed = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "CONTEÚDO INESPERADO NA ROI",
+            "missing_score": 0.42229900453358477,
+            "missing_changed_coverage": 0.09485614646904969,
+            "missing_residual_mean": 0.690674364566803,
+            "missing_residual_p90": 0.3208164870738983,
+            "missing_structure_loss": 0.6287593984962406,
+            "missing_edge_mismatch": 0.47345132743362833,
+            "missing_background_exposure": 0.011764707043766975,
+            "missing_best_similarity": 0.21568238735198975,
+            "missing_appearance_loss": 0.1663059608014532,
+            "missing_direct_similarity": 0.8336940391985468,
+            "missing_roi_box": (254, 138, 62, 185),
+            "missing_reason": "QUEBRA DA EXPECTATIVA VISUAL DA ROI",
+        }
+        body = {
+            "missing_body_presence_active": True,
+            "missing_component_body_present": True,
+            "missing_body_presence_source": "missing_roi",
+            "missing_body_presence_box": [254, 138, 62, 185],
+            "missing_body_coarse_similarity": -0.023470375686883926,
+            "missing_body_silhouette_dice": 0.9526089993016063,
+            "missing_body_area_ratio": 0.9111450090571075,
+            "missing_body_centroid_shift": 0.0327231839109394,
+            "missing_body_box_width_ratio": 0.9655172413793104,
+            "missing_body_box_height_ratio": 1.0,
+            "missing_body_presence_policy": "geometry_only",
+            "missing_body_presence_reason": (
+                "silhueta, área e centro preservados apesar da mudança forte"
+            ),
+        }
+        envelope = {
+            "missing_global_envelope_active": True,
+            "missing_global_envelope_support": False,
+            "missing_global_envelope_veto": False,
+            "missing_global_envelope_invariant_support": True,
+            "missing_global_envelope_reason": (
+                "massa física invariável preservada; requer testemunha OK"
+            ),
+        }
+        context = {
+            "missing_dual_scale_policy": DualScalePresenceAnalyzer.POLICY,
+            "missing_dual_scale_active": True,
+            "missing_dual_scale_triggered": True,
+            "missing_scale_disagreement": False,
+            "missing_local_global_area_ratio": 0.05080391548921469,
+            "missing_context_box": [138, 0, 294, 459],
+            "missing_context_area_ratio": 0.08499696174766203,
+            "missing_context_score": 0.7764069508267862,
+            "missing_context_coverage": 0.3702518044254739,
+            "missing_context_residual_mean": 0.6748465895652771,
+            "missing_context_residual_p90": 0.8399999737739563,
+            "missing_context_structure_loss": 0.39749230092388915,
+            "missing_context_edge_mismatch": 0.38258883518351305,
+            "missing_context_direct_similarity": 0.5837855445549378,
+            "missing_context_appearance_loss": 0.4162144554450622,
+            "missing_context_best_similarity": 0.4460892081260681,
+            "missing_context_hard_absence": False,
+            "missing_context_hard_reason": (
+                "contexto não confirmou ausência física forte"
+            ),
+            "missing_context_physical_support": {
+                "supported": False,
+                "structural": 0.38106103822019394,
+                "semantic": 0.5496011674404144,
+            },
+        }
+
+        with patch.object(
+            ROIPatchExpectationExpert,
+            "analyze",
+            return_value=dict(observed),
+        ), patch.object(
+            self.expert,
+            "_component_body_presence_witness",
+            return_value=dict(body),
+        ), patch.object(
+            self.expert,
+            "_global_envelope_presence_support",
+            return_value=dict(envelope),
+        ), patch.object(
+            DualScalePresenceAnalyzer,
+            "analyze",
+            return_value=dict(context),
+        ):
+            result = self.expert.analyze(
+                reference,
+                test,
+                global_box_info={
+                    "x": 20,
+                    "y": 20,
+                    "w": 535,
+                    "h": 422,
+                    "detected": True,
+                },
+                aoi_info={"category": "FALTANDO"},
+                aoi_epicenters=[(254, 138, 62, 185)],
+                physical_detail={
+                    "silk_error_pct": 0.38106103822019394,
+                    "semantic_loss": 0.5496011674404144,
+                },
+            )
+
+        self.assertTrue(result["missing_dedicated_footprint_absence"])
+        self.assertTrue(result["missing_hard_absence"])
+        self.assertTrue(result["missing_is_defect"])
+        self.assertEqual(
+            result["missing_classification"],
+            "COMPONENTE FISICAMENTE AUSENTE — DUAL-SCALE",
+        )
+        self.assertIn(
+            "footprint preservou geometria",
+            result["missing_hard_absence_reason"],
+        )
+
+    def test_geometry_only_presence_without_multiscale_support_stays_safe(self):
+        result = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_classification": "CONTEÚDO INESPERADO NA ROI",
+            "missing_component_body_present": True,
+            "missing_body_presence_policy": "geometry_only",
+            "missing_body_coarse_similarity": 0.38,
+            "missing_residual_mean": 0.75,
+            "missing_structure_loss": 0.70,
+            "missing_edge_mismatch": 0.55,
+            "missing_best_similarity": 0.12,
+            "missing_dual_scale_triggered": True,
+            "missing_context_score": 0.85,
+            "missing_context_coverage": 0.50,
+            "missing_context_residual_mean": 0.75,
+            "missing_context_appearance_loss": 0.60,
+            "missing_context_structure_loss": 0.50,
+            "missing_context_direct_similarity": 0.40,
+            "missing_context_best_similarity": 0.20,
+            "missing_global_envelope_support": False,
+        }
+
+        hard, reason = self.expert._dedicated_footprint_absence_evidence(
+            result,
+            {
+                "silk_error_pct": 0.60,
+                "semantic_loss": 0.65,
+            },
+        )
+
+        self.assertFalse(hard)
+        self.assertIn("presença física", reason)
+
     def test_complete_component_disappearance_sets_hard_absence(self):
         reference = missing_body_scene(component_present=True)
         test = missing_body_scene(component_present=False)
