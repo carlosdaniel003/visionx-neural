@@ -958,6 +958,7 @@ class ControlPanelUI:
     def _build_network_debug_bar(self, window, parent_layout):
         window.network_debug_frame = QFrame()
         window.network_debug_frame.setObjectName("networkDebugFrame")
+        window.network_debug_frame.setMinimumWidth(0)
         window.network_debug_frame.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
@@ -1014,6 +1015,7 @@ class ControlPanelUI:
 
         window.lbl_network_debug_title = QLabel("DIAGNÓSTICO DA CAPTURA")
         window.lbl_network_debug_title.setObjectName("networkDebugTitle")
+        window.lbl_network_debug_title.setMinimumWidth(0)
         window.lbl_network_debug_title.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
@@ -1031,6 +1033,7 @@ class ControlPanelUI:
 
         window.network_debug_actions = QWidget(window.network_debug_frame)
         window.network_debug_actions.setObjectName("networkDebugActions")
+        window.network_debug_actions.setMinimumWidth(0)
         window.network_debug_actions.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
