@@ -3493,3 +3493,107 @@ Regressões obrigatórias:
 - resize durante espera não faz a peça anterior reaparecer;
 - `Copiar imagem` continua disponível quando existe evidência válida;
 - nova inspeção válida reabilita a exibição das imagens.
+
+
+## Responsividade dos painéis inferiores do ODIN
+
+A partir da seção **DECISÃO E CONFIANÇA**, todo o restante da interface principal
+usa os mesmos breakpoints definidos em `src/ui/responsive_layout.py`.
+
+Objetivo operacional:
+
+```text
+notebook / largura < 1500 px
+        ↓
+leitura vertical, sem compressão lateral
+
+monitor padrão / 1500–1799 px
+        ↓
+mais colunas sem perder espaçamento
+
+monitor grande / >= 1800 px
+        ↓
+uso amplo da largura disponível
+```
+
+### DECISÃO E CONFIANÇA
+
+Os três cards:
+
+```text
+VEREDITO DA IA
+MÉTRICAS DE DECISÃO
+MEMÓRIA LOCAL • KNN
+```
+
+refluem conforme o perfil:
+
+- notebook: 1 coluna;
+- monitor padrão: 2 colunas;
+- monitor grande: 3 colunas.
+
+Os cards usam largura mínima zero e política `Expanding`, evitando que um
+`sizeHint` interno force scroll horizontal.
+
+### CONTROLES OPERACIONAIS
+
+Os grupos de **ILUMINAÇÃO DA CÂMERA** e **CAPTURA E DECISÃO DO OPERADOR**
+deixam de depender de uma pilha vertical fixa.
+
+- notebook: os dois grupos ficam empilhados;
+- monitor padrão/grande: os grupos ficam lado a lado, com mais espaço reservado
+  para captura e decisão;
+- as três luzes TOP/SIDE/MID permanecem em três colunas;
+- as quatro ações principais ficam em grade 2×2 no notebook e em uma linha de
+  quatro botões nos perfis maiores.
+
+A barra dinâmica `PRONTO / PROCESSANDO / ...` também é responsiva:
+
+- notebook: badge e contador ocupam a primeira linha e a mensagem fica abaixo;
+- monitor maior: badge, mensagem e contador ficam na mesma linha.
+
+Nenhuma regra de habilitação, decisão, atalhos ou comunicação com o XP é
+alterada por esse reflow.
+
+### ARQUIVO VISUAL NG / OK
+
+Os dois painéis já possuem contrato adaptativo e continuam assim:
+
+- notebook: título, estado e botão ficam empilhados;
+- monitor padrão/grande: ficam distribuídos horizontalmente.
+
+### DIAGNÓSTICO DA CAPTURA
+
+No notebook, título, estado e ações são empilhados e **Copiar debug** /
+**Copiar imagem** passam a ocupar uma coluna cada, eliminando compressão.
+Nos perfis maiores, as duas ações permanecem lado a lado.
+
+### Três indicadores SVG da barra inferior
+
+Os indicadores de:
+
+```text
+rede / AOI
+estado do cérebro
+última peça
+```
+
+também participam do reflow.
+
+- notebook: os três grupos ficam em três linhas, alinhados à esquerda;
+- monitor padrão/grande: ficam em três colunas equivalentes, com rede à
+  esquerda, estado ao centro e histórico à direita;
+- ícone e texto pertencem ao mesmo grupo responsivo e não são separados durante
+  redimensionamento.
+
+A implementação envolve:
+
+```text
+src/ui/control_panel_ui.py
+src/ui/responsive_layout.py
+src/ui/operational_controls.py
+src/ui/iconography.py
+```
+
+e é exclusivamente visual. Não altera análise, KNN, arquivos OK/NG, dataset,
+fusão multilight, teclas 0/1, setas ou protocolo Windows XP.
