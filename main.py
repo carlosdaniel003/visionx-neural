@@ -13,6 +13,7 @@ import src.services.dataset_manager as dataset_manager_module
 from src.core.anomaly_memory_integration import install_anomaly_memory_integration
 from src.core.best_match_memory import install_best_match_memory
 from src.core.dual_scale_memory import install_dual_scale_memory
+from src.core.full_frame_memory import install_full_frame_memory
 from src.core.experts.knn_expert import KNNExpert
 from src.core.experts.missing_component_expert import MissingComponentExpert
 from src.core.experts.semantic_calibration import (
@@ -112,6 +113,13 @@ def main():
     # + 30% contexto visual da maior caixa verde do componente. JSONs antigos
     # continuam usando somente o epicentro.
     install_dual_scale_memory(
+        anomaly_memory_module,
+        best_match_memory_module,
+        dataset_manager_module,
+    )
+    # Terceira escala: preserva o quadro completo da área de inspeção. Assim,
+    # defeitos fora do epicentro/caixa maior continuam presentes na memória.
+    install_full_frame_memory(
         anomaly_memory_module,
         best_match_memory_module,
         dataset_manager_module,
