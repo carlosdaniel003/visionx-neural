@@ -6,6 +6,7 @@
 - `src/services/ok_image_archive.py`: Arquivo visual opcional de decisões humanas OK em fila de background, usando a mesma evidência de `Copiar imagem`.
 - `src/services/image_archive_naming.py`: Formato compartilhado de nomes dos arquivos visuais OK/NG.
 - `src/services/production_daily_session_store.py`: Persistência diária e atômica das métricas do Modo Produção em diretório de dados do usuário, fora do repositório.
+- `src/services/aoi_ocr_fields.py`: Normalização específica de Board/Parts/Value e releitura dirigida do campo de componente quando o OCR geral é inconsistente.
 
 **Fluxos Principais (Planejados):**
 1. **Pilar 1 (Extrator Visual):** Monitoramento contínuo da tela usando `mss` para detectar a janela da AOI.
@@ -4141,3 +4142,124 @@ verticais completos.
 
 Esses ajustes são de interface/apresentação e não alteram o tempo matemático de
 análise, a fusão multilight, o KNN ou a política de julgamento.
+
+
+## OCR da interface AOI — correção contextual dos campos Board / Parts / Value
+
+### Caso real observado em 07/10/2026
+
+Na captura real da AOI, o OCR geral do Tesseract identificou corretamente a
+estrutura da tela, mas introduziu três erros nos campos exibidos pelo ODIN:
+
+~~~text
+Board
+OCR anterior: [P22-22200 (PRINCIPAL) L13
+correto:      P22-22200 (PRINCIPAL) L13
+
+Parts
+OCR anterior: [RI~5
+correto:      R3~5
+
+Value
+OCR anterior: [io <= 2 <= 80 FALTANDO
+correto:      10 <= 2 <= 80 FALTANDO
+~~~
+
+O problema não era a extração das imagens de inspeção. O texto bruto continha
+os rótulos Board, Parts e Value, porém a fonte clássica do Windows/AOI fazia o
+Tesseract confundir bordas de células e alguns caracteres.
+
+### Implementação
+
+Foi criado:
+
+~~~text
+src/services/aoi_ocr_fields.py
+~~~
+
+O ScreenMonitor continua responsável pela leitura geral da região textual.
+Depois da extração inicial, os três campos passam por políticas específicas.
+
+#### Board
+
+Remove somente ruído de borda no começo da célula:
+
+~~~text
+[P22-22200 (PRINCIPAL) L13
+↓
+P22-22200 (PRINCIPAL) L13
+~~~
+
+Não existe substituição global de letras ou números no nome da placa.
+
+#### Value
+
+Confusões entre letras e números são corrigidas somente quando aparecem no
+primeiro token de uma expressão comparativa numérica:
+
+~~~text
+io <= 2 <= 80 FALTANDO
+↓
+10 <= 2 <= 80 FALTANDO
+~~~
+
+Mapeamento contextual:
+
+~~~text
+I / i / L / l → 1
+O / o         → 0
+~~~
+
+Esse mapeamento não é aplicado livremente ao restante do texto, evitando
+corromper palavras e categorias.
+
+#### Parts
+
+O campo de componente possui uma validação sintática inicial, por exemplo:
+
+~~~text
+R3~5
+C120
+CN12
+~~~
+
+Quando a leitura geral já é válida, nenhuma chamada OCR adicional é feita.
+
+Quando a leitura não possui uma referência coerente, como:
+
+~~~text
+RI~5
+~~~
+
+o ODIN executa uma segunda leitura somente da célula Parts:
+
+1. image_to_data localiza o rótulo Parts e a próxima coluna da mesma linha;
+2. é criada uma ROI estreita apenas com o valor da célula;
+3. ocorre uma leitura PSM 7 com whitelist alfanumérica;
+4. ocorre uma segunda passada numérica com whitelist 0123456789~-;
+5. os resultados são combinados somente se formarem uma referência válida.
+
+Isso permite recuperar o caso real:
+
+~~~text
+OCR geral:          RI~5
+leitura numérica:   3~5
+prefixo confiável:  R
+resultado:           R3~5
+~~~
+
+A estratégia é deliberadamente condicional para não aumentar o custo do OCR em
+todas as capturas: a releitura dirigida só ocorre quando Parts falha na
+validação de formato.
+
+### Resultado esperado para o caso de 07/10/2026
+
+~~~text
+Placa / Máquina: P22-22200 (PRINCIPAL) L13
+Componente:      R3~5
+Valor / OCR:     10 <= 2 <= 80 FALTANDO
+~~~
+
+Essa alteração afeta metadados OCR e apresentação dos dados da AOI. Não altera
+a classificação visual dos especialistas, a fusão, o KNN, o protocolo XP ou a
+política do Modo Produção.
