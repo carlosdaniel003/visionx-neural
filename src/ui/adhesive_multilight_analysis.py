@@ -1,9 +1,8 @@
 """Painel responsivo de especialistas por iluminação para adesivo.
 
-A camada é exclusivamente visual. Nesta etapa somente SIDE recebe o resultado
-real já calculado pelo pipeline existente. TOP e MID aparecem como posições
-reservadas para análises futuras, sem executar novos especialistas nem alterar
-a decisão da peça.
+SIDE, TOP e MID recebem análises independentes do pipeline multilight. A camada
+é visual: organiza os especialistas, sincroniza a navegação horizontal das três
+iluminações e não altera a decisão fundida da peça.
 """
 
 from __future__ import annotations
