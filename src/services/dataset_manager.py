@@ -389,13 +389,23 @@ class DatasetManager:
             "label": normalized_label,
             "timestamp": datetime.now().isoformat(),
             "storage": {
-                "mode": "json_plus_audit_images" if save_images else "json_only",
+                "mode": (
+                    "json_plus_audit_images"
+                    if test_image_file
+                    else (
+                        "json_reusing_existing_visual"
+                        if duplicate_visual_of
+                        else "json_only"
+                    )
+                ),
                 "test_image_file": test_image_file,
                 "reference_image_file": reference_image_file,
                 "source_image_file": source_image_file,
                 "test_image_fingerprint": fingerprint,
                 "images_required_for_knn": False,
-                "full_test_area_preserved": bool(test_image_file),
+                "full_test_area_preserved": bool(
+                    test_image_file or duplicate_visual_of
+                ),
                 "raw_aoi_frame_preserved": bool(source_image_file),
                 "visual_deduplicated": bool(duplicate_visual_of),
                 "duplicate_visual_of_json": duplicate_visual_of,
