@@ -92,6 +92,20 @@ class AnomalyLearningPolicyTests(unittest.TestCase):
         self.assertEqual(result, "original")
         self.assertEqual(panel.original_calls, 1)
 
+    def test_production_auto_ok_does_not_self_train(self):
+        panel = self.panel_class(ai_defect=False)
+        with patch(
+            "src.services.anomaly_learning.DatasetManager.save_sample"
+        ) as save:
+            result = panel.save_label(
+                "OK",
+                source="production_auto",
+            )
+
+        save.assert_not_called()
+        self.assertEqual(result, "original")
+        self.assertEqual(panel.original_calls, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
