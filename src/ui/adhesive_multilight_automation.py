@@ -257,7 +257,6 @@ class AdhesiveMultiLightAutomation(QObject):
 
         # A decisão SIDE guardada durante o início da coleta deixa de ter
         # autoridade. O único resultado elegível agora é a fusão das 3 luzes.
-        self.panel.adhesive_multilight_deferred_auto_decision = ""
 
         finalize = getattr(
             self.panel,
