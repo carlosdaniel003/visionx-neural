@@ -4,6 +4,10 @@ import numpy as np
 
 from src.core.multilight_fusion import fuse_multilight
 from src.services.image_archive_candidates import archive_image_candidates
+from src.ui.network_xp_debug import (
+    format_multilight_debug_report,
+    multilight_copy_image_snapshot,
+)
 
 
 def _analysis(
@@ -239,6 +243,71 @@ class GeneralMultiLightArchiveTests(unittest.TestCase):
         self.assertEqual(len(resolved), 1)
         self.assertEqual(resolved[0][1], "FALTANDO")
         self.assertTrue(np.array_equal(resolved[0][0], primary))
+
+
+class GeneralMultiLightDebugTests(unittest.TestCase):
+    class Panel:
+        pass
+
+    def _panel(self):
+        panel = self.Panel()
+        event_id = "evt-debug-general"
+        panel.capture_debug_last_record = {
+            "event_id": event_id,
+            "source": "windows_xp",
+            "validation": {"valid": True},
+        }
+        panel.adhesive_multilight_last_event_id = event_id
+        panel.adhesive_multilight_last_category = "FALTANDO"
+        panel.adhesive_multilight_last_analyses = {
+            mode: _analysis(
+                mode,
+                final_score=score,
+                physical_score=score,
+                is_defect=mode == "TOP",
+            )
+            for mode, score in (
+                ("SIDE", 0.20),
+                ("TOP", 0.91),
+                ("MID", 0.18),
+            )
+        }
+        panel.adhesive_multilight_last_final_analysis = fuse_multilight(
+            panel.adhesive_multilight_last_analyses,
+            "FALTANDO",
+        )
+        panel.adhesive_multilight_last_source_frames = {
+            "SIDE": np.full((10, 20, 3), (10, 20, 30), dtype=np.uint8),
+            "TOP": np.full((10, 24, 3), (40, 50, 60), dtype=np.uint8),
+            "MID": np.full((10, 22, 3), (70, 80, 90), dtype=np.uint8),
+        }
+        return panel
+
+    def test_non_adhesive_debug_contains_three_independent_analyses(self):
+        report = format_multilight_debug_report(self._panel())
+
+        self.assertIn("ANÁLISES MULTILIGHT - FALTANDO", report)
+        self.assertIn("Categoria multilight: FALTANDO", report)
+        self.assertIn("ILUMINAÇÃO SIDE", report)
+        self.assertIn("ILUMINAÇÃO TOP", report)
+        self.assertIn("ILUMINAÇÃO MID", report)
+        self.assertIn("JULGAMENTO FINAL MULTILIGHT", report)
+        self.assertIn("Iluminação dominante: TOP", report)
+
+    def test_non_adhesive_copy_image_snapshot_is_side_top_mid_composite(self):
+        composite = multilight_copy_image_snapshot(self._panel())
+
+        self.assertIsNotNone(composite)
+        self.assertEqual(composite.shape, (54, 82, 3))
+        self.assertTrue(
+            np.array_equal(composite[44, 0], np.array([10, 20, 30]))
+        )
+        self.assertTrue(
+            np.array_equal(composite[44, 28], np.array([40, 50, 60]))
+        )
+        self.assertTrue(
+            np.array_equal(composite[44, 60], np.array([70, 80, 90]))
+        )
 
 
 if __name__ == "__main__":
