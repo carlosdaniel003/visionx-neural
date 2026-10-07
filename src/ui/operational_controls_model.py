@@ -73,8 +73,11 @@ def operational_state(
     if is_locked and has_analysis and normalized_mode == "Modo Produção":
         return OperationalState(
             name="production_auto",
-            badge="EMISSÃO AUTOMÁTICA",
-            hint="A decisão está sendo enviada automaticamente à estação.",
+            badge="APRESENTANDO ANÁLISE",
+            hint=(
+                "O ODIN está exibindo o resultado antes de aplicar a política "
+                "automática ou solicitar o operador."
+            ),
             tone="busy",
             capture_enabled=False,
             discard_enabled=False,
