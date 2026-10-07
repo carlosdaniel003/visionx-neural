@@ -48,6 +48,7 @@ class _Panel(QWidget):
 
     def save_label(self, decision, source="button"):
         self.saved.append((str(decision), str(source)))
+        self.last_decision_command_success = True
         self.current_analysis = None
 
     def show_decision_key_feedback(self, decision, source=""):
@@ -121,6 +122,36 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         )
         self.assertEqual(panel.session_increments, ["OK"])
         self.assertEqual(controller.state, "idle")
+
+    def test_failed_auto_command_is_not_counted_and_requires_operator(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = {
+            "verdict": "FALHA FALSA",
+            "is_defect": False,
+            "confidence": 0.3,
+        }
+        panel.current_analysis = analysis
+        controller.pending_analysis = analysis
+        controller.generation += 1
+
+        def failed_save(decision, source="button"):
+            panel.saved.append((decision, source))
+            panel.last_decision_command_success = False
+            return False
+
+        panel.save_label = failed_save
+
+        controller._emit_auto_ok(controller.generation)
+
+        self.assertEqual(panel.session_increments, [])
+        self.assertTrue(panel.production_review_pending)
+        self.assertEqual(controller.state, "operator_review")
+        self.assertEqual(
+            panel.interventions[-1],
+            "REVISÃO OBRIGATÓRIA",
+        )
 
     def test_real_defect_never_emits_auto_ng(self):
         panel = _Panel()
