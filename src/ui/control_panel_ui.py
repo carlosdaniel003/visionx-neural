@@ -394,7 +394,9 @@ class ControlPanelUI:
         window.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         window.main_splitter.setMinimumWidth(0)
         window.main_splitter.setChildrenCollapsible(False)
-        window.main_splitter.setHandleWidth(6)
+        # O splitter é usado apenas como motor de reflow responsivo. O operador
+        # não deve redimensionar manualmente as seções como se fosse zoom.
+        window.main_splitter.setHandleWidth(0)
 
         window.images_section = QFrame()
         window.images_section.setObjectName("sectionPanel")
@@ -536,6 +538,10 @@ class ControlPanelUI:
 
         window.main_splitter.addWidget(window.images_section)
         window.main_splitter.addWidget(window.telemetry_section)
+        splitter_handle = window.main_splitter.handle(1)
+        if splitter_handle is not None:
+            splitter_handle.setEnabled(False)
+            splitter_handle.setCursor(Qt.CursorShape.ArrowCursor)
         window.main_splitter.setStretchFactor(0, 1)
         window.main_splitter.setStretchFactor(1, 3)
         parent_layout.addWidget(window.main_splitter, stretch=10)
@@ -1425,21 +1431,26 @@ class ControlPanelUI:
                 [540 if compact else 500, 540 if compact else 460]
             )
         elif profile.splitter_vertical:
+            # Notebook: as imagens ocupam uma seção vertical estável e alta o
+            # suficiente para mostrar captura + quatro cards sem precisar
+            # arrastar uma divisória. O root_scroll cuida da página inteira.
             window.main_splitter.setStretchFactor(0, 1)
-            window.main_splitter.setStretchFactor(1, 3)
+            window.main_splitter.setStretchFactor(1, 1)
             window.images_section.setMaximumWidth(16777215)
-            window.images_section.setMinimumHeight(320)
-            window.telemetry_section.setMinimumHeight(330)
-            window.main_splitter.setMinimumHeight(0)
-            window.main_splitter.setSizes([340, 430])
+            window.images_section.setMinimumHeight(560)
+            window.telemetry_section.setMinimumHeight(430)
+            window.main_splitter.setMinimumHeight(1000)
+            window.main_splitter.setSizes([560, 440])
         else:
             window.main_splitter.setStretchFactor(0, 1)
             window.main_splitter.setStretchFactor(1, 3)
-            image_width = 400 if profile.name == "wide" else 340
+            # Em monitores maiores, a largura da inspeção acompanha a tela,
+            # com limites para preservar área suficiente aos especialistas.
+            image_width = min(520, max(420, int(width * 0.28)))
             window.images_section.setMaximumWidth(image_width)
-            window.images_section.setMinimumHeight(0)
-            window.telemetry_section.setMinimumHeight(360)
-            window.main_splitter.setMinimumHeight(0)
+            window.images_section.setMinimumHeight(520)
+            window.telemetry_section.setMinimumHeight(520)
+            window.main_splitter.setMinimumHeight(560)
             available_for_telemetry = max(1, width - image_width)
             window.main_splitter.setSizes(
                 [image_width, available_for_telemetry]
