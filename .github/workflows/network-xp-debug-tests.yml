@@ -58,6 +58,7 @@ on:
       - "tests/test_responsive_iconography.py"
       - "tests/test_xp_decision_shortcuts.py"
       - "tests/test_fast_xp_decision_cycle.py"
+      - "tests/test_production_confidence_gate.py"
       - "tests/test_image_cycle_gate.py"
       - "tests/test_local_capture_network_takeover.py"
       - ".github/workflows/network-xp-debug-tests.yml"
