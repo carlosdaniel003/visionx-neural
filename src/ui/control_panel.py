@@ -135,7 +135,7 @@ class ControlPanel(QWidget):
 
         normalized_source = str(source or "").strip().lower()
 
-        # Durante a sequência automática de adesivo, os controles manuais do
+        # Durante a sequência automática multilight, os controles manuais do
         # próprio ODIN não podem trocar a iluminação no meio de TOP/MID.
         if (
             bool(
@@ -548,9 +548,9 @@ class ControlPanel(QWidget):
             getattr(self, "adhesive_multilight_pending_start", False)
         )
         if multilight_pending:
-            # Em adesivo, SIDE é somente a primeira observação. O julgamento
+            # Em um ciclo multilight, SIDE é somente a primeira observação. O julgamento
             # final só existe depois que TOP e MID também forem analisadas.
-            self.lbl_verdict.setText("ADESIVO • AGUARDANDO TOP/MID")
+            self.lbl_verdict.setText("MULTILIGHT • AGUARDANDO TOP/MID")
             self.lbl_verdict.setStyleSheet(
                 "color: #ffd33d; font-size: 16px; font-weight: bold; "
                 "border: none;"
