@@ -1,5 +1,54 @@
 # Estrutura do Projeto: VisionX Neural
 
+## Atualização operacional — 07/10/2026 — multilight geral para todas as categorias AOI
+
+O padrão multilight que foi validado primeiro em `MUITO ADESIVO` passa a ser o
+**contrato geral de inspeção para todo ciclo recebido do Windows XP com categoria
+AOI válida**. Referências posteriores neste documento que descrevem o recurso
+como “exclusivo do adesivo” devem ser lidas como histórico da implantação; o
+escopo atual é geral.
+
+Contrato atual:
+
+```text
+mesma peça / mesmo event_id
+        ↓
+SIDE recebido + análise completa da categoria
+        ↓
+TOP automático + análise completa da mesma categoria
+        ↓
+MID automático + análise completa da mesma categoria
+        ↓
+restaurar SIDE
+        ↓
+fusão final única das três iluminações
+        ↓
+um único julgamento da peça
+```
+
+Regras obrigatórias:
+
+- SIDE/TOP/MID nunca viram três peças ou três `event_id`;
+- cada iluminação executa o mesmo pipeline técnico e os mesmos especialistas
+  roteados pela categoria AOI;
+- TOP/MID permanecem não elegíveis para decisão enquanto isolados;
+- `MUITO ADESIVO` continua usando `fuse_adhesive_multilight` e o detector MID
+  `mid_bright_resin_v1`, sem regressão da política já validada;
+- as demais categorias usam a fusão geral de
+  `src/core/multilight_fusion.py`: evidência forte isolada ou duas iluminações
+  positivas confirmam defeito; uma única positiva moderada ou revisão local
+  exige `REVISÃO OBRIGATÓRIA`; somente três análises sem defeito resultam em
+  `FALHA FALSA`;
+- `Copiar debug` registra SIDE/TOP/MID e a fusão final para qualquer categoria;
+- `Copiar imagem` usa a composição SIDE/TOP/MID sem redimensionar os frames;
+- arquivos visuais OK/NG persistem SIDE, TOP e MID separadamente com o sufixo da
+  iluminação;
+- a captura local MSS permanece monoimagem, pois não possui a máquina de estados
+  que comanda as iluminações da AOI;
+- nenhuma mudança no `agente_industrial_xp.py` é necessária: os comandos
+  LEFT/DOWN/RIGHT já existentes são reutilizados.
+
+
 **Módulos Existentes:**
 - `src/config/settings.py`: Centralização de todas as variáveis de ambiente, caminhos e constantes mágicas.
 - `src/services/ng_image_archive.py`: Arquivo visual opcional de decisões finais NG em fila de background, independente do dataset e da memória KNN.
