@@ -3555,6 +3555,23 @@ A barra dinâmica `PRONTO / PROCESSANDO / ...` também é responsiva:
 Nenhuma regra de habilitação, decisão, atalhos ou comunicação com o XP é
 alterada por esse reflow.
 
+#### Correção de regressão — botão Excluir dataset local
+
+Após a primeira implementação responsiva, o container raiz dos controles passou
+de `QVBoxLayout` para `QGridLayout`. O instalador de
+`src/ui/test_mode_dataset_controls.py` ainda chamava
+`action_layout.addLayout(button_row)`, assinatura válida para layout vertical,
+mas inválida para `QGridLayout`, causando falha na inicialização do ODIN.
+
+O botão administrativo agora é inserido preferencialmente dentro de
+`decision_controls_group`, que é o grupo semântico de captura/decisão e mantém
+layout vertical. Existe ainda fallback defensivo para `QGridLayout`, fornecendo
+explicitamente linha, coluna e spans.
+
+Regressões cobrem os dois contratos: hierarquia responsiva atual e fallback em
+grade. A correção é somente estrutural/visual e não altera a limpeza do dataset,
+KNN ou regras do Modo Teste.
+
 ### ARQUIVO VISUAL NG / OK
 
 Os dois painéis já possuem contrato adaptativo e continuam assim:
