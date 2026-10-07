@@ -72,7 +72,13 @@ from src.ui.operational_controls import (
     OperationalControlsPresenter,
     install_operational_controls,
 )
+from src.ui.production_autonomy_controller import (
+    install_production_autonomy_controller,
+)
 from src.ui.production_confidence_gate import install_production_confidence_gate
+from src.ui.production_session_feedback import (
+    install_production_session_feedback,
+)
 from src.ui.qt_button_signal_adapter import install_qt_button_signal_adapter
 from src.ui.strict_category_memory_ui import install_strict_category_memory_ui
 from src.ui.test_mode_dataset_controls import install_test_mode_dataset_controls
@@ -135,7 +141,7 @@ def main():
     # Ordem dos wrappers operacionais:
     # 1. aprendizado humano;
     # 2. arquivos visuais NG/OK opcionais, ainda internos à trava de confiança;
-    # 3. confiança mínima de produção;
+    # 3. política de intervenção do Modo Produção (NG/revisão = operador);
     # 4. trava geral de uma única imagem ativa;
     # 5. filtro de rede: dois frames estáveis + epicentro válido;
     # 6. supervisão externa do MSS e recuperação de exceções;
@@ -149,8 +155,8 @@ def main():
     install_network_image_cycle_gate(ControlPanel, OperationalControlsPresenter)
     install_network_aoi_intake_filter(ControlPanel)
     install_local_capture_safety(ControlPanel)
-    # Camada externa e somente visual: mantém a primeira SIDE no pipeline
-    # produtivo e usa frames posteriores apenas para preencher TOP/MID.
+    # Camada externa multilight: mantém SIDE/TOP/MID na mesma peça e entrega
+    # a fusão final ao controlador único do Modo Produção.
     install_adhesive_multilight_inspection(ControlPanel)
     install_qt_button_signal_adapter(ControlPanel)
     install_mode_selector_gate(OperationalControlsPresenter)
@@ -177,6 +183,8 @@ def main():
     install_test_mode_dataset_controls(panel)
     install_operational_controls(panel)
     install_svg_iconography(panel)
+    install_production_session_feedback(panel)
+    install_production_autonomy_controller(panel)
     install_lighting_shortcuts(panel)
     install_xp_decision_shortcuts(panel)
     panel.show()
