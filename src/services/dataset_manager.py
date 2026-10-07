@@ -116,10 +116,13 @@ class DatasetManager:
                             )
                         except Exception:
                             lighting = "SIDE"
-                    index.setdefault(
-                        f"{lighting}:{fingerprint}",
-                        str(json_path) if json_path.exists() else "",
-                    )
+                    # Um PNG sem JSON não é memória KNN utilizável.
+                    # Nesse caso não bloqueamos a criação de um registro novo.
+                    if json_path.exists():
+                        index.setdefault(
+                            f"{lighting}:{fingerprint}",
+                            str(json_path),
+                        )
                 except Exception:
                     continue
 
