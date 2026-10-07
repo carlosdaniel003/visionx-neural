@@ -134,6 +134,7 @@ def install_strict_category_memory(knn_expert_cls) -> None:
                 {
                     "memory_scope": "categoria",
                     "memory_category": target_category,
+                    "memory_lighting": target_lighting,
                     "memory_candidate_count": 0,
                     "memory_filter_strict": True,
                     "memory_mode": "anomaly",
