@@ -29,6 +29,33 @@ class FakeLayout:
         self.items.append(layout)
 
 
+class FakeGridLayout(FakeLayout):
+    def __init__(self):
+        super().__init__()
+        self.placements = []
+
+    def rowCount(self):
+        return len(self.placements)
+
+    def columnCount(self):
+        return 2
+
+    def addLayout(
+        self,
+        layout,
+        row=None,
+        column=None,
+        row_span=None,
+        column_span=None,
+    ):
+        if row is None or column is None:
+            raise TypeError("QGridLayout requires row and column")
+        self.placements.append(
+            (layout, row, column, row_span, column_span)
+        )
+        self.items.append(layout)
+
+
 class FakeButton:
     def __init__(self, text):
         self.text = text
@@ -43,6 +70,9 @@ class FakeButton:
 
     def setVisible(self, visible):
         self.visible = visible
+
+    def setEnabled(self, _enabled):
+        pass
 
 
 class FakeMessageBox:
@@ -138,6 +168,36 @@ class TestModeDatasetControlsTests(unittest.TestCase):
         FakeMessageBox.answer = FakeMessageBox.StandardButton.Yes
         FakeMessageBox.information_calls = []
         FakeMessageBox.warning_calls = []
+
+    def test_responsive_ui_inserts_dataset_button_into_decision_group(self):
+        window = FakeWindow()
+        window.action_widget._layout = FakeGridLayout()
+        window.decision_controls_group = FakeActionWidget()
+
+        controls.install_test_mode_dataset_controls(window)
+
+        self.assertEqual(
+            len(window.decision_controls_group.layout().items),
+            1,
+        )
+        self.assertEqual(
+            len(window.action_widget.layout().placements),
+            0,
+        )
+
+    def test_grid_fallback_uses_required_row_and_column_arguments(self):
+        window = FakeWindow()
+        window.action_widget._layout = FakeGridLayout()
+
+        controls.install_test_mode_dataset_controls(window)
+
+        placements = window.action_widget.layout().placements
+        self.assertEqual(len(placements), 1)
+        _layout, row, column, row_span, column_span = placements[0]
+        self.assertEqual(row, 0)
+        self.assertEqual(column, 0)
+        self.assertEqual(row_span, 1)
+        self.assertEqual(column_span, 2)
 
     def test_button_is_visible_only_in_test_mode(self):
         window = FakeWindow()
