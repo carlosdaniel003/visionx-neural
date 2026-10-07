@@ -187,6 +187,8 @@ class DecisionKeyFeedbackOverlay(QFrame):
             return "TECLADO ODIN"
         if normalized == "odin_control":
             return "CONTROLE ODIN"
+        if normalized == "production_auto":
+            return "ODIN • MODO PRODUÇÃO"
         return "AÇÃO MANUAL"
 
     @staticmethod
@@ -196,6 +198,8 @@ class DecisionKeyFeedbackOverlay(QFrame):
             return "TECLA ENVIADA"
         if normalized == "xp_keyboard":
             return "TECLA RECEBIDA"
+        if normalized == "production_auto":
+            return "TECLA ENVIADA AUTOMATICAMENTE"
         return "TECLA PRESSIONADA"
 
     @staticmethod
