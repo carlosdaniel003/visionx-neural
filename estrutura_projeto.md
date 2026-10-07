@@ -4550,18 +4550,133 @@ componente realmente presente, porém deslocado / com mudança de registro / ilu
 
 O caso real DESLOCADO já validado, em que o componente está presente e a memória OK forte deve continuar elegível, permanece uma regressão obrigatória.
 
+### Correção implementada — footprint_absence dedicado
+
+A correção foi implementada especificamente dentro do especialista de
+`FALTANDO`, sem alterar a guarda transversal usada por
+`DESLOCADO/EMBORCADO/INVERTIDO`.
+
+Nova rota:
+
+~~~text
+missing_is_defect = True
+        ↓
+não é DESLOCAMENTO PROVÁVEL
+        ↓
+presença não foi confirmada por aparência
+ou geometry_only possui coarse similarity <= 10%
+        ↓
+ROI local:
+residual >= 60%
+estrutura >= 55%
+bordas incompatíveis >= 42%
+melhor match próximo < 30%
+        ↓
+contexto dual-scale:
+score >= 72%
+cobertura >= 32%
+residual >= 60%
+appearance loss >= 38%
+structure loss >= 35%
+direct similarity <= 62%
+melhor match próximo < 50%
+        ↓
+motores independentes:
+estrutural >= 35%
+semântico >= 50%
+        ↓
+missing_dedicated_footprint_absence = True
+        ↓
+missing_hard_absence = True
+~~~
+
+O evento real `6a45d7509bf8444fa5e529645cab1236` satisfaz esse
+contrato:
+
+~~~text
+body coarse similarity ≈ -0.023
+local residual ≈ 0.691
+local structure loss ≈ 0.629
+local edge mismatch ≈ 0.473
+local nearby similarity ≈ 0.216
+
+context score ≈ 0.776
+context coverage ≈ 0.370
+context residual ≈ 0.675
+context appearance loss ≈ 0.416
+context structure loss ≈ 0.397
+context direct similarity ≈ 0.584
+context nearby similarity ≈ 0.446
+
+motor estrutural ≈ 0.381
+motor semântico ≈ 0.550
+~~~
+
+Essa rota reconhece que footprint, pads e massa escura podem conservar uma
+silhueta semelhante mesmo depois que o corpo central desaparece. Portanto
+`geometry_only` deixa de ser suficiente para proteger presença quando há
+contradição multiescala independente.
+
+### Autoridade da memória nesta rota
+
+Quando `missing_dedicated_footprint_absence=True`:
+
+- a massa global invariável continua registrada para auditoria;
+- ela não pode acionar a exceção
+  `hard_missing_invariant_presence_ok_witness`;
+- o KNN continua visível no debug, porém recebe peso zero;
+- a exceção de memória OK **quase exata** permanece válida somente a partir do
+  contrato já existente de aproximadamente 99,5% + margem mínima.
+
+Para o evento real, o KNN OK ≈ 90,4% não é suficiente para anular a ausência
+física dedicada.
+
+Resultado esperado:
+
+~~~text
+fusion_rule = missing_hard_absence
+dominant_engine = missing
+physical weight = 100%
+KNN weight = 0%
+DEFEITO REAL
+confidence = 0.99
+~~~
+
+### Observabilidade
+
+O debug passa a incluir:
+
+~~~text
+FALTANDO footprint dedicado: True/False
+FALTANDO footprint motivo: ...
+~~~
+
+e o payload completo preserva:
+
+~~~text
+missing_dedicated_footprint_absence
+missing_dedicated_footprint_reason
+~~~
+
+### Regressões adicionadas
+
+Foram adicionados testes para:
+
+- reproduzir as métricas reais do evento `6a45...`;
+- promover esse vetor para hard missing;
+- impedir que KNN OK ≈ 90,4% + massa invariável vetem a ausência dedicada;
+- manter seguro um caso de `geometry_only` com coarse similarity ainda
+  plausível para corpo presente;
+- expor a nova rota no debug técnico.
+
 ### Status
 
 ~~~text
 registrado em 07/10/2026
-reprodução real confirmada pelo operador
-correção de decisão ainda NÃO implementada
+correção implementada na branch central
+aguardando validação operacional na AOI real
 ~~~
 
-Próxima etapa recomendada para este caso:
-
-1. reproduzir o evento em teste automatizado com as métricas do debug;
-2. revisar a testemunha geometry_only de corpo presente;
-3. avaliar uma regra intermediária entre missing_is_defect e hard missing;
-4. impedir veto indevido do KNN somente quando houver combinação física robusta;
-5. retestar também os casos DESLOCADO/EMBORCADO/INVERTIDO já protegidos.
+A regressão real de `DESLOCADO` com componente presente continua obrigatória:
+esta nova rota não é compartilhada com a guarda transversal e não deve
+transformar deslocamento/registro em componente faltando.
