@@ -30,6 +30,11 @@ class OperationalControlsVisualContractTests(unittest.TestCase):
         self.assertIn("operationStateBar", self.source)
         self.assertIn("operationStateBadge", self.source)
 
+    def test_production_pause_has_explicit_status_message(self):
+        self.assertIn("production_autonomy_paused", self.source)
+        self.assertIn("PRODUÇÃO PAUSADA", self.source)
+        self.assertIn("ESPAÇO • CONTINUAR", self.source)
+
     def test_state_bar_has_compact_and_wide_reflow(self):
         self.assertIn("QGridLayout", self.source)
         self.assertIn("def apply_responsive_layout", self.source)
