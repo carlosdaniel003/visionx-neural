@@ -3614,3 +3614,217 @@ src/ui/iconography.py
 
 e é exclusivamente visual. Não altera análise, KNN, arquivos OK/NG, dataset,
 fusão multilight, teclas 0/1, setas ou protocolo Windows XP.
+
+
+## Contrato planejado — Modo Produção autônomo v1
+
+Esta etapa se aplica **somente ao Modo Produção**. O **Modo Teste deve manter
+exatamente o comportamento atual**, sem scroll automático, contador de decisões
+autônomas ou julgamento automático adicional.
+
+### Objetivo
+
+O ODIN poderá julgar peças automaticamente, mas o processo deve continuar
+visível para o operador. A prioridade desta fase não é velocidade; é permitir
+acompanhar o que o ODIN analisou antes que ele envie uma decisão à AOI.
+
+Contrato visual e operacional:
+
+```text
+imagem recebida
+      ↓
+análise completa
+      ↓
+renderizar imagens, especialistas, KNN, decisão, confiança,
+debug e demais painéis
+      ↓
+resultado final já visível no ODIN
+      ↓
+scroll automático da interface
+do topo até a parte inferior
+      ↓
+pequena pausa visual no final
+      ↓
+avaliar política de autonomia
+```
+
+O scroll deve ser não bloqueante, usando mecanismos do Qt
+(`QTimer` / animação da scrollbar) e **nunca `sleep` na thread da interface**.
+
+### Política de decisão nesta fase de testes
+
+Não existe mais requisito de confiança mínima de 99% para permitir uma decisão
+automática OK. O estado final apresentado pelo ODIN é a referência operacional.
+
+A política inicial fica:
+
+```text
+FALHA FALSA
+      ↓
+Modo Produção
+      ↓
+scroll/apresentação concluídos
+      ↓
+ODIN envia 0 = OK automaticamente
+
+DEFEITO REAL / NG
+      ↓
+NÃO enviar 1 automaticamente nesta fase
+      ↓
+pausar autonomia
+      ↓
+aguardar operador: 0 = OK ou 1 = NG
+
+REVISÃO OBRIGATÓRIA
+      ↓
+não enviar 0 nem 1
+      ↓
+pausar autonomia
+      ↓
+aguardar operador: 0 = OK ou 1 = NG
+```
+
+Portanto, embora o mapeamento operacional continue sendo:
+
+```text
+FALHA FALSA → 0 / OK
+DEFEITO REAL → 1 / NG
+```
+
+**somente o caminho FALHA FALSA → 0 é autônomo nesta primeira versão**.
+`DEFEITO REAL/NG` e `REVISÃO OBRIGATÓRIA` permanecem deliberadamente sob
+decisão humana enquanto o sistema está em fase de testes.
+
+### Intervenção humana e retomada automática
+
+Quando houver `DEFEITO REAL/NG` ou `REVISÃO OBRIGATÓRIA`, o ODIN deve:
+
+- congelar o ciclo atual;
+- manter toda a análise renderizada;
+- exibir mensagem visual persistente indicando que há intervenção necessária;
+- aceitar julgamento humano tanto pelo teclado do Windows XP quanto pelos
+  controles/atalhos do ODIN;
+- não receber uma nova peça enquanto a atual estiver pendente.
+
+Depois que o operador decidir `0` ou `1`, o ciclo é encerrado normalmente e
+a autonomia fica automaticamente habilitada novamente para a **próxima peça**.
+Não deve existir uma etapa manual extra de "retomar automação".
+
+### Contador da sessão de Produção
+
+O Modo Produção deve possuir um overlay/card visível durante a sessão com, no
+mínimo:
+
+```text
+MODO PRODUÇÃO • SESSÃO
+
+OK AUTO   N
+NG AUTO   N
+```
+
+Regras:
+
+- `OK AUTO` incrementa somente quando o ODIN realmente envia `0`
+  automaticamente;
+- `NG AUTO` conta somente decisões `1` enviadas automaticamente pelo ODIN;
+- nesta primeira fase, `NG AUTO` deve permanecer em zero porque NG não será
+  automatizado;
+- decisões humanas, mesmo realizadas enquanto o Modo Produção está ativo, não
+  incrementam os contadores automáticos;
+- os contadores pertencem à sessão atual do Modo Produção;
+- sair do Modo Produção e entrar novamente inicia uma nova sessão em zero.
+
+### Feedback visual da decisão automática
+
+Quando o ODIN enviar um `0` sozinho, deve existir feedback visual equivalente
+ao feedback já usado para teclas, deixando a origem explícita. Exemplo:
+
+```text
+TECLA ENVIADA AUTOMATICAMENTE
+
+0
+OK
+
+ODIN • MODO PRODUÇÃO
+```
+
+Esse feedback deve ocorrer somente **depois** de:
+
+1. toda a análise estar pronta;
+2. o veredito estar renderizado;
+3. o scroll automático ter apresentado a interface;
+4. a pausa final ter terminado.
+
+### Mensagem para intervenção
+
+Para `DEFEITO REAL/NG` ou `REVISÃO OBRIGATÓRIA`, usar um card/overlay
+persistente e independente, por exemplo:
+
+```text
+INTERVENÇÃO NECESSÁRIA
+
+DEFEITO REAL
+Aguardando operador
+
+0 = OK
+1 = NG
+```
+
+ou:
+
+```text
+INTERVENÇÃO NECESSÁRIA
+
+REVISÃO OBRIGATÓRIA
+Aguardando operador
+
+0 = OK
+1 = NG
+```
+
+O card só desaparece quando a decisão humana da peça atual for consumida.
+
+### Separação entre modos
+
+Contrato obrigatório:
+
+```text
+Modo Produção
+→ pode usar apresentação automática + scroll
+→ FALHA FALSA pode gerar 0 automático
+→ NG/DEFEITO REAL e REVISÃO aguardam operador
+→ contador de decisões automáticas da sessão
+
+Modo Teste
+→ permanece exatamente como está hoje
+→ nenhuma nova automação de julgamento
+→ nenhum scroll automático obrigatório
+→ nenhum contador de decisões autônomas
+```
+
+Nenhuma dessas regras deve alterar o comportamento do Modo Teste por efeito
+colateral.
+
+### Direção arquitetural recomendada
+
+A implementação futura deve centralizar a autonomia em um único controlador,
+evitando que `control_panel.py`, o gate de confiança e o fluxo multilight de
+adesivo enviem decisões automáticas de forma independente.
+
+Responsabilidades esperadas:
+
+```text
+ProductionAutonomyController
+├── esperar renderização final
+├── executar apresentação/scroll
+├── avaliar veredito final
+├── enviar somente decisões autorizadas
+├── pausar em NG/revisão
+├── observar decisão humana
+└── manter contadores da sessão
+```
+
+A regra de confiança mínima de 99% existente no gate atual **não deve ser usada
+como requisito para o OK automático desta nova política**. A futura
+implementação deverá substituir/adequar esse comportamento sem interferir no
+Modo Teste.
