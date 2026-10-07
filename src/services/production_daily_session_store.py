@@ -1,4 +1,4 @@
-"""Persistência diária das métricas do Modo Produção.
+r"""Persistência diária das métricas do Modo Produção.
 
 Os dados ficam fora do repositório para sobreviver a:
 - fechamento/reabertura do ODIN;
