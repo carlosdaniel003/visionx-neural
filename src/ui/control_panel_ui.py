@@ -1195,36 +1195,32 @@ class ControlPanelUI:
             for row, (item, label) in enumerate(
                 zip(layout_items, self.status_widgets)
             ):
+                item.setMinimumWidth(0)
+                item.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Preferred,
+                )
                 label.setAlignment(
                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
                 )
-                self.status_layout.addWidget(
-                    item,
-                    row,
-                    0,
-                    1,
-                    1,
-                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                )
+                self.status_layout.addWidget(item, row, 0)
             self.status_layout.setColumnStretch(0, 1)
             self.status_layout.setColumnStretch(1, 0)
             self.status_layout.setColumnStretch(2, 0)
-            window.status_frame.setMinimumHeight(72)
+            window.status_frame.setMinimumHeight(84)
         else:
             for column, (item, label, alignment) in enumerate(
                 zip(layout_items, self.status_widgets, alignments)
             ):
-                label.setAlignment(alignment)
-                self.status_layout.addWidget(
-                    item,
-                    0,
-                    column,
-                    1,
-                    1,
-                    alignment,
+                item.setMinimumWidth(0)
+                item.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Preferred,
                 )
+                label.setAlignment(alignment)
+                self.status_layout.addWidget(item, 0, column)
                 self.status_layout.setColumnStretch(column, 1)
-            window.status_frame.setMinimumHeight(34)
+            window.status_frame.setMinimumHeight(38)
 
     @staticmethod
     def _reflow_grid(grid: QGridLayout, widgets: list[QWidget], columns: int) -> None:
