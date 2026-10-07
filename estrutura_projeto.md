@@ -315,6 +315,197 @@ Um conjunto multilight incompleto nunca é arquivado parcialmente como se fosse
 um conjunto completo. Nessa situação, o resolvedor retorna para a evidência
 monoimagem disponível do ciclo.
 
+#### Dataset e memória de aprendizado multilight
+
+O multilight também passa a enriquecer o **Active Learning/KNN**, e não somente
+os arquivos visuais OK/NG.
+
+Um ciclo completo continua representando **uma única peça e um único julgamento
+humano**, porém a persistência do aprendizado pode produzir três memórias
+relacionadas:
+
+```text
+mesmo event_id
+mesmo OCR
+mesmo rótulo humano OK ou NG
+
+├── memória SIDE
+├── memória TOP
+└── memória MID
+```
+
+Cada registro recebe explicitamente:
+
+```text
+lighting_mode = SIDE | TOP | MID
+
+Board
+Parts
+Category
+Value
+
+event_id
+análise local da iluminação
+resumo da fusão multilight final
+rótulo humano da peça
+```
+
+Portanto TOP e MID **não viram peças independentes**. São observações adicionais
+da mesma anomalia, sob condições de iluminação diferentes.
+
+A fila de persistência em
+`src/services/decision_persistence.py` grava as três observações e recarrega a
+memória KNN somente uma vez ao final do conjunto.
+
+Decisões automáticas de Produção continuam sem ensinar a IA a partir da própria
+resposta. O Active Learning permanece baseado em confirmação humana, evitando
+feedback autorreferente.
+
+##### Proteção contra epicentro/quadrado menor incorreto
+
+O dataset não depende somente do menor retângulo detectado.
+
+Uma situação real possível é:
+
+```text
+quadrado menor
+  → está em uma região local
+
+defeito verdadeiro
+  → está evidente em outra região
+  → ou só fica evidente olhando a imagem completa
+```
+
+Para evitar perda dessa informação, a memória passa a trabalhar com três
+escalas quando os dados novos estão disponíveis:
+
+```text
+1. EPICENTRO
+   detalhe local / quadrado menor
+
+2. CONTEXTO DO COMPONENTE
+   caixa maior / região estrutural
+
+3. QUADRO COMPLETO
+   toda a área de inspeção gabarito x teste
+```
+
+A terceira escala é implementada em:
+
+```text
+src/core/full_frame_memory.py
+```
+
+Ela é independente da posição do epicentro e da caixa maior. Assim, uma memória
+pode continuar carregando evidência global mesmo quando a proposta local estiver
+deslocada da região onde o defeito é visualmente mais explícito.
+
+Quando as três escalas existem, a comparação preserva a política anterior como
+base e acrescenta o quadro completo como evidência global. JSONs antigos
+continuam compatíveis: quando não possuem a terceira escala, o comparador volta
+para a política anterior sem invalidá-los.
+
+O frame bruto recebido da AOI também pode ser salvo como `*_source.png` para
+auditoria. Ele não substitui o par técnico gabarito/teste usado pela memória.
+
+##### Isolamento por iluminação
+
+A memória KNN passa a consultar:
+
+```text
+mesma categoria
++
+mesma iluminação
+```
+
+Exemplo:
+
+```text
+consulta FALTANDO / TOP
+  → memória FALTANDO / TOP
+
+não consulta SIDE como se fosse TOP
+não consulta MID como se fosse TOP
+```
+
+Isso é necessário porque a aparência física da mesma anomalia muda
+substancialmente entre SIDE, TOP e MID.
+
+Registros antigos sem `lighting_mode` são tratados como:
+
+```text
+SIDE
+```
+
+porque todo o dataset histórico anterior à generalização multilight foi formado
+a partir da iluminação padrão SIDE.
+
+##### Deduplicação do dataset
+
+A deduplicação do Active Learning é separada da deduplicação dos arquivos
+visuais OK/NG.
+
+A chave de identidade do aprendizado considera:
+
+```text
+rótulo OK/NG
+categoria
+Board
+Parts
+iluminação
+conteúdo visual exato
+```
+
+O conteúdo visual recebe fingerprint SHA-256 determinístico.
+
+Consequência para o dataset histórico:
+
+```text
+SIDE antigo idêntico já existe
+  → não duplica a imagem SIDE
+
+TOP novo
+  → salva memória TOP
+
+MID novo
+  → salva memória MID
+```
+
+Mesmo que duas iluminações produzam pixels idênticos por alguma condição
+anormal, suas identidades não são fundidas: SIDE/TOP/MID permanecem escopos
+diferentes.
+
+Para OK, uma duplicata exata pode enriquecer/reutilizar o registro/protótipo
+existente.
+
+Para NG, permanece a regra de segurança já existente:
+
+```text
+cada observação NG = memória JSON protegida individual
+```
+
+Porém a imagem pesada repetida não é escrita novamente. O novo JSON aponta que
+o conteúdo visual já existe, preservando a observação NG sem desperdiçar disco.
+
+##### REVISÃO OBRIGATÓRIA
+
+`REVISÃO OBRIGATÓRIA` continua não sendo uma terceira classe do dataset.
+
+O fluxo é:
+
+```text
+ODIN → REVISÃO OBRIGATÓRIA
+        ↓
+operador decide
+        ↓
+0 = OK ou 1 = NG
+        ↓
+SIDE/TOP/MID recebem o mesmo rótulo humano final
+```
+
+Os JSONs preservam que a fusão havia solicitado revisão, mas a classe usada para
+aprendizado continua sendo a verdade humana OK/NG.
+
 #### Captura local MSS
 
 A generalização é aplicada ao fluxo que vem da AOI pela rede.
@@ -355,6 +546,11 @@ A generalização alterou ou passou a depender diretamente de:
 src/core/multilight_fusion.py
 src/core/adhesive_multilight_fusion.py
 src/core/adhesive_multilight_analysis.py
+src/core/full_frame_memory.py
+src/core/dual_scale_memory.py
+src/core/strict_category_memory.py
+src/core/prototype_memory.py
+src/core/experts/knn_expert.py
 
 src/ui/adhesive_multilight_automation.py
 src/ui/adhesive_multilight_inspection.py
@@ -366,6 +562,9 @@ src/ui/control_panel_ui.py
 src/services/image_archive_candidates.py
 src/services/ng_image_archive.py
 src/services/ok_image_archive.py
+src/services/anomaly_learning.py
+src/services/decision_persistence.py
+src/services/dataset_manager.py
 ```
 
 Os nomes `adhesive_multilight_*` foram mantidos onde necessário para evitar uma
@@ -383,6 +582,7 @@ e o teste dedicado:
 
 ```text
 tests/test_multilight_generalization.py
+tests/test_multilight_learning.py
 ```
 
 A suíte específica valida:
@@ -399,13 +599,22 @@ A suíte específica valida:
 - três imagens independentes no arquivo visual;
 - bloqueio de conjunto multilight incompleto;
 - debug com SIDE/TOP/MID;
-- composição de `Copiar imagem`.
+- composição de `Copiar imagem`;
+- captura de SIDE/TOP/MID completos para Active Learning;
+- mesmo OCR/event_id/rótulo humano nas três persistências;
+- isolamento KNN por iluminação;
+- compatibilidade de memórias antigas como SIDE;
+- terceira escala de quadro completo;
+- defeito fora do quadrado menor preservado na assinatura global;
+- deduplicação do SIDE legado;
+- independência de TOP/MID;
+- NG protegido em JSON sem duplicação da imagem pesada.
 
 Resultado da validação específica em 07/10/2026:
 
 ```text
 General Multilight Tests
-43 testes executados
+50 testes executados
 resultado: SUCCESS
 ```
 
@@ -442,6 +651,10 @@ da AOI é **multilight por padrão**, e não mais uma exceção exclusiva de ade
 
 **Módulos Existentes:**
 - `src/core/multilight_fusion.py`: Fusão final SIDE/TOP/MID para categorias AOI gerais, delegando `MUITO ADESIVO` à política especializada existente.
+- `src/core/full_frame_memory.py`: Terceira escala da memória; compara o quadro completo para preservar evidências fora do epicentro/contexto local.
+- `src/services/anomaly_learning.py`: Captura o snapshot humano e, em ciclo multilight completo, preserva SIDE/TOP/MID antes da limpeza da interface.
+- `src/services/decision_persistence.py`: Persiste as três observações multilight sob um único julgamento humano e recarrega o KNN uma vez ao final.
+- `src/services/dataset_manager.py`: Persistência `visionx.memory.v3`, identificação de iluminação, OCR/event_id compartilhados e deduplicação visual do dataset.
 - `src/config/settings.py`: Centralização de todas as variáveis de ambiente, caminhos e constantes mágicas.
 - `src/services/ng_image_archive.py`: Arquivo visual opcional de decisões finais NG em fila de background, independente do dataset e da memória KNN.
 - `src/services/ok_image_archive.py`: Arquivo visual opcional de decisões humanas OK em fila de background, usando a mesma evidência de `Copiar imagem`.
