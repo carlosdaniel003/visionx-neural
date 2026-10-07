@@ -1,5 +1,6 @@
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -290,6 +291,60 @@ class DatasetDedupTests(unittest.TestCase):
             self.assertGreaterEqual(
                 upgraded["deduplication"]["duplicate_observations"],
                 1,
+            )
+
+    def test_duplicate_ng_keeps_two_json_memories_but_one_heavy_image(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            normal_dir = root / "normal"
+            anomaly_dir = root / "anomaly"
+            reference = np.zeros((48, 48, 3), dtype=np.uint8)
+            image = reference.copy()
+            image[8:32, 8:32] = 210
+            info = {
+                "board": "B-NG",
+                "parts": "R10",
+                "category": "FALTANDO",
+                "value": "FALTANDO",
+                "lighting_mode": "SIDE",
+            }
+
+            with (
+                patch.object(settings, "NORMAL_DIR", normal_dir),
+                patch.object(settings, "ANOMALY_DIR", anomaly_dir),
+            ):
+                first = DatasetManager.save_sample(
+                    ng_image=image,
+                    label="NG",
+                    sample_image=reference,
+                    aoi_info=info,
+                    analysis={"detail": {}},
+                    save_images=True,
+                    lighting_mode="SIDE",
+                    event_id="evt-ng-1",
+                )
+                time.sleep(0.005)
+                second = DatasetManager.save_sample(
+                    ng_image=image.copy(),
+                    label="NG",
+                    sample_image=reference,
+                    aoi_info=info,
+                    analysis={"detail": {}},
+                    save_images=True,
+                    lighting_mode="SIDE",
+                    event_id="evt-ng-2",
+                )
+
+            self.assertNotEqual(first, second)
+            category_dir = anomaly_dir / "FALTANDO"
+            self.assertEqual(len(list(category_dir.glob("*.json"))), 2)
+            self.assertEqual(len(list(category_dir.glob("*_test.png"))), 1)
+
+            with open(second, "r", encoding="utf-8") as file:
+                duplicate = json.load(file)
+            self.assertTrue(duplicate["storage"]["visual_deduplicated"])
+            self.assertTrue(
+                duplicate["storage"]["duplicate_visual_of_json"]
             )
 
     def test_same_pixels_in_different_lighting_keep_distinct_memories(self):
