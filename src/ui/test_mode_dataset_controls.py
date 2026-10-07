@@ -27,8 +27,33 @@ def install_test_mode_dataset_controls(window) -> None:
     button_row.addStretch()
     button_row.addWidget(window.btn_clear_dataset)
 
-    action_layout = window.action_widget.layout()
-    action_layout.addLayout(button_row)
+    # O layout raiz dos Controles Operacionais passou a ser um QGridLayout
+    # responsivo. O botão administrativo pertence semanticamente ao grupo de
+    # captura/decisão, cujo layout continua vertical. Mantemos fallback para
+    # versões antigas da interface e para usos isolados deste instalador.
+    decision_group = getattr(window, "decision_controls_group", None)
+    action_layout = (
+        decision_group.layout()
+        if decision_group is not None and decision_group.layout() is not None
+        else window.action_widget.layout()
+    )
+
+    try:
+        action_layout.addLayout(button_row)
+    except TypeError:
+        # Compatibilidade defensiva quando o fallback também for QGridLayout.
+        row_count = getattr(action_layout, "rowCount", lambda: 0)()
+        column_count = max(
+            1,
+            getattr(action_layout, "columnCount", lambda: 1)(),
+        )
+        action_layout.addLayout(
+            button_row,
+            row_count,
+            0,
+            1,
+            column_count,
+        )
 
     def update_visibility(mode_text: str) -> None:
         try:
