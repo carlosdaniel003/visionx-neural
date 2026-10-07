@@ -62,14 +62,31 @@ class ResponsiveIconographyStatusBarTests(unittest.TestCase):
 
     def test_status_icon_groups_survive_responsive_reflow(self):
         panel, builder = self._build_panel("compact")
-        SvgIconographyPresenter(panel)
+        presenter = SvgIconographyPresenter(panel)
 
         builder._layout_status_bar(panel, compact=False)
+        presenter.apply_responsive_layout(compact=False)
         self.assertEqual(builder.status_layout.count(), 3)
+        for column, group in enumerate(panel.status_layout_items):
+            index = builder.status_layout.indexOf(group)
+            row, current_column, _row_span, _column_span = (
+                builder.status_layout.getItemPosition(index)
+            )
+            self.assertEqual(row, 0)
+            self.assertEqual(current_column, column)
 
         builder._layout_status_bar(panel, compact=True)
+        presenter.apply_responsive_layout(compact=True)
         self.assertEqual(builder.status_layout.count(), 3)
         self.assertEqual(len(panel.status_layout_items), 3)
+        for row, group in enumerate(panel.status_layout_items):
+            index = builder.status_layout.indexOf(group)
+            current_row, column, _row_span, _column_span = (
+                builder.status_layout.getItemPosition(index)
+            )
+            self.assertEqual(current_row, row)
+            self.assertEqual(column, 0)
+
         self.assertTrue(
             all(
                 label.parent().objectName() == "statusGroup"
