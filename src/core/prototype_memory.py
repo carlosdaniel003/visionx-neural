@@ -34,7 +34,14 @@ def _clean_key(value: Any) -> str:
     return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
 
 
-def _record_scope(record: dict) -> tuple[str, str, str, str]:
+def _lighting_key(value: str) -> str:
+    normalized = str(value or "").strip().upper()
+    # Dataset legado foi formado antes do multilight geral e, operacionalmente,
+    # corresponde à iluminação padrão SIDE.
+    return normalized if normalized in {"SIDE", "TOP", "MID"} else "SIDE"
+
+
+def _record_scope(record: dict) -> tuple[str, str, str, str, str]:
     signature = record.get("anomaly_signature") or {}
     scale = (
         "dual"
@@ -45,16 +52,18 @@ def _record_scope(record: dict) -> tuple[str, str, str, str]:
         canonical_memory_category(record.get("category", "")),
         _clean_key(record.get("board", "")),
         _clean_key(record.get("part", "")),
+        _lighting_key(record.get("lighting_mode", "")),
         scale,
     )
 
 
-def _json_scope(data: dict) -> tuple[str, str, str]:
+def _json_scope(data: dict) -> tuple[str, str, str, str]:
     info = data.get("aoi_info", {}) if isinstance(data, dict) else {}
     return (
         canonical_memory_category(info.get("category", "")),
         _clean_key(info.get("board", "")),
         _clean_key(info.get("parts", "")),
+        _lighting_key(info.get("lighting_mode", "")),
     )
 
 
@@ -112,12 +121,16 @@ def _augment_record_from_json(record: dict) -> dict:
     data = _read_json(output.get("json_path", ""))
     if not data:
         output.setdefault("board", "")
+        output.setdefault("lighting_mode", "SIDE")
         output.setdefault("prototype_occurrences", 1)
         return output
 
     info = data.get("aoi_info", {}) or {}
     prototype = data.get("prototype", {}) or {}
     output["board"] = _clean_key(info.get("board", ""))
+    output["lighting_mode"] = _lighting_key(
+        info.get("lighting_mode", "")
+    )
     output["prototype_occurrences"] = max(
         1,
         int(prototype.get("occurrences", 1) or 1),
@@ -326,6 +339,7 @@ def _find_persistent_ok_prototype(
         canonical_memory_category(info.get("category", "")),
         _clean_key(info.get("board", "")),
         _clean_key(info.get("parts", "")),
+        _lighting_key(info.get("lighting_mode", "")),
     )
     if not settings.NORMAL_DIR.exists():
         return None
@@ -512,20 +526,68 @@ def install_prototype_memory(
         save_images=False,
         source="",
         ai_decision="",
+        lighting_mode="",
+        event_id="",
+        source_frame=None,
+        final_analysis=None,
     ):
         normalized = str(label or "").strip().upper()
+        info = dict(aoi_info or {})
+        normalized_lighting = _lighting_key(
+            lighting_mode or info.get("lighting_mode", "")
+        )
+        info["lighting_mode"] = normalized_lighting
+
+        # Duplicata pixel a pixel tem prioridade sobre compactação por
+        # similaridade. O DatasetManager atualiza o JSON existente sem criar
+        # nova imagem, inclusive para registros SIDE legados.
+        try:
+            category = dataset_manager_cls._safe_category(info)
+            base_folder = (
+                settings.ANOMALY_DIR
+                if normalized == "NG"
+                else settings.NORMAL_DIR
+            )
+            target_folder = base_folder / category
+            fingerprint = dataset_manager_module.image_fingerprint(ng_image)
+            existing = (
+                dataset_manager_cls._fingerprint_index(
+                    target_folder
+                ).get(fingerprint)
+                if fingerprint
+                else None
+            )
+        except Exception:
+            existing = None
+
+        if existing is not None:
+            return original_save_sample(
+                ng_image=ng_image,
+                label=normalized,
+                sample_image=sample_image,
+                aoi_info=info,
+                analysis=analysis,
+                save_images=save_images,
+                source=source,
+                ai_decision=ai_decision,
+                lighting_mode=normalized_lighting,
+                event_id=event_id,
+                source_frame=source_frame,
+                final_analysis=final_analysis,
+            )
+
         signature = _query_signature(
             dataset_manager_module,
             ng_image,
             sample_image,
-            aoi_info,
+            info,
             analysis,
         )
 
         if normalized == "OK" and valid_anomaly_signature(signature):
             match = _find_persistent_ok_prototype(
                 signature,
-                aoi_info,
+                info,
                 comparator,
             )
             if match is not None:
@@ -548,11 +610,15 @@ def install_prototype_memory(
             ng_image=ng_image,
             label=normalized,
             sample_image=sample_image,
-            aoi_info=aoi_info,
+            aoi_info=info,
             analysis=analysis,
             save_images=save_images,
             source=source,
             ai_decision=ai_decision,
+            lighting_mode=normalized_lighting,
+            event_id=event_id,
+            source_frame=source_frame,
+            final_analysis=final_analysis,
         )
         if path and normalized in {"OK", "NG"}:
             _update_prototype_metadata(
