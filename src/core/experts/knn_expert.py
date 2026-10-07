@@ -160,9 +160,18 @@ class KNNExpert:
                         if image_file
                         else str(json_path)
                     )
+                    lighting_mode = str(
+                        aoi_info.get("lighting_mode", "") or ""
+                    ).strip().upper()
+                    if lighting_mode not in {"SIDE", "TOP", "MID"}:
+                        # Memória anterior ao multilight geral corresponde à
+                        # iluminação padrão usada historicamente pela AOI.
+                        lighting_mode = "SIDE"
+
                     record = {
                         "part": part_name,
                         "category": category_name,
+                        "lighting_mode": lighting_mode,
                         "path": match_path,
                         "json_path": str(json_path),
                         "label": resolved_label,
