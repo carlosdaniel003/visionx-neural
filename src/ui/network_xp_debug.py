@@ -300,12 +300,13 @@ def _multilight_event_matches(panel) -> bool:
     )
     category = str(
         getattr(panel, "adhesive_multilight_last_category", "") or ""
-    ).strip().upper()
+    ).strip()
     return bool(
         event_id
         and last_event_id
         and event_id == last_event_id
-        and category == "MUITO ADESIVO"
+        and category
+        and category.upper() not in {"UNKNOWN", "SEM CATEGORIA"}
     )
 
 
@@ -330,10 +331,13 @@ def _multilight_counts(panel) -> tuple[int, int]:
 
 
 def format_multilight_debug_report(panel) -> str:
-    """Acrescenta SIDE/TOP/MID ao debug somente para o evento de adesivo."""
+    """Acrescenta SIDE/TOP/MID ao debug do evento multilight atual."""
     if not _multilight_event_matches(panel):
         return ""
 
+    category = str(
+        getattr(panel, "adhesive_multilight_last_category", "") or ""
+    ).strip()
     analyses = getattr(panel, "adhesive_multilight_last_analyses", {})
     if not isinstance(analyses, dict):
         analyses = {}
@@ -349,11 +353,17 @@ def format_multilight_debug_report(panel) -> str:
     final_detail = final_analysis.get("detail", {})
     final_detail = final_detail if isinstance(final_detail, dict) else {}
 
+    title = (
+        "ANÁLISES MULTILIGHT - ADESIVO"
+        if category.upper() == "MUITO ADESIVO"
+        else f"ANÁLISES MULTILIGHT - {category or 'CATEGORIA'}"
+    )
     lines = [
         "",
-        "ANÁLISES MULTILIGHT - ADESIVO",
+        title,
         "=" * 72,
         "Escopo: diagnóstico técnico independente por iluminação.",
+        f"Categoria multilight: {category or '-'}",
         f"Evento multilight: {getattr(panel, 'adhesive_multilight_last_event_id', '-')}",
         "",
         "JULGAMENTO FINAL MULTILIGHT",
@@ -369,10 +379,11 @@ def format_multilight_debug_report(panel) -> str:
                 f"Score final: {final_detail.get('final_score', '-')}",
                 f"Score físico máximo: {final_detail.get('physical_score', '-')}",
                 f"Regra de fusão: {final_detail.get('fusion_rule', '-')}",
-                f"Iluminação dominante: {final_detail.get('adhesive_multilight_dominant_mode', '-')}",
-                f"Iluminações positivas: {final_detail.get('adhesive_multilight_positive_modes', [])}",
-                f"Auxiliares fortes: {final_detail.get('adhesive_multilight_strong_auxiliary_modes', [])}",
-                f"Papel da memória KNN: {final_detail.get('adhesive_multilight_memory_role', '-')}",
+                f"Iluminação dominante: {final_detail.get('multilight_dominant_mode', final_detail.get('adhesive_multilight_dominant_mode', '-'))}",
+                f"Iluminações positivas: {final_detail.get('multilight_positive_modes', final_detail.get('adhesive_multilight_positive_modes', []))}",
+                f"Iluminações fortes: {final_detail.get('multilight_strong_positive_modes', final_detail.get('adhesive_multilight_strong_auxiliary_modes', []))}",
+                f"Iluminações em revisão: {final_detail.get('multilight_review_modes', [])}",
+                f"Papel da memória KNN: {final_detail.get('multilight_memory_role', final_detail.get('adhesive_multilight_memory_role', '-'))}",
                 f"Motivo final: {final_analysis.get('reason', '-')}",
             ]
         )
@@ -724,13 +735,13 @@ def sync_network_debug_controls(panel) -> None:
             if multilight_match:
                 if analysis_count == 3 and frame_count == 3:
                     state_label.setText(
-                        "Adesivo multilight completo • 3 análises + "
+                        "Multilight completo • 3 análises + "
                         "imagem composta SIDE/TOP/MID"
                     )
                     state_label.setProperty("state", "ready")
                 else:
                     state_label.setText(
-                        "Adesivo multilight em coleta • "
+                        "Multilight em coleta • "
                         f"análises {analysis_count}/3 • imagens {frame_count}/3"
                     )
                     state_label.setProperty("state", "partial")
