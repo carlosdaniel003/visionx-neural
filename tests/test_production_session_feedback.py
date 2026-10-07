@@ -18,6 +18,8 @@ class ProductionSessionFeedbackTests(unittest.TestCase):
     def setUp(self):
         self.panel = QWidget()
         self.panel.resize(1200, 800)
+        self.panel.show()
+        self.app.processEvents()
         self.overlay = ProductionSessionFeedbackOverlay(self.panel)
 
     def test_reset_keeps_card_hidden_until_piece_is_active(self):
