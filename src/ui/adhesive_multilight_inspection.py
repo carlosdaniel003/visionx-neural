@@ -524,6 +524,7 @@ def _reset_session(panel, *, show_normal: bool = True) -> None:
     panel.adhesive_multilight_views = {}
     panel.adhesive_multilight_analyses = {}
     panel.adhesive_multilight_source_frames = {}
+    panel.adhesive_multilight_learning_samples = {}
     panel.adhesive_multilight_pending_source_frame = None
     panel.adhesive_multilight_pending_source_mode = ""
     panel.adhesive_multilight_primary_event_id = None
@@ -570,6 +571,48 @@ def _store_view(
     return True
 
 
+def _store_learning_sample(
+    panel,
+    mode: str,
+    sample_crop,
+    ng_crop,
+    analysis: dict | None,
+    source_frame=None,
+) -> bool:
+    """Preserva a evidência completa usada pelo Active Learning por luz.
+
+    A memória nunca depende somente do retângulo menor: cada observação mantém
+    o gabarito e o teste completos da área de inspeção. O frame bruto da AOI é
+    guardado separadamente apenas para auditoria/contexto.
+    """
+    normalized = str(mode or "").strip().upper()
+    if (
+        normalized not in LIGHTING_ORDER
+        or not _valid_image(sample_crop)
+        or not _valid_image(ng_crop)
+        or not isinstance(analysis, dict)
+    ):
+        return False
+
+    samples = getattr(panel, "adhesive_multilight_learning_samples", None)
+    if not isinstance(samples, dict):
+        samples = {}
+        panel.adhesive_multilight_learning_samples = samples
+
+    samples[normalized] = {
+        "lighting_mode": normalized,
+        "sample_image": sample_crop.copy(),
+        "test_image": ng_crop.copy(),
+        "source_frame": (
+            source_frame.copy()
+            if _valid_image(source_frame)
+            else np.array([])
+        ),
+        "analysis": analysis,
+    }
+    return True
+
+
 def _current_lighting(panel) -> str:
     label = getattr(panel, "lbl_light_value", None)
     try:
@@ -601,6 +644,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_views = {}
         self.adhesive_multilight_analyses = {}
         self.adhesive_multilight_source_frames = {}
+        self.adhesive_multilight_learning_samples = {}
         self.adhesive_multilight_pending_source_frame = None
         self.adhesive_multilight_pending_source_mode = ""
         self.adhesive_multilight_primary_event_id = None
@@ -730,17 +774,28 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     "adhesive_multilight_pending_source_frame",
                     None,
                 )
+                source_for_learning = None
                 if (
                     pending_source_mode == aux_mode
                     and _valid_image(pending_source_frame)
                 ):
                     source_copy = pending_source_frame.copy()
+                    source_for_learning = source_copy
                     self.adhesive_multilight_source_frames[aux_mode] = (
                         source_copy
                     )
                     self.adhesive_multilight_last_source_frames[aux_mode] = (
                         source_copy.copy()
                     )
+
+                _store_learning_sample(
+                    self,
+                    aux_mode,
+                    sample_crop,
+                    ng_crop,
+                    lighting_analysis,
+                    source_frame=source_for_learning,
+                )
 
                 self.adhesive_multilight_last_analyses[aux_mode] = (
                     lighting_analysis
@@ -821,6 +876,10 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             )
 
         # A primeira imagem SIDE continua usando o pipeline atual integralmente.
+        # A iluminação também entra no aoi_info para manter a memória KNN
+        # estritamente separada por SIDE/TOP/MID.
+        aoi_info["lighting_mode"] = "SIDE"
+
         # Em Produção, o controlador autônomo só pode ser avisado depois que
         # TOP/MID forem recebidas e a fusão multilight terminar.
         self.adhesive_multilight_pending_start = True
@@ -892,8 +951,16 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             "current_analysis",
             None,
         )
+        _store_learning_sample(
+            self,
+            "SIDE",
+            sample_crop,
+            ng_crop,
+            getattr(self, "current_analysis", None),
+            source_frame=side_source,
+        )
 
-        analysis_view = getattr(
+        analysis_view = getattr
             self,
             "adhesive_multilight_analysis_view",
             None,
