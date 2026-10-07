@@ -38,11 +38,17 @@ from src.ui.widgets.silk_debugger import SilkDebuggerWidget
 from src.ui.widgets.ssim_debugger import SSIMDebuggerWidget
 
 
-class _ResponsiveCapturePreview(QLabel):
-    """Prévia que preserva proporção ao redimensionar o painel."""
+class _ResponsivePixmapLabel(QLabel):
+    """QLabel que sempre reescala a imagem ao tamanho real do próprio viewport.
 
-    def __init__(self, placeholder: str = "Aguardando captura"):
+    Diferente de um QLabel comum, mover o QSplitter também dispara o novo
+    escalonamento. Assim o pixmap nunca permanece maior que o card e não fica
+    visualmente cortado até o operador arrastar a divisória.
+    """
+
+    def __init__(self, placeholder: str = ""):
         super().__init__(placeholder)
+        self._placeholder = str(placeholder or "")
         self._source_pixmap = QPixmap()
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setSizePolicy(
@@ -50,17 +56,21 @@ class _ResponsiveCapturePreview(QLabel):
             QSizePolicy.Policy.Expanding,
         )
 
-    def set_source_image(self, qimage) -> None:
-        pixmap = QPixmap.fromImage(qimage)
-        if pixmap.isNull():
+    def set_source_pixmap(self, pixmap: QPixmap) -> None:
+        if not isinstance(pixmap, QPixmap) or pixmap.isNull():
+            self.clear()
+            if self._placeholder:
+                self.setText(self._placeholder)
             return
-        self._source_pixmap = pixmap
+        self._source_pixmap = QPixmap(pixmap)
         self._render_source()
 
-    def clear_source_image(self, placeholder: str = "Aguardando captura") -> None:
+    def setPixmap(self, pixmap: QPixmap) -> None:
+        self.set_source_pixmap(pixmap)
+
+    def clear(self) -> None:
         self._source_pixmap = QPixmap()
-        self.clear()
-        self.setText(placeholder)
+        super().clear()
 
     def _render_source(self) -> None:
         if self._source_pixmap.isNull():
@@ -73,11 +83,29 @@ class _ResponsiveCapturePreview(QLabel):
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        super().setPixmap(scaled)
+        QLabel.setPixmap(self, scaled)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._render_source()
+
+
+class _ResponsiveCapturePreview(_ResponsivePixmapLabel):
+    """Prévia completa que preserva proporção ao redimensionar o painel."""
+
+    def __init__(self, placeholder: str = "Aguardando captura"):
+        super().__init__(placeholder)
+
+    def set_source_image(self, qimage) -> None:
+        pixmap = QPixmap.fromImage(qimage)
+        if pixmap.isNull():
+            return
+        self.set_source_pixmap(pixmap)
+
+    def clear_source_image(self, placeholder: str = "Aguardando captura") -> None:
+        self._placeholder = str(placeholder or "Aguardando captura")
+        self.clear()
+        self.setText(self._placeholder)
 
 
 class _CurrentPageStack(QStackedWidget):
@@ -411,10 +439,10 @@ class ControlPanelUI:
         image_grid.setHorizontalSpacing(8)
         image_grid.setVerticalSpacing(8)
 
-        window.lbl_sample = QLabel("Sem Sinal")
-        window.lbl_sample_focus = QLabel("Sem Foco")
-        window.lbl_ng = QLabel("Sem Sinal")
-        window.lbl_ng_focus = QLabel("Sem Foco")
+        window.lbl_sample = _ResponsivePixmapLabel("Sem Sinal")
+        window.lbl_sample_focus = _ResponsivePixmapLabel("Sem Foco")
+        window.lbl_ng = _ResponsivePixmapLabel("Sem Sinal")
+        window.lbl_ng_focus = _ResponsivePixmapLabel("Sem Foco")
 
         image_cards = [
             self._create_image_card("GABARITO • VISÃO COMPLETA", window.lbl_sample),
@@ -465,7 +493,9 @@ class ControlPanelUI:
         window.scroll_area = QScrollArea()
         window.scroll_area.setWidgetResizable(True)
         window.scroll_area.setMinimumWidth(0)
-        window.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        window.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+        )
         window.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         window.scroll_content = QWidget()
