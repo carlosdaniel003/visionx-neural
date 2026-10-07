@@ -570,9 +570,10 @@ def install_prototype_memory(
             )
             target_folder = base_folder / category
             fingerprint = dataset_manager_module.image_fingerprint(ng_image)
-            fingerprint_key = (
-                f"{dataset_manager_cls._lighting_key(normalized_lighting)}:"
-                f"{fingerprint}"
+            fingerprint_key = dataset_manager_cls._fingerprint_key(
+                fingerprint,
+                normalized_lighting,
+                info,
             )
             existing = (
                 dataset_manager_cls._fingerprint_index(
@@ -585,7 +586,7 @@ def install_prototype_memory(
             existing = None
 
         if existing is not None:
-            return original_save_sample(
+            path = original_save_sample(
                 ng_image=ng_image,
                 label=normalized,
                 sample_image=sample_image,
@@ -599,6 +600,29 @@ def install_prototype_memory(
                 source_frame=source_frame,
                 final_analysis=final_analysis,
             )
+            if path and normalized == "OK":
+                _update_prototype_metadata(
+                    path,
+                    label="OK",
+                    protected=False,
+                    increment=True,
+                    similarity=1.0,
+                    source=source,
+                    ai_decision=ai_decision,
+                    save_images=bool(save_images),
+                    ng_image=ng_image,
+                    sample_image=sample_image,
+                )
+            elif path and normalized == "NG":
+                _update_prototype_metadata(
+                    path,
+                    label="NG",
+                    protected=True,
+                    increment=False,
+                    source=source,
+                    ai_decision=ai_decision,
+                )
+            return path
 
         signature = _query_signature(
             dataset_manager_module,
