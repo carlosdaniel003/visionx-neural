@@ -1,8 +1,9 @@
-"""Automação da aquisição SIDE/TOP/MID para a categoria de adesivo.
+"""Automação da aquisição SIDE/TOP/MID para qualquer categoria AOI.
 
-A automação controla a troca de iluminação, a coleta das imagens auxiliares e
-o fechamento do ciclo multilight. TOP/MID são analisadas antes do avanço da
-máquina de estados e, ao final, SIDE/TOP/MID são fundidas em um único julgamento.
+O nome da classe/módulo é mantido por compatibilidade histórica. A automação
+controla a troca de iluminação, a coleta das imagens auxiliares e o fechamento
+do ciclo multilight. TOP/MID são analisadas antes do avanço da máquina de
+estados e, ao final, SIDE/TOP/MID são fundidas em um único julgamento.
 
 No Modo Produção, a fusão final não envia 0/1 diretamente. Ela entrega o
 resultado ao ProductionAutonomyController, que apresenta a interface com scroll
@@ -113,7 +114,7 @@ class AdhesiveMultiLightAutomation(QObject):
         self._set_auxiliary_receiver(True)
 
         self._status(
-            "Adesivo detectado: iniciando captura automática SIDE/TOP/MID.",
+            "Iniciando captura automática multilight SIDE/TOP/MID.",
             True,
         )
         return self._request_mode("TOP", reset_retry=True)
@@ -142,7 +143,7 @@ class AdhesiveMultiLightAutomation(QObject):
             return False
 
         self._status(
-            "Captura automática de adesivo: aguardando imagem {0}.".format(
+            "Captura automática multilight: aguardando imagem {0}.".format(
                 normalized
             ),
             True,
@@ -209,7 +210,7 @@ class AdhesiveMultiLightAutomation(QObject):
             return
 
         self.abort(
-            "Captura automática de adesivo interrompida: imagem {0} não foi recebida.".format(
+            "Captura automática multilight interrompida: imagem {0} não foi recebida.".format(
                 self.expected_mode
             )
         )
@@ -250,7 +251,7 @@ class AdhesiveMultiLightAutomation(QObject):
 
         suffix = "" if restored else " SIDE precisa ser verificada manualmente."
         self._status(
-            "Captura automática de adesivo concluída: SIDE, TOP e MID recebidas."
+            "Captura automática multilight concluída: SIDE, TOP e MID recebidas."
             + suffix,
             False,
         )
@@ -260,13 +261,19 @@ class AdhesiveMultiLightAutomation(QObject):
 
         finalize = getattr(
             self.panel,
-            "finalize_adhesive_multilight_decision",
+            "finalize_multilight_decision",
             None,
         )
+        if not callable(finalize):
+            finalize = getattr(
+                self.panel,
+                "finalize_adhesive_multilight_decision",
+                None,
+            )
         fused = finalize() if callable(finalize) else None
         if not isinstance(fused, dict):
             self._network_status(
-                "Falha ao concluir julgamento multilight de adesivo."
+                "Falha ao concluir julgamento multilight."
             )
             self.completed = False
             return False
