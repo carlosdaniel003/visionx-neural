@@ -71,8 +71,8 @@ def is_adhesive_category(aoi_info: dict | None) -> bool:
 
 def is_multilight_category(aoi_info: dict | None) -> bool:
     """Toda categoria AOI canônica conhecida participa do ciclo multilight."""
-    category = category_from_aoi_info(aoi_info)
-    return bool(category and category != "Unknown")
+    category = str(category_from_aoi_info(aoi_info) or "").strip().upper()
+    return bool(category and category not in {"UNKNOWN", "SEM CATEGORIA"})
 
 
 def _valid_image(value: Any) -> bool:
