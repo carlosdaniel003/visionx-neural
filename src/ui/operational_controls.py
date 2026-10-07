@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy
+from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QSizePolicy
 
 from src.ui.operational_controls_model import (
     available_action_count,
@@ -258,23 +258,30 @@ class OperationalControlsPresenter:
         panel = self.panel
         state_bar = QFrame()
         state_bar.setObjectName("operationStateBar")
+        state_bar.setMinimumWidth(0)
         state_bar.setSizePolicy(
             QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Preferred,
         )
 
-        layout = QHBoxLayout(state_bar)
+        layout = QGridLayout(state_bar)
         layout.setContentsMargins(9, 7, 9, 7)
-        layout.setSpacing(9)
+        layout.setHorizontalSpacing(9)
+        layout.setVerticalSpacing(6)
 
         badge = QLabel("PRONTO")
         badge.setObjectName("operationStateBadge")
         badge.setProperty("tone", "ready")
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
 
         hint = QLabel("Selecione a iluminação ou inicie uma nova captura.")
         hint.setObjectName("operationStateHint")
         hint.setWordWrap(True)
+        hint.setMinimumWidth(0)
         hint.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
@@ -285,18 +292,24 @@ class OperationalControlsPresenter:
         count.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
-
-        layout.addWidget(badge)
-        layout.addWidget(hint, stretch=1)
-        layout.addWidget(count)
+        count.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
 
         controls_layout = panel.controls_section.layout()
         controls_layout.insertWidget(1, state_bar)
 
+        self.state_layout = layout
+        self.state_widgets = [badge, hint, count]
         panel.operation_state_bar = state_bar
         panel.lbl_operation_state = badge
         panel.lbl_operation_hint = hint
         panel.lbl_operation_actions = count
+
+        builder = getattr(panel, "ui_builder", None)
+        compact = getattr(builder, "_active_profile_name", "") == "compact"
+        self.apply_responsive_layout(compact=compact)
 
     def _connect_feedback(self) -> None:
         bindings = (
@@ -372,6 +385,49 @@ class OperationalControlsPresenter:
                 self.panel.btn_clear_dataset,
                 "Excluir dataset local",
             )
+
+    def apply_responsive_layout(self, compact: bool) -> None:
+        """Reorganiza a barra de estado sem recriar widgets nem perder estado."""
+        layout = self.state_layout
+        for widget in self.state_widgets:
+            layout.removeWidget(widget)
+
+        badge, hint, count = self.state_widgets
+
+        if compact:
+            layout.addWidget(badge, 0, 0)
+            layout.addWidget(
+                count,
+                0,
+                1,
+                alignment=(
+                    Qt.AlignmentFlag.AlignRight
+                    | Qt.AlignmentFlag.AlignVCenter
+                ),
+            )
+            layout.addWidget(hint, 1, 0, 1, 2)
+            layout.setColumnStretch(0, 1)
+            layout.setColumnStretch(1, 1)
+            count.setAlignment(
+                Qt.AlignmentFlag.AlignRight
+                | Qt.AlignmentFlag.AlignVCenter
+            )
+        else:
+            layout.addWidget(badge, 0, 0)
+            layout.addWidget(hint, 0, 1)
+            layout.addWidget(count, 0, 2)
+            layout.setColumnStretch(0, 0)
+            layout.setColumnStretch(1, 1)
+            layout.setColumnStretch(2, 0)
+            count.setAlignment(
+                Qt.AlignmentFlag.AlignRight
+                | Qt.AlignmentFlag.AlignVCenter
+            )
+
+        self.panel.operation_state_bar.setMinimumHeight(
+            78 if compact else 56
+        )
+        self.panel.operation_state_bar.updateGeometry()
 
     def sync(self, force: bool = False) -> None:
         panel = self.panel
