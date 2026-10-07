@@ -180,6 +180,18 @@ class MultiLightPersistenceQueueTests(unittest.TestCase):
                 for call in self.DatasetStub.calls
             )
         )
+        self.assertTrue(
+            all(call["label"] == "NG" for call in self.DatasetStub.calls)
+        )
+        self.assertTrue(
+            all(
+                call["aoi_info"]["board"] == "B1"
+                and call["aoi_info"]["parts"] == "R3~5"
+                and call["aoi_info"]["category"] == "FALTANDO"
+                and call["aoi_info"]["value"] == "10 <= 2 <= 80 FALTANDO"
+                for call in self.DatasetStub.calls
+            )
+        )
         self.assertEqual(orchestrator.reloads, 1)
 
 
@@ -279,6 +291,50 @@ class DatasetDedupTests(unittest.TestCase):
                 upgraded["deduplication"]["duplicate_observations"],
                 1,
             )
+
+    def test_same_pixels_in_different_lighting_keep_distinct_memories(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            normal_dir = root / "normal"
+            anomaly_dir = root / "anomaly"
+            reference = np.zeros((48, 48, 3), dtype=np.uint8)
+            image = reference.copy()
+            image[12:30, 12:30] = 180
+            info = {
+                "board": "B2",
+                "parts": "C7",
+                "category": "DESLOCADO",
+                "value": "DESLOCADO",
+            }
+
+            with (
+                patch.object(settings, "NORMAL_DIR", normal_dir),
+                patch.object(settings, "ANOMALY_DIR", anomaly_dir),
+            ):
+                side_path = DatasetManager.save_sample(
+                    ng_image=image,
+                    label="OK",
+                    sample_image=reference,
+                    aoi_info={**info, "lighting_mode": "SIDE"},
+                    analysis={"detail": {}},
+                    save_images=True,
+                    lighting_mode="SIDE",
+                    event_id="evt-identical",
+                )
+                top_path = DatasetManager.save_sample(
+                    ng_image=image.copy(),
+                    label="OK",
+                    sample_image=reference,
+                    aoi_info={**info, "lighting_mode": "TOP"},
+                    analysis={"detail": {}},
+                    save_images=True,
+                    lighting_mode="TOP",
+                    event_id="evt-identical",
+                )
+
+            self.assertNotEqual(side_path, top_path)
+            category_dir = normal_dir / "DESLOCADO"
+            self.assertEqual(len(list(category_dir.glob("*.json"))), 2)
 
 
 class StrictLightingMemoryTests(unittest.TestCase):
