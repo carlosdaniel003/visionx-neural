@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
+from threading import RLock
 
 import cv2
 import numpy as np
@@ -13,9 +15,13 @@ from src.core.anomaly_signature import (
     build_anomaly_signature,
     valid_anomaly_signature,
 )
+from src.services.image_archive_dedup import image_fingerprint
 
 
 class DatasetManager:
+    _fingerprint_lock = RLock()
+    _folder_fingerprint_cache: dict[str, dict[str, str]] = {}
+
     @staticmethod
     def _json_safe(value):
         """Converte estruturas NumPy residuais em valores serializáveis."""
@@ -42,6 +48,139 @@ class DatasetManager:
         ).strip()
         return category or "Unknown"
 
+    @classmethod
+    def _fingerprint_index(cls, target_folder: Path) -> dict[str, str]:
+        """Indexa memórias existentes, incluindo PNGs legados sem fingerprint."""
+        key = str(Path(target_folder).resolve())
+        with cls._fingerprint_lock:
+            cached = cls._folder_fingerprint_cache.get(key)
+            if cached is not None:
+                return cached
+
+            index: dict[str, str] = {}
+            folder = Path(target_folder)
+            folder.mkdir(parents=True, exist_ok=True)
+
+            for json_path in folder.glob("*.json"):
+                try:
+                    with open(json_path, "r", encoding="utf-8") as file:
+                        data = json.load(file)
+                    storage = data.get("storage", {})
+                    fingerprint = str(
+                        storage.get("test_image_fingerprint", "") or ""
+                    ).strip()
+                    if fingerprint:
+                        index.setdefault(fingerprint, str(json_path))
+                except Exception:
+                    continue
+
+            # Compatibilidade com dataset anterior: calcula o fingerprint dos
+            # *_test.png que ainda não possuíam hash no JSON.
+            for image_path in folder.glob("*_test.png"):
+                try:
+                    image = cv2.imread(
+                        str(image_path),
+                        cv2.IMREAD_UNCHANGED,
+                    )
+                    fingerprint = image_fingerprint(image)
+                    if not fingerprint or fingerprint in index:
+                        continue
+                    base_name = image_path.name[:-9]
+                    json_path = image_path.with_name(f"{base_name}.json")
+                    index[fingerprint] = (
+                        str(json_path) if json_path.exists() else ""
+                    )
+                except Exception:
+                    continue
+
+            cls._folder_fingerprint_cache[key] = index
+            return index
+
+    @classmethod
+    def _register_fingerprint(
+        cls,
+        target_folder: Path,
+        fingerprint: str,
+        json_path: Path,
+    ) -> None:
+        if not fingerprint:
+            return
+        index = cls._fingerprint_index(target_folder)
+        with cls._fingerprint_lock:
+            index[fingerprint] = str(json_path)
+
+    @staticmethod
+    def _upgrade_duplicate_record(
+        json_path: str,
+        *,
+        fingerprint: str,
+        lighting_mode: str,
+        event_id: str,
+        anomaly_memory: dict,
+        source: str,
+    ) -> str:
+        """Enriquece um JSON antigo sem duplicar a imagem já conhecida."""
+        if not json_path:
+            return ""
+        path = Path(json_path)
+        if not path.exists():
+            return ""
+
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+
+            storage = data.setdefault("storage", {})
+            storage["test_image_fingerprint"] = fingerprint
+
+            info = data.setdefault("aoi_info", {})
+            if lighting_mode:
+                info["lighting_mode"] = lighting_mode
+
+            if event_id or lighting_mode:
+                multilight = data.setdefault("multilight", {})
+                if event_id:
+                    multilight["event_id"] = event_id
+                if lighting_mode:
+                    multilight["lighting_mode"] = lighting_mode
+                multilight["same_piece_single_judgement"] = True
+
+            analysis = data.setdefault("analysis", {})
+            stored_memory = analysis.get("anomaly_memory")
+            if (
+                valid_anomaly_signature(anomaly_memory)
+                and (
+                    not valid_anomaly_signature(stored_memory)
+                    or (
+                        "full_frame_signature" not in stored_memory
+                        and "full_frame_signature" in anomaly_memory
+                    )
+                )
+            ):
+                analysis["anomaly_memory"] = DatasetManager._json_safe(
+                    anomaly_memory
+                )
+
+            duplicate = data.setdefault("deduplication", {})
+            duplicate["policy"] = "exact_visual_content"
+            duplicate["duplicate_observations"] = int(
+                duplicate.get("duplicate_observations", 0) or 0
+            ) + 1
+            duplicate["last_duplicate_at"] = datetime.now().isoformat()
+            duplicate["last_duplicate_source"] = str(source or "")
+
+            with open(path, "w", encoding="utf-8") as file:
+                json.dump(
+                    DatasetManager._json_safe(data),
+                    file,
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            return str(path)
+        except Exception as exc:
+            print(f"Erro ao enriquecer memória duplicada: {exc}")
+            return ""
+
     @staticmethod
     def save_sample(
         ng_image: np.ndarray,
@@ -52,11 +191,22 @@ class DatasetManager:
         save_images: bool = False,
         source: str = "",
         ai_decision: str = "",
+        lighting_mode: str = "",
+        event_id: str = "",
+        source_frame: np.ndarray = None,
+        final_analysis: dict = None,
     ) -> str:
         """Salva o JSON da anomalia; imagens são apenas auditoria opcional."""
         normalized_label = str(label or "").strip().upper()
         if normalized_label not in {"OK", "NG"}:
             return ""
+
+        normalized_lighting = str(
+            lighting_mode
+            or (aoi_info or {}).get("lighting_mode", "")
+            or ""
+        ).strip().upper()
+        normalized_event_id = str(event_id or "").strip()
 
         detail = (analysis or {}).get("detail", {})
         anomaly_memory = (
@@ -93,14 +243,38 @@ class DatasetManager:
         target_folder = base_folder / category
         target_folder.mkdir(parents=True, exist_ok=True)
 
+        fingerprint = image_fingerprint(ng_image)
+        if fingerprint:
+            existing = DatasetManager._fingerprint_index(
+                target_folder
+            ).get(fingerprint)
+            if existing is not None:
+                return DatasetManager._upgrade_duplicate_record(
+                    existing,
+                    fingerprint=fingerprint,
+                    lighting_mode=normalized_lighting,
+                    event_id=normalized_event_id,
+                    anomaly_memory=anomaly_memory,
+                    source=source,
+                )
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-        filename = f"memory_{normalized_label}_{timestamp}"
+        lighting_suffix = (
+            f"_{normalized_lighting}"
+            if normalized_lighting
+            else ""
+        )
+        filename = (
+            f"memory_{normalized_label}{lighting_suffix}_{timestamp}"
+        )
         filepath_test = target_folder / f"{filename}_test.png"
         filepath_reference = target_folder / f"{filename}_reference.png"
+        filepath_source = target_folder / f"{filename}_source.png"
         filepath_json = target_folder / f"{filename}.json"
 
         test_image_file = ""
         reference_image_file = ""
+        source_image_file = ""
         if save_images and isinstance(ng_image, np.ndarray) and ng_image.size > 0:
             if cv2.imwrite(str(filepath_test), ng_image):
                 test_image_file = filepath_test.name
@@ -110,6 +284,12 @@ class DatasetManager:
                 and cv2.imwrite(str(filepath_reference), sample_image)
             ):
                 reference_image_file = filepath_reference.name
+            if (
+                isinstance(source_frame, np.ndarray)
+                and source_frame.size > 0
+                and cv2.imwrite(str(filepath_source), source_frame)
+            ):
+                source_image_file = filepath_source.name
 
         info = aoi_info if isinstance(aoi_info, dict) else {}
         semantic_debug = detail.get("semantic_debug") or {}
@@ -118,14 +298,18 @@ class DatasetManager:
         legacy_embedding = detail.get("query_embedding", [])
 
         metadata = {
-            "schema": "visionx.memory.v2",
+            "schema": "visionx.memory.v3",
             "label": normalized_label,
             "timestamp": datetime.now().isoformat(),
             "storage": {
                 "mode": "json_plus_audit_images" if save_images else "json_only",
                 "test_image_file": test_image_file,
                 "reference_image_file": reference_image_file,
+                "source_image_file": source_image_file,
+                "test_image_fingerprint": fingerprint,
                 "images_required_for_knn": False,
+                "full_test_area_preserved": bool(test_image_file),
+                "raw_aoi_frame_preserved": bool(source_image_file),
             },
             "image_file": test_image_file,
             "image_type": "anomaly_signature",
@@ -144,6 +328,20 @@ class DatasetManager:
                 "parts": info.get("parts", ""),
                 "category": category,
                 "value": info.get("value", ""),
+                "lighting_mode": normalized_lighting,
+            },
+            "multilight": {
+                "event_id": normalized_event_id,
+                "lighting_mode": normalized_lighting,
+                "same_piece_single_judgement": bool(
+                    normalized_event_id and normalized_lighting
+                ),
+                "shared_ocr": {
+                    "board": info.get("board", ""),
+                    "parts": info.get("parts", ""),
+                    "category": category,
+                    "value": info.get("value", ""),
+                },
             },
             "analysis": {
                 "operator_label": normalized_label,
@@ -154,6 +352,24 @@ class DatasetManager:
                 "final_score": detail.get("final_score", 0.0),
                 "physical_score": detail.get("physical_score", 0.0),
                 "fusion_rule": detail.get("fusion_rule", ""),
+                "lighting_mode": normalized_lighting,
+                "final_multilight": {
+                    "verdict": (final_analysis or {}).get("verdict", ""),
+                    "is_defect": (final_analysis or {}).get(
+                        "is_defect",
+                        False,
+                    ),
+                    "confidence": (final_analysis or {}).get(
+                        "confidence",
+                        0.0,
+                    ),
+                    "fusion_rule": (
+                        ((final_analysis or {}).get("detail", {}) or {}).get(
+                            "fusion_rule",
+                            "",
+                        )
+                    ),
+                },
                 "anomaly_memory": anomaly_memory,
                 "embedding": legacy_embedding,
                 "semantic": {
@@ -375,4 +591,9 @@ class DatasetManager:
             print(f"Erro ao salvar memória JSON: {exc}")
             return ""
 
+        DatasetManager._register_fingerprint(
+            target_folder,
+            fingerprint,
+            filepath_json,
+        )
         return str(filepath_json)
