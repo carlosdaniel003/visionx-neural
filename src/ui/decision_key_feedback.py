@@ -367,7 +367,21 @@ def install_decision_key_feedback_hooks(control_panel_cls) -> None:
         normalized = str(comando_xp or "").strip().upper()
         had_active_capture = bool(getattr(self, "current_ng", None) is not None)
 
-        if normalized in {"OK", "NG"} and had_active_capture:
+        mode = ""
+        try:
+            mode = str(self.combo_mode.currentText() or "").strip()
+        except Exception:
+            pass
+        production_accepts_operator = bool(
+            mode != "Modo Produção"
+            or getattr(self, "production_review_pending", False)
+        )
+
+        if (
+            normalized in {"OK", "NG"}
+            and had_active_capture
+            and production_accepts_operator
+        ):
             show_feedback = getattr(
                 self,
                 "show_decision_key_feedback",
