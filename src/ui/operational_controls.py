@@ -400,10 +400,10 @@ class OperationalControlsPresenter:
                 count,
                 0,
                 1,
-                alignment=(
-                    Qt.AlignmentFlag.AlignRight
-                    | Qt.AlignmentFlag.AlignVCenter
-                ),
+                1,
+                1,
+                Qt.AlignmentFlag.AlignRight
+                | Qt.AlignmentFlag.AlignVCenter,
             )
             layout.addWidget(hint, 1, 0, 1, 2)
             layout.setColumnStretch(0, 1)
