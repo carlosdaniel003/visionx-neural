@@ -307,17 +307,12 @@ class ProductionAutonomyController(QObject):
 
         self.state = "emitting_auto_ok"
         try:
-            self.panel.save_label("OK", source="production_auto")
-        except Exception as exc:
-            self.state = "operator_review"
-            enter_production_review(self.panel, self.pending_analysis)
-            show_intervention = getattr(
-                self.panel,
-                "show_production_intervention_feedback",
-                None,
+            result = self.panel.save_label(
+                "OK",
+                source="production_auto",
             )
-            if callable(show_intervention):
-                show_intervention("REVISÃO OBRIGATÓRIA")
+        except Exception as exc:
+            result = False
             try:
                 self.panel.update_brain_status(
                     f"Falha ao enviar decisão automática: {exc}. "
@@ -326,6 +321,43 @@ class ProductionAutonomyController(QObject):
                 )
             except Exception:
                 pass
+
+        command_success = getattr(
+            self.panel,
+            "last_decision_command_success",
+            None,
+        )
+        if result is False or command_success is False:
+            self.state = "operator_review"
+            # Se o envio falhou, a análise original continua sendo FALHA FALSA,
+            # mas operacionalmente a peça precisa de intervenção humana.
+            self.panel.production_review_pending = True
+            self.panel.is_locked = True
+            try:
+                self.panel.update_brain_status(
+                    "Falha ao enviar 0 automaticamente. "
+                    "Aguardando operador: 0=OK | 1=NG",
+                    True,
+                )
+            except Exception:
+                pass
+            presenter = getattr(
+                self.panel,
+                "_operational_controls",
+                None,
+            )
+            if presenter is not None:
+                try:
+                    presenter.sync(force=True)
+                except Exception:
+                    pass
+            show_intervention = getattr(
+                self.panel,
+                "show_production_intervention_feedback",
+                None,
+            )
+            if callable(show_intervention):
+                show_intervention("REVISÃO OBRIGATÓRIA")
             return
 
         increment = getattr(
