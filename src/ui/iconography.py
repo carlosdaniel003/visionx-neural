@@ -120,6 +120,8 @@ class SvgIconographyPresenter:
         self.panel = panel
         self.status_icons: dict[str, QLabel] = {}
         self.status_groups: list[QWidget] = []
+        self.status_group_map: dict[str, QWidget] = {}
+        self.status_text_map: dict[str, QLabel] = {}
         panel._svg_iconography = self
 
         self._configure_window()
@@ -127,6 +129,10 @@ class SvgIconographyPresenter:
         self._rebuild_status_bar()
         self._sanitize_existing_texts()
         self._initialize_status_icons()
+
+        builder = getattr(panel, "ui_builder", None)
+        compact = getattr(builder, "_active_profile_name", "") == "compact"
+        self.apply_responsive_layout(compact=compact)
 
     def _configure_window(self) -> None:
         self.panel.setWindowIcon(svg_icon("processor"))
@@ -189,13 +195,15 @@ class SvgIconographyPresenter:
         self.status_icons[slot] = icon_label
 
         group.setMinimumWidth(0)
+        group.setProperty("statusSlot", slot)
         group.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
         )
         text_label.setMinimumWidth(0)
+        text_label.setWordWrap(True)
         text_label.setSizePolicy(
-            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
         )
 
@@ -203,6 +211,8 @@ class SvgIconographyPresenter:
         group_layout.addWidget(text_label)
 
         self.status_groups.append(group)
+        self.status_group_map[slot] = group
+        self.status_text_map[slot] = text_label
         return group
 
     def _rebuild_status_bar(self) -> None:
@@ -244,6 +254,46 @@ class SvgIconographyPresenter:
         except TypeError:
             for group in groups:
                 layout.addWidget(group, 1)
+
+    def apply_responsive_layout(self, compact: bool) -> None:
+        """Alinha os três grupos SVG conforme notebook ou monitor amplo."""
+        for slot, group in self.status_group_map.items():
+            layout = group.layout()
+            icon = self.status_icons.get(slot)
+            label = self.status_text_map.get(slot)
+            if layout is None or icon is None or label is None:
+                continue
+
+            while layout.count():
+                layout.takeAt(0)
+
+            if compact or slot == "network":
+                layout.addWidget(icon)
+                layout.addWidget(label, stretch=1)
+                label.setAlignment(
+                    Qt.AlignmentFlag.AlignLeft
+                    | Qt.AlignmentFlag.AlignVCenter
+                )
+            elif slot == "brain":
+                layout.addStretch(1)
+                layout.addWidget(icon)
+                layout.addWidget(label)
+                layout.addStretch(1)
+                label.setAlignment(
+                    Qt.AlignmentFlag.AlignCenter
+                    | Qt.AlignmentFlag.AlignVCenter
+                )
+            else:
+                layout.addStretch(1)
+                layout.addWidget(icon)
+                layout.addWidget(label)
+                label.setAlignment(
+                    Qt.AlignmentFlag.AlignRight
+                    | Qt.AlignmentFlag.AlignVCenter
+                )
+
+            group.setMinimumWidth(0)
+            group.updateGeometry()
 
     def _sanitize_existing_texts(self) -> None:
         for attribute in (
