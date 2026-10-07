@@ -53,6 +53,30 @@ class DatasetManager:
         normalized = str(value or "").strip().upper()
         return normalized if normalized in {"SIDE", "TOP", "MID"} else "SIDE"
 
+    @staticmethod
+    def _dedup_scope(aoi_info: dict | None) -> str:
+        info = aoi_info if isinstance(aoi_info, dict) else {}
+        board = "".join(
+            char for char in str(info.get("board", "") or "").upper()
+            if char.isalnum()
+        )
+        parts = "".join(
+            char for char in str(info.get("parts", "") or "").upper()
+            if char.isalnum()
+        )
+        return f"{board}|{parts}"
+
+    @classmethod
+    def _fingerprint_key(
+        cls,
+        fingerprint: str,
+        lighting_mode: str,
+        aoi_info: dict | None,
+    ) -> str:
+        lighting = cls._lighting_key(lighting_mode)
+        scope = cls._dedup_scope(aoi_info)
+        return f"{lighting}:{scope}:{fingerprint}"
+
     @classmethod
     def _fingerprint_index(cls, target_folder: Path) -> dict[str, str]:
         """Indexa memórias por iluminação + conteúdo visual exato."""
@@ -80,7 +104,11 @@ class DatasetManager:
                     )
                     if fingerprint:
                         index.setdefault(
-                            f"{lighting}:{fingerprint}",
+                            cls._fingerprint_key(
+                                fingerprint,
+                                lighting,
+                                info,
+                            ),
                             str(json_path),
                         )
                 except Exception:
@@ -120,7 +148,11 @@ class DatasetManager:
                     # Nesse caso não bloqueamos a criação de um registro novo.
                     if json_path.exists():
                         index.setdefault(
-                            f"{lighting}:{fingerprint}",
+                            cls._fingerprint_key(
+                                fingerprint,
+                                lighting,
+                                legacy_data.get("aoi_info", {}),
+                            ),
                             str(json_path),
                         )
                 except Exception:
@@ -136,13 +168,18 @@ class DatasetManager:
         fingerprint: str,
         json_path: Path,
         lighting_mode: str = "",
+        aoi_info: dict | None = None,
     ) -> None:
         if not fingerprint:
             return
         index = cls._fingerprint_index(target_folder)
-        lighting = cls._lighting_key(lighting_mode)
+        key = cls._fingerprint_key(
+            fingerprint,
+            lighting_mode,
+            aoi_info,
+        )
         with cls._fingerprint_lock:
-            index[f"{lighting}:{fingerprint}"] = str(json_path)
+            index.setdefault(key, str(json_path))
 
     @staticmethod
     def _upgrade_duplicate_record(
@@ -279,23 +316,29 @@ class DatasetManager:
         target_folder.mkdir(parents=True, exist_ok=True)
 
         fingerprint = image_fingerprint(ng_image)
+        duplicate_visual_of = ""
         if fingerprint:
-            fingerprint_key = (
-                f"{DatasetManager._lighting_key(normalized_lighting)}:"
-                f"{fingerprint}"
+            fingerprint_key = DatasetManager._fingerprint_key(
+                fingerprint,
+                normalized_lighting,
+                aoi_info,
             )
             existing = DatasetManager._fingerprint_index(
                 target_folder
             ).get(fingerprint_key)
             if existing is not None:
-                return DatasetManager._upgrade_duplicate_record(
-                    existing,
-                    fingerprint=fingerprint,
-                    lighting_mode=normalized_lighting,
-                    event_id=normalized_event_id,
-                    anomaly_memory=anomaly_memory,
-                    source=source,
-                )
+                if normalized_label == "OK":
+                    return DatasetManager._upgrade_duplicate_record(
+                        existing,
+                        fingerprint=fingerprint,
+                        lighting_mode=normalized_lighting,
+                        event_id=normalized_event_id,
+                        anomaly_memory=anomaly_memory,
+                        source=source,
+                    )
+                # NG continua sendo uma observação protegida individual. Apenas
+                # a imagem pesada repetida é deduplicada.
+                duplicate_visual_of = str(existing or "")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
         lighting_suffix = (
@@ -314,7 +357,12 @@ class DatasetManager:
         test_image_file = ""
         reference_image_file = ""
         source_image_file = ""
-        if save_images and isinstance(ng_image, np.ndarray) and ng_image.size > 0:
+        if (
+            save_images
+            and not duplicate_visual_of
+            and isinstance(ng_image, np.ndarray)
+            and ng_image.size > 0
+        ):
             if cv2.imwrite(str(filepath_test), ng_image):
                 test_image_file = filepath_test.name
             if (
@@ -349,6 +397,8 @@ class DatasetManager:
                 "images_required_for_knn": False,
                 "full_test_area_preserved": bool(test_image_file),
                 "raw_aoi_frame_preserved": bool(source_image_file),
+                "visual_deduplicated": bool(duplicate_visual_of),
+                "duplicate_visual_of_json": duplicate_visual_of,
             },
             "image_file": test_image_file,
             "image_type": "anomaly_signature",
@@ -635,5 +685,6 @@ class DatasetManager:
             fingerprint,
             filepath_json,
             normalized_lighting,
+            aoi_info,
         )
         return str(filepath_json)
