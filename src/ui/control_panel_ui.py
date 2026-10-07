@@ -128,6 +128,7 @@ class ControlPanelUI:
         self._active_profile_name: str | None = None
         self.info_cards: list[QWidget] = []
         self.footer_cards: list[QWidget] = []
+        self.control_groups: list[QWidget] = []
         self.debug_wrappers: list[QWidget] = []
         self.image_viewports: list[QLabel] = []
         self.capture_preview_viewport: QLabel | None = None
@@ -513,6 +514,11 @@ class ControlPanelUI:
     def _create_footer_card(title_text: str) -> tuple[QFrame, QVBoxLayout]:
         card = QFrame()
         card.setObjectName("footerCard")
+        card.setMinimumWidth(0)
+        card.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         layout = QVBoxLayout(card)
         layout.setContentsMargins(12, 9, 12, 10)
         layout.setSpacing(7)
@@ -524,6 +530,11 @@ class ControlPanelUI:
     def _build_footer(self, window, parent_layout):
         window.confidence_frame = QFrame()
         window.confidence_frame.setObjectName("confidenceFrame")
+        window.confidence_frame.setMinimumWidth(0)
+        window.confidence_frame.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         confidence_layout = QVBoxLayout(window.confidence_frame)
         confidence_layout.setContentsMargins(10, 10, 10, 10)
         confidence_layout.setSpacing(8)
@@ -597,6 +608,11 @@ class ControlPanelUI:
     def _build_action_buttons(self, window, parent_layout):
         window.controls_section = QFrame()
         window.controls_section.setObjectName("controlsSection")
+        window.controls_section.setMinimumWidth(0)
+        window.controls_section.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         controls_layout = QVBoxLayout(window.controls_section)
         controls_layout.setContentsMargins(10, 10, 10, 10)
         controls_layout.setSpacing(8)
@@ -608,13 +624,29 @@ class ControlPanelUI:
         )
 
         window.action_widget = QWidget()
-        master_action_layout = QVBoxLayout(window.action_widget)
-        master_action_layout.setContentsMargins(0, 0, 0, 0)
-        master_action_layout.setSpacing(8)
+        window.action_widget.setMinimumWidth(0)
+        window.action_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        self.controls_body_grid = QGridLayout(window.action_widget)
+        self.controls_body_grid.setContentsMargins(0, 0, 0, 0)
+        self.controls_body_grid.setHorizontalSpacing(10)
+        self.controls_body_grid.setVerticalSpacing(10)
+
+        window.lighting_controls_group = QWidget()
+        window.lighting_controls_group.setMinimumWidth(0)
+        window.lighting_controls_group.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        lighting_group_layout = QVBoxLayout(window.lighting_controls_group)
+        lighting_group_layout.setContentsMargins(0, 0, 0, 0)
+        lighting_group_layout.setSpacing(8)
 
         light_label = QLabel("ILUMINAÇÃO DA CÂMERA")
         light_label.setObjectName("fieldLabel")
-        master_action_layout.addWidget(light_label)
+        lighting_group_layout.addWidget(light_label)
         self.light_grid = QGridLayout()
         self.light_grid.setHorizontalSpacing(8)
         self.light_grid.setVerticalSpacing(8)
@@ -629,12 +661,27 @@ class ControlPanelUI:
         ]
         for button in self.light_buttons:
             button.setObjectName("lightButton")
+            button.setMinimumWidth(0)
+            button.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Fixed,
+            )
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-        master_action_layout.addLayout(self.light_grid)
+        lighting_group_layout.addLayout(self.light_grid)
+
+        window.decision_controls_group = QWidget()
+        window.decision_controls_group.setMinimumWidth(0)
+        window.decision_controls_group.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        decision_group_layout = QVBoxLayout(window.decision_controls_group)
+        decision_group_layout.setContentsMargins(0, 0, 0, 0)
+        decision_group_layout.setSpacing(8)
 
         action_label = QLabel("CAPTURA E DECISÃO DO OPERADOR")
         action_label.setObjectName("fieldLabel")
-        master_action_layout.addWidget(action_label)
+        decision_group_layout.addWidget(action_label)
         self.action_grid = QGridLayout()
         self.action_grid.setHorizontalSpacing(8)
         self.action_grid.setVerticalSpacing(8)
@@ -648,11 +695,25 @@ class ControlPanelUI:
         window.btn_skip.setObjectName("secondaryButton")
         window.btn_save_ok.setObjectName("outlineAccentButton")
         window.btn_save_ng.setObjectName("primaryButton")
-        self.action_buttons = [window.btn_start, window.btn_skip, window.btn_save_ok, window.btn_save_ng]
+        self.action_buttons = [
+            window.btn_start,
+            window.btn_skip,
+            window.btn_save_ok,
+            window.btn_save_ng,
+        ]
         for button in self.action_buttons:
+            button.setMinimumWidth(0)
+            button.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Fixed,
+            )
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-        master_action_layout.addLayout(self.action_grid)
+        decision_group_layout.addLayout(self.action_grid)
 
+        self.control_groups = [
+            window.lighting_controls_group,
+            window.decision_controls_group,
+        ]
         controls_layout.addWidget(window.action_widget)
         parent_layout.addWidget(window.controls_section)
 
@@ -974,9 +1035,12 @@ class ControlPanelUI:
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
         )
-        self.network_debug_actions_layout = QHBoxLayout(window.network_debug_actions)
+        self.network_debug_actions_layout = QGridLayout(
+            window.network_debug_actions
+        )
         self.network_debug_actions_layout.setContentsMargins(0, 0, 0, 0)
-        self.network_debug_actions_layout.setSpacing(8)
+        self.network_debug_actions_layout.setHorizontalSpacing(8)
+        self.network_debug_actions_layout.setVerticalSpacing(8)
 
         window.btn_copy_network_debug = QPushButton("Copiar debug")
         window.btn_copy_network_debug.setObjectName("networkDebugTextButton")
@@ -1011,14 +1075,10 @@ class ControlPanelUI:
             lambda _checked=False: copy_network_image_to_clipboard(window)
         )
 
-        self.network_debug_actions_layout.addWidget(
+        self.network_debug_action_buttons = [
             window.btn_copy_network_debug,
-            stretch=1,
-        )
-        self.network_debug_actions_layout.addWidget(
             window.btn_copy_network_image,
-            stretch=1,
-        )
+        ]
 
         self.network_debug_widgets = [
             window.lbl_network_debug_title,
@@ -1029,7 +1089,12 @@ class ControlPanelUI:
         parent_layout.addWidget(window.network_debug_frame)
         sync_network_debug_controls(window)
 
-    def _layout_network_debug(self, window, compact: bool) -> None:
+    def _layout_network_debug(
+        self,
+        window,
+        compact: bool,
+        action_columns: int = 2,
+    ) -> None:
         grid = self.network_debug_grid
         for widget in self.network_debug_widgets:
             grid.removeWidget(widget)
@@ -1039,7 +1104,7 @@ class ControlPanelUI:
             grid.addWidget(window.lbl_network_debug_state, 1, 0)
             grid.addWidget(window.network_debug_actions, 2, 0)
             grid.setColumnStretch(0, 1)
-            window.network_debug_frame.setMinimumHeight(138)
+            window.network_debug_frame.setMinimumHeight(180)
         else:
             grid.addWidget(window.lbl_network_debug_title, 0, 0)
             grid.addWidget(window.lbl_network_debug_state, 0, 1)
@@ -1049,6 +1114,11 @@ class ControlPanelUI:
             grid.setColumnStretch(2, 0)
             window.network_debug_frame.setMinimumHeight(62)
 
+        self._reflow_grid(
+            self.network_debug_actions_layout,
+            self.network_debug_action_buttons,
+            max(1, int(action_columns)),
+        )
         window.network_debug_actions.setMinimumWidth(0 if compact else 300)
 
     def _build_status_bar(self, window, parent_layout):
@@ -1158,12 +1228,23 @@ class ControlPanelUI:
 
     @staticmethod
     def _reflow_grid(grid: QGridLayout, widgets: list[QWidget], columns: int) -> None:
+        columns = max(1, int(columns))
         for widget in widgets:
             grid.removeWidget(widget)
         for index, widget in enumerate(widgets):
             grid.addWidget(widget, index // columns, index % columns)
         for column in range(columns):
             grid.setColumnStretch(column, 1)
+
+    def _layout_controls_body(self, profile) -> None:
+        self._reflow_grid(
+            self.controls_body_grid,
+            self.control_groups,
+            profile.controls_columns,
+        )
+        if profile.controls_columns >= 2:
+            self.controls_body_grid.setColumnStretch(0, 2)
+            self.controls_body_grid.setColumnStretch(1, 3)
 
     def set_adhesive_inspection_mode(self, window, enabled: bool) -> None:
         """Alterna somente a área de imagens; demais categorias mantêm o layout atual."""
@@ -1218,10 +1299,11 @@ class ControlPanelUI:
             self._layout_header(window, compact=compact)
             self._reflow_grid(self.info_grid, self.info_cards, profile.info_columns)
             self._reflow_grid(self.footer_grid, self.footer_cards, profile.footer_columns)
+            self._layout_controls_body(profile)
             self._reflow_grid(
                 self.light_grid,
                 self.light_buttons,
-                min(3, profile.action_columns),
+                profile.light_columns,
             )
             self._reflow_grid(
                 self.action_grid,
@@ -1230,8 +1312,30 @@ class ControlPanelUI:
             )
             self._layout_ng_archive(window, compact=compact)
             self._layout_ok_archive(window, compact=compact)
-            self._layout_network_debug(window, compact=compact)
+            self._layout_network_debug(
+                window,
+                compact=compact,
+                action_columns=profile.debug_action_columns,
+            )
             self._layout_status_bar(window, compact=compact)
+
+            operational = getattr(window, "_operational_controls", None)
+            apply_operational_layout = getattr(
+                operational,
+                "apply_responsive_layout",
+                None,
+            )
+            if callable(apply_operational_layout):
+                apply_operational_layout(compact=compact)
+
+            iconography = getattr(window, "_svg_iconography", None)
+            apply_icon_layout = getattr(
+                iconography,
+                "apply_responsive_layout",
+                None,
+            )
+            if callable(apply_icon_layout):
+                apply_icon_layout(compact=compact)
 
         adhesive_mode = bool(
             getattr(window, "_adhesive_inspection_mode", False)
