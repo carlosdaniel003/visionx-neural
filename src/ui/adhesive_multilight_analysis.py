@@ -8,13 +8,14 @@ a decisão da peça.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QScrollArea,
+    QScrollBar,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -83,7 +84,7 @@ class _LightingExpertLane(QFrame):
         self.scroll.setMinimumWidth(0)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         self.scroll.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -229,7 +230,23 @@ class AdhesiveMultiLightAnalysisView(QWidget):
             for mode in LIGHTING_ORDER
         }
         root.addLayout(self.grid)
+
+        # Um único scroll horizontal mestre controla SIDE/TOP/MID em conjunto.
+        # Isso evita três barras pequenas e mantém os mesmos especialistas
+        # alinhados visualmente entre as iluminações.
+        self.horizontal_scroll = QScrollBar(Qt.Orientation.Horizontal)
+        self.horizontal_scroll.setObjectName(
+            "adhesiveExpertHorizontalScroll"
+        )
+        self.horizontal_scroll.setRange(0, 0)
+        self.horizontal_scroll.setEnabled(False)
+        self.horizontal_scroll.valueChanged.connect(
+            self._sync_lanes_from_master
+        )
+        root.addWidget(self.horizontal_scroll)
+
         self._reflow(LARGE_MONITOR_COLUMNS_BREAKPOINT + 1)
+        QTimer.singleShot(0, self._sync_master_scroll_range)
 
     @staticmethod
     def columns_for_width(width: int) -> int:
@@ -259,12 +276,57 @@ class AdhesiveMultiLightAnalysisView(QWidget):
             )
         self._columns = columns
 
+    def _sync_master_scroll_range(self) -> None:
+        maxima = []
+        page_steps = []
+        for lane in self.lanes.values():
+            bar = lane.scroll.horizontalScrollBar()
+            maxima.append(int(bar.maximum()))
+            page_steps.append(int(bar.pageStep()))
+
+        maximum = max(maxima, default=0)
+        self.horizontal_scroll.blockSignals(True)
+        self.horizontal_scroll.setRange(0, maximum)
+        self.horizontal_scroll.setPageStep(
+            max(1, min(page_steps, default=1))
+        )
+        self.horizontal_scroll.setEnabled(maximum > 0)
+        if maximum <= 0:
+            self.horizontal_scroll.setValue(0)
+        elif self.horizontal_scroll.value() > maximum:
+            self.horizontal_scroll.setValue(maximum)
+        self.horizontal_scroll.blockSignals(False)
+        self._sync_lanes_from_master(self.horizontal_scroll.value())
+
+    def _sync_lanes_from_master(self, value: int) -> None:
+        master_max = int(self.horizontal_scroll.maximum())
+        ratio = (
+            float(value) / float(master_max)
+            if master_max > 0
+            else 0.0
+        )
+        for lane in self.lanes.values():
+            bar = lane.scroll.horizontalScrollBar()
+            lane_max = int(bar.maximum())
+            bar.setValue(
+                int(round(ratio * lane_max))
+                if lane_max > 0
+                else 0
+            )
+
+    def horizontal_scroll_bars(self):
+        """Contrato usado pelo Modo Produção para apresentação automática."""
+        self._sync_master_scroll_range()
+        return [self.horizontal_scroll]
+
     def set_analysis(self, mode: str, analysis: dict | None) -> bool:
         normalized = str(mode or "").strip().upper()
         lane = self.lanes.get(normalized)
         if lane is None:
             return False
-        return lane.set_analysis(analysis)
+        result = lane.set_analysis(analysis)
+        QTimer.singleShot(0, self._sync_master_scroll_range)
+        return result
 
     def clear_analysis(self, mode: str) -> bool:
         normalized = str(mode or "").strip().upper()
@@ -277,10 +339,14 @@ class AdhesiveMultiLightAnalysisView(QWidget):
     def clear_all(self) -> None:
         for lane in self.lanes.values():
             lane.clear_analysis()
+        self.horizontal_scroll.setRange(0, 0)
+        self.horizontal_scroll.setValue(0)
+        self.horizontal_scroll.setEnabled(False)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._reflow(event.size().width())
+        QTimer.singleShot(0, self._sync_master_scroll_range)
 
 
 __all__ = [
