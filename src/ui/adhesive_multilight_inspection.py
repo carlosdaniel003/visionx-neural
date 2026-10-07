@@ -517,7 +517,6 @@ def _reset_session(panel, *, show_normal: bool = True) -> None:
     panel.adhesive_multilight_pending_source_mode = ""
     panel.adhesive_multilight_primary_event_id = None
     panel.adhesive_multilight_pending_start = False
-    panel.adhesive_multilight_deferred_auto_decision = ""
     _set_receiver_auxiliary_mode(panel, False)
 
     view = getattr(panel, "adhesive_multilight_view", None)
@@ -570,7 +569,7 @@ def _current_lighting(panel) -> str:
 
 
 def install_adhesive_multilight_inspection(control_panel_cls) -> None:
-    """Liga o layout às imagens recebidas sem alterar o julgamento atual."""
+    """Liga aquisição, análise e fusão multilight ao ciclo da peça de adesivo."""
     if getattr(
         control_panel_cls,
         "_adhesive_multilight_inspection_installed",
@@ -803,9 +802,8 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             )
 
         # A primeira imagem SIDE continua usando o pipeline atual integralmente.
-        # Em Produção, save_label(auto) pode ocorrer dentro desse processamento;
-        # por isso marcamos a futura sessão multilight e adiamos somente o envio
-        # automático 0/1 até TOP/MID serem recebidas.
+        # Em Produção, o controlador autônomo só pode ser avisado depois que
+        # TOP/MID forem recebidas e a fusão multilight terminar.
         self.adhesive_multilight_pending_start = True
         try:
             result = original_process_aoi_images(
@@ -924,15 +922,6 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         return result
 
     def save_label(self, *args, **kwargs):
-        decision = ""
-        if args:
-            decision = str(args[0] or "").strip().upper()
-        elif "user_decision" in kwargs:
-            decision = str(
-                kwargs.get("user_decision") or ""
-            ).strip().upper()
-
-        source = str(kwargs.get("source", "button") or "button").strip().lower()
         automation = getattr(
             self,
             "adhesive_multilight_automation",
