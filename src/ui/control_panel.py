@@ -675,10 +675,23 @@ class ControlPanel(QWidget):
     def save_label(self, user_decision: str, source="button"):
         if self.current_ng is None: return
         
-        # Envia ordem para a máquina avançar, independentemente de salvar a foto
+        # Envia ordem para a máquina avançar, independentemente de salvar a foto.
+        # O Modo Produção precisa saber se o comando realmente saiu antes de
+        # contabilizar a placa como julgamento autônomo.
+        self.last_decision_command_success = None
         if source in {"button", "auto", "production_auto"}:
-            if user_decision == "OK": self.send_command_to_xp("0")
-            elif user_decision == "NG": self.send_command_to_xp("1")
+            command = "0" if user_decision == "OK" else "1" if user_decision == "NG" else ""
+            if command:
+                sent = bool(self.send_command_to_xp(command))
+                self.last_decision_command_success = sent
+                if source == "production_auto" and not sent:
+                    self.is_locked = True
+                    self.update_brain_status(
+                        "Falha ao enviar decisão automática ao XP. "
+                        "Aguardando operador.",
+                        True,
+                    )
+                    return False
 
         # =========================================================
         # FILTRO DE DISCORDÂNCIA (HARD NEGATIVE MINING)
