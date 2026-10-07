@@ -464,6 +464,7 @@ class ControlPanelUI:
         window.inspection_view_stack.setCurrentWidget(
             window.normal_inspection_view
         )
+        window._multilight_inspection_mode = False
         window._adhesive_inspection_mode = False
         images_layout.addWidget(window.inspection_view_stack, stretch=1)
 
@@ -1293,9 +1294,11 @@ class ControlPanelUI:
             self.controls_body_grid.setColumnStretch(0, 2)
             self.controls_body_grid.setColumnStretch(1, 3)
 
-    def set_adhesive_inspection_mode(self, window, enabled: bool) -> None:
-        """Alterna somente a área de imagens; demais categorias mantêm o layout atual."""
+    def set_multilight_inspection_mode(self, window, enabled: bool) -> None:
+        """Alterna imagens e especialistas entre visual normal e multilight."""
         enabled = bool(enabled)
+        window._multilight_inspection_mode = enabled
+        # Alias legado usado por testes/extensões existentes.
         window._adhesive_inspection_mode = enabled
         stack = getattr(window, "inspection_view_stack", None)
         if stack is not None:
@@ -1326,6 +1329,10 @@ class ControlPanelUI:
         )()
         width = viewport.width() if viewport is not None else window.width()
         self.apply_layout_profile(window, width, force=True)
+
+    def set_adhesive_inspection_mode(self, window, enabled: bool) -> None:
+        """Alias legado da API geral de visualização multilight."""
+        self.set_multilight_inspection_mode(window, enabled)
 
     def apply_layout_profile(self, window, width: int, force: bool = False) -> None:
         width = max(int(width), 1)
@@ -1384,12 +1391,16 @@ class ControlPanelUI:
             if callable(apply_icon_layout):
                 apply_icon_layout(compact=compact)
 
-        adhesive_mode = bool(
-            getattr(window, "_adhesive_inspection_mode", False)
+        multilight_mode = bool(
+            getattr(
+                window,
+                "_multilight_inspection_mode",
+                getattr(window, "_adhesive_inspection_mode", False),
+            )
         )
         orientation = (
             Qt.Orientation.Vertical
-            if adhesive_mode or profile.splitter_vertical
+            if multilight_mode or profile.splitter_vertical
             else Qt.Orientation.Horizontal
         )
         window.main_splitter.setOrientation(orientation)
@@ -1411,8 +1422,8 @@ class ControlPanelUI:
             wrapper.setMaximumWidth(profile.debugger_max_width)
             wrapper.setMinimumHeight(265 if compact else 300)
 
-        if adhesive_mode:
-            # Para adesivo, imagens e especialistas usam a largura inteira.
+        if multilight_mode:
+            # Em multilight, imagens e especialistas usam a largura inteira.
             # Em notebook o conteúdo cresce verticalmente dentro do root_scroll;
             # em monitores grandes os próprios painéis internos refluem em colunas.
             window.main_splitter.setStretchFactor(0, 1)
