@@ -35,11 +35,17 @@ class _Panel(QWidget):
 
         self.current_analysis = None
         self.production_review_pending = False
+        self.production_review_policy = None
+        self.last_analysis_time_seconds = 0.0
         self.status = []
         self.saved = []
         self.feedback = []
         self.session_resets = 0
-        self.session_increments = []
+        self.session_visible = False
+        self.auto_records = []
+        self.manual_records = []
+        self.analysis_records = []
+        self.paused_records = []
         self.interventions = []
         self.intervention_clears = 0
 
@@ -57,12 +63,25 @@ class _Panel(QWidget):
 
     def reset_production_session_feedback(self):
         self.session_resets += 1
+        self.session_visible = False
 
     def show_production_session_feedback(self):
-        return None
+        self.session_visible = True
 
-    def increment_production_session_feedback(self, decision):
-        self.session_increments.append(str(decision))
+    def hide_production_session_feedback(self):
+        self.session_visible = False
+
+    def record_production_analysis_feedback(self, elapsed):
+        self.analysis_records.append(float(elapsed))
+
+    def record_production_automatic_feedback(self, decision):
+        self.auto_records.append(str(decision))
+
+    def record_production_manual_feedback(self, decision):
+        self.manual_records.append(str(decision))
+
+    def set_production_paused_feedback(self, paused):
+        self.paused_records.append(bool(paused))
 
     def show_production_intervention_feedback(self, reason):
         self.interventions.append(str(reason))
@@ -76,7 +95,7 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_entering_production_resets_session(self):
+    def test_entering_production_resets_session_without_showing_idle_card(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
 
@@ -85,6 +104,81 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
 
         self.assertTrue(controller.is_production())
         self.assertEqual(panel.session_resets, 1)
+        self.assertFalse(panel.session_visible)
+
+    def test_cycle_started_shows_session_only_in_production(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+
+        self.assertFalse(controller.cycle_started())
+        self.assertFalse(panel.session_visible)
+
+        panel.combo_mode.setCurrentText("Modo Produção")
+        self.assertTrue(controller.cycle_started())
+        self.assertTrue(panel.session_visible)
+
+    def test_analysis_ready_records_pre_scroll_analysis_time_once(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = {
+            "verdict": "FALHA FALSA",
+            "is_defect": False,
+        }
+        panel.current_analysis = analysis
+        panel.last_analysis_time_seconds = 1.37
+
+        self.assertTrue(controller.analysis_ready(analysis))
+        self.assertEqual(panel.analysis_records, [1.37])
+
+        # A mesma análise não pode entrar duas vezes na média da sessão.
+        self.assertTrue(controller.analysis_ready(analysis))
+        self.assertEqual(panel.analysis_records, [1.37])
+
+    def test_space_pause_stops_and_resumes_pending_stage(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = {
+            "verdict": "FALHA FALSA",
+            "is_defect": False,
+        }
+        panel.current_analysis = analysis
+
+        controller.analysis_ready(analysis)
+        self.assertTrue(controller._stage_timer.isActive())
+
+        self.assertTrue(controller.toggle_pause())
+        self.assertTrue(controller.paused)
+        self.assertFalse(controller._stage_timer.isActive())
+        self.assertTrue(panel.production_autonomy_paused)
+        self.assertIn(True, panel.paused_records)
+
+        self.assertFalse(controller.toggle_pause())
+        self.assertFalse(controller.paused)
+        self.assertTrue(controller._stage_timer.isActive())
+        self.assertFalse(panel.production_autonomy_paused)
+
+    def test_pause_before_analysis_keeps_result_waiting_until_resume(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        controller.toggle_pause()
+
+        analysis = {
+            "verdict": "FALHA FALSA",
+            "is_defect": False,
+        }
+        panel.current_analysis = analysis
+
+        controller.analysis_ready(analysis)
+
+        self.assertTrue(controller.paused)
+        self.assertFalse(controller._stage_timer.isActive())
+        self.assertTrue(callable(controller._stage_callback))
+
+        controller.toggle_pause()
+        self.assertTrue(controller._stage_timer.isActive())
 
     def test_test_mode_is_untouched(self):
         panel = _Panel()
@@ -97,10 +191,11 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         panel.current_analysis = analysis
 
         self.assertFalse(controller.analysis_ready(analysis))
+        self.assertFalse(controller.toggle_pause())
         self.assertEqual(panel.saved, [])
         self.assertEqual(panel.feedback, [])
 
-    def test_false_failure_emits_only_auto_ok(self):
+    def test_false_failure_emits_auto_ok_and_counts_it(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
@@ -112,15 +207,18 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         panel.current_analysis = analysis
         controller.pending_analysis = analysis
         controller.generation += 1
-        generation = controller.generation
+        controller.cycle_started()
 
-        controller._emit_auto_ok(generation)
+        controller._emit_auto_ok(controller.generation)
 
         self.assertEqual(
             panel.saved,
             [("OK", "production_auto")],
         )
-        self.assertEqual(panel.session_increments, ["OK"])
+        self.assertEqual(panel.auto_records, ["OK"])
+        self.assertEqual(panel.manual_records, [])
+        self.assertEqual(panel.feedback, [("OK", "production_auto")])
+        self.assertFalse(panel.session_visible)
         self.assertEqual(controller.state, "idle")
 
     def test_failed_auto_command_is_not_counted_and_requires_operator(self):
@@ -145,7 +243,7 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
 
         controller._emit_auto_ok(controller.generation)
 
-        self.assertEqual(panel.session_increments, [])
+        self.assertEqual(panel.auto_records, [])
         self.assertTrue(panel.production_review_pending)
         self.assertEqual(controller.state, "operator_review")
         self.assertEqual(
@@ -169,6 +267,7 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         controller._finish_presentation(controller.generation)
 
         self.assertEqual(panel.saved, [])
+        self.assertEqual(panel.auto_records, [])
         self.assertTrue(panel.production_review_pending)
         self.assertEqual(controller.state, "operator_review")
         self.assertEqual(panel.interventions[-1], "DEFEITO REAL")
@@ -195,21 +294,27 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
             "REVISÃO OBRIGATÓRIA",
         )
 
-    def test_operator_decision_rearms_without_incrementing_auto_counter(self):
+    def test_operator_decision_counts_manual_failure_and_hides_session(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
+        controller.cycle_started()
         controller.state = "operator_review"
         controller.pending_analysis = {
             "verdict": "DEFEITO REAL",
             "is_defect": True,
         }
 
-        controller.operator_decision_completed("NG", source="xp_keyboard")
+        controller.operator_decision_completed(
+            "NG",
+            source="xp_keyboard",
+        )
 
         self.assertEqual(controller.state, "idle")
         self.assertIsNone(controller.pending_analysis)
-        self.assertEqual(panel.session_increments, [])
+        self.assertEqual(panel.manual_records, ["NG"])
+        self.assertEqual(panel.auto_records, [])
+        self.assertFalse(panel.session_visible)
         self.assertGreaterEqual(panel.intervention_clears, 1)
 
     def test_presentation_is_intentionally_visible_and_non_instant(self):
@@ -231,12 +336,23 @@ class ProductionAutonomySourceContractTests(unittest.TestCase):
         self.assertIn("verticalScrollBar()", source)
         self.assertNotIn("time.sleep(", source)
 
+    def test_space_is_window_shortcut_only_for_production_controller(self):
+        source = (
+            ROOT / "src" / "ui" / "production_autonomy_controller.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('QKeySequence("Space")', source)
+        self.assertIn("Qt.ShortcutContext.WindowShortcut", source)
+        self.assertIn("shortcut.setAutoRepeat(False)", source)
+        self.assertIn("shortcut.setEnabled(controller.is_production())", source)
+
     def test_control_panel_no_longer_saves_immediately_after_analysis(self):
         source = (
             ROOT / "src" / "ui" / "control_panel.py"
         ).read_text(encoding="utf-8")
 
         self.assertIn("notify_production_analysis_ready", source)
+        self.assertIn("notify_production_cycle_started", source)
         self.assertNotIn(
             'self.save_label(auto_decision, source="auto")',
             source,
