@@ -128,6 +128,7 @@ class DatasetManager:
                     base_name = image_path.name[:-9]
                     json_path = image_path.with_name(f"{base_name}.json")
                     lighting = "SIDE"
+                    legacy_info = {}
                     if json_path.exists():
                         try:
                             with open(
@@ -136,14 +137,13 @@ class DatasetManager:
                                 encoding="utf-8",
                             ) as file:
                                 legacy_data = json.load(file)
+                            legacy_info = legacy_data.get("aoi_info", {}) or {}
                             lighting = cls._lighting_key(
-                                (legacy_data.get("aoi_info", {}) or {}).get(
-                                    "lighting_mode",
-                                    "",
-                                )
+                                legacy_info.get("lighting_mode", "")
                             )
                         except Exception:
                             lighting = "SIDE"
+                            legacy_info = {}
                     # Um PNG sem JSON não é memória KNN utilizável.
                     # Nesse caso não bloqueamos a criação de um registro novo.
                     if json_path.exists():
@@ -151,7 +151,7 @@ class DatasetManager:
                             cls._fingerprint_key(
                                 fingerprint,
                                 lighting,
-                                legacy_data.get("aoi_info", {}),
+                                legacy_info,
                             ),
                             str(json_path),
                         )
