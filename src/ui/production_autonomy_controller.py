@@ -330,28 +330,13 @@ class ProductionAutonomyController(QObject):
         )
         if result is False or command_success is not True:
             self.state = "operator_review"
-            # Se o envio falhou, a análise original continua sendo FALHA FALSA,
-            # mas operacionalmente a peça precisa de intervenção humana.
-            self.panel.production_review_pending = True
-            self.panel.is_locked = True
-            try:
-                self.panel.update_brain_status(
-                    "Falha ao enviar 0 automaticamente. "
-                    "Aguardando operador: 0=OK | 1=NG",
-                    True,
-                )
-            except Exception:
-                pass
-            presenter = getattr(
+            # Se o envio falhou, a análise visual original pode continuar sendo
+            # FALHA FALSA, mas operacionalmente a peça exige intervenção.
+            enter_production_review(
                 self.panel,
-                "_operational_controls",
-                None,
+                self.pending_analysis,
+                verdict_override="REVISÃO OBRIGATÓRIA",
             )
-            if presenter is not None:
-                try:
-                    presenter.sync(force=True)
-                except Exception:
-                    pass
             show_intervention = getattr(
                 self.panel,
                 "show_production_intervention_feedback",
