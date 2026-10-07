@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QApplication, QComboBox, QScrollArea, QWidget
 
 from src.ui.production_autonomy_controller import (
     AUTO_DECISION_DELAY_MS,
+    HORIZONTAL_SCROLL_DURATION_MS,
     POST_SCROLL_PAUSE_MS,
     RENDER_SETTLE_MS,
     SCROLL_DURATION_MS,
@@ -320,7 +321,8 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
     def test_presentation_is_intentionally_visible_and_non_instant(self):
         self.assertGreaterEqual(RENDER_SETTLE_MS, 300)
         self.assertGreaterEqual(TOP_HOLD_MS, 300)
-        self.assertGreaterEqual(SCROLL_DURATION_MS, 4000)
+        self.assertGreaterEqual(SCROLL_DURATION_MS, 6000)
+        self.assertGreaterEqual(HORIZONTAL_SCROLL_DURATION_MS, 2000)
         self.assertGreaterEqual(POST_SCROLL_PAUSE_MS, 500)
         self.assertGreaterEqual(AUTO_DECISION_DELAY_MS, 200)
 
@@ -334,6 +336,9 @@ class ProductionAutonomySourceContractTests(unittest.TestCase):
         self.assertIn("QPropertyAnimation", source)
         self.assertIn('b"value"', source)
         self.assertIn("verticalScrollBar()", source)
+        self.assertIn("_active_specialist_horizontal_bar", source)
+        self.assertIn("horizontalScrollBar()", source)
+        self.assertIn("adhesive_multilight_analysis_view", source)
         self.assertNotIn("time.sleep(", source)
 
     def test_space_is_window_shortcut_only_for_production_controller(self):
