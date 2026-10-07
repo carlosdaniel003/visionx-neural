@@ -168,9 +168,20 @@ def _ok_merge_eligible(
     first_dual = valid_context_signature(first.get("context_signature", {}))
     second_dual = valid_context_signature(second.get("context_signature", {}))
 
+    # A terceira escala envolve o breakdown dual-scale dentro de "previous".
+    # Os limiares de compactação continuam avaliando epicentro + contexto.
+    scale_breakdown = breakdown
+    previous_breakdown = breakdown.get("previous")
+    if isinstance(previous_breakdown, dict):
+        scale_breakdown = previous_breakdown
+
     if first_dual and second_dual:
-        epicenter = float(breakdown.get("epicenter_similarity", similarity) or 0.0)
-        context = float(breakdown.get("context_similarity", 0.0) or 0.0)
+        epicenter = float(
+            scale_breakdown.get("epicenter_similarity", similarity) or 0.0
+        )
+        context = float(
+            scale_breakdown.get("context_similarity", 0.0) or 0.0
+        )
         eligible = bool(
             similarity >= OK_PROTOTYPE_MERGE_SIMILARITY
             and epicenter >= OK_PROTOTYPE_EPICENTER_MIN
@@ -224,7 +235,7 @@ def condense_ok_records(
 ) -> list[dict]:
     """Cria protótipos OK em memória sem apagar os JSONs existentes."""
     augmented = [_augment_record_from_json(record) for record in records]
-    grouped: dict[tuple[str, str, str, str], list[dict]] = {}
+    grouped: dict[tuple[str, str, str, str, str], list[dict]] = {}
     for record in augmented:
         grouped.setdefault(_record_scope(record), []).append(record)
 
@@ -550,10 +561,14 @@ def install_prototype_memory(
             )
             target_folder = base_folder / category
             fingerprint = dataset_manager_module.image_fingerprint(ng_image)
+            fingerprint_key = (
+                f"{dataset_manager_cls._lighting_key(normalized_lighting)}:"
+                f"{fingerprint}"
+            )
             existing = (
                 dataset_manager_cls._fingerprint_index(
                     target_folder
-                ).get(fingerprint)
+                ).get(fingerprint_key)
                 if fingerprint
                 else None
             )
