@@ -82,9 +82,10 @@ def install_anomaly_learning(control_panel_cls) -> None:
         if normalized not in {"OK", "NG"} or self.current_ng is None:
             return None
 
-        # Produção mantém a decisão automática original e não cria rótulos
-        # humanos para si mesma.
-        if source == "auto":
+        # Produção automática não cria rótulos humanos para si mesma.
+        # "production_auto" identifica explicitamente o novo controlador visual;
+        # "auto" é mantido apenas por compatibilidade com fluxos antigos.
+        if str(source or "").strip().lower() in {"auto", "production_auto"}:
             return original_save_label(self, normalized, source=source)
 
         if source == "button":
