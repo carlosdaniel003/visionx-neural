@@ -227,13 +227,13 @@ class ControlPanel(QWidget):
         if hasattr(self, 'current_sample') and self.current_sample is not None and self.current_sample.size > 0:
             px_sample = self.numpy_to_pixmap(self.current_sample)
             if self.lbl_sample.width() > 0 and self.lbl_sample.height() > 0:
-                self.lbl_sample.setPixmap(px_sample.scaled(self.lbl_sample.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                self.lbl_sample.setPixmap(px_sample)
 
         if hasattr(self, 'current_ng') and self.current_ng is not None and self.current_ng.size > 0 and hasattr(self, 'current_analysis') and self.current_analysis:
             img_drawn = ImageRenderer.draw_multilayer_boxes(self.current_ng, self.current_analysis)
             px_ng = self.numpy_to_pixmap(img_drawn)
             if self.lbl_ng.width() > 0 and self.lbl_ng.height() > 0:
-                self.lbl_ng.setPixmap(px_ng.scaled(self.lbl_ng.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                self.lbl_ng.setPixmap(px_ng)
 
     def handle_network_image(self, img_bgr: np.ndarray, ip: str):
         self.is_locked = True
@@ -519,7 +519,7 @@ class ControlPanel(QWidget):
 
         px_sample = self.numpy_to_pixmap(sample_crop)
         if self.lbl_sample.width() > 0 and self.lbl_sample.height() > 0:
-            self.lbl_sample.setPixmap(px_sample.scaled(self.lbl_sample.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            self.lbl_sample.setPixmap(px_sample)
 
         raw_anomalies, old_epicenters, global_box_info, gab_focus, test_focus = detect_anomalies(sample_crop, ng_crop)
         
@@ -529,13 +529,13 @@ class ControlPanel(QWidget):
 
         if focus_gab.size > 0 and hasattr(self, 'lbl_sample_focus') and self.lbl_sample_focus.width() > 0:
             px_focus_gab = self.numpy_to_pixmap(focus_gab)
-            self.lbl_sample_focus.setPixmap(px_focus_gab.scaled(self.lbl_sample_focus.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            self.lbl_sample_focus.setPixmap(px_focus_gab)
         else:
             if hasattr(self, 'lbl_sample_focus'): self.lbl_sample_focus.setText("Inválido/Sem Foco")
 
         if focus_ng.size > 0 and hasattr(self, 'lbl_ng_focus') and self.lbl_ng_focus.width() > 0:
             px_focus_ng = self.numpy_to_pixmap(focus_ng)
-            self.lbl_ng_focus.setPixmap(px_focus_ng.scaled(self.lbl_ng_focus.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            self.lbl_ng_focus.setPixmap(px_focus_ng)
         else:
             if hasattr(self, 'lbl_ng_focus'): self.lbl_ng_focus.setText("Inválido/Sem Foco")
 
@@ -570,7 +570,7 @@ class ControlPanel(QWidget):
 
         px_ng = self.numpy_to_pixmap(img_ng_drawn)
         if self.lbl_ng.width() > 0 and self.lbl_ng.height() > 0:
-            self.lbl_ng.setPixmap(px_ng.scaled(self.lbl_ng.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            self.lbl_ng.setPixmap(px_ng)
 
         # "Tempo de análise" termina quando o resultado já foi entregue aos
         # widgets e o Qt processou a pintura pendente. Excluímos input do
