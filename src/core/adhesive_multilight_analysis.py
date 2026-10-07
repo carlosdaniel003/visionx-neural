@@ -1,10 +1,12 @@
-"""Análise independente das iluminações auxiliares da categoria de adesivo.
+"""Análise independente das iluminações auxiliares SIDE/TOP/MID.
 
-TOP e MID percorrem o mesmo pipeline técnico usado pela imagem SIDE:
+O nome do módulo é mantido por compatibilidade histórica. TOP e MID percorrem
+o mesmo pipeline técnico usado pela imagem SIDE em qualquer categoria AOI:
 detect_anomalies -> EpicenterExtractor -> MoEOrchestrator.inspect.
 
-O resultado retornado por este módulo é diagnóstico visual por iluminação.
-Ele não substitui current_analysis e não participa do veredito final da peça.
+O resultado retornado é diagnóstico por iluminação. Ele não substitui
+current_analysis; somente a camada posterior de fusão multilight pode promover
+um julgamento final da peça.
 """
 
 from __future__ import annotations
