@@ -1,8 +1,8 @@
-"""Painel responsivo de especialistas por iluminação para adesivo.
+"""Painel responsivo de especialistas SIDE/TOP/MID.
 
-SIDE, TOP e MID recebem análises independentes do pipeline multilight. A camada
-é visual: organiza os especialistas, sincroniza a navegação horizontal das três
-iluminações e não altera a decisão fundida da peça.
+O nome do módulo é mantido por compatibilidade histórica. SIDE, TOP e MID
+recebem análises independentes do pipeline multilight de qualquer categoria AOI.
+A camada é visual e não altera a decisão fundida da peça.
 """
 
 from __future__ import annotations
