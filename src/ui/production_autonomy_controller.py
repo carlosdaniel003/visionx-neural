@@ -159,15 +159,16 @@ class ProductionAutonomyController(QObject):
             self._cancel_pending()
             self.paused = False
             self.panel.production_autonomy_paused = False
-            self._recorded_analysis_keys = set()
 
-            reset = getattr(
+            restore_daily = getattr(
                 self.panel,
-                "reset_production_session_feedback",
+                "restore_production_daily_session_feedback",
                 None,
             )
-            if callable(reset):
-                reset()
+            if callable(restore_daily):
+                # Trocar de modo nunca zera métricas. O próprio store decide
+                # se ainda é o mesmo dia local ou se deve iniciar um novo dia.
+                restore_daily()
 
             clear_intervention = getattr(
                 self.panel,
