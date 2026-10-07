@@ -1,8 +1,10 @@
-"""Aquisição, visualização, análise e fusão multilight da categoria de adesivo.
+"""Aquisição, visualização, análise e fusão multilight para a AOI.
 
-SIDE, TOP e MID pertencem à mesma peça. Cada iluminação mantém sua análise
-independente para auditoria, e o julgamento final só é promovido depois que as
-três análises estão disponíveis.
+O nome do módulo é mantido por compatibilidade histórica. Em todo ciclo de rede
+com categoria AOI válida, SIDE, TOP e MID pertencem à mesma peça e ao mesmo
+event_id. Cada iluminação mantém sua análise independente para auditoria, e o
+julgamento final só é promovido depois que as três análises estão disponíveis.
+A categoria MUITO ADESIVO continua usando sua fusão física especializada.
 """
 
 from __future__ import annotations
@@ -30,9 +32,7 @@ from src.core.adhesive_multilight_analysis import (
     build_lighting_context,
     valid_image,
 )
-from src.core.adhesive_multilight_fusion import (
-    fuse_adhesive_multilight,
-)
+from src.core.multilight_fusion import fuse_multilight
 from src.services.capture_debug_payload import decision_record
 from src.services.capture_evidence import (
     capture_debug_record,
@@ -67,6 +67,12 @@ def category_from_aoi_info(aoi_info: dict | None) -> str:
 
 def is_adhesive_category(aoi_info: dict | None) -> bool:
     return category_from_aoi_info(aoi_info) == ADHESIVE_CATEGORY
+
+
+def is_multilight_category(aoi_info: dict | None) -> bool:
+    """Toda categoria AOI canônica conhecida participa do ciclo multilight."""
+    category = category_from_aoi_info(aoi_info)
+    return bool(category and category != "Unknown")
 
 
 def _valid_image(value: Any) -> bool:
@@ -145,7 +151,7 @@ def build_adhesive_view_payload(
                     int(value) for value in real_epicenters[0]
                 )
     except Exception as exc:
-        print(f"Falha não fatal ao montar preview multilight de adesivo: {exc}")
+        print(f"Falha não fatal ao montar preview multilight: {exc}")
 
     return payload
 
@@ -292,7 +298,7 @@ class _LightingInspectionCard(QFrame):
 
 
 class AdhesiveMultiLightView(QWidget):
-    """Layout responsivo das nove imagens da inspeção de adesivo."""
+    """Layout responsivo das nove imagens da inspeção multilight."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -305,7 +311,7 @@ class AdhesiveMultiLightView(QWidget):
         root.setSpacing(7)
 
         hint = QLabel(
-            "ADESIVO • SIDE / TOP / MID • imagem recebida + caixas maior e menor"
+            "MULTILIGHT • SIDE / TOP / MID • imagem recebida + caixas maior e menor"
         )
         hint.setObjectName("sectionHint")
         hint.setWordWrap(True)
@@ -374,11 +380,13 @@ def _set_receiver_auxiliary_mode(panel, enabled: bool) -> None:
             print(f"Falha não fatal ao alternar recepção multilight: {exc}")
 
 
-def _switch_inspection_view(panel, adhesive: bool) -> None:
+def _switch_inspection_view(panel, enabled: bool) -> None:
     builder = getattr(panel, "ui_builder", None)
-    method = getattr(builder, "set_adhesive_inspection_mode", None)
+    method = getattr(builder, "set_multilight_inspection_mode", None)
+    if not callable(method):
+        method = getattr(builder, "set_adhesive_inspection_mode", None)
     if callable(method):
-        method(panel, bool(adhesive))
+        method(panel, bool(enabled))
 
 
 def _sync_multilight_debug_controls(panel) -> None:
@@ -392,9 +400,12 @@ def _sync_multilight_debug_controls(panel) -> None:
 
 
 def _finalize_multilight_decision(panel) -> dict | None:
-    """Promove SIDE/TOP/MID a um único julgamento final de adesivo."""
+    """Promove SIDE/TOP/MID a um único julgamento final da peça."""
     analyses = getattr(panel, "adhesive_multilight_analyses", {})
-    fused = fuse_adhesive_multilight(analyses)
+    category = category_from_aoi_info(
+        getattr(panel, "current_aoi_info", None)
+    )
+    fused = fuse_multilight(analyses, category)
     if not isinstance(fused, dict):
         try:
             panel.update_network_status(
@@ -438,7 +449,7 @@ def _finalize_multilight_decision(panel) -> dict | None:
     try:
         panel.lbl_timer.setText(f"{elapsed:.2f} s")
         panel.lbl_timer.setToolTip(
-            "Tempo real da categoria adesivo: do recebimento da SIDE até "
+            "Tempo real multilight: do recebimento da SIDE até "
             "a conclusão das análises SIDE/TOP/MID e da fusão final."
         )
     except Exception:
@@ -569,7 +580,7 @@ def _current_lighting(panel) -> str:
 
 
 def install_adhesive_multilight_inspection(control_panel_cls) -> None:
-    """Liga aquisição, análise e fusão multilight ao ciclo da peça de adesivo."""
+    """Liga aquisição, análise e fusão multilight aos ciclos AOI de rede."""
     if getattr(
         control_panel_cls,
         "_adhesive_multilight_inspection_installed",
@@ -606,13 +617,13 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         _switch_inspection_view(self, False)
 
     def handle_network_image(self, img_bgr, ip: str):
-        # Enquanto uma peça de adesivo permanece ativa, frames adicionais são
+        # Enquanto uma peça multilight permanece ativa, frames adicionais são
         # previews auxiliares da mesma peça. Eles não passam pelo gate normal,
         # não recebem novo event_id e não substituem current_analysis.
         if (
             bool(getattr(self, "adhesive_multilight_active", False))
             and getattr(self, "current_analysis", None) is not None
-            and is_adhesive_category(
+            and is_multilight_category(
                 getattr(self, "current_aoi_info", None)
             )
         ):
@@ -742,7 +753,11 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     )
                     or ""
                 )
-                self.adhesive_multilight_last_category = ADHESIVE_CATEGORY
+                self.adhesive_multilight_last_category = (
+                    category_from_aoi_info(
+                        getattr(self, "current_aoi_info", None)
+                    )
+                )
 
                 analysis_view = getattr(
                     self,
@@ -791,8 +806,12 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     pass
                 return False
 
-        adhesive = is_adhesive_category(aoi_info)
-        if not adhesive:
+        category = category_from_aoi_info(aoi_info)
+        network_cycle = (
+            str(getattr(self, "capture_cycle_source", "") or "").strip().lower()
+            == "network"
+        )
+        if not network_cycle or not is_multilight_category(aoi_info):
             _reset_session(self, show_normal=True)
             return original_process_aoi_images(
                 self,
@@ -828,7 +847,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_source_frames = {}
         self.adhesive_multilight_last_analyses = {}
         self.adhesive_multilight_last_source_frames = {}
-        self.adhesive_multilight_last_category = ADHESIVE_CATEGORY
+        self.adhesive_multilight_last_category = category
         self.adhesive_multilight_final_analysis = None
         self.adhesive_multilight_last_final_analysis = None
         self.adhesive_multilight_primary_event_id = getattr(
@@ -889,10 +908,10 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         _switch_inspection_view(self, True)
         _set_receiver_auxiliary_mode(self, True)
 
-        # SIDE não é mais julgamento final para adesivo. Até TOP/MID terminarem
+        # SIDE não é julgamento final em ciclos multilight. Até TOP/MID terminarem
         # nenhum botão 0/1 do ODIN deve ficar disponível.
         try:
-            self.lbl_verdict.setText("ADESIVO • AGUARDANDO TOP/MID")
+            self.lbl_verdict.setText("MULTILIGHT • AGUARDANDO TOP/MID")
             self.lbl_verdict.setStyleSheet(
                 "color: #ffd33d; font-size: 16px; font-weight: bold; "
                 "border: none;"
@@ -942,7 +961,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         # decisão, automática ou manual, pode encerrar a peça no meio da
         # sequência. O Modo Produção só recebe o resultado depois da fusão.
         if (
-            is_adhesive_category(
+            is_multilight_category(
                 getattr(self, "current_aoi_info", None)
             )
             and (pending_start or automation_active)
@@ -989,6 +1008,10 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
     control_panel_cls.process_aoi_images = process_aoi_images
     control_panel_cls.save_label = save_label
     control_panel_cls.skip_image = skip_image
+    control_panel_cls.finalize_multilight_decision = (
+        _finalize_multilight_decision
+    )
+    # Alias legado: integrações/testes antigos ainda podem chamar este nome.
     control_panel_cls.finalize_adhesive_multilight_decision = (
         _finalize_multilight_decision
     )
@@ -1004,4 +1027,5 @@ __all__ = [
     "category_from_aoi_info",
     "install_adhesive_multilight_inspection",
     "is_adhesive_category",
+    "is_multilight_category",
 ]
