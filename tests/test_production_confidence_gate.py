@@ -137,7 +137,7 @@ class ProductionGateIntegrationContractTests(unittest.TestCase):
             '== "REVISÃO OBRIGATÓRIA"',
             source,
         )
-        self.assertIn("analysis["production_review_required"]", source)
+        self.assertIn('analysis["production_review_required"]', source)
 
     def test_human_resolution_notifies_autonomy_controller(self):
         source = self.gate_source()
