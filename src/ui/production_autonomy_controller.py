@@ -22,7 +22,8 @@ from src.ui.production_confidence_gate import (
 
 RENDER_SETTLE_MS = 500
 TOP_HOLD_MS = 450
-SCROLL_DURATION_MS = 5_200
+SCROLL_DURATION_MS = 6_300
+HORIZONTAL_SCROLL_DURATION_MS = 2_800
 NO_SCROLL_REVIEW_MS = 1_200
 POST_SCROLL_PAUSE_MS = 900
 AUTO_DECISION_DELAY_MS = 300
@@ -297,6 +298,77 @@ class ProductionAutonomyController(QObject):
         )
         return True
 
+    def _active_specialist_horizontal_bar(self):
+        """Retorna o scroll horizontal da página de especialistas ativa."""
+        if bool(getattr(self.panel, "_adhesive_inspection_mode", False)):
+            view = getattr(
+                self.panel,
+                "adhesive_multilight_analysis_view",
+                None,
+            )
+            getter = getattr(view, "horizontal_scroll_bars", None)
+            if callable(getter):
+                bars = list(getter() or [])
+                for bar in bars:
+                    if bar is not None and int(bar.maximum()) > int(bar.minimum()):
+                        return bar
+            return None
+
+        area = getattr(self.panel, "scroll_area", None)
+        if area is None:
+            return None
+        bar = area.horizontalScrollBar()
+        if bar is None or int(bar.maximum()) <= int(bar.minimum()):
+            return None
+        return bar
+
+    def _reset_specialist_horizontal_scroll(self) -> None:
+        bar = self._active_specialist_horizontal_bar()
+        if bar is not None:
+            bar.setValue(bar.minimum())
+
+    def _telemetry_scroll_target(self, root_bar) -> int:
+        section = getattr(self.panel, "telemetry_section", None)
+        content = getattr(self.panel, "root_content", None)
+        if section is None or content is None:
+            return int(root_bar.minimum())
+
+        try:
+            y = int(section.mapTo(content, section.rect().topLeft()).y())
+        except Exception:
+            return int(root_bar.minimum())
+
+        return max(
+            int(root_bar.minimum()),
+            min(int(root_bar.maximum()), max(0, y - 24)),
+        )
+
+    def _start_animation(
+        self,
+        bar,
+        end_value: int,
+        duration_ms: int,
+        callback,
+    ) -> None:
+        start_value = int(bar.value())
+        end_value = int(end_value)
+        if start_value == end_value:
+            callback()
+            return
+
+        self.state = "scrolling"
+        animation = QPropertyAnimation(bar, b"value", self)
+        animation.setDuration(max(450, int(duration_ms)))
+        animation.setStartValue(start_value)
+        animation.setEndValue(end_value)
+        animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        animation.finished.connect(callback)
+        self._scroll_animation = animation
+        animation.start()
+
+        if self.paused:
+            animation.pause()
+
     def _go_to_top(self, generation: int) -> None:
         if not self._analysis_still_current(generation):
             return
@@ -314,6 +386,7 @@ class ProductionAutonomyController(QObject):
         self.state = "presentation_top"
         try:
             bar.setValue(bar.minimum())
+            self._reset_specialist_horizontal_scroll()
         except Exception:
             self._schedule_stage(
                 NO_SCROLL_REVIEW_MS,
@@ -335,6 +408,7 @@ class ProductionAutonomyController(QObject):
         )
 
     def _start_scroll(self, generation: int) -> None:
+        """Desce até especialistas, percorre horizontalmente e segue ao final."""
         if not self._analysis_still_current(generation):
             return
 
@@ -346,38 +420,91 @@ class ProductionAutonomyController(QObject):
 
         minimum = int(bar.minimum())
         maximum = int(bar.maximum())
-        current = int(bar.value())
         if maximum <= minimum:
-            self._schedule_finish_without_scroll(generation)
+            self._start_specialist_horizontal_scroll(generation)
             return
 
-        remaining_fraction = max(
-            0.0,
-            min(
-                1.0,
-                float(maximum - current)
-                / float(maximum - minimum),
-            ),
-        )
-        remaining_duration = max(
+        target = self._telemetry_scroll_target(bar)
+        total_range = max(1, maximum - minimum)
+        distance = abs(target - int(bar.value()))
+        duration = max(
             450,
-            int(SCROLL_DURATION_MS * remaining_fraction),
+            int(SCROLL_DURATION_MS * (float(distance) / float(total_range))),
         )
 
-        self.state = "scrolling"
-        animation = QPropertyAnimation(bar, b"value", self)
-        animation.setDuration(remaining_duration)
-        animation.setStartValue(current)
-        animation.setEndValue(maximum)
-        animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
-        animation.finished.connect(
-            lambda g=generation: self._scroll_finished(g)
+        self._start_animation(
+            bar,
+            target,
+            duration,
+            lambda g=generation: self._start_specialist_horizontal_scroll(g),
         )
-        self._scroll_animation = animation
-        animation.start()
 
-        if self.paused:
-            animation.pause()
+    def _start_specialist_horizontal_scroll(self, generation: int) -> None:
+        if not self._analysis_still_current(generation):
+            return
+
+        self._scroll_animation = None
+        bar = self._active_specialist_horizontal_bar()
+        if bar is None:
+            self._start_vertical_to_bottom(generation)
+            return
+
+        try:
+            self.panel.update_brain_status(
+                "Modo Produção: percorrendo horizontalmente a análise "
+                "dos especialistas...",
+                True,
+            )
+        except Exception:
+            pass
+
+        bar.setValue(bar.minimum())
+        self._start_animation(
+            bar,
+            int(bar.maximum()),
+            HORIZONTAL_SCROLL_DURATION_MS,
+            lambda g=generation: self._start_vertical_to_bottom(g),
+        )
+
+    def _start_vertical_to_bottom(self, generation: int) -> None:
+        if not self._analysis_still_current(generation):
+            return
+
+        self._scroll_animation = None
+        scroll = getattr(self.panel, "root_scroll", None)
+        bar = scroll.verticalScrollBar() if scroll is not None else None
+        if bar is None:
+            self._scroll_finished(generation)
+            return
+
+        minimum = int(bar.minimum())
+        maximum = int(bar.maximum())
+        current = int(bar.value())
+        if maximum <= minimum or current >= maximum:
+            self._scroll_finished(generation)
+            return
+
+        total_range = max(1, maximum - minimum)
+        distance = max(0, maximum - current)
+        duration = max(
+            450,
+            int(SCROLL_DURATION_MS * (float(distance) / float(total_range))),
+        )
+
+        try:
+            self.panel.update_brain_status(
+                "Modo Produção: continuando a apresentação até o final...",
+                True,
+            )
+        except Exception:
+            pass
+
+        self._start_animation(
+            bar,
+            maximum,
+            duration,
+            lambda g=generation: self._scroll_finished(g),
+        )
 
     def _schedule_finish_without_scroll(self, generation: int) -> None:
         self.state = "presentation_pause"
@@ -672,6 +799,7 @@ def install_production_autonomy_controller(panel) -> None:
 
 __all__ = [
     "AUTO_DECISION_DELAY_MS",
+    "HORIZONTAL_SCROLL_DURATION_MS",
     "NO_SCROLL_REVIEW_MS",
     "POST_SCROLL_PAUSE_MS",
     "ProductionAutonomyController",
