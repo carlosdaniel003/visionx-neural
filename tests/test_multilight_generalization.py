@@ -158,6 +158,46 @@ class GeneralMultiLightFusionTests(unittest.TestCase):
             "multilight_all_clear",
         )
 
+    def test_adhesive_keeps_specialized_fusion_policy(self):
+        def adhesive(mode, score, physical, defect):
+            return {
+                "lighting_mode": mode,
+                "verdict": "DEFEITO REAL" if defect else "FALHA FALSA",
+                "is_defect": bool(defect),
+                "confidence": 0.90,
+                "active_engines": ["ssim_expert.py", "knn_expert.py"],
+                "detail": {
+                    "adhesive_score": float(score),
+                    "adhesive_is_defect": bool(defect),
+                    "adhesive_tolerance": 0.32,
+                    "physical_score": float(physical),
+                    "best_match_label": "NG" if defect else "OK",
+                    "best_similarity": 0.90,
+                    "adhesive_reason": f"adesivo {mode}",
+                    "decision_trace": {
+                        "operator_review_required": False,
+                    },
+                },
+            }
+
+        analyses = {
+            "SIDE": adhesive("SIDE", 0.05, 0.20, False),
+            "TOP": adhesive("TOP", 0.88, 0.90, True),
+            "MID": adhesive("MID", 0.10, 0.20, False),
+        }
+
+        result = fuse_multilight(analyses, "MUITO ADESIVO")
+
+        self.assertEqual(result["verdict"], "DEFEITO REAL")
+        self.assertEqual(
+            result["detail"]["fusion_rule"],
+            "adhesive_multilight_strong_auxiliary",
+        )
+        self.assertEqual(
+            result["detail"]["multilight_dominant_mode"],
+            "TOP",
+        )
+
 
 class GeneralMultiLightArchiveTests(unittest.TestCase):
     class Panel:
