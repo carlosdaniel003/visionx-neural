@@ -405,6 +405,10 @@ class ScreenMonitor(QThread):
             if above_y2_r > above_y1_r + 5:
                 text_zone_r = frame_bgr[above_y1_r:above_y2_r, x1r:x2r].copy()
                 raw = self._ocr_fast(text_zone_r)
+                if raw:
+                    # A releitura dirigida de Parts deve usar a mesma região
+                    # que efetivamente produziu o texto bruto selecionado.
+                    text_zone = text_zone_r
 
         if not raw:
             info["raw_text"] = "[Nenhum texto encontrado]"
