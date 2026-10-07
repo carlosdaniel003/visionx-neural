@@ -4,8 +4,12 @@ A automação controla a troca de iluminação, a coleta das imagens auxiliares 
 o fechamento do ciclo multilight. TOP/MID são analisadas antes do avanço da
 máquina de estados e, ao final, SIDE/TOP/MID são fundidas em um único julgamento.
 
+No Modo Produção, a fusão final não envia 0/1 diretamente. Ela entrega o
+resultado ao ProductionAutonomyController, que apresenta a interface com scroll
+e aplica a política operacional do modo.
+
 SIDE já recebido -> TOP -> análise TOP -> MID -> análise MID -> restaura SIDE
--> fusão final.
+-> fusão final -> apresentação do Modo Produção.
 
 As setas da AOI são seletores absolutos:
 LEFT=TOP, DOWN=SIDE, RIGHT=MID.
@@ -273,23 +277,19 @@ class AdhesiveMultiLightAutomation(QObject):
         except Exception:
             mode = ""
 
-        review_required = bool(
-            fused.get("production_review_required", False)
-            or str(fused.get("verdict", "") or "").strip().upper()
-            == "REVISÃO OBRIGATÓRIA"
-        )
-
-        if mode == "Modo Produção" and not review_required:
-            final_decision = (
-                "NG" if bool(fused.get("is_defect", False)) else "OK"
+        if mode == "Modo Produção":
+            notify = getattr(
+                self.panel,
+                "notify_production_analysis_ready",
+                None,
             )
-            QTimer.singleShot(
-                0,
-                lambda decision=final_decision: self.panel.save_label(
-                    decision,
-                    source="auto",
-                ),
-            )
+            if callable(notify):
+                # Agenda no próximo giro do event loop para garantir que a
+                # fusão e todos os painéis multilight já tenham sido pintados.
+                QTimer.singleShot(
+                    0,
+                    lambda analysis=fused: notify(analysis),
+                )
 
         return True
 
