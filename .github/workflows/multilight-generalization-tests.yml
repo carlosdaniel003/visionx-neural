@@ -8,6 +8,10 @@ on:
       - "src/core/multilight_fusion.py"
       - "src/core/adhesive_multilight_fusion.py"
       - "src/core/adhesive_multilight_analysis.py"
+      - "src/core/full_frame_memory.py"
+      - "src/core/prototype_memory.py"
+      - "src/core/strict_category_memory.py"
+      - "src/core/experts/knn_expert.py"
       - "src/ui/adhesive_multilight_automation.py"
       - "src/ui/adhesive_multilight_inspection.py"
       - "src/ui/adhesive_multilight_analysis.py"
@@ -15,6 +19,9 @@ on:
       - "src/ui/control_panel.py"
       - "src/ui/control_panel_ui.py"
       - "src/services/image_archive_candidates.py"
+      - "src/services/anomaly_learning.py"
+      - "src/services/decision_persistence.py"
+      - "src/services/dataset_manager.py"
       - "src/services/ng_image_archive.py"
       - "src/services/ok_image_archive.py"
       - "tests/test_adhesive_multilight_automation.py"
@@ -22,6 +29,7 @@ on:
       - "tests/test_adhesive_multilight_fusion.py"
       - "tests/test_adhesive_multilight_inspection.py"
       - "tests/test_multilight_generalization.py"
+      - "tests/test_multilight_learning.py"
       - ".github/workflows/multilight-generalization-tests.yml"
   workflow_dispatch:
 
@@ -50,9 +58,9 @@ jobs:
       - name: Compile multilight modules
         shell: pwsh
         run: |
-          python -m py_compile src/core/multilight_fusion.py src/core/adhesive_multilight_fusion.py src/core/adhesive_multilight_analysis.py src/ui/adhesive_multilight_automation.py src/ui/adhesive_multilight_inspection.py src/ui/adhesive_multilight_analysis.py src/ui/network_xp_debug.py src/services/image_archive_candidates.py
+          python -m py_compile src/core/multilight_fusion.py src/core/adhesive_multilight_fusion.py src/core/adhesive_multilight_analysis.py src/core/full_frame_memory.py src/core/prototype_memory.py src/core/strict_category_memory.py src/core/experts/knn_expert.py src/ui/adhesive_multilight_automation.py src/ui/adhesive_multilight_inspection.py src/ui/adhesive_multilight_analysis.py src/ui/network_xp_debug.py src/services/image_archive_candidates.py src/services/anomaly_learning.py src/services/decision_persistence.py src/services/dataset_manager.py
 
       - name: Run multilight regressions
         shell: pwsh
         run: |
-          python -m unittest tests.test_adhesive_multilight_automation tests.test_adhesive_multilight_expert_analysis tests.test_adhesive_multilight_fusion tests.test_adhesive_multilight_inspection tests.test_multilight_generalization -v
+          python -m unittest tests.test_adhesive_multilight_automation tests.test_adhesive_multilight_expert_analysis tests.test_adhesive_multilight_fusion tests.test_adhesive_multilight_inspection tests.test_multilight_generalization tests.test_multilight_learning -v
