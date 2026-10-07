@@ -132,6 +132,8 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         "missing_context_hard_absence",
         "missing_context_hard_reason",
         "missing_context_physical_support",
+        "missing_dedicated_footprint_absence",
+        "missing_dedicated_footprint_reason",
     )
     missing = {
         key: json_safe(detail.get(key))
