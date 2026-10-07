@@ -41,7 +41,7 @@ class _Panel(QWidget):
         self.status = []
         self.saved = []
         self.feedback = []
-        self.session_resets = 0
+        self.session_restores = 0
         self.session_visible = False
         self.auto_records = []
         self.manual_records = []
@@ -62,8 +62,8 @@ class _Panel(QWidget):
         self.feedback.append((str(decision), str(source)))
         return True
 
-    def reset_production_session_feedback(self):
-        self.session_resets += 1
+    def restore_production_daily_session_feedback(self):
+        self.session_restores += 1
         self.session_visible = False
 
     def show_production_session_feedback(self):
@@ -96,7 +96,7 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_entering_production_resets_session_without_showing_idle_card(self):
+    def test_entering_production_restores_daily_session_without_showing_idle_card(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
 
@@ -104,8 +104,19 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         self.app.processEvents()
 
         self.assertTrue(controller.is_production())
-        self.assertEqual(panel.session_resets, 1)
+        self.assertEqual(panel.session_restores, 1)
         self.assertFalse(panel.session_visible)
+
+    def test_switching_modes_restores_same_daily_session_instead_of_resetting(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+
+        panel.combo_mode.setCurrentText("Modo Produção")
+        panel.combo_mode.setCurrentText("Modo Teste")
+        panel.combo_mode.setCurrentText("Modo Produção")
+
+        self.assertEqual(panel.session_restores, 2)
+        self.assertFalse(hasattr(panel, "session_resets"))
 
     def test_cycle_started_shows_session_only_in_production(self):
         panel = _Panel()
@@ -350,6 +361,20 @@ class ProductionAutonomySourceContractTests(unittest.TestCase):
         self.assertIn("Qt.ShortcutContext.WindowShortcut", source)
         self.assertIn("shortcut.setAutoRepeat(False)", source)
         self.assertIn("shortcut.setEnabled(controller.is_production())", source)
+
+    def test_mode_change_restores_daily_metrics_instead_of_resetting_them(self):
+        source = (
+            ROOT / "src" / "ui" / "production_autonomy_controller.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            '"restore_production_daily_session_feedback"',
+            source,
+        )
+        self.assertNotIn(
+            '"reset_production_session_feedback"',
+            source,
+        )
 
     def test_control_panel_no_longer_saves_immediately_after_analysis(self):
         source = (
