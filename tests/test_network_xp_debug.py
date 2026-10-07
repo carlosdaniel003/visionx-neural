@@ -172,6 +172,65 @@ class AnalysisTimingContractTests(unittest.TestCase):
 
 
 class NetworkXPDebugFormatTests(unittest.TestCase):
+    def test_report_exposes_dedicated_missing_footprint_route(self):
+        analysis = {
+            "is_defect": True,
+            "verdict": "DEFEITO REAL",
+            "confidence": 0.99,
+            "reason": "ausência física confirmada",
+            "detail": {
+                "missing_active": True,
+                "missing_is_defect": True,
+                "missing_hard_absence": True,
+                "missing_dedicated_footprint_absence": True,
+                "missing_dedicated_footprint_reason": (
+                    "footprint preservou geometria, mas contexto confirmou falta"
+                ),
+                "decision_trace": {
+                    "fusion_rule": "missing_hard_absence",
+                    "dominant_engine": "missing",
+                    "hard_missing_evidence": True,
+                    "memory": {},
+                    "operator_review_required": False,
+                },
+                "fusion_rule": "missing_hard_absence",
+                "dominant_engine": "missing",
+                "physical_score": 0.88,
+                "final_score": 1.0,
+            },
+        }
+        decision = decision_record(
+            analysis,
+            {"category": "FALTANDO"},
+        )
+        record = {
+            "schema": DEBUG_SCHEMA,
+            "event_id": "missing-footprint-001",
+            "timestamp": "2026-10-07T12:31:33.432",
+            "source_ip": "169.254.95.200",
+            "stage": "aoi_intake_validation",
+            "mode": "Modo Teste",
+            "transport": {"image": {"valid": True}},
+            "cycle": {},
+            "validation_message": "epicentro válido",
+            "validation": {"valid": True, "reason": "valid_epicenter"},
+            "decision": decision,
+        }
+
+        report = format_network_debug_report(record)
+
+        self.assertTrue(
+            decision["missing"]["missing_dedicated_footprint_absence"]
+        )
+        self.assertIn(
+            "FALTANDO footprint dedicado: True",
+            report,
+        )
+        self.assertIn(
+            "footprint preservou geometria",
+            report,
+        )
+
     def test_report_contains_rejection_context_and_full_json(self):
         record = {
             "schema": DEBUG_SCHEMA,
