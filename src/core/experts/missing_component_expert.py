@@ -76,6 +76,24 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
     INVARIANT_OCCUPANCY_MIN_BOX_RATIO = 0.75
     INVARIANT_OCCUPANCY_MAX_BOX_RATIO = 1.33
 
+    # Rota dedicada para FALTANDO com footprint/pads preservados. Ela cobre o
+    # caso em que a silhueta local parece semelhante por geometria, mas o corpo
+    # real desapareceu e contexto + motores independentes confirmam a perda.
+    FOOTPRINT_ABSENCE_MAX_BODY_COARSE = 0.10
+    FOOTPRINT_ABSENCE_MIN_LOCAL_RESIDUAL = 0.60
+    FOOTPRINT_ABSENCE_MIN_LOCAL_STRUCTURE = 0.55
+    FOOTPRINT_ABSENCE_MIN_LOCAL_EDGE_MISMATCH = 0.42
+    FOOTPRINT_ABSENCE_MAX_LOCAL_NEARBY = 0.30
+    FOOTPRINT_ABSENCE_MIN_CONTEXT_SCORE = 0.72
+    FOOTPRINT_ABSENCE_MIN_CONTEXT_COVERAGE = 0.32
+    FOOTPRINT_ABSENCE_MIN_CONTEXT_RESIDUAL = 0.60
+    FOOTPRINT_ABSENCE_MIN_CONTEXT_APPEARANCE = 0.38
+    FOOTPRINT_ABSENCE_MIN_CONTEXT_STRUCTURE = 0.35
+    FOOTPRINT_ABSENCE_MAX_CONTEXT_DIRECT_SIMILARITY = 0.62
+    FOOTPRINT_ABSENCE_MAX_CONTEXT_NEARBY = 0.50
+    FOOTPRINT_ABSENCE_MIN_PHYSICAL_STRUCTURAL = 0.35
+    FOOTPRINT_ABSENCE_MIN_PHYSICAL_SEMANTIC = 0.50
+
     @staticmethod
     def _palette_residual(reference: np.ndarray, test: np.ndarray) -> np.ndarray:
         """Mede se o teste ainda pertence à paleta cromática do patch.
@@ -858,6 +876,140 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
         return False, "divergência presente, mas sem prova forte de ausência"
 
     @classmethod
+    def _dedicated_footprint_absence_evidence(
+        cls,
+        result: dict,
+        physical_detail: dict | None,
+    ) -> tuple[bool, str]:
+        """Confirma ausência quando footprint preservado engana a geometria.
+
+        Esta rota existe somente dentro do especialista FALTANDO. Ela não é
+        usada pela guarda transversal de DESLOCADO/EMBORCADO/INVERTIDO.
+        """
+        if not isinstance(result, dict):
+            return False, "resultado missing indisponível"
+        if not bool(result.get("missing_active", False)):
+            return False, "motor missing inativo"
+        if not bool(result.get("missing_is_defect", False)):
+            return False, "motor missing não detectou divergência"
+
+        classification = str(
+            result.get("missing_classification", "")
+        ).strip().upper()
+        if classification == "DESLOCAMENTO PROVÁVEL":
+            return False, "deslocamento provável não pode virar ausência"
+
+        if bool(result.get("missing_global_envelope_support", False)):
+            return False, "envelope global alinhado ainda confirma presença"
+
+        body_present = bool(
+            result.get("missing_component_body_present", False)
+        )
+        body_policy = str(
+            result.get("missing_body_presence_policy", "")
+        ).strip().lower()
+        body_coarse = float(
+            result.get("missing_body_coarse_similarity", 0.0) or 0.0
+        )
+
+        # Presença com suporte de aparência continua soberana. A exceção é
+        # apenas geometry_only com correlação coarse praticamente nula:
+        # footprint/pads podem conservar forma mesmo sem o componente.
+        geometry_contradicted = bool(
+            body_present
+            and body_policy == "geometry_only"
+            and body_coarse <= cls.FOOTPRINT_ABSENCE_MAX_BODY_COARSE
+        )
+        if body_present and not geometry_contradicted:
+            return False, "testemunha de presença física não foi contradita"
+
+        local_residual = float(
+            result.get("missing_residual_mean", 0.0) or 0.0
+        )
+        local_structure = float(
+            result.get("missing_structure_loss", 0.0) or 0.0
+        )
+        local_edge = float(
+            result.get("missing_edge_mismatch", 0.0) or 0.0
+        )
+        local_nearby = float(
+            result.get("missing_best_similarity", 1.0) or 0.0
+        )
+
+        context_triggered = bool(
+            result.get("missing_dual_scale_triggered", False)
+        )
+        context_score = float(
+            result.get("missing_context_score", 0.0) or 0.0
+        )
+        context_coverage = float(
+            result.get("missing_context_coverage", 0.0) or 0.0
+        )
+        context_residual = float(
+            result.get("missing_context_residual_mean", 0.0) or 0.0
+        )
+        context_appearance = float(
+            result.get("missing_context_appearance_loss", 0.0) or 0.0
+        )
+        context_structure = float(
+            result.get("missing_context_structure_loss", 0.0) or 0.0
+        )
+        context_direct = float(
+            result.get("missing_context_direct_similarity", 1.0) or 0.0
+        )
+        context_nearby = float(
+            result.get("missing_context_best_similarity", 1.0) or 0.0
+        )
+
+        detail = physical_detail if isinstance(physical_detail, dict) else {}
+        physical_structural = float(
+            detail.get("silk_error_pct", 0.0) or 0.0
+        )
+        physical_semantic = float(
+            detail.get("semantic_loss", 0.0) or 0.0
+        )
+
+        local_support = bool(
+            local_residual >= cls.FOOTPRINT_ABSENCE_MIN_LOCAL_RESIDUAL
+            and local_structure >= cls.FOOTPRINT_ABSENCE_MIN_LOCAL_STRUCTURE
+            and local_edge >= cls.FOOTPRINT_ABSENCE_MIN_LOCAL_EDGE_MISMATCH
+            and local_nearby < cls.FOOTPRINT_ABSENCE_MAX_LOCAL_NEARBY
+        )
+        context_support = bool(
+            context_triggered
+            and context_score >= cls.FOOTPRINT_ABSENCE_MIN_CONTEXT_SCORE
+            and context_coverage >= cls.FOOTPRINT_ABSENCE_MIN_CONTEXT_COVERAGE
+            and context_residual >= cls.FOOTPRINT_ABSENCE_MIN_CONTEXT_RESIDUAL
+            and context_appearance
+            >= cls.FOOTPRINT_ABSENCE_MIN_CONTEXT_APPEARANCE
+            and context_structure
+            >= cls.FOOTPRINT_ABSENCE_MIN_CONTEXT_STRUCTURE
+            and context_direct
+            <= cls.FOOTPRINT_ABSENCE_MAX_CONTEXT_DIRECT_SIMILARITY
+            and context_nearby < cls.FOOTPRINT_ABSENCE_MAX_CONTEXT_NEARBY
+        )
+        independent_support = bool(
+            physical_structural
+            >= cls.FOOTPRINT_ABSENCE_MIN_PHYSICAL_STRUCTURAL
+            and physical_semantic
+            >= cls.FOOTPRINT_ABSENCE_MIN_PHYSICAL_SEMANTIC
+        )
+
+        if not local_support:
+            return False, "ROI local não confirmou perda física suficiente"
+        if not context_support:
+            return False, "contexto não confirmou perda do corpo esperado"
+        if not independent_support:
+            return False, "motores estrutural/semântico não corroboraram ausência"
+
+        reason = (
+            "footprint preservou geometria, mas correlação coarse do corpo "
+            f"caiu para {body_coarse:.3f}; ROI local + contexto + motores "
+            "estrutural/semântico confirmam desaparecimento físico"
+        )
+        return True, reason
+
+    @classmethod
     def _invariant_occupancy_presence_support(
         cls,
         result: dict,
@@ -1137,7 +1289,25 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
                         "contexto maior confirmou ausência física",
                     )
                 )
+
+            dedicated_footprint, footprint_reason = (
+                self._dedicated_footprint_absence_evidence(
+                    result,
+                    physical_detail,
+                )
+            )
+            result["missing_dedicated_footprint_absence"] = bool(
+                dedicated_footprint
+            )
+            result["missing_dedicated_footprint_reason"] = footprint_reason
+            if dedicated_footprint:
+                hard_absence = True
+                hard_reason = footprint_reason
         else:
+            result["missing_dedicated_footprint_absence"] = False
+            result["missing_dedicated_footprint_reason"] = (
+                "hard missing já confirmado por rota anterior"
+            )
             result.update(
                 {
                     "missing_dual_scale_policy": (
@@ -1153,6 +1323,14 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
                 }
             )
 
+        result.setdefault(
+            "missing_dedicated_footprint_absence",
+            False,
+        )
+        result.setdefault(
+            "missing_dedicated_footprint_reason",
+            "rota dedicada não avaliada",
+        )
         result["missing_hard_absence"] = bool(hard_absence)
         result["missing_hard_absence_reason"] = hard_reason
         result["missing_hard_absence_thresholds"] = {
@@ -1262,6 +1440,48 @@ class MissingComponentExpert(ROIPatchExpectationExpert):
             ),
             "dual_scale_context_coverage": (
                 DualScalePresenceAnalyzer.MIN_CONTEXT_COVERAGE
+            ),
+            "footprint_body_coarse_max": (
+                self.FOOTPRINT_ABSENCE_MAX_BODY_COARSE
+            ),
+            "footprint_local_residual_min": (
+                self.FOOTPRINT_ABSENCE_MIN_LOCAL_RESIDUAL
+            ),
+            "footprint_local_structure_min": (
+                self.FOOTPRINT_ABSENCE_MIN_LOCAL_STRUCTURE
+            ),
+            "footprint_local_edge_mismatch_min": (
+                self.FOOTPRINT_ABSENCE_MIN_LOCAL_EDGE_MISMATCH
+            ),
+            "footprint_local_nearby_max": (
+                self.FOOTPRINT_ABSENCE_MAX_LOCAL_NEARBY
+            ),
+            "footprint_context_score_min": (
+                self.FOOTPRINT_ABSENCE_MIN_CONTEXT_SCORE
+            ),
+            "footprint_context_coverage_min": (
+                self.FOOTPRINT_ABSENCE_MIN_CONTEXT_COVERAGE
+            ),
+            "footprint_context_residual_min": (
+                self.FOOTPRINT_ABSENCE_MIN_CONTEXT_RESIDUAL
+            ),
+            "footprint_context_appearance_min": (
+                self.FOOTPRINT_ABSENCE_MIN_CONTEXT_APPEARANCE
+            ),
+            "footprint_context_structure_min": (
+                self.FOOTPRINT_ABSENCE_MIN_CONTEXT_STRUCTURE
+            ),
+            "footprint_context_direct_similarity_max": (
+                self.FOOTPRINT_ABSENCE_MAX_CONTEXT_DIRECT_SIMILARITY
+            ),
+            "footprint_context_nearby_max": (
+                self.FOOTPRINT_ABSENCE_MAX_CONTEXT_NEARBY
+            ),
+            "footprint_physical_structural_min": (
+                self.FOOTPRINT_ABSENCE_MIN_PHYSICAL_STRUCTURAL
+            ),
+            "footprint_physical_semantic_min": (
+                self.FOOTPRINT_ABSENCE_MIN_PHYSICAL_SEMANTIC
             ),
         }
 
