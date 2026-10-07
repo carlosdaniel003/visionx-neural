@@ -5,6 +5,7 @@
 - `src/services/ng_image_archive.py`: Arquivo visual opcional de decisões finais NG em fila de background, independente do dataset e da memória KNN.
 - `src/services/ok_image_archive.py`: Arquivo visual opcional de decisões humanas OK em fila de background, usando a mesma evidência de `Copiar imagem`.
 - `src/services/image_archive_naming.py`: Formato compartilhado de nomes dos arquivos visuais OK/NG.
+- `src/services/production_daily_session_store.py`: Persistência diária e atômica das métricas do Modo Produção em diretório de dados do usuário, fora do repositório.
 
 **Fluxos Principais (Planejados):**
 1. **Pilar 1 (Extrator Visual):** Monitoramento contínuo da tela usando `mss` para detectar a janela da AOI.
@@ -3712,16 +3713,43 @@ Depois que o operador decidir `0` ou `1`, o ciclo é encerrado normalmente e
 a autonomia fica automaticamente habilitada novamente para a **próxima peça**.
 Não deve existir uma etapa manual extra de "retomar automação".
 
-### Métricas da sessão de Produção
+### Métricas diárias persistentes do Modo Produção
 
-A sessão é zerada ao entrar em `Modo Produção`, mas o card permanece oculto
-enquanto não existe uma peça ativa. Ele aparece quando uma imagem entra no ciclo
-de análise e desaparece novamente depois que essa peça é julgada.
+A sessão deixou de ser vinculada à entrada/saída do modo. Ela agora é vinculada
+à **data local do computador**.
+
+Contrato:
+
+```text
+07/10/2026
+   ↓
+todos os julgamentos e tempos acumulam no mesmo arquivo diário
+   ↓
+trocar Produção → Teste → Produção
+   ↓
+mantém os mesmos números
+
+fechar ODIN / abrir novamente
+   ↓
+restaura os mesmos números
+
+atualizar/substituir o código do repositório
+   ↓
+mantém os mesmos números
+
+08/10/2026
+   ↓
+nova sessão diária começa em zero
+```
+
+O card continua oculto enquanto não existe peça ativa. Quando uma imagem entra
+no ciclo ele mostra os dados acumulados do dia e desaparece novamente depois
+que a peça é julgada.
 
 Conteúdo atual:
 
 ```text
-MODO PRODUÇÃO • SESSÃO
+MODO PRODUÇÃO • DIA DD/MM/AAAA
 AUTOMAÇÃO ATIVA / PAUSADA
 
 OK AUTO        N
@@ -3731,30 +3759,59 @@ PRECISÃO       N%
 MÉDIA ANÁLISE  N.NN s
 ```
 
-Regras:
+Persistência:
+
+- serviço: `src/services/production_daily_session_store.py`;
+- schema: `visionx.production_daily_session.v1`;
+- um arquivo JSON por data;
+- gravação atômica por arquivo temporário + `os.replace`;
+- no Windows, diretório padrão:
+  `%LOCALAPPDATA%\\VisionX-Neural\\production_sessions\\`;
+- exemplo:
+  `%LOCALAPPDATA%\\VisionX-Neural\\production_sessions\\2026-10-07.json`;
+- por ficar fora do checkout Git, um `git pull`, troca de branch, substituição
+  da pasta do projeto ou atualização do código não apaga a sessão diária;
+- arquivos de dias anteriores são preservados como histórico e o ODIN carrega
+  somente o arquivo correspondente à data local atual.
+
+Dados persistidos:
+
+```text
+auto_ok
+auto_ng
+manual_judgments
+analysis_count
+analysis_time_total
+analysis_time_count
+accuracy_percent
+average_analysis_time_seconds
+```
+
+`accuracy_percent` e `average_analysis_time_seconds` são gravados como
+snapshot para inspeção humana, mas são recalculados a partir dos acumuladores
+ao carregar o arquivo.
+
+Regras de cálculo permanecem:
 
 - `OK AUTO` incrementa somente quando o ODIN realmente envia `0`
   automaticamente;
-- `NG AUTO` existe para manter o contrato futuro, mas permanece em zero nesta
-  fase porque NG não é automatizado;
-- `MANUAL` incrementa quando uma peça que exigiu intervenção é finalmente
-  julgada pelo operador, seja pelo XP ou pelo ODIN;
-- uma decisão manual representa falha da autonomia para a métrica desta sessão;
-- a precisão exibida é
+- `NG AUTO` permanece em zero nesta fase porque NG não é automatizado;
+- `MANUAL` incrementa quando uma peça que exigiu intervenção é julgada pelo
+  operador, seja pelo XP ou pelo ODIN;
+- precisão =
   `julgamentos automáticos / julgamentos concluídos × 100`;
-- portanto, 100 julgamentos concluídos com 98 automáticos e 2 manuais resultam
-  em `98,0%`;
+- 100 julgamentos concluídos com 98 automáticos e 2 manuais = `98,0%`;
 - `ANÁLISES` conta resultados finais renderizados;
 - a média usa `last_analysis_time_seconds` de cada resultado final;
-- para categoria comum, o tempo termina quando
-  `FALHA FALSA/DEFEITO REAL/REVISÃO OBRIGATÓRIA` está renderizado;
-- para adesivo, termina somente quando SIDE/TOP/MID e a fusão final estão
-  concluídos e renderizados;
-- scroll, espera de apresentação, pausa pela barra de espaço e tempo de decisão
-  humana **não entram** no tempo médio;
-- o tooltip do card é atualizado junto com os números e explica a fórmula da
-  precisão e o contrato temporal;
-- sair de `Modo Produção` e entrar novamente inicia uma nova sessão em zero.
+- scroll, espera de apresentação, pausa e tempo do operador não entram na média.
+
+O tooltip do card mostra a data operacional, os números restaurados, a fórmula,
+o contrato temporal e o caminho do arquivo persistido. Se uma gravação falhar,
+a inspeção não é interrompida; o tooltip passa a informar a falha de
+persistência.
+
+A pausa por `Space` é transitória e não é restaurada após reiniciar o
+programa. Somente as métricas diárias são persistentes.
 
 ### Feedback visual da decisão automática
 
