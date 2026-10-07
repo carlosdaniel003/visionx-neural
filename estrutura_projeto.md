@@ -4383,3 +4383,185 @@ O sufixo textual FALTANDO permanece intacto.
 
 Esses dois refinamentos estão implementados e aguardam nova validação
 operacional na AOI real.
+
+## Caso real pendente — FALTANDO fisicamente ausente classificado como FALHA FALSA
+
+### Registro de 07/10/2026
+
+Evento:
+
+~~~text
+6a45d7509bf8444fa5e529645cab1236
+~~~
+
+Origem:
+
+~~~text
+Windows XP
+categoria AOI = FALTANDO
+~~~
+
+Validação do operador:
+
+~~~text
+DEFEITO REAL / NG
+motivo: componente fisicamente ausente
+~~~
+
+Resultado incorreto do ODIN:
+
+~~~text
+FALHA FALSA
+confidence = 0.99
+fusion_rule = best_match_strong
+dominant_engine = knn
+~~~
+
+### Evidência do debug
+
+O caso é importante porque o especialista dedicado de ausência física já marcou defeito, mas essa evidência não ganhou autoridade final:
+
+~~~text
+missing_is_defect = True
+missing_score ≈ 0.4223
+physical_score = 0.88
+
+missing_hard_absence = False
+missing_context_hard_absence = False
+~~~
+
+A memória encontrou:
+
+~~~text
+best_match_label = OK
+best_similarity ≈ 0.9039
+~~~
+
+e, como não existia missing_hard_absence, a fusão escolheu:
+
+~~~text
+best_match_strong
+↓
+motor dominante = KNN
+↓
+FALHA FALSA
+~~~
+
+### Sinais que bloquearam a promoção para ausência física forte
+
+A ROI local foi interpretada como corpo preservado principalmente por geometria:
+
+~~~text
+missing_component_body_present = True
+missing_body_presence_policy = geometry_only
+silhouette_dice ≈ 0.9526
+area_ratio ≈ 0.9111
+centroid_shift ≈ 0.0327
+coarse_similarity ≈ -0.0235
+~~~
+
+O ponto de atenção é que a forma/ocupação do footprint permaneceu parecida mesmo com o componente ausente. Portanto a testemunha geométrica conseguiu descrever a região como corpo presente, apesar de a similaridade visual coarse ser praticamente nula/negativa.
+
+O envelope global também registrou massa invariável:
+
+~~~text
+missing_global_envelope_invariant_support = True
+dark_retention ≈ 0.7580
+invariant_row_profile ≈ 0.8477
+invariant_col_profile ≈ 0.8477
+~~~
+
+Nesse caso, pads, cobre, fundo e estruturas vizinhas preservadas podem dominar a massa global e não provar que o componente central continua presente.
+
+A análise contextual dual-scale encontrou divergência relevante:
+
+~~~text
+missing_context_score ≈ 0.7764
+coverage ≈ 0.3703
+residual_mean ≈ 0.6748
+appearance_loss ≈ 0.4162
+direct_similarity ≈ 0.5838
+~~~
+
+mas não confirmou suporte físico independente:
+
+~~~text
+missing_context_physical_support.supported = False
+structural ≈ 0.3811
+semantic ≈ 0.5496
+~~~
+
+Com isso:
+
+~~~text
+missing_context_hard_absence = False
+~~~
+
+e a memória OK voltou a ter autoridade total.
+
+### Diagnóstico arquitetural provisório
+
+Este caso não deve ser tratado simplesmente como "KNN errou".
+
+A sequência observada foi:
+
+~~~text
+componente realmente ausente
+↓
+especialista missing detecta defeito
+↓
+geometria local confunde footprint preservado com corpo presente
+↓
+contexto não alcança contrato de hard missing
+↓
+missing_hard_absence permanece False
+↓
+KNN OK forte continua elegível
+↓
+best_match_strong
+↓
+FALHA FALSA
+~~~
+
+Portanto o ponto de investigação é a fronteira entre:
+
+- missing_is_defect=True;
+- presença geométrica local;
+- promoção para missing_hard_absence;
+- autoridade do KNN quando existe evidência física relevante, mas ainda abaixo do contrato de hard absence.
+
+### Regra de segurança para a futura correção
+
+Qualquer correção futura deste evento deve preservar as regressões já validadas contra falsos positivos de ausência física.
+
+Em especial, não se deve simplesmente transformar todo missing_is_defect=True em hard missing.
+
+A correção precisa distinguir:
+
+~~~text
+footprint/pads permanecem, componente sumiu
+~~~
+
+de:
+
+~~~text
+componente realmente presente, porém deslocado / com mudança de registro / iluminação / serigrafia
+~~~
+
+O caso real DESLOCADO já validado, em que o componente está presente e a memória OK forte deve continuar elegível, permanece uma regressão obrigatória.
+
+### Status
+
+~~~text
+registrado em 07/10/2026
+reprodução real confirmada pelo operador
+correção de decisão ainda NÃO implementada
+~~~
+
+Próxima etapa recomendada para este caso:
+
+1. reproduzir o evento em teste automatizado com as métricas do debug;
+2. revisar a testemunha geometry_only de corpo presente;
+3. avaliar uma regra intermediária entre missing_is_defect e hard missing;
+4. impedir veto indevido do KNN somente quando houver combinação física robusta;
+5. retestar também os casos DESLOCADO/EMBORCADO/INVERTIDO já protegidos.
