@@ -30,6 +30,13 @@ class OperationalControlsVisualContractTests(unittest.TestCase):
         self.assertIn("operationStateBar", self.source)
         self.assertIn("operationStateBadge", self.source)
 
+    def test_state_bar_has_compact_and_wide_reflow(self):
+        self.assertIn("QGridLayout", self.source)
+        self.assertIn("def apply_responsive_layout", self.source)
+        self.assertIn("if compact:", self.source)
+        self.assertIn("layout.addWidget(hint, 1, 0, 1, 2)", self.source)
+        self.assertIn("layout.addWidget(hint, 0, 1)", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
