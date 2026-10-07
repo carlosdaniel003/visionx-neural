@@ -21,6 +21,11 @@ import time
 from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 from src.config.settings import settings
+from src.services.aoi_ocr_fields import (
+    normalize_board_ocr,
+    normalize_value_ocr,
+    recover_parts_from_text_zone,
+)
 
 HAS_TESSERACT = False
 try:
@@ -427,6 +432,14 @@ class ScreenMonitor(QThread):
                     r'(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Pp][Aa][Rr]|\s*$)', lc)
                 if m and m.group(1).strip():
                     info["value"] = m.group(1).strip()
+
+        info["board"] = normalize_board_ocr(info["board"])
+        info["parts"] = recover_parts_from_text_zone(
+            text_zone,
+            info["parts"],
+            pytesseract,
+        )
+        info["value"] = normalize_value_ocr(info["value"])
 
         print(f"📋 OCR — Board: '{info['board']}' | "
               f"Parts: '{info['parts']}' | Value: '{info['value']}'")
