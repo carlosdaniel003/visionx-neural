@@ -285,7 +285,7 @@ class AdhesiveAutomationSourceContractTests(unittest.TestCase):
             inspection_source,
         )
         self.assertIn(
-            "self.current_analysis = fused",
+            "panel.current_analysis = fused",
             inspection_source,
         )
         self.assertIn(
