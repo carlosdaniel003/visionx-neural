@@ -354,6 +354,67 @@ class FusionTests(unittest.TestCase):
         self.assertFalse(trace["hard_missing_evidence"])
         self.assertGreater(trace["weights"]["knn"], 0.80)
 
+    def test_real_6a45_dedicated_footprint_missing_beats_904_ok_memory(self):
+        knn = {
+            "has_memory": True,
+            "memory_available": True,
+            "match_reliable": True,
+            "best_match_label": "OK",
+            "best_similarity": 0.9039242265745998,
+            "best_ok_similarity": 0.9039242265745998,
+            "best_ng_similarity": 0.8097463506716531,
+            "ng_memory_available": True,
+            "hypothesis_margin": 0.0941778759029467,
+            "memory_conflict": False,
+            "operator_review_required": False,
+            "vote_defect": 0.0,
+            "n_neighbors": 5,
+            "memory_mode": "anomaly",
+            "memory_scope": "categoria",
+        }
+        missing = {
+            "missing_active": True,
+            "missing_is_defect": True,
+            "missing_score": 0.42229900453358477,
+            "missing_tolerance": 0.36,
+            "missing_reason": (
+                "QUEBRA DA EXPECTATIVA VISUAL DA ROI • "
+                "AUSÊNCIA FÍSICA FORTE"
+            ),
+            "missing_hard_absence": True,
+            "missing_hard_absence_reason": (
+                "footprint preservou geometria, mas ROI local + contexto + "
+                "motores independentes confirmaram desaparecimento físico"
+            ),
+            "missing_dedicated_footprint_absence": True,
+            "missing_global_envelope_invariant_support": True,
+            "missing_global_envelope_background_exposure": 0.0,
+        }
+
+        score, defect, confidence, reason, trace = self.fusion(
+            self.orchestrator,
+            {
+                "silk_error_pct": 0.38106103822019394,
+                "semantic_loss": 0.5496011674404144,
+            },
+            "FALTANDO",
+            missing,
+            knn,
+        )
+
+        self.assertEqual(score, 1.0)
+        self.assertTrue(defect)
+        self.assertEqual(confidence, 0.99)
+        self.assertEqual(trace["fusion_rule"], "missing_hard_absence")
+        self.assertEqual(trace["dominant_engine"], "missing")
+        self.assertEqual(trace["weights"], {"physical": 1.0, "knn": 0.0})
+        self.assertTrue(trace["hard_missing_evidence"])
+        self.assertTrue(trace["memory"]["suppressed_by_hard_missing"])
+        self.assertFalse(
+            trace.get("hard_missing_contradicted_by_invariant_ok", False)
+        )
+        self.assertIn("AUSÊNCIA FÍSICA FORTE", reason)
+
     def test_hard_missing_cannot_be_vetoed_by_strong_ok_memory(self):
         knn = {
             "has_memory": True,
