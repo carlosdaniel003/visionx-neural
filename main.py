@@ -145,7 +145,7 @@ def main():
     # 4. trava geral de uma única imagem ativa;
     # 5. filtro de rede: dois frames estáveis + epicentro válido;
     # 6. supervisão externa do MSS e recuperação de exceções;
-    # 7. visão multilight de adesivo, externa ao gate produtivo;
+    # 7. visão multilight geral da AOI, externa ao gate produtivo;
     # 8. adaptador final que consome o checked(bool) dos QPushButtons;
     # 9. seletor de modo bloqueado durante o ciclo ativo.
     install_anomaly_learning(ControlPanel)
@@ -155,7 +155,7 @@ def main():
     install_network_image_cycle_gate(ControlPanel, OperationalControlsPresenter)
     install_network_aoi_intake_filter(ControlPanel)
     install_local_capture_safety(ControlPanel)
-    # Camada externa multilight: mantém SIDE/TOP/MID na mesma peça e entrega
+    # Camada externa multilight: mantém SIDE/TOP/MID da mesma peça em toda categoria AOI e entrega
     # a fusão final ao controlador único do Modo Produção.
     install_adhesive_multilight_inspection(ControlPanel)
     install_qt_button_signal_adapter(ControlPanel)
