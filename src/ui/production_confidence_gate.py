@@ -252,7 +252,11 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
         _clear_pending(self)
         result = original_save_label(self, user_decision, source=source)
 
-        if is_production and had_pending:
+        if (
+            is_production
+            and had_pending
+            and not bool(getattr(self, "is_locked", False))
+        ):
             callback = getattr(
                 self,
                 "production_operator_decision_completed",
