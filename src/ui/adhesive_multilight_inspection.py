@@ -595,7 +595,6 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_pending_source_mode = ""
         self.adhesive_multilight_primary_event_id = None
         self.adhesive_multilight_pending_start = False
-        self.adhesive_multilight_deferred_auto_decision = ""
         self.adhesive_multilight_final_analysis = None
 
         # Último conjunto multilight completo/parcial permanece disponível para
@@ -822,7 +821,6 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             getattr(self, "current_analysis", None) is None
             or not _valid_image(getattr(self, "current_ng", None))
         ):
-            self.adhesive_multilight_deferred_auto_decision = ""
             return result
 
         self.adhesive_multilight_active = True
@@ -951,26 +949,15 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             )
         )
 
-        # A peça precisa permanecer na AOI até TOP e MID chegarem. Em Produção
-        # guardamos a decisão automática já calculada; em ações do ODIN apenas
-        # recusamos o julgamento enquanto a sequência estiver ativa.
+        # A peça precisa permanecer na AOI até TOP e MID chegarem. Nenhuma
+        # decisão, automática ou manual, pode encerrar a peça no meio da
+        # sequência. O Modo Produção só recebe o resultado depois da fusão.
         if (
             is_adhesive_category(
                 getattr(self, "current_aoi_info", None)
             )
             and (pending_start or automation_active)
         ):
-            if source == "auto" and decision in {"OK", "NG"}:
-                self.adhesive_multilight_deferred_auto_decision = decision
-                try:
-                    self.update_brain_status(
-                        "Decisão automática pronta; aguardando fotos TOP/MID.",
-                        True,
-                    )
-                except Exception:
-                    pass
-                return False
-
             try:
                 self.update_brain_status(
                     "Aguarde a captura automática SIDE/TOP/MID antes de julgar.",
