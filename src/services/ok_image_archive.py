@@ -1,7 +1,7 @@
 """Arquivo opcional de evidências visuais OK confirmadas pelo operador.
 
-Para categorias normais, salva a mesma evidência completa de "Copiar imagem".
-Para adesivo multilight, salva separadamente SIDE/TOP/MID da mesma peça.
+Para um ciclo monoimagem, salva a mesma evidência completa de "Copiar imagem".
+Para qualquer ciclo multilight completo, salva separadamente SIDE/TOP/MID da mesma peça.
 A fila elimina imagens pixel a pixel repetidas já existentes no arquivo.
 """
 
