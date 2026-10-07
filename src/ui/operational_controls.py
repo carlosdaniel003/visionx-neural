@@ -370,7 +370,7 @@ class OperationalControlsPresenter:
             "processing": "Processando captura...",
             "review_test": "Nova captura (descarta a atual)",
             "review_shadow": "Forçar nova captura",
-            "production_auto": "Enviando decisão automática...",
+            "production_auto": "Processo automático em andamento...",
         }.get(state_name, "Capturar nova peça")
 
         self._set_text(self.panel.btn_start, start_text)
@@ -475,6 +475,21 @@ class OperationalControlsPresenter:
         count = available_action_count(state)
         suffix = "AÇÃO DISPONÍVEL" if count == 1 else "AÇÕES DISPONÍVEIS"
         panel.lbl_operation_actions.setText(f"{count} {suffix}")
+
+        if (
+            mode == "Modo Produção"
+            and bool(getattr(panel, "production_autonomy_paused", False))
+            and not bool(getattr(panel, "production_review_pending", False))
+        ):
+            panel.lbl_operation_state.setText("PRODUÇÃO PAUSADA")
+            panel.lbl_operation_state.setProperty("tone", "attention")
+            self._refresh_style(panel.lbl_operation_state)
+            panel.lbl_operation_hint.setText(
+                "Julgamento automático pausado. "
+                "Pressione a barra de espaço para continuar."
+            )
+            panel.lbl_operation_actions.setText("ESPAÇO • CONTINUAR")
+            self.last_state_name = "production_paused"
 
 
 def install_operational_controls(panel) -> None:
