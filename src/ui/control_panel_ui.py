@@ -1225,10 +1225,22 @@ class ControlPanelUI:
     @staticmethod
     def _reflow_grid(grid: QGridLayout, widgets: list[QWidget], columns: int) -> None:
         columns = max(1, int(columns))
+        previous_columns = max(grid.columnCount(), columns)
+        previous_rows = max(grid.rowCount(), 1)
+
         for widget in widgets:
             grid.removeWidget(widget)
+
+        # Limpa stretches do perfil anterior. Sem isso, ao sair de 3/4 colunas
+        # para 1/2 colunas, colunas vazias continuavam consumindo largura.
+        for column in range(previous_columns):
+            grid.setColumnStretch(column, 0)
+        for row in range(previous_rows):
+            grid.setRowStretch(row, 0)
+
         for index, widget in enumerate(widgets):
             grid.addWidget(widget, index // columns, index % columns)
+
         for column in range(columns):
             grid.setColumnStretch(column, 1)
 
