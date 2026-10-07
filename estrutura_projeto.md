@@ -3616,13 +3616,15 @@ e é exclusivamente visual. Não altera análise, KNN, arquivos OK/NG, dataset,
 fusão multilight, teclas 0/1, setas ou protocolo Windows XP.
 
 
-## Contrato planejado — Modo Produção autônomo v1
+## Implementado — Modo Produção autônomo v1
 
 Esta etapa se aplica **somente ao Modo Produção**. O **Modo Teste deve manter
 exatamente o comportamento atual**, sem scroll automático, contador de decisões
 autônomas ou julgamento automático adicional.
 
 ### Objetivo
+
+Status: **implementação concluída na branch `central`; aguardando validação operacional na AOI real.**
 
 O ODIN poderá julgar peças automaticamente, mas o processo deve continuar
 visível para o operador. A prioridade desta fase não é velocidade; é permitir
@@ -3805,26 +3807,119 @@ Modo Teste
 Nenhuma dessas regras deve alterar o comportamento do Modo Teste por efeito
 colateral.
 
-### Direção arquitetural recomendada
+### Arquitetura implementada
 
-A implementação futura deve centralizar a autonomia em um único controlador,
-evitando que `control_panel.py`, o gate de confiança e o fluxo multilight de
-adesivo enviem decisões automáticas de forma independente.
+A autonomia foi centralizada em:
 
-Responsabilidades esperadas:
+```text
+src/ui/production_autonomy_controller.py
+```
+
+Responsabilidades atuais:
 
 ```text
 ProductionAutonomyController
-├── esperar renderização final
-├── executar apresentação/scroll
-├── avaliar veredito final
-├── enviar somente decisões autorizadas
+├── esperar a renderização final
+├── posicionar a interface no topo
+├── executar scroll visível e não bloqueante
+├── aplicar pausa final
+├── avaliar o veredito final
+├── enviar somente 0/OK autorizado
 ├── pausar em NG/revisão
 ├── observar decisão humana
-└── manter contadores da sessão
+└── manter o ciclo pronto para a próxima peça
 ```
 
-A regra de confiança mínima de 99% existente no gate atual **não deve ser usada
-como requisito para o OK automático desta nova política**. A futura
-implementação deverá substituir/adequar esse comportamento sem interferir no
-Modo Teste.
+O contador e a mensagem de intervenção ficam em:
+
+```text
+src/ui/production_session_feedback.py
+```
+
+O antigo `production_confidence_gate.py` permanece como módulo de compatibilidade
+e trava de intervenção, mas **não usa mais 99% como requisito**. A confiança
+continua disponível apenas como telemetria.
+
+O fluxo normal em `control_panel.py` também não chama mais
+`save_label(..., source="auto")` imediatamente ao terminar a análise. Ele
+entrega a análise ao controlador. Para adesivo, a automação SIDE/TOP/MID entrega
+somente a fusão final multilight ao mesmo controlador.
+
+### Temporização da apresentação
+
+Constantes atuais:
+
+```text
+espera após renderização = 500 ms
+pausa no topo            = 450 ms
+scroll visível           = 5200 ms
+pausa no final           = 900 ms
+espera antes do 0        = 300 ms
+```
+
+Quando não existe scroll vertical útil, o ODIN mantém uma janela de apresentação
+de aproximadamente `1200 ms` antes de aplicar a política.
+
+Todo o fluxo usa `QTimer` e `QPropertyAnimation`; não existe `sleep` na
+thread da interface.
+
+### Contador e overlays
+
+Ao entrar em `Modo Produção`, a sessão é zerada:
+
+```text
+MODO PRODUÇÃO • SESSÃO
+OK AUTO     0
+NG AUTO     0
+```
+
+Somente um comando automático realmente confirmado como enviado ao XP incrementa
+o contador. Se o envio de `0` falhar, a placa **não é contabilizada** e o ODIN
+converte o estado operacional para intervenção/revisão humana.
+
+O feedback de tecla automática reutiliza o card existente:
+
+```text
+TECLA ENVIADA AUTOMATICAMENTE
+0
+OK
+ODIN • MODO PRODUÇÃO
+```
+
+Decisões humanas em Produção não incrementam os contadores automáticos.
+
+### Intervenção humana
+
+Depois da apresentação completa:
+
+- `FALHA FALSA` → `production_auto` envia somente `0/OK`;
+- `DEFEITO REAL` → nenhuma tecla automática; exibe intervenção;
+- `REVISÃO OBRIGATÓRIA` → nenhuma tecla automática; exibe intervenção;
+- falha no envio automático de `0` → intervenção operacional.
+
+Durante intervenção:
+
+- a captura permanece protegida;
+- os botões `0 - Aprovar como OK` e `1 - Confirmar defeito NG` ficam
+  disponíveis no ODIN;
+- `0/1` físicos recebidos do XP também são aceitos;
+- fora de intervenção, `0/1` físicos em Produção são ignorados;
+- após uma decisão humana válida, o overlay de intervenção some e a autonomia
+  fica armada para a próxima placa sem botão adicional de retomada.
+
+### Separação preservada
+
+O **Modo Teste não foi alterado** por essa implementação. Ele continua com
+julgamento manual, possibilidade de substituir/descartar capturas, limpeza do
+dataset e controles já existentes.
+
+O **Modo Sombra também mantém o contrato anterior**.
+
+### Aprendizado e persistência
+
+A origem `production_auto` é tratada como decisão automática e não cria
+rótulo humano no Active Learning. Ela também não é confundida com uma decisão
+de operador no histórico da interface.
+
+A implementação não libera NG automático nesta fase. Portanto
+`NG AUTO` permanece em zero até uma etapa futura explicitamente aprovada.
