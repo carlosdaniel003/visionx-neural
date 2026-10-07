@@ -3875,7 +3875,8 @@ Constantes atuais:
 ```text
 espera após renderização = 500 ms
 pausa no topo            = 450 ms
-scroll visível           = 5200 ms
+scroll vertical total    = 6300 ms
+scroll horizontal experts = 2800 ms
 pausa no final           = 900 ms
 espera antes do 0        = 300 ms
 ```
@@ -4002,3 +4003,84 @@ de operador no histórico da interface.
 
 A implementação não libera NG automático nesta fase. Portanto
 `NG AUTO` permanece em zero até uma etapa futura explicitamente aprovada.
+
+
+### Ajuste visual — imagens integrais e especialistas horizontais
+
+Implementado após a validação inicial do Modo Produção.
+
+#### IMAGENS DA INSPEÇÃO
+
+Os quatro viewports normais:
+
+```text
+GABARITO • VISÃO COMPLETA
+GABARITO • EPICENTRO
+TESTE • VISÃO COMPLETA
+TESTE • EPICENTRO
+```
+
+passaram de `QLabel` simples para um viewport responsivo que preserva o pixmap
+fonte e o redesenha sempre que **o próprio card** muda de tamanho.
+
+Isso resolve o caso em que mover a divisória do `QSplitter` alterava o espaço
+do label sem disparar `resizeEvent` da janela principal. Antes, o pixmap podia
+continuar maior que o viewport e parecer cortado até o operador aumentar
+manualmente a seção.
+
+Contrato atual:
+
+```text
+mudou largura/altura do viewport
+        ↓
+recalcular pixmap a partir da fonte
+        ↓
+KeepAspectRatio
+        ↓
+imagem inteira dentro do card
+```
+
+A prévia completa e os viewports multilight de adesivo já possuíam lógica
+equivalente e continuam preservados.
+
+#### ANÁLISE DOS ESPECIALISTAS
+
+A navegação horizontal fica explícita:
+
+- categoria normal: a barra horizontal do `scroll_area` fica sempre visível;
+- adesivo: SIDE/TOP/MID possuem uma **barra horizontal mestre única**;
+- a barra mestre distribui proporcionalmente a posição para os scrolls internos
+  das três iluminações, mantendo os mesmos especialistas visualmente alinhados;
+- as barras internas de cada lane ficam ocultas para evitar três controles
+  horizontais concorrentes.
+
+No Modo Produção, a apresentação automática passa a executar:
+
+```text
+topo da página
+   ↓
+scroll vertical até ANÁLISE DOS ESPECIALISTAS
+   ↓
+scroll horizontal dos especialistas
+   ↓
+continua scroll vertical até o final
+   ↓
+pausa final
+   ↓
+política de decisão
+```
+
+A pausa por `Space` continua válida durante qualquer uma dessas animações.
+
+#### Velocidade da apresentação
+
+O movimento vertical foi desacelerado de `5200 ms` para `6300 ms` no total.
+Quando existe overflow horizontal nos especialistas, é acrescentado um passeio
+de aproximadamente `2800 ms`.
+
+A duração vertical é distribuída proporcionalmente entre o trecho até os
+especialistas e o trecho restante até o final; não são adicionados dois ciclos
+verticais completos.
+
+Esses ajustes são de interface/apresentação e não alteram o tempo matemático de
+análise, a fusão multilight, o KNN ou a política de julgamento.
