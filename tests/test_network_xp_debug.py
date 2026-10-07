@@ -1315,6 +1315,38 @@ class AdhesiveMultiLightDebugTests(unittest.TestCase):
         self.assertEqual(format_multilight_debug_report(panel), "")
         self.assertIsNone(multilight_copy_image_snapshot(panel))
 
+    def test_non_adhesive_event_also_exposes_three_images_and_analyses(self):
+        panel = self._panel("missing-001")
+        panel.adhesive_multilight_last_category = "FALTANDO"
+        panel.adhesive_multilight_last_final_analysis = {
+            "verdict": "DEFEITO REAL",
+            "is_defect": True,
+            "confidence": 0.91,
+            "reason": "fusão multilight geral",
+            "detail": {
+                "final_score": 0.91,
+                "physical_score": 0.88,
+                "fusion_rule": "multilight_strong_single",
+                "multilight_dominant_mode": "TOP",
+                "multilight_positive_modes": ["TOP"],
+                "multilight_strong_positive_modes": ["TOP"],
+                "multilight_review_modes": [],
+                "multilight_memory_role": "per_lighting_audit",
+            },
+        }
+
+        self.assertTrue(network_debug_image_available(panel))
+        composite = multilight_copy_image_snapshot(panel)
+        self.assertIsNotNone(composite)
+
+        report = format_multilight_debug_report(panel)
+        self.assertIn("ANÁLISES MULTILIGHT - FALTANDO", report)
+        self.assertIn("Categoria multilight: FALTANDO", report)
+        self.assertIn("ILUMINAÇÃO SIDE", report)
+        self.assertIn("ILUMINAÇÃO TOP", report)
+        self.assertIn("ILUMINAÇÃO MID", report)
+        self.assertIn("Iluminação dominante: TOP", report)
+
 
 class NeutralDecisionBackgroundTests(unittest.TestCase):
     @classmethod
