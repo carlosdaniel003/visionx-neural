@@ -248,7 +248,7 @@ class ScreenMonitor(QThread):
         strip = frame_bgr[y1:y2, x1:x2].copy()
         strip_h, strip_w = strip.shape[:2]
 
-        self._write_debug_crop(DEBUG_DIR / f"{label}_01_strip.png"), strip)
+        self._write_debug_crop(DEBUG_DIR / f"{label}_01_strip.png", strip)
 
         # Máscara de cinza
         gray_mask = self._build_interface_gray_mask(strip)
@@ -281,7 +281,7 @@ class ScreenMonitor(QThread):
                 print(f"   [{label}] Nenhum cinza → foto = strip inteiro")
             else:
                 print(f"⚠️ [{label}] Sem foto detectada — fallback")
-                self._write_debug_crop(DEBUG_DIR / f"{label}_FALLBACK.png"), strip)
+                self._write_debug_crop(DEBUG_DIR / f"{label}_FALLBACK.png", strip)
 
                 gm_rows = np.zeros((strip_h, 40, 3), dtype=np.uint8)
                 for row in range(strip_h):
@@ -292,7 +292,7 @@ class ScreenMonitor(QThread):
                 thresh_x = int(0.75 * 35)
                 cv2.line(gm_rows, (thresh_x, 0), (thresh_x, strip_h),
                           (0, 255, 255), 1)
-                self._write_debug_crop(DEBUG_DIR / f"{label}_graymap_rows.png"),
+                self._write_debug_crop(DEBUG_DIR / f"{label}_graymap_rows.png",
                               gm_rows)
                 return strip
 
@@ -329,8 +329,8 @@ class ScreenMonitor(QThread):
         debug_vis = strip.copy()
         cv2.rectangle(debug_vis, (left, top), (right, bottom),
                        (0, 255, 0), 2)
-        self._write_debug_crop(DEBUG_DIR / f"{label}_03_detected.png"), debug_vis)
-        self._write_debug_crop(DEBUG_DIR / f"{label}_04_photo.png"), photo)
+        self._write_debug_crop(DEBUG_DIR / f"{label}_03_detected.png", debug_vis)
+        self._write_debug_crop(DEBUG_DIR / f"{label}_04_photo.png", photo)
 
         # Graymap linhas
         gm_rows = np.zeros((strip_h, 40, 3), dtype=np.uint8)
@@ -344,7 +344,7 @@ class ScreenMonitor(QThread):
         thresh_x = int(0.75 * 35)
         cv2.line(gm_rows, (thresh_x, 0), (thresh_x, strip_h),
                   (0, 255, 255), 1)
-        self._write_debug_crop(DEBUG_DIR / f"{label}_graymap_rows.png"), gm_rows)
+        self._write_debug_crop(DEBUG_DIR / f"{label}_graymap_rows.png", gm_rows)
 
         # Graymap colunas
         gm_cols = np.zeros((40, strip_w, 3), dtype=np.uint8)
@@ -361,7 +361,7 @@ class ScreenMonitor(QThread):
         thresh_y = 40 - int(0.75 * 35)
         cv2.line(gm_cols, (0, thresh_y), (strip_w, thresh_y),
                   (0, 255, 255), 1)
-        self._write_debug_crop(DEBUG_DIR / f"{label}_graymap_cols.png"), gm_cols)
+        self._write_debug_crop(DEBUG_DIR / f"{label}_graymap_cols.png", gm_cols)
 
         return photo
 
