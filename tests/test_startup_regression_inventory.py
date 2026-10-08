@@ -169,6 +169,95 @@ class ArchiveInventoryTests(unittest.TestCase):
         self.assertEqual(report["summary"]["png_count"], 1)
         self.assertIn("INVALID_PNG", [i["code"] for i in report["issues"]])
 
+    def test_png_with_invalid_crc_is_not_accepted(self):
+        path = self.png(self.ng_dir, "2026-10-01_0810_FALTANDO.png")
+        contents = bytearray(path.read_bytes())
+        # Primeiro CRC, logo após IHDR, permanece decodificável por muitos
+        # leitores permissivos, mas não é um arquivo íntegro para o gate.
+        contents[29] ^= 0x01
+        path.write_bytes(contents)
+
+        report = inventory_archives(self.root)
+        self.assertEqual(report["summary"]["invalid_png"], 1)
+        self.assertIn(
+            "CRC de PNG inválido",
+            report["images"][0]["issues"][0]["detail"],
+        )
+
+    def test_invalid_manifest_does_not_partially_claim_frames(self):
+        paths = {
+            light: self.png(
+                self.ng_dir,
+                f"2026-10-08_0715_FALTANDO_{light}.png",
+                value,
+            )
+            for light, value in zip(("SIDE", "TOP", "MID"), (60, 80, 100))
+        }
+        frames = self.frames(paths)
+        frames["MID"]["sha256"] = "0" * 64
+        self.manifest(self.ng_dir, "evt-invalid.json", frames=frames)
+        report = inventory_archives(self.root)
+
+        self.assertEqual(report["summary"]["manifest_linked_png_count"], 0)
+        self.assertEqual(report["summary"]["explicit_unlinked_count"], 3)
+        self.assertEqual(report["summary"]["linked_event_count"], 0)
+        self.assertTrue(all(not r["manifest_links"] for r in report["images"]))
+        self.assertIn(
+            "MANIFEST_HASH_MISMATCH",
+            [i["code"] for i in report["issues"]],
+        )
+
+    def test_one_deduplicated_visual_can_be_referenced_by_two_events(self):
+        paths = {
+            light: self.png(
+                self.ng_dir,
+                f"2026-10-08_0715_FALTANDO_{light}.png",
+                value,
+            )
+            for light, value in zip(("SIDE", "TOP", "MID"), (60, 80, 100))
+        }
+        frames = self.frames(paths)
+        self.manifest(
+            self.ng_dir, "evt-1.json",
+            event_id="evt-1", frames=frames,
+        )
+        self.manifest(
+            self.ng_dir, "evt-2.json",
+            event_id="evt-2", frames=frames,
+        )
+        report = inventory_archives(self.root)
+
+        self.assertEqual(report["summary"]["linked_event_count"], 2)
+        self.assertEqual(report["summary"]["manifest_linked_png_count"], 3)
+        self.assertTrue(all(
+            len(r["manifest_links"]) == 2 for r in report["images"]
+        ))
+        self.assertTrue(all(
+            r["event_id"] is None for r in report["images"]
+        ))
+        self.assertEqual(report["status"], "INVENTORIED")
+
+    def test_deduplicated_same_png_for_three_lights_is_allowed_by_manifest(self):
+        source = self.png(
+            self.ng_dir, "2026-10-08_0715_FALTANDO_SIDE.png", 110
+        )
+        frames = {
+            light: {
+                "path": source.name,
+                "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+            }
+            for light in ("SIDE", "TOP", "MID")
+        }
+        self.manifest(self.ng_dir, "evt-identical.json", frames=frames)
+        report = inventory_archives(self.root)
+
+        self.assertEqual(report["summary"]["linked_event_count"], 1)
+        self.assertEqual(report["summary"]["manifest_linked_png_count"], 1)
+        self.assertEqual(
+            {link["lighting_mode"] for link in report["images"][0]["manifest_links"]},
+            {"SIDE", "TOP", "MID"},
+        )
+
     def test_unknown_file_and_unknown_category_are_visible(self):
         self.png(self.ng_dir, "unknown_format.png", 55)
         (self.ng_dir / "screenshot.jpg").write_bytes(b"hello")
