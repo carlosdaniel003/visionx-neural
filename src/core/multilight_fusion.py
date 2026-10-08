@@ -249,7 +249,10 @@ def _verified_missing_ok_witnesses(
 
     # Um exemplo OK já salvo é corroborador, não atalho: exigir
     # similaridade de imagem completa, contexto e epicentro separadamente.
-    hypothesis = suspect.get("hypotheses", {}).get("OK", {})
+    hypotheses = suspect.get("hypotheses", {})
+    if not isinstance(hypotheses, dict):
+        return {}
+    hypothesis = hypotheses.get("OK", {})
     if not isinstance(hypothesis, dict) or not hypothesis.get("available", False):
         return {}
     breakdown = hypothesis.get("similarity_breakdown", {})
