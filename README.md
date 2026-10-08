@@ -79,6 +79,18 @@ O projeto combina diferentes abordagens para aumentar a confiabilidade da análi
 
 ---
 
+## Qualificação visual offline CNN FALTANDO
+
+Após preparar o acervo, execute `python -m src.ui.faltando_neural_review`
+para revisar os pares gabarito/teste, confirmar OK/NG/recorte inválido e
+validar manualmente trincas SIDE/TOP/MID. As decisões são salvas
+automaticamente em `qualification.json` no staging local.
+Sugestões dHash de proximidade visual **não** alteram classificações.
+Não treina CNN nem afeta a operação. Consulte
+[Qualificação visual FALTANDO](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+
+---
+
 ## Preparação offline do dataset para CNN FALTANDO
 
 Ferramenta disponível: `python -m src.services.faltando_neural_dataset`.

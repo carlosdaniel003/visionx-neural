@@ -1,5 +1,50 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — Qualificação visual assistida CNN FALTANDO (offline)
+
+**Escopo autorizado:** criar ferramenta local para revisar pares gabarito/teste
+e as trincas SIDE/TOP/MID preparadas anteriormente, sem qualquer treinamento
+ou integração à produção. A preparação real confirmou **117 pares extraídos**
+(107 OK, 10 NG) e **25 trincas candidatas por nome**, nenhuma com manifesto
+`event_id` comprovado; `training_ready=0`. A contagem de 17 trincas
+anterior ignorava arquivos `_SIDE_2/_TOP_2/_MID_2` por causa do sufixo.
+
+**Implementação:**
+
+- `src/services/faltando_neural_qualification.py`: carrega
+  `reports/faltando_neural/run_*/manifest.json`, valida caminhos/hash
+  SHA-256 da origem antes de confirmar, persiste
+  `qualification.json` atomicamente em staging com decisão explícita
+  do operador (OK presente, NG ausente, recorte rejeitado), observação
+  e divergência contra o rótulo do archive, sem tocar nas fontes.
+  A qualificação nunca muda automaticamente `training_ready`.
+- `src/ui/faltando_neural_review.py`: aplicativo PyQt6 independente
+  do ODIN, com lista pesquisável, gabarito/teste completos responsivos,
+  inspeção de três pares para trincas, rótulo original e observações.
+  Exige confirmação visual explícita antes de salvar. O vínculo
+  multilight humano exige que os três pares sejam revisados individualmente
+  e convergentes; armazena `human_group_id`, não inventa `event_id`.
+- dHash em **ambos** gabarito e teste sugere proximidade visual por
+  iluminação sem remover/treinar com imagens ou reclassificar rótulos.
+- `tests/test_faltando_neural_qualification.py`: fluxos de revisão,
+  recarga, integridade da fonte, caminhos seguros, trincas, OCR e GUI
+  sem AOI/XP. Workflow Windows de testes da ferramenta.
+
+**Como abrir no computador do ODIN:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.ui.faltando_neural_review
+```
+
+Os botões da ferramenta só geram `qualification.json` dentro do run;
+não treinam CNN, não alteram rótulos/hashes/PNG nem reconfiguram o ODIN.
+Para avançar ao treino exigir aprovação explícita após revisão dos dados.
+
+---
+
+
 ## Preparação neural FALTANDO — qualificação offline (08/10/2026)
 
 **Status da etapa:** preparador implementado, sem treinar/classificar automaticamente.

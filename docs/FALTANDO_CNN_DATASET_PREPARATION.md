@@ -8,9 +8,9 @@
 
 - 117 PNGs FALTANDO: 107 OK e 10 NG.
 - NG: 10 sem sufixo de luz (SIDE histórico presumido); nenhum NG TOP/MID.
-- OK: 56 sem sufixo + 17 SIDE, 17 TOP e 17 MID explícitos.
+- OK: 32 sem sufixo + 25 SIDE, 25 TOP e 25 MID explícitos.
 - SHA-256 distintos: 117; nenhuma duplicata exata, nenhum hash comum OK/NG.
-- 17 trincas por **nome**, ainda sem comprovação por manifesto event_id.
+- 25 trincas por **nome** (sufixos _2/_3 incluídos), sem manifesto event_id.
 - Isso **não prova** 117 observações independentes, rótulos perfeitos ou cobertura
   suficiente para treinamento seguro de NG multilight.
 
@@ -68,3 +68,36 @@ Nenhum arquivo em `public` é editado, renomeado ou substituído. A pasta
 
 A execução informa `training_ready=false` em todos os candidatos. Esta
 etapa não altera a decisão operacional nem o startup gate.
+
+## Qualificação visual assistida — próxima etapa implementada
+
+Use, depois da preparação e atualização do repositório:
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.ui.faltando_neural_review
+```
+
+Para escolher uma preparação específica:
+`python -m src.ui.faltando_neural_review --manifest "C:\visionx-neural-main\reports\faltando_neural\run_XXXXX\manifest.json"`.
+
+A interface offline lista casos individuais e trincas candidatas. Gabarito e
+teste são exibidos inteiros, sem crop oculto. O usuário confirma cada par
+como `CONFIRMED_OK` (componente presente), `CONFIRMED_NG` (componente
+ausente) ou `REJECTED` (recorte impróprio); requer checkbox humano, e
+registra eventual divergência contra o rótulo original, sem alterar a fonte.
+
+Uma trinca SIDE/TOP/MID só é validada manualmente depois de todos os três
+pares terem rótulo confirmado equivalente ao rótulo arquivado; gera
+`human_group_id`, nunca falsifica `event_id` original da AOI.
+As sugestões de semelhança dHash consideram ambos gabarito/teste na mesma
+iluminação e **não** removem imagens ou alteram rótulos.
+
+Cada decisão é salva imediatamente em
+`reports/faltando_neural/run_*/qualification.json`, com confirmação
+SHA-256 da origem, em escrita atômica. O estado é restaurado ao reabrir.
+Os originais em `public`, o dataset e o `manifest.json` não mudam.
+
+Esta revisão é preparatória: `training_ready=False` continua intacto,
+não treina CNN, não cria splits e não interfere no ODIN em Produção.
