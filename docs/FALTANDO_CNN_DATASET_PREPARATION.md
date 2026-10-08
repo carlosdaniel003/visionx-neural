@@ -477,3 +477,94 @@ ser exercitado com capturas reais no PC da fábrica.
 
 ---
 
+
+
+## 08/10/2026 — Aprendizado incremental ao vivo de CNNs especializadas
+
+**Solicitação operacional:** toda captura **nova**, reconhecida por rota
+`NEW_CNN`, quando confirmada **OK** ou **NG** pelo operador deve disparar
+treinamento incremental imediatamente, em Teste, Produção e Sombra.
+Não depender somente da discordância IA × operador; mesmo se concordarem
+os pares originais devem ser preservados. Implementação da primeira
+especialidade: CNN FALTANDO v2. Base extensível para outras CNNs futuras.
+
+**Pontos de integração reais:**
+- `src/services/anomaly_learning.py`: `_decision_task`
+  ativa `save_images=True` em **qualquer caso novo CNN confirmado**
+  (inclusive quando a IA concordou com o OK/NG humano).
+  É independente do modo operacional, pois todos compartilham
+  `save_label` e a `DecisionPersistenceQueue`.
+- `src/services/decision_persistence.py`: só depois de salvar
+  com êxito o registro humano no dataset/KNN é enfileirado o treino.
+  Em multilight, as **três gravações** de SIDE/TOP/MID precisam
+  ter êxito antes do pedido incremental.
+  A decisão na AOI NÃO espera treinamento nem escrita de pesos.
+- `src/services/neural_online_learning.py`: journal durável local
+  em `reports/neural_online/events/`, guarda **gabarito/teste completos
+  por iluminação**, metadados, rótulo humano e hashes; trabalhador
+  serial de baixa prioridade CPU, em subprocesso separado. Novo caso
+  de três iluminações é **um** evento supervisionado com três pares.
+  Retoma tarefas pendentes após reiniciar o ODIN. Mantém
+  `statuses/`, `logs/` e `latest_event.json` para auditoria.
+  `SPECIALIST_TRAINERS` registra categorias e scripts para
+  futuras CNNs, sem modificar a fila/persistência.
+- `src/scripts/train_faltando_cnn_v2_online.py`: carrega pesos
+  ATIVOS do `FaltandoCNNV2`, os 117 screenshots históricos
+  organizados em eventos, e todos os novos eventos confirmados;
+  faz 3 épocas por solicitação com replay balanceado entre
+  OK/NG, taxa pequena 0.00002, CPU limitada a dois threads,
+  **incluindo explicitamente o novo caso em cada época**
+  para não depender de amostragem aleatória.
+- Todo novo checkpoint é salvo como **CANDIDATO** em
+  `reports/neural_online/checkpoints/`. A validação testa
+  **cada imagem/luz** dos 117 exemplos conhecidos e todas
+  as novas imagens confirmadas. Para promoção requer zero
+  erros em ambos, nenhum falso OK nos NG históricos,
+  nenhuma perda de acerto histórico. Dados ilegíveis,
+  rótulos humanos contraditórios, arquivos ausentes ou
+  falhas de regressão bloqueiam ativação. Pesos antigos
+  permanecem intactos.
+- Quando o candidato passa, a promoção é feita com escrita
+  atômica de `reports/neural_online/live_active.json` contendo
+  hash SHA-256 do checkpoint. `src/core/neural/faltando_live.py`
+  observa este ponteiro na próxima inspeção, verifica
+  schema, caminho, hash e pesos antes de carregar.
+  Um arquivo inválido resulta em `REVISÃO OBRIGATÓRIA`;
+  nenhuma atualização parcial se torna modelo ativo.
+- O tooltip de `CASO NOVO • CNN FALTANDO v2` explica como
+  a amostra humana dispara treinamento assíncrono, e o status
+  de `QUEUED/TRAINING/PROMOTED/REJECTED/FAILED`.
+
+**Segurança contra autoaprendizado incorreto:**
+- Decisão `production_auto`/`auto` **não é verdade-terreno**;
+  a CNN **não aprende de sua própria previsão**.
+- Casos `KNOWN_KNN` não são reensinados como exemplos novos.
+- Apenas rótulos humanos OK/NG registrados por botões, 0/1
+  ou fontes humanas verificadas entram na fila; a política
+  produtiva atual mantém obrigatória a confirmação humana para
+  novos OK de CNN FALTANDO experimental.
+- A auditoria do acervo histórico é **in-sample**, uma proteção
+  contra esquecimento e não teste cego de novos defeitos. A
+  promoção incremental NÃO declara modelo certificado para
+  liberação autônoma. Nenhuma mudança nas outras categorias.
+- Não usar privilégios administrativos, não alterar XP, não
+  exigir nuvem, tokens ou servidor de treinamento. Todos os
+  artefatos de `reports/neural_online/` ficam locais e ignorados
+  pelo Git (não enviar fotos/pesos ao repositório).
+
+**Fluxo de produção:** atualização disponível após
+`git pull origin central` e `python main.py`. Não há
+treinamento síncrono no loop AOI. O primeiro treino real
+precisa ser testado na máquina Windows 10 com o checkpoint
+v2 e a base histórica, depois de o operador confirmar um
+novo caso FALTANDO.
+
+**Extensão para categoria futura:** adicionar
+`SPECIALIST_TRAINERS[canonical_category] = "src.scripts.train_<categoria>_online"`;
+cada treinador deve gerar checkpoint candidato, validar
+contra regressões próprias e promover atomicamente, mantendo
+rótulos humanos e isolamento por categoria. Não reutilizar
+pesos do modelo FALTANDO em outra categoria.
+
+---
+

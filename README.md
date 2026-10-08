@@ -79,6 +79,27 @@ O projeto combina diferentes abordagens para aumentar a confiabilidade da análi
 
 ---
 
+## Aprendizado incremental das CNNs (Teste / Produção / Sombra)
+
+Uma decisão humana `OK` ou `NG` para **CASO NOVO • CNN FALTANDO v2**
+é salva normalmente e dispara treino local em segundo plano
+imediatamente, inclusive se IA e operador concordarem.
+Os pares gabarito/teste SIDE/TOP/MID são agrupados em um evento.
+O treinamento não congela a estação ou comandos XP.
+
+O sistema usa replay dos casos antigos para evitar esquecimento,
+salva um checkpoint candidato e só troca o modelo ativo se
+**todos os exemplos históricos e confirmados** continuarem
+corretos. Se falhar, preserva os pesos atuais.
+Nunca aprende rótulos `production_auto`; não habilita auto-OK
+ainda, pois os NG inéditos TOP/MID seguem sem validação
+independente. Os arquivos da fila, logs e pesos ficam locais em
+`reports/neural_online/`, ignorados pelo Git.
+A estrutura `SPECIALIST_TRAINERS` permite criar treinadores
+próprios para futuras CNNs. [Detalhes](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+
+---
+
 ## Roteamento inteligente da inspeção — memória KNN ou especialistas
 
 Antes de iniciar a análise de um componente, o ODIN verifica se o

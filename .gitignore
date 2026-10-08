@@ -21,3 +21,6 @@ public/debug_ocr
 reports/startup_regression/
 # Dados derivados e privados da preparação neural FALTANDO
 reports/faltando_neural/
+
+# Aprendizado incremental CNN local: eventos/pesos/logs privados
+reports/neural_online/
