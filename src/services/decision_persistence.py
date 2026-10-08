@@ -12,6 +12,9 @@ from threading import Thread
 from typing import Any
 
 from src.services.dataset_manager import DatasetManager
+from src.services.neural_online_learning import (
+    OnlineLearningQueue, eligible_online_case,
+)
 
 
 LIGHTING_ORDER = ("SIDE", "TOP", "MID")
@@ -38,6 +41,7 @@ class DecisionPersistenceQueue:
     def __init__(self, orchestrator, dataset_manager=DatasetManager):
         self.orchestrator = orchestrator
         self.dataset_manager = dataset_manager
+        self._online_learning = None
         self._queue: Queue[dict[str, Any] | None] = Queue()
         self._worker = Thread(
             target=self._run,
@@ -76,6 +80,7 @@ class DecisionPersistenceQueue:
         event_id = str(task.get("event_id", "") or "")
 
         persisted = False
+        all_saved = True
         for item in samples:
             mode = str(item.get("lighting_mode", "") or "").strip().upper()
             local_analysis = item.get("analysis", {}) or {}
@@ -105,6 +110,8 @@ class DecisionPersistenceQueue:
                 final_analysis=final_analysis,
             )
             persisted = bool(json_path) or persisted
+            all_saved = all_saved and bool(json_path)
+        task["_online_all_persisted"] = all_saved
         return persisted
 
     def _run(self) -> None:
@@ -127,6 +134,19 @@ class DecisionPersistenceQueue:
                     persisted = bool(json_path)
 
                 if persisted:
+                    # Nunca esperar backpropagation/validação no ciclo XP.
+                    # Enfileirar DEPOIS da persistência da decisão humana,
+                    # incluindo Teste, Sombra e Produção.
+                    if (eligible_online_case(work)
+                            and work.get("_online_all_persisted", True)):
+                        try:
+                            if self._online_learning is None:
+                                self._online_learning = OnlineLearningQueue()
+                            event_id = self._online_learning.submit_saved(work)
+                            if event_id:
+                                print("Aprendizado CNN incremental: job " + event_id)
+                        except Exception as neural_exc:
+                            print("Não foi possível enfileirar treino CNN: " + str(neural_exc))
                     self._reload_memory_once()
             except Exception as exc:
                 print(
