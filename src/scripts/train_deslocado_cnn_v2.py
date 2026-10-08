@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 import random
 
+import cv2
 import numpy as np
 import torch
 from torch import nn
@@ -203,6 +204,51 @@ def _measure(model: DeslocadoCNN, dataset: DeslocadoV2Dataset) -> dict:
     }
 
 
+def export_proxy_previews(
+    dataset: DeslocadoV2Dataset, output: Path,
+) -> list[str]:
+    """Gera uma evidência visual original/máscara/OK/proxy por luz válida.
+
+    A região marcada é somente uma HIPÓTESE; operador deve conferir se
+    corresponde ao componente, principalmente quando a AOI tem trilhas.
+    """
+    target = output / "proxy_previews"
+    target.mkdir(parents=True, exist_ok=True)
+    results = []
+    for record in dataset.items:
+        proposals = record.get("proxies", {}).get(0, {})
+        for light, proxy in proposals.items():
+            frame = record["views"][light][1]
+            x, y, w, h = proxy.component_box
+            outlined = frame.copy()
+            cv2.rectangle(outlined, (x,y), (x+w,y+h), (0,0,255), 2)
+            difference = cv2.absdiff(proxy.normal, proxy.shifted)
+            panels = [
+                ("TEST/ROI HYPOTHESIS", outlined),
+                ("RECOMPOSED OK", proxy.normal),
+                ("SYNTHETIC SHIFT", proxy.shifted),
+                ("DIFFERENCE", difference),
+            ]
+            formatted = []
+            for title, panel in panels:
+                tile = panel.copy()
+                cv2.putText(
+                    tile, title, (3, max(14, min(23, h//4))),
+                    cv2.FONT_HERSHEY_SIMPLEX, .32, (255,255,255), 1,
+                    cv2.LINE_AA,
+                )
+                formatted.append(tile)
+            image = cv2.hconcat(formatted)
+            filename = (
+                sha256(record["id"].encode()).hexdigest()[:14]
+                + "_" + light + ".png"
+            )
+            if not cv2.imwrite(str(target/filename), image):
+                raise ValueError("Não foi possível salvar preview proxy")
+            results.append("proxy_previews/" + filename)
+    return results
+
+
 def train_deslocado_v2(
     manifest_path: Path, *, epochs: int = 25, size: int = 160,
     batch_size: int = 4, seed: int = 42, patience: int = 8,
@@ -354,6 +400,7 @@ def train_deslocado_v2(
         "experiment_v2_"+now.strftime("%Y%m%dT%H%M%S_%fZ")
     )
     output.mkdir(parents=True, exist_ok=False)
+    proxy_previews = export_proxy_previews(dev_data, output)
     manifest_hash = sha256(Path(manifest_path).read_bytes()).hexdigest()
     ckpt = {
         "schema": MODEL_SCHEMA,
@@ -393,6 +440,8 @@ def train_deslocado_v2(
         "development_proxy_counts": dev_data.counts(),
         "train_proxy_unresolved": train_data.unresolved,
         "development_proxy_unresolved": dev_data.unresolved,
+        "development_proxy_preview_images": proxy_previews,
+        "proxy_previews_reveal_component_mask_hypothesis": True,
         "dev_real_ok_zero_false_ng_gate_passed": dev["zero_false_ng_on_real_ok"],
         "development_combined_gate_passed": gate,
         "production_approved": False,
@@ -436,6 +485,7 @@ def train_deslocado_v2(
         f"Gate desenvolvimento OK: {'PASSOU' if dev['zero_false_ng_on_real_ok'] else 'REPROVOU'}.\n"
         f"Gate combinado: {'PASSOU' if gate else 'REPROVOU'}.\n"
         "RECALL DESLOCADO NG REAL: NÃO MENSURÁVEL.\n"
+        f"Previews para revisar máscara: {len(proxy_previews)} em proxy_previews/.\n"
         "CHECKPOINT NÃO ATIVADO; MOTORES FÍSICOS MANTIDOS.\n",
         encoding="utf-8"
     )
