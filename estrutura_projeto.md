@@ -1,6 +1,43 @@
 # Estrutura do Projeto: VisionX Neural
 
 
+## Correção 08/10/2026 — moldura global confundida com epicentro (C6~2)
+
+**Ocorrência:** inspeção `DESLOCADO`, 3 iluminações SIDE/TOP/MID.
+Após correção da captura cortada, o radar aceitava a moldura maior como
+foco, embora o contorno interno fosse detectado. O debug comprovou:
+
+- Global: `[25,25,525,230]`;
+- Foco incorreto: `[25,25,520,228]`;
+- Epicentro interno real nos contornos do gabarito:
+  `[76,56,189,166]` (corresponde ao candidato legado TESTE `[78,57,189,166]`);
+- `missing_local_global_area_ratio=0.9819`, desativando a verificação
+  contextual `Dual-Scale Presence` por foco quase igual à moldura global.
+
+**Causa:** o Radar Euclidiano selecionava apenas por distância até o centro.
+O quadro global possuía largura >85% e altura <85% do recorte, passando no
+filtro de descarte e vencendo a caixa interna deslocada para a esquerda.
+
+**Correção localizada:** `EpicenterExtractor.select_radar_candidate` passou
+a reconhecer `global_box_info.detected` e priorizar contornos internos com
+área distinta e inclusão geométrica no quadro externo. Quando possível,
+usa concordância da ROI entre TESTE e GABARITO para desempate, sem tratar a
+moldura global como candidata. Sem relação hierárquica confiável, mantém
+recuperação por linhas cruzadas, fallback legado e a rejeição de telas sem
+epicentro. O painel de debug chama exatamente a mesma seleção, exibindo
+`candidate_selected_by_radar` e `selection_rule` coerentes com o motor.
+
+A análise do quadro completo continua ativa, mas o foco local recebe apenas
+o retângulo menor. Sem alteração de OCR, KNN, categorias, fusão multilight,
+pipeline dos especialistas ou agente XP.
+
+**Regressão:** recorte `570×276` reproduzindo a geometria do debug,
+moldura global isolada e integração de validação de entrada da AOI.
+
+---
+
+
+
 ## Correção 08/10/2026 — epicentro oculto por molduras verdes cruzadas
 
 **Escopo:** validação AOI/Windows XP, sem alteração do agente XP ou de decisões OK/NG.

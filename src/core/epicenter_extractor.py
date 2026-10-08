@@ -17,6 +17,114 @@ class EpicenterExtractor:
     e a moldura gigante, focando no objeto verde válido mais central.
     """
     @staticmethod
+    def select_radar_candidate(
+        boxes: list,
+        image_shape: tuple,
+        old_epicenters: list | None = None,
+        global_box_info: dict | None = None,
+    ) -> tuple[tuple[int, int, int, int] | None, str]:
+        """Seleciona o foco pela hierarquia de molduras antes da distância.
+
+        A moldura global não é uma ROI. Ela pode ocupar menos que 85% da
+        altura e, ainda assim, parecer perfeitamente centralizada. Só
+        elegemos um candidato como epicentro quando existe uma moldura
+        interior geometricamente distinta; na ausência de moldura externa
+        reconhecida, preservamos o desempate radial para caixas independentes.
+        """
+        height, width = image_shape[:2]
+        candidates = []
+        for box in boxes or []:
+            try:
+                x, y, w, h = (int(value) for value in box[:4])
+            except (ValueError, TypeError):
+                continue
+            if w <= 15 or h <= 15:
+                continue
+            if w >= width * 0.85 and h >= height * 0.85:
+                continue
+            candidates.append((x, y, w, h))
+
+        if not candidates:
+            return None, "no_contour_candidate"
+
+        def area(box):
+            return box[2] * box[3]
+
+        def nested(inner, outer):
+            x, y, w, h = inner
+            ox, oy, ow, oh = outer
+            if area(inner) >= area(outer) * 0.85:
+                return False
+            margin = max(5, round(min(height, width) * 0.025))
+            return (
+                x >= ox - margin
+                and y >= oy - margin
+                and x + w <= ox + ow + margin
+                and y + h <= oy + oh + margin
+            )
+
+        def distance(box):
+            x, y, w, h = box
+            return math.hypot(x + w / 2 - width / 2, y + h / 2 - height / 2)
+
+        def iou(first, second):
+            ax, ay, aw, ah = first
+            bx, by, bw, bh = second
+            intersection_w = max(0, min(ax + aw, bx + bw) - max(ax, bx))
+            intersection_h = max(0, min(ay + ah, by + bh) - max(ay, by))
+            intersection = intersection_w * intersection_h
+            union = area(first) + area(second) - intersection
+            return intersection / union if union else 0.0
+
+        global_frame = None
+        if isinstance(global_box_info, dict) and global_box_info.get("detected"):
+            try:
+                global_frame = tuple(
+                    int(global_box_info[key]) for key in ("x", "y", "w", "h")
+                )
+                if global_frame[2] <= 0 or global_frame[3] <= 0:
+                    global_frame = None
+            except (TypeError, ValueError, KeyError):
+                global_frame = None
+
+        if global_frame is not None:
+            # Impede que os dois contornos da espessura da moldura externa
+            # sejam confundidos com duas regiões distintas.
+            inner_candidates = [
+                box for box in candidates if nested(box, global_frame)
+            ]
+        else:
+            inner_candidates = [
+                box for box in candidates
+                if any(nested(box, outer) for outer in candidates if outer != box)
+            ]
+
+        if inner_candidates:
+            # A marcação encontrada no TESTE fornece confirmação espacial,
+            # mas nunca supera uma caixa sem correspondência no GABARITO.
+            confirmed = []
+            for box in inner_candidates:
+                matches = [
+                    iou(box, tuple(int(value) for value in prior[:4]))
+                    for prior in (old_epicenters or [])
+                    if len(prior) >= 4
+                ]
+                similarity = max(matches, default=0.0)
+                if similarity >= 0.6:
+                    confirmed.append((similarity, box))
+            if confirmed:
+                confirmed.sort(key=lambda item: (-item[0], distance(item[1])))
+                return confirmed[0][1], "inner_frame_confirmed_by_test"
+            return min(inner_candidates, key=distance), "inner_frame_hierarchy"
+
+        if global_frame is not None:
+            # A maior caixa identificada no TESTE não pode se tornar o
+            # epicentro apenas por estar próxima do centro do GABARITO.
+            return None, "global_frame_only"
+
+        return min(candidates, key=distance), "center_without_global"
+
+    @staticmethod
     def extract_focus(sample_crop: np.ndarray, ng_crop: np.ndarray, old_epicenters: list, global_box_info: dict) -> Tuple[list, np.ndarray, np.ndarray]:
         """
         Retorna: (Lista de Epicentros Reais, Gabarito Recortado, Teste Recortado)
@@ -38,29 +146,14 @@ class EpicenterExtractor:
             
             cnts, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
             
-            center_x, center_y = img_w / 2, img_h / 2
-            valid_boxes = []
-            
-            for c in cnts:
-                x, y, w, h = cv2.boundingRect(c)
-
-                # Uma moldura global é grande nos DOIS eixos. Uma ROI legítima
-                # pode ser muito alta e estreita (ou muito larga e baixa), como
-                # ocorre em componentes verticais da AOI. O filtro antigo usava
-                # "w < 85% E h < 85%" e descartava essas ROIs válidas.
-                oversized_width = w >= (img_w * 0.85)
-                oversized_height = h >= (img_h * 0.85)
-                is_global_frame = oversized_width and oversized_height
-
-                if w > 15 and h > 15 and not is_global_frame:
-                    box_cx = x + (w / 2)
-                    box_cy = y + (h / 2)
-                    dist = math.sqrt((center_x - box_cx)**2 + (center_y - box_cy)**2)
-                    valid_boxes.append({"box": (x, y, w, h), "dist": dist})
-            
-            if valid_boxes:
-                valid_boxes.sort(key=lambda b: b["dist"]) 
-                real_epicenters.append(valid_boxes[0]["box"]) 
+            candidate, _strategy = EpicenterExtractor.select_radar_candidate(
+                [cv2.boundingRect(contour) for contour in cnts],
+                sample_crop.shape,
+                old_epicenters,
+                global_box_info,
+            )
+            if candidate is not None:
+                real_epicenters.append(candidate)
                 
         except Exception as e:
             print(f"⚠️ Erro no Radar Euclidiano: {e}")

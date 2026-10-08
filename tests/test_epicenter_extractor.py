@@ -138,6 +138,42 @@ class EpicenterExtractorRegressionTests(unittest.TestCase):
         self.assertEqual(focus_reference.shape, focus_test.shape)
 
 
+    def test_inner_epicenter_precedes_centered_global_when_outer_not_over_85_percent_height(self):
+        """Reproduz coordenadas da captura real C6~2 em DESLOCADO."""
+        reference = np.full((276, 570, 3), BACKGROUND, dtype=np.uint8)
+        test = reference.copy()
+        for image in (reference, test):
+            cv2.rectangle(image, (25, 25), (548, 254), GREEN, 2)
+            cv2.rectangle(image, (76, 56), (264, 221), GREEN, 2)
+
+        epicenters, focus_reference, focus_test = EpicenterExtractor.extract_focus(
+            reference,
+            test,
+            old_epicenters=[(78, 57, 189, 166)],
+            global_box_info={"x": 25, "y": 25, "w": 525, "h": 230, "detected": True},
+        )
+
+        self.assertEqual(len(epicenters), 1)
+        x, y, w, h = epicenters[0]
+        self.assertAlmostEqual(x, 76, delta=4)
+        self.assertAlmostEqual(y, 56, delta=4)
+        self.assertAlmostEqual(w, 189, delta=5)
+        self.assertAlmostEqual(h, 166, delta=5)
+        self.assertEqual(focus_reference.shape, focus_test.shape)
+        self.assertLess(w * h, 0.35 * 525 * 230)
+
+    def test_outer_frame_without_inner_is_not_accepted_at_83_percent_height(self):
+        reference = np.full((276, 570, 3), BACKGROUND, dtype=np.uint8)
+        cv2.rectangle(reference, (25, 25), (548, 254), GREEN, 2)
+
+        epicenters, focus_reference, focus_test = EpicenterExtractor.extract_focus(
+            reference, reference.copy(), old_epicenters=[],
+            global_box_info={"x": 25, "y": 25, "w": 525, "h": 230, "detected": True},
+        )
+        self.assertEqual(epicenters, [])
+        self.assertEqual(focus_reference.size, 0)
+        self.assertEqual(focus_test.size, 0)
+
     def test_crossing_frames_clipped_at_bottom_recover_inner_roi(self):
         """Caso real 08/10: os dois topos se cruzam e os fundos saem da tela."""
         reference = np.full((540, 394, 3), BACKGROUND, dtype=np.uint8)

@@ -404,6 +404,34 @@ class NetworkInspectionValidationTests(unittest.TestCase):
         self.assertGreater(selected["height_ratio"], 0.85)
         self.assertLess(selected["width_ratio"], 0.50)
 
+    def test_centered_outer_frame_does_not_replace_known_inner_epicenter(self):
+        sample = np.full((276, 570, 3), (28, 30, 34), dtype=np.uint8)
+        test = sample.copy()
+        for image in (sample, test):
+            cv2.rectangle(image, (25, 25), (548, 254), (0, 255, 0), 2)
+            cv2.rectangle(image, (76, 56), (264, 221), (0, 255, 0), 2)
+
+        valid, reason, audit = validate_network_inspection(sample, test)
+
+        self.assertTrue(valid, msg=f"{reason}: {audit}")
+        self.assertEqual(audit["real_epicenter_count"], 1)
+        x, y, w, h = audit["focus_box"]
+        self.assertAlmostEqual(x, 76, delta=4)
+        self.assertAlmostEqual(y, 56, delta=4)
+        self.assertLess(w * h, 0.35 * 525 * 230)
+        radar = audit["green_detection"]["epicenter_radar_sample"]
+        self.assertEqual(radar["candidate_selected_by_radar"], audit["focus_box"])
+        self.assertIn(radar["selection_rule"], (
+            "inner_frame_confirmed_by_test", "inner_frame_hierarchy",
+        ))
+
+    def test_centered_global_frame_alone_is_rejected_during_intake(self):
+        sample = np.full((276, 570, 3), (28, 30, 34), dtype=np.uint8)
+        cv2.rectangle(sample, (25, 25), (548, 254), (0, 255, 0), 2)
+        valid, reason, audit = validate_network_inspection(sample, sample.copy())
+        self.assertFalse(valid, msg=str(audit))
+        self.assertEqual(audit["reason"], "missing_epicenter")
+
     def test_crossed_green_frames_do_not_block_xp_intake(self):
         sample = np.full((540, 394, 3), (28, 30, 34), dtype=np.uint8)
         test = sample.copy()

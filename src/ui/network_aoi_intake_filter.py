@@ -206,7 +206,7 @@ def _green_diagnostics(
         }
 
 
-def _radar_green_diagnostics(sample_crop: Any) -> dict:
+def _radar_green_diagnostics(sample_crop: Any, *, global_box_info=None, old_epicenters=None) -> dict:
     diagnostics = _green_diagnostics(
         sample_crop,
         RADAR_GREEN_LOWER,
@@ -248,9 +248,16 @@ def _radar_green_diagnostics(sample_crop: Any) -> dict:
             )
         ranked.sort(key=lambda item: item["distance_to_center"])
         diagnostics["ranked_center_candidates"] = ranked[:DEBUG_BOX_LIMIT]
-        diagnostics["candidate_selected_by_radar"] = (
-            ranked[0]["box"] if ranked else None
+        selected_box, selection_rule = EpicenterExtractor.select_radar_candidate(
+            diagnostics.get("valid_boxes", []),
+            sample_crop.shape,
+            old_epicenters,
+            global_box_info,
         )
+        diagnostics["candidate_selected_by_radar"] = (
+            list(selected_box) if selected_box is not None else None
+        )
+        diagnostics["selection_rule"] = selection_rule
     except Exception as exc:
         diagnostics["ranking_error"] = str(exc)
     return diagnostics
@@ -366,6 +373,13 @@ def validate_network_inspection(
             ng_crop,
             old_epicenters,
             global_box_info,
+        )
+        audit["green_detection"]["epicenter_radar_sample"] = (
+            _radar_green_diagnostics(
+                sample_crop,
+                global_box_info=global_box_info,
+                old_epicenters=old_epicenters,
+            )
         )
     except Exception as exc:
         audit.update(
