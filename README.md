@@ -1,5 +1,24 @@
 # VisionX Neural
 
+## CNN DESLOCADO v2 — correção do treinamento experimental
+
+A CNN DESLOCADO v1 concluiu 15 épocas e acertou os proxies
+artificiais de desenvolvimento, mas errou **todos os seis OK reais**
+reservados (**0/6**). Por isso, foi reprovada.
+
+A nova v2 utiliza uma hipótese de máscara de componente para deslocar
+a peça em vez de mover um patch inteiro; também gera OK com a mesma
+reconstrução, reduzindo pistas de artefato. Mantém as três luzes,
+holdout agrupado por placa/componente e diagnóstico por imagem.
+O requisito para avançar na avaliação de desenvolvimento é
+**zero falsos NG entre os OK reservados**. Como ainda não há NG
+reais DESLOCADO, nenhum checkpoint é autorizado à Produção.
+
+Para testar no PC da fábrica: `python -m src.scripts.train_deslocado_cnn_v2 --epochs 25`.
+Consultar [documentação DESLOCADO](docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md).
+
+---
+
 ## CNN DESLOCADO — nova especialidade em preparação
 
 A categoria **DESLOCADO** passa a ter pipeline próprio de dados, modelo

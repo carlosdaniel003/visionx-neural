@@ -1,5 +1,92 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — CNN DESLOCADO v1 reprovada; correção v2 por máscara de componente
+
+**Treino real v1 recebido da fábrica:** `training_report_deslocado.json`
+e `training_summary_deslocado.txt`. O dataset contém
+34 pares extraídos, dos quais **24 eventos OK reais**
+(19 SIDE legados e 5 trincas candidatas SIDE/TOP/MID).
+Não há qualquer NG DESLOCADO real. O treino v1 usou 18 eventos OK
+mais deslocamentos sintéticos e reservou 6 eventos OK de
+desenvolvimento, separados por placa/componente.
+
+**Falha da v1:**
+- No treino: 18/18 OK corretos e 18/18 proxies sintéticos corretos;
+- Na validação: **0/6 OK reais corretos**, **6/6 proxies sintéticos**
+  reconhecidos, acurácia combinada 50%, seis falsos NG reais;
+- Os scores de deslocamento dos seis OK reais ficaram entre
+  0,784709 e 0,992219; a loss de treino caiu de 0,815261
+  para 0,018744 em 15 épocas. Fortes sinais de sobreajuste,
+  não houve generalização para OK reservados.
+- **v1 REPROVADA**: não aumentar épocas sem mudar os proxies,
+  nem integrar a rede ao julgamento normal.
+
+**Correção v2 implementada no GitHub, ainda não executada com os 34
+pares locais**:
+
+- `src/services/deslocado_proxy_v2.py` identifica uma hipótese
+  de componente aproximadamente central por contraste contra
+  o fundo e componentes conectados. **É uma máscara
+  heurística não validada**, não uma segmentação comprovada.
+  Quando não é confiável, o exemplo sintético é recusado.
+- O fundo no local de origem do componente é reconstruído
+  com `cv2.inpaint`, a máscara é movida e composta no
+  novo local. Há **duas reconstruções com mesmo procedimento**:
+  `RECOMPOSED_OK` com deslocamento zero e
+  `SYNTHETIC_SHIFT_PROXY` com deslocamento, minimizando
+  aprendizado apenas de artefatos de inpaint. A classe
+  `REAL_OK` original permanece incluída.
+  Deslocamentos variam em ângulo e distância;
+  fotometria ligeiramente perturbada em ambas as classes
+  e flips sincronizados entre gabarito/teste.
+- `src/scripts/train_deslocado_cnn_v2.py` mantém o treino
+  comparativo de duas escalas e três luzes com
+  **pesos exclusivamente DESLOCADO**. Não toca a CNN FALTANDO
+  nem substitui o treino v1 / arquivos originais. As trincas
+  candidatas são tratadas como um evento; eventos com mesmo
+  `board+parts` são mantidos juntos no split.
+- Validação por época registra OK reais, OK recompostos,
+  proxies e scores individuais por SIDE/TOP/MID. A escolha
+  do checkpoint prioriza zero **falsos NG em OK reais**
+  do conjunto reservado, depois a discriminação dos proxies.
+  A verificação `dev_real_ok_zero_false_ng_gate_passed`
+  só passa se **todos os OK reais** reservados forem
+  reconhecidos como OK. O gate combinado também exige
+  acerto em OK recompostos e proxies.
+- Guarda `deslocado_cnn_v2_candidate.pt`,
+  `training_report_deslocado_v2.json`,
+  `training_summary_deslocado_v2.txt` e
+  `holdout_predictions_deslocado_v2.json` em
+  `reports/deslocado_neural/models/experiment_v2_*/`.
+- Ainda **não existem NG reais**, logo recall NG real
+  continua **não mensurável**. Resultados de proxy e do
+  holdout de desenvolvimento (usado para escolher a melhor
+  época) não são teste cego e não autorizam operação.
+  Todo checkpoint declara `production_approved=False`,
+  `allow_automatic_classification=False`.
+  Os motores físicos da categoria continuam em uso.
+  O aprendizado incremental DESLOCADO já existente mantém
+  o fluxo de candidatos; esta v2 é um treino inicial
+  separado, sem ativação automática no ODIN.
+
+**Executar na estação Windows 10 que contém os pares:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.scripts.train_deslocado_cnn_v2 --epochs 25 --batch-size 4 --size 160
+```
+
+**Após executar:** enviar os três relatórios JSON/TXT da v2.
+Não há motivo para substituir o motor físico mesmo que a v2
+alcance seis OK corretos, sem NG reais de deslocamento.
+Se o diagnóstico mencionar `AMBIGUOUS_OR_MISSING_COMPONENT_MASK`
+ou erro de segmentação, não fabricar NG fictícios: será
+necessário identificar visualmente a região correta.
+
+---
+
+
 ## 08/10/2026 — CNN especializada DESLOCADO: preparação, bootstrap e coleta incremental
 
 **Situação informada:** nenhum NG DESLOCADO real no acervo local;
