@@ -79,6 +79,23 @@ O projeto combina diferentes abordagens para aumentar a confiabilidade da análi
 
 ---
 
+## CNN FALTANDO v2 — treinamento experimental e diagnóstico real v1
+
+O primeiro treinamento da v1 concluiu 25 épocas sobre 117 frames/67 eventos,
+porém na validação de desenvolvimento classificou **13/13 eventos como OK**
+(11 OK corretos, **2 NG liberados como OK**, recall NG 0%).
+Não será integrado em Produção.
+
+A nova CNN v2 compara gabarito/teste e diferença visual diretamente,
+com imagem integral e região central ampliada. Treina com sampler balanceado
+e gera relatório por evento/luz e curva de treinamento. A v1 permanece
+intacta. Execute `python -m src.scripts.train_faltando_cnn_v2 --epochs 25 --device cpu`
+após `git pull origin central`; veja
+[documentação CNN FALTANDO](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+Pesos continuam experimentais e não alteram o ODIN operacional.
+
+---
+
 ## Treinamento experimental da CNN FALTANDO
 
 Após extrair os pares com `python -m src.services.faltando_neural_dataset`,

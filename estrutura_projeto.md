@@ -1,5 +1,95 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — CNN FALTANDO v1: treino real reprovado; evolução v2
+
+**Resultado real da CNN v1 recebido do operador:**
+`training_report.json` e `training_summary.txt` (gerados localmente
+08/10/2026 às 15:40:35 UTC). Treino de 25 épocas em CPU, tamanho
+160 × 160, batch 4, seed 42, holdout 20%, sem memória KNN.
+A preparação original continha **117 frames**, correspondentes a
+**67 eventos** (57 OK / 10 NG): 25 trincas OK SIDE/TOP/MID por
+nome+OCR e 42 monoimagens históricas (32 OK/10 NG SIDE).
+O split agrupado por board/parts e proximidade visual resultou em
+54 eventos de treinamento (46 OK / 8 NG) e 13 de validação
+(11 OK / 2 NG), em 45 grupos de separação.
+
+**Matriz de confusão v1 na validação:**
+
+| Real | Previsto OK | Previsto NG |
+|---|---:|---:|
+| OK | 11 | 0 |
+| NG | **2** | **0** |
+
+Acurácia 84,62%, recall NG **0/2 = 0%**, especificidade OK
+11/11 = 100%. O valor de acurácia é enganoso por desbalanceamento,
+porque **todas as 13 observações foram previstas como OK**. Os dois
+NG não detectados ficaram no holdout:
+
+- `2026-10-01_07-53-17-716_FALTANDO.png` (R475);
+- `2026-10-01_09-53-18-089_FALTANDO.png` (R475).
+
+A perda de treinamento caiu de **1,337919** (época 1)
+para **0,000206** (época 25), enquanto a validação final teve
+perda **0,637349**. Nas 25 épocas, o recall NG no holdout
+permaneceu **0%**. Isto é consistente com sobreajuste e
+ausência de generalização do detector NG, não prova de que
+somente mais épocas resolveriam o problema. A v1 é uma
+**linha de base reprovada**, não modelo para produção.
+
+**Evolução v2 implementada, ainda não treinada com os 117 PNGs reais:**
+
+- `src/core/neural/faltando_cnn_v2.py`: CNN comparativa
+  de **nove canais** por escala (`RGB_gabarito`,
+  `RGB_teste`, `|diferença|`) e duas escalas;
+  imagem integral + zoom de 70% da região central,
+  com mapa final espacial 2×2, encoder compartilhado,
+  dropout e fusão do maior logit NG em SIDE/TOP/MID.
+  A região central é hipótese operacional a verificar,
+  **não** um localizador infalível de componente.
+- `src/scripts/train_faltando_cnn_v2.py`: aceita as pastas
+  e o `manifest.json` existentes, rótulos OK/NG
+  confirmados pelo operador e mesmo agrupamento multilight
+  por nome+OCR; revalida hashes e pares antes de treinar.
+  Ajustes: sampler balanceado OK/NG, BCE binária,
+  perda auxiliar por iluminação, pequenas augmentações
+  sincronizadas, AdamW, weight decay e early stopping
+  por perda em validação de desenvolvimento.
+- **Diagnóstico por evento:** grava probabilidade de NG por
+  evento e por iluminação, FP/FN, identificador do evento,
+  matriz de confusão, curva por época, melhor época,
+  seed e identificações exatas do split.
+- **Arquivos locais:** `reports/faltando_neural/models/experiment_v2_*/`
+  com `faltando_cnn_v2_candidate.pt`,
+  `training_report_v2.json`,
+  `holdout_predictions_v2.json`,
+  `training_summary_v2.txt`.
+- O split seed 42 permite comparar o mesmo conjunto de desenvolvimento
+  com a v1, mas **esse conjunto já foi consultado e NÃO é teste cego**.
+  Nenhuma conclusão de generalização pode ser tirada sem novos
+  eventos NG independentes. Não há NG TOP/MID reais na base.
+- O comando executa somente no Windows 10 novo. **Nunca** conecta
+  a CNN à produção, roteador KNN, XP ou gate de startup;
+  checkpoint possui `experimental=True` e
+  `production_approved=False`. v1 preservada.
+
+**Comando da próxima execução no computador do ODIN:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.scripts.train_faltando_cnn_v2 --epochs 25 --batch-size 4 --size 160 --device cpu
+```
+
+Depois enviar `training_report_v2.json`,
+`holdout_predictions_v2.json` e `training_summary_v2.txt`
+para comparação caso a caso (principalmente R475).
+A execução precisa ocorrer na máquina com o staging real:
+o GitHub só testou dados sintéticos. O modelo não pode
+liberar NG automático sem testes cegos novos.
+
+---
+
+
 ## 08/10/2026 — CNN FALTANDO: treinamento experimental com dataset confirmado
 
 **Decisão do operador:** confiar nos rótulos locais de OK/NG e iniciar treinamento

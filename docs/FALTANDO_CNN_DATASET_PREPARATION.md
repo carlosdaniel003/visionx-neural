@@ -156,3 +156,77 @@ independentes, o treino falha sem salvar modelo.
   Nenhuma alteração em `main.py`, no roteador KNN, no modo Produção ou
   na regressão de startup. Substituição de motores e automação de decisão
   serão etapas posteriores após avaliar os resultados reais.
+
+
+## Resultado real da v1 — 08/10/2026
+
+O operador treinou a v1 com `python -m src.scripts.train_faltando_cnn
+--epochs 25 --batch-size 4 --size 160 --device cpu` e enviou
+`training_report.json` e `training_summary.txt`. A execução local
+resultou em:
+
+| Medida | Resultado |
+|---|---:|
+| Capturas preparadas | 117 |
+| Eventos (25 trincas OK + 42 monoimagem) | 67 (57 OK / 10 NG) |
+| Treinamento | 54 (46 OK / 8 NG) |
+| Desenvolvimento (holdout) | 13 (11 OK / 2 NG) |
+| NG detectados (TP) | 0 |
+| NG erroneamente considerados OK (FN) | **2** |
+| OK corretamente considerados OK (TN) | 11 |
+| OK erroneamente considerados NG (FP) | 0 |
+| Acurácia | 84,62% |
+| Recall NG | **0%** |
+| Perda treino época 1 → 25 | 1,337919 → 0,000206 |
+| Perda no holdout época 25 | 0,637349 |
+
+A rede respondeu **OK para todos os 13 eventos** e errou os dois NG
+do holdout: `2026-10-01_07-53-17-716_FALTANDO.png` e
+`2026-10-01_09-53-18-089_FALTANDO.png`. Ambos possuem componente
+OCR aproximado R475; esse detalhe sugere dificuldade de generalizar
+com poucos NG, sem provar um único defeito de mecanismo universal.
+Todas as 25 épocas obtiveram **TP_NG=0** na validação.
+Os 84,62% expressam prevalência OK, não detecção confiável.
+O declínio quase completo de perda apenas no treinamento
+é compatível com sobreajuste.
+
+**v1: REPROVADA para julgamento automático de FALTANDO.**
+Nenhum motor de Produção foi substituído.
+
+## CNN FALTANDO v2 — mudanças e comando
+
+A v2 implementa uma CNN comparativa de duas escalas:
+imagem integral e recorte central de 70% redimensionado,
+preservando mais detalhes da região de inspeção. Cada uma recebe
+RGB de gabarito, RGB de teste e diferença absoluta dos dois.
+Mantém SIDE/TOP/MID agrupados, respeitando máscara de luz
+para imagens legadas SIDE. O modelo utiliza mapas espaciais 2×2
+antes da cabeça de classificação, sampler OK/NG balanceado,
+perda auxiliar por iluminação, dropout e early stopping.
+Não introduz regras físicas de decisão nem usa a memória KNN.
+
+A v2 registra **probabilidades por evento e por iluminação**,
+erros FP/FN e melhor época. O mesmo split (seed 42) permite
+comparação de desenvolvimento com a v1; **não é teste cego**,
+pois já vimos as falhas da v1 nesse conjunto. Para validar
+generalização serão necessários eventos inéditos, especialmente
+NG reais em TOP/MID, antes de qualquer substituição operacional.
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.scripts.train_faltando_cnn_v2 --epochs 25 --batch-size 4 --size 160 --device cpu
+```
+
+Salva localmente em `reports/faltando_neural/models/experiment_v2_*/`:
+
+- `faltando_cnn_v2_candidate.pt` — pesos **candidatos**;
+- `training_report_v2.json` — treino, split e resultados;
+- `holdout_predictions_v2.json` — cada caso, verdade,
+  probabilidade NG, iluminação e erro;
+- `training_summary_v2.txt` — resumo para leitura humana.
+
+**Ainda não executado nos dados reais nesta etapa.**
+A v2 permanece desligada no ODIN, com
+`production_approved=False`. Enviar os três relatórios
+para avaliação antes de discutir roteador KNN/CNN.
