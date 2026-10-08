@@ -30,6 +30,12 @@ Evento de regressão: `2eac69d849b04b5bb205ec191d9f130c`.
 intermediária, conflito de ausência física TOP versus SIDE/MID e três
 memórias OK, ausência real/sem suporte contextual e isolamento por categoria.
 
+**Consistência do debug:** a fusão registra
+`decision_trace.raw_hard_missing_evidence=True` para o sinal local TOP e
+`decision_trace.hard_missing_evidence=False` quando a contradição
+multilight coloca a peça em revisão. O payload final exibe ausência
+**bruta** separada da **efetiva**, sem apagar a evidência TOP.
+
 **Limitação explícita:** o operador informou que a peça está OK, mas esta
 proteção inicialmente devolve `REVISÃO OBRIGATÓRIA`, não um OK automático.
 Para automatizar OK de maneira segura será necessário reproduzir a decisão

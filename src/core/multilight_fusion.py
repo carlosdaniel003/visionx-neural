@@ -392,9 +392,21 @@ def fuse_multilight(
     if not isinstance(trace, dict):
         trace = {}
         detail["decision_trace"] = trace
+    # A TOP original permanece no debug bruto; a fusão de revisão não
+    # concede autoridade final ao hard missing isolado.
+    raw_hard_missing = bool(
+        trace.get("raw_hard_missing_evidence", False)
+        or trace.get("hard_missing_evidence", False)
+        or detail.get("missing_hard_absence", False)
+    )
     trace.update(
         {
             "schema": "visionx.multilight_decision.v1",
+            "raw_hard_missing_evidence": raw_hard_missing,
+            "hard_missing_evidence": bool(
+                raw_hard_missing and not physical_disagreement
+            ),
+            "multilight_physical_disagreement": bool(physical_disagreement),
             "cutoff": GENERIC_DECISION_CUTOFF,
             "final_score": detail["final_score"],
             "confidence": dominant_analysis["confidence"],

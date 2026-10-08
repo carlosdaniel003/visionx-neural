@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 
 from src.core.multilight_fusion import fuse_multilight
+from src.services.capture_debug_payload import decision_record
 from src.services.image_archive_candidates import archive_image_candidates
 from src.ui.network_xp_debug import (
     format_multilight_debug_report,
@@ -101,6 +102,16 @@ class GeneralMultiLightFusionTests(unittest.TestCase):
         self.assertTrue(result["detail"]["multilight_physical_disagreement"])
         self.assertIn("Revisão humana", result["reason"])
         self.assertTrue(result["detail"]["missing_hard_absence"])
+        self.assertTrue(
+            result["detail"]["decision_trace"]["raw_hard_missing_evidence"]
+        )
+        self.assertFalse(
+            result["detail"]["decision_trace"]["hard_missing_evidence"]
+        )
+        debug = decision_record(result, {"category": "FALTANDO"})
+        self.assertTrue(debug["raw_hard_missing_evidence"])
+        self.assertFalse(debug["hard_missing_evidence"])
+        self.assertTrue(debug["operator_review_required"])
 
     def test_real_single_top_missing_remains_ng_when_context_does_not_corrob_or_memory_is_weak(self):
         for context, ok_similarity in ((0.15, 0.91), (0.77, 0.62)):

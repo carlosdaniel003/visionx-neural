@@ -206,8 +206,12 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         trace.get("hard_missing_contradicted_by_invariant_ok", False)
         or memory.get("hard_missing_contradicted_by_invariant_ok", False)
     )
+    # Em uma revisão multilight por conflito físico, a TOP permanece
+    # registrada como hard missing bruto, mas esse sinal não é a decisão
+    # efetiva da peça: uma inspeção humana ainda precisa resolver a dúvida.
     hard_missing = bool(
-        not hard_missing_contradicted_by_exact_ok
+        not detail.get("multilight_physical_disagreement", False)
+        and not hard_missing_contradicted_by_exact_ok
         and not hard_missing_contradicted_by_invariant_ok
         and (
             trace.get("hard_missing_evidence", False)
