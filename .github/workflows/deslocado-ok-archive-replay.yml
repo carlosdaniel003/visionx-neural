@@ -1,0 +1,29 @@
+name: DESLOCADO V2 Complete OK Archive Replay
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/scripts/replay_deslocado_ok_v2.py"
+      - "tests/test_deslocado_ok_archive_replay.py"
+      - ".github/workflows/deslocado-ok-archive-replay.yml"
+  workflow_dispatch:
+
+jobs:
+  strict-ok-replay:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU dependencies
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python -m pip install numpy opencv-python-headless
+      - name: Check syntax
+        run: python -m py_compile src/scripts/replay_deslocado_ok_v2.py tests/test_deslocado_ok_archive_replay.py
+      - name: Check complete archive, labels, no NG, production protected
+        run: python -m unittest tests.test_deslocado_ok_archive_replay -v
