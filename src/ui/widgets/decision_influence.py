@@ -45,7 +45,9 @@ class DecisionInfluenceWidget(QWidget):
     @staticmethod
     def _status_text(row: dict) -> str:
         if row["selected"]:
-            return "ORIGEM LOCAL" if row.get("multilight_local_origin", False) else "DOMINANTE"
+            if row.get("multilight_local_origin", False):
+                return "ORIGEM LOCAL"
+            return "DOMINANTE"
         if row.get("participates", False):
             return "PARTICIPA"
         if not row["active"]:
