@@ -9,6 +9,7 @@ Instalar depois de todos os demais wrappers MoE em main.py.
 from __future__ import annotations
 
 from hashlib import sha256
+import json
 import math
 from pathlib import Path
 
@@ -84,8 +85,41 @@ class FaltandoCNNLive:
         self._model = None
         self._metadata = {}
         self._error: tuple[str, str] | None = None
+        self._online_pointer_seen = False
+
+    def _refresh_live_pointer(self) -> None:
+        """Ativa atomicamente pesos online SOMENTE após o gate de regressão."""
+        from src.scripts.train_faltando_cnn_v2_online import POINTER_SCHEMA
+        root = Path(__file__).resolve().parents[3]
+        pointer = root / "reports" / "neural_online" / "live_active.json"
+        if not pointer.exists():
+            if self._online_pointer_seen:
+                raise ValueError("Ponteiro online anteriormente ativo desapareceu")
+            return
+        if pointer.is_symlink():
+            raise ValueError("Ponteiro online é link simbólico")
+        row = json.loads(pointer.read_text(encoding="utf-8"))
+        folder = (root / "reports" / "neural_online" / "checkpoints").resolve()
+        candidate = (root / row["checkpoint_relative_path"]).resolve()
+        digest = str(row.get("checkpoint_sha256", ""))
+        if (row.get("schema") != POINTER_SCHEMA
+                or row.get("category") != "FALTANDO"
+                or row.get("experimental") is not True
+                or row.get("production_approved") is not False
+                or folder not in candidate.parents
+                or candidate.suffix != ".pt"
+                or len(digest) != 64):
+            raise ValueError("Ponteiro online não passou no contrato de segurança")
+        self._online_pointer_seen = True
+        if candidate != self.path or digest != self.expected_sha256:
+            self.path = candidate
+            self.expected_sha256 = digest
+            self._model = None
+            self._metadata = {}
+            self._error = None
 
     def _load(self):
+        self._refresh_live_pointer()
         if self._model is not None:
             return self._model
         if self._error is not None:
