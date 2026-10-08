@@ -64,7 +64,7 @@ def install_memory_status_ui(control_panel_cls) -> None:
                         for mode in ("SIDE", "TOP", "MID")
                     ],
                 ]
-            tooltip = "\\n".join(tooltip_lines).replace("\\\\n", "\\n")
+            tooltip = "\n".join(tooltip_lines)
             # O label é visível sem passar o mouse; tooltip guarda os detalhes.
             if hasattr(self, "lbl_db_info"):
                 self.lbl_db_info.setText(route_labels.get(route, route))
