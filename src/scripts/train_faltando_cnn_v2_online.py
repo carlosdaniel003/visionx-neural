@@ -30,7 +30,7 @@ from src.scripts.train_faltando_cnn import load_events
 from src.scripts.train_faltando_cnn_v2 import (
     _focus_crop, _letterbox_rgb,
 )
-from src.services.neural_online_learning import ONLINE_SCHEMA
+from src.services.neural_online_learning import ONLINE_SCHEMA, _known_human_source
 
 ONLINE_MODEL_SCHEMA = "visionx.specialist_online_model.v1"
 POINTER_SCHEMA = "visionx.specialist_active_pointer.v1"
@@ -63,8 +63,10 @@ def _on_disk_event(json_path: Path, root: Path) -> dict:
             or row.get("category") != "FALTANDO"
             or row.get("label") not in ("OK", "NG")
             or not row.get("training_requested")
-            or row.get("human_source", "").strip().lower() in ("auto", "production_auto")):
+            or not _known_human_source(row.get("human_source", ""))):
         raise ValueError("Evento não possui rótulo humano treinável")
+    if row.get("event_id") != json_path.stem:
+        raise ValueError("Identidade do evento online diferente do arquivo")
     views = {}
     for item in row.get("images", []):
         mode = item.get("lighting_mode", "")
