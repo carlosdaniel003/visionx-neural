@@ -354,9 +354,9 @@ linhas interrompidas, moldura isolada, linha espúria e integração com
 
 ## Planejado — 08/10/2026 — gate de regressão visual antes da inicialização
 
-**Status em 08/10/2026:** **Etapa 1 — ferramenta de inventário
-implementada, aguardando análise do acervo real**. O gate bloqueante e o
-replay de classificação **ainda NÃO estão implementados**.
+**Status em 08/10/2026:** Etapa 1 concluída e aprovada (209 PNG);
+    Etapa 2 replay SIDE sem KNN implementada e aguardando diagnóstico real;
+    gate operacional bloqueante ainda NÃO implementado.
 
 Documento técnico completo (fonte única deste plano):
 [`docs/ODIN_STARTUP_REGRESSION_GATE.md`](docs/ODIN_STARTUP_REGRESSION_GATE.md).
@@ -420,10 +420,39 @@ reports/startup_regression/inventory_<data>.json
 reports/startup_regression/inventory_<data>.txt
 ```
 
-O inventário **não** executa OCR, especialistas, MoE, KNN ou valida OK/NG;
-essas responsabilidades são de etapas seguintes. O `main.py` e agente XP
-não foram alterados. **Ainda faltam os relatórios reais e a aprovação da
-Etapa 1**.
+O inventário **não** executa OCR, especialistas, MoE, KNN ou valida OK/NG.
+O usuário aprovou a Etapa 1 após o inventário real de 08/10/2026:
+**209 PNG válidos** (192 OK, 17 NG), incluindo **119 SIDE históricos**
+e **90 imagens multilight sem manifesto**. Nenhuma duplicação pixel a pixel.
+
+**Etapa 2 implementada (aguardando resultado real):** replay físico SIDE sem
+KNN/memória. A ordem do replay é screenshot → barras azul/vermelha →
+gabarito/teste completos → OCR → `detect_anomalies` →
+`EpicenterExtractor` → especialistas físicos/semânticos →
+fusão física, sem `memory_veto`, sem similaridade de vizinhos e sem
+usar os próprios arquivos arquivados como memória.
+
+```text
+src/services/startup_regression/inspection_runner.py
+src/services/startup_regression/side_replay.py
+tests/test_startup_regression_replay.py
+.github/workflows/startup-regression-side-replay.yml
+```
+
+Comando no PC da fábrica:
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.side_replay
+```
+
+Relatórios: `reports/startup_regression/side_replay_*.json` e
+`side_replay_*.txt`. O KNN não é carregado pelo executor e a operação
+normal mantém a memória intacta. Não há treinamento, alteração do dataset,
+escrita de PNGs em `public/debug_crop`, comunicação XP ou bloqueio
+de inicialização nesta etapa. A extensão de `INVERTIDO` também não
+pode consultar memória. Não avançar à Etapa 3 antes da revisão do
+relatório real e aprovação do usuário.
 
 **Regra de execução:** trabalhar em **uma etapa por vez**, avançando somente
 após aceite expresso do operador.
