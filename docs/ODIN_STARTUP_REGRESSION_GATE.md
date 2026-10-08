@@ -14,8 +14,8 @@ iluminação **SIDE**; novos eventos podem preservar **SIDE, TOP e MID** da
 mesma anomalia da AOI.
 
 **Objetivo:** em **toda inicialização**, antes de disponibilizar o painel
-operacional, reanalisar o acervo completo com o **mesmo código, especialistas,
-KNN/modelos e regras atualmente carregados**. O ODIN só pode entrar em
+operacional, reanalisar o acervo completo com o **mesmo código e especialistas
+físicos e modelos visuais, excluindo integralmente KNN e memória episódica**. O ODIN só pode entrar em
 operação após aprovação integral da regressão. Se houver erro, divergência,
 arquivo inválido ou cobertura incompleta, a entrada em operação é bloqueada,
 com diagnóstico acessível em uma janela restrita de validação.
