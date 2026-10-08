@@ -79,6 +79,27 @@ O projeto combina diferentes abordagens para aumentar a confiabilidade da análi
 
 ---
 
+## Planejado — validação obrigatória do acervo OK/NG na inicialização
+
+**Ainda não implementado.** A evolução planejada é reanalisar **todos** os
+screenshots de `public/ok_archive/` e `public/ng_archive/` antes de abrir
+o ODIN operacional. Evidências antigas sem sufixo serão tratadas como
+**SIDE monoimagem**, com comparação estrita ao rótulo confirmado; novos
+eventos SIDE/TOP/MID serão avaliados pela **fusão final única** da peça,
+não pela exigência de que as três luzes coincidam individualmente.
+
+O gate deverá bloquear a operação em caso de regressão, revisão,
+imagem inválida ou evento incompleto, apresentar relatório de diagnóstico
+e nunca comandar a AOI ou modificar o dataset durante o replay. Eventos
+multilight novos exigirão manifesto com `event_id`, OCR compartilhado,
+rótulo e vínculo confiável das três imagens. A implementação começará
+por inventário/qualificação do acervo real e será executada em etapas.
+
+**Especificação e checklist de implementação:**
+[`docs/ODIN_STARTUP_REGRESSION_GATE.md`](docs/ODIN_STARTUP_REGRESSION_GATE.md).
+
+---
+
 ## Arquitetura planejada
 
 O projeto foi organizado em quatro pilares principais:
