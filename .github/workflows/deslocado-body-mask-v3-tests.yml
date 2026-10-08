@@ -6,6 +6,7 @@ on:
     paths:
       - "src/services/deslocado_body_masks_v3.py"
       - "src/scripts/prepare_deslocado_body_masks_v3.py"
+      - "src/scripts/review_deslocado_body_masks_v3.py"
       - "tests/test_deslocado_body_masks_v3.py"
       - ".github/workflows/deslocado-body-mask-v3-tests.yml"
   workflow_dispatch:
@@ -26,5 +27,5 @@ jobs:
           python -m pip install numpy opencv-python-headless
       - name: Compile and validate mask review
         run: |
-          python -m py_compile src/services/deslocado_body_masks_v3.py src/scripts/prepare_deslocado_body_masks_v3.py tests/test_deslocado_body_masks_v3.py
+          python -m py_compile src/services/deslocado_body_masks_v3.py src/scripts/prepare_deslocado_body_masks_v3.py src/scripts/review_deslocado_body_masks_v3.py tests/test_deslocado_body_masks_v3.py
           python -m unittest tests.test_deslocado_body_masks_v3 -v
