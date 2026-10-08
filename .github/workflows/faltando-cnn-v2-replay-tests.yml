@@ -1,0 +1,29 @@
+name: CNN FALTANDO V2 Known Archive Replay
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/scripts/replay_faltando_cnn_v2.py"
+      - "tests/test_faltando_cnn_v2_replay.py"
+      - ".github/workflows/faltando-cnn-v2-replay-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  known-archive-replay:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python -m pip install numpy opencv-python-headless
+      - name: Check Python syntax
+        run: python -m py_compile src/scripts/replay_faltando_cnn_v2.py tests/test_faltando_cnn_v2_replay.py
+      - name: Test all archive frame coverage and no production changes
+        run: python -m unittest tests.test_faltando_cnn_v2_replay -v
