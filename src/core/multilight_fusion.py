@@ -28,6 +28,19 @@ GENERIC_DECISION_CUTOFF = 0.50
 MISSING_INTERLIGHT_OK_MIN_SIMILARITY = 0.88
 MISSING_INTERLIGHT_MIN_CONTEXT_SIMILARITY = 0.70
 MISSING_INTERLIGHT_MAX_GLOBAL_BACKGROUND = 0.03
+# Liberação OK exige testemunha física independente e recorrência visual
+# contextual na mesma categoria e iluminação; somente KNN não basta.
+MISSING_VERIFIED_OK_MIN_SIMILARITY = 0.90
+MISSING_VERIFIED_OK_SUSPECT_SIMILARITY = 0.92
+MISSING_VERIFIED_OK_MIN_MARGIN = 0.08
+MISSING_VERIFIED_OK_MIN_FULL_FRAME = 0.95
+MISSING_VERIFIED_OK_MIN_CONTEXT = 0.94
+MISSING_VERIFIED_OK_MIN_EPICENTER = 0.90
+MISSING_VERIFIED_OK_MIN_BODY_COARSE = 0.70
+MISSING_VERIFIED_OK_MIN_BODY_DICE = 0.84
+MISSING_VERIFIED_OK_MIN_CLEAR_SIMILARITY = 0.93
+MISSING_VERIFIED_OK_MAX_CLEAR_SCORE = 0.20
+
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -187,6 +200,131 @@ def _isolated_missing_disagreement(
     return bool(own_context or (context_witness and clear_witness))
 
 
+def _verified_missing_ok_witnesses(
+    category: str,
+    source: dict[str, dict],
+    evidence: dict[str, dict],
+) -> dict:
+    """Libera OK somente com corpo preservado, outra luz limpa e memória contextual.
+
+    A decisão de ausência física bruta permanece no debug. Um match KNN
+    isolado, mesmo alto, jamais autoriza esta rota. São exigidos três
+    tipos de evidência de iluminações diferentes.
+    """
+    if category != "FALTANDO":
+        return {}
+
+    positives = [
+        mode for mode in LIGHTING_ORDER if evidence[mode]["local_is_defect"]
+    ]
+    if len(positives) != 1:
+        return {}
+    suspect_mode = positives[0]
+    suspect = _detail(source[suspect_mode])
+    if not (
+        evidence[suspect_mode]["strong_positive"]
+        and evidence[suspect_mode]["dominant_engine"] == "missing"
+        and bool(suspect.get("missing_hard_absence", False))
+    ):
+        return {}
+
+    # As memórias devem ser da categoria/iluminação correta. A comparação
+    # com o próprio NG mais próximo não pode mostrar empate relevante.
+    if any(
+        evidence[mode]["local_review_required"]
+        or evidence[mode]["memory_label"].strip().upper() != "OK"
+        or evidence[mode]["memory_similarity"] < MISSING_VERIFIED_OK_MIN_SIMILARITY
+        or str(_detail(source[mode]).get("memory_lighting", "")).upper() != mode
+        or str(_detail(source[mode]).get("memory_category", "")).upper() != "FALTANDO"
+        for mode in LIGHTING_ORDER
+    ):
+        return {}
+    if (
+        evidence[suspect_mode]["memory_similarity"]
+        < MISSING_VERIFIED_OK_SUSPECT_SIMILARITY
+        or _safe_float(suspect.get("best_match_margin", 0.0))
+        < MISSING_VERIFIED_OK_MIN_MARGIN
+    ):
+        return {}
+
+    # Um exemplo OK já salvo é corroborador, não atalho: exigir
+    # similaridade de imagem completa, contexto e epicentro separadamente.
+    hypothesis = suspect.get("hypotheses", {}).get("OK", {})
+    if not isinstance(hypothesis, dict) or not hypothesis.get("available", False):
+        return {}
+    breakdown = hypothesis.get("similarity_breakdown", {})
+    if not isinstance(breakdown, dict):
+        return {}
+    previous = breakdown.get("previous", {})
+    if not isinstance(previous, dict):
+        return {}
+    if (
+        _safe_float(breakdown.get("full_frame_similarity", 0.0))
+        < MISSING_VERIFIED_OK_MIN_FULL_FRAME
+        or _safe_float(previous.get("context_similarity", 0.0))
+        < MISSING_VERIFIED_OK_MIN_CONTEXT
+        or _safe_float(previous.get("epicenter_similarity", 0.0))
+        < MISSING_VERIFIED_OK_MIN_EPICENTER
+    ):
+        return {}
+
+    other_modes = [mode for mode in LIGHTING_ORDER if mode != suspect_mode]
+    if any(
+        evidence[mode]["local_is_defect"]
+        or evidence[mode]["final_score"] > MISSING_VERIFIED_OK_MAX_CLEAR_SCORE
+        for mode in other_modes
+    ):
+        return {}
+
+    def physical_body_confirmed(mode: str) -> bool:
+        detail = _detail(source[mode])
+        return bool(
+            detail.get("fusion_rule") == "hard_missing_invariant_presence_ok_witness"
+            and detail.get("missing_component_body_present", False)
+            and detail.get("missing_global_envelope_invariant_support", False)
+            and _safe_float(detail.get("missing_body_coarse_similarity", 0.0))
+            >= MISSING_VERIFIED_OK_MIN_BODY_COARSE
+            and _safe_float(detail.get("missing_body_silhouette_dice", 0.0))
+            >= MISSING_VERIFIED_OK_MIN_BODY_DICE
+            and _safe_float(
+                detail.get("missing_global_envelope_background_exposure", 1.0), 1.0
+            ) <= MISSING_INTERLIGHT_MAX_GLOBAL_BACKGROUND
+            and detail.get("roi_consistent", False)
+        )
+
+    def physically_clear(mode: str) -> bool:
+        detail = _detail(source[mode])
+        return bool(
+            evidence[mode]["memory_similarity"]
+            >= MISSING_VERIFIED_OK_MIN_CLEAR_SIMILARITY
+            and detail.get("missing_active", False)
+            and not detail.get("missing_is_defect", True)
+            and not detail.get("missing_hard_absence", True)
+            and detail.get("missing_global_envelope_support", False)
+            and _safe_float(detail.get("missing_score", 1.0), 1.0)
+            <= _safe_float(detail.get("missing_tolerance", 0.0))
+            and _safe_float(
+                detail.get("missing_global_envelope_background_exposure", 1.0), 1.0
+            ) <= MISSING_INTERLIGHT_MAX_GLOBAL_BACKGROUND
+        )
+
+    for body_mode in other_modes:
+        clear_mode = next(mode for mode in other_modes if mode != body_mode)
+        if physical_body_confirmed(body_mode) and physically_clear(clear_mode):
+            return {
+                "suspect_mode": suspect_mode,
+                "body_mode": body_mode,
+                "clear_mode": clear_mode,
+                "suspect_memory_similarity": evidence[suspect_mode]["memory_similarity"],
+                "full_frame_similarity": _safe_float(
+                    breakdown["full_frame_similarity"]
+                ),
+                "context_similarity": _safe_float(previous["context_similarity"]),
+                "epicenter_similarity": _safe_float(previous["epicenter_similarity"]),
+            }
+    return {}
+
+
 def _dominant_mode(evidence: dict[str, dict]) -> str:
     return max(
         LIGHTING_ORDER,
@@ -290,7 +428,16 @@ def fuse_multilight(
     physical_disagreement = _isolated_missing_disagreement(
         canonical_category, source, evidence,
     )
-    if physical_disagreement:
+    verified_presence = (
+        _verified_missing_ok_witnesses(canonical_category, source, evidence)
+        if physical_disagreement else {}
+    )
+    if verified_presence:
+        verdict = "FALHA FALSA"
+        is_defect = False
+        review_required = False
+        rule = "multilight_missing_verified_presence"
+    elif physical_disagreement:
         verdict = "REVISÃO OBRIGATÓRIA"
         is_defect = False
         review_required = True
@@ -333,6 +480,15 @@ def fuse_multilight(
     if review_required:
         confidence = 0.50
         final_score = 0.50
+    elif verified_presence:
+        confidence = min(confidences)
+        # O score NG bruto da iluminação contradita permanece na auditoria,
+        # mas não pode ser apresentado como score final da peça OK.
+        final_score = max(
+            evidence[mode]["final_score"]
+            for mode in LIGHTING_ORDER
+            if mode != verified_presence["suspect_mode"]
+        )
     elif is_defect:
         confidence = max(confidences)
         final_score = strongest_signal
@@ -355,7 +511,19 @@ def fuse_multilight(
             _summary(evidence),
         )
     )
-    if physical_disagreement:
+    if verified_presence:
+        reason += (
+            " | {0} indicou ausência local, mas {1} confirmou corpo "
+            "e presença invariável, {2} não detectou ausência; "
+            "há correspondente OK contextual validado na iluminação {0}. "
+            "Ausência bruta mantida somente para auditoria."
+            .format(
+                verified_presence["suspect_mode"],
+                verified_presence["body_mode"],
+                verified_presence["clear_mode"],
+            )
+        )
+    elif physical_disagreement:
         reason += (
             f" | {positive_modes[0]} sinalizou ausência física isolada; "
             "outras iluminações não confirmaram, três memórias OK e "
@@ -394,6 +562,8 @@ def fuse_multilight(
             "multilight_evidence": deepcopy(evidence),
             "multilight_memory_role": "per_lighting_audit",
             "multilight_physical_disagreement": bool(physical_disagreement),
+            "multilight_missing_verified_presence": bool(verified_presence),
+            "multilight_missing_presence_witnesses": deepcopy(verified_presence),
             "operator_review_required": bool(review_required),
             "eligible_for_final_decision": True,
         }
@@ -418,6 +588,8 @@ def fuse_multilight(
                 raw_hard_missing and not physical_disagreement
             ),
             "multilight_physical_disagreement": bool(physical_disagreement),
+            "multilight_missing_verified_presence": bool(verified_presence),
+            "multilight_missing_presence_witnesses": deepcopy(verified_presence),
             "multilight_dominant_mode": dominant_mode,
             "multilight_dominant_local_engine": evidence[dominant_mode]["dominant_engine"],
             "cutoff": GENERIC_DECISION_CUTOFF,
