@@ -74,9 +74,10 @@ class VerifiedKNNMemory:
         board = _clean(info.get("board"))
         parts = _clean(info.get("parts"))
         light = canonical_memory_lighting(info.get("lighting_mode", ""))
+        value = _clean(info.get("value", ""))
         if not all((category, board, parts, reference_hash, test_hash)):
             return None
-        return category, light, board, parts, reference_hash, test_hash
+        return category, light, board, parts, value, reference_hash, test_hash
 
     @staticmethod
     def _entry(record: dict) -> tuple[tuple, dict] | None:
@@ -89,7 +90,20 @@ class VerifiedKNNMemory:
         if data.get("schema") != "visionx.memory.v3":
             return None
         label = str(data.get("label", "")).strip().upper()
-        operator = str((data.get("decision") or {}).get("operator_label", "")).strip().upper()
+        decision = data.get("decision") or {}
+        if not isinstance(decision, dict):
+            return None
+        operator = str(decision.get("operator_label", "")).strip().upper()
+        source = str(decision.get("source", "")).strip().lower()
+        # Um OK automático jamais pode se transformar em memória humana
+        # capaz de dispensar a CNN/motores no próximo ciclo.
+        manual = (
+            source in {"button", "xp_keyboard", "keyboard", "manual",
+                       "operator", "physical_keyboard", "human"}
+            or source.startswith("operator_")
+        )
+        if not manual:
+            return None
         if (label not in ("OK", "NG")
                 or operator != label
                 or str(record.get("label", "")).strip().upper() != label
