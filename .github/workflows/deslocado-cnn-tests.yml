@@ -1,0 +1,31 @@
+name: DESLOCADO CNN Dataset and Proxy Training Tests
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/services/deslocado_neural_dataset.py"
+      - "src/core/neural/deslocado_cnn.py"
+      - "src/scripts/train_deslocado_cnn.py"
+      - "tests/test_deslocado_cnn.py"
+      - ".github/workflows/deslocado-cnn-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  deslocado-dataset:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU ML requirements
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python -m pip install numpy opencv-python-headless
+      - name: Syntax check
+        run: python -m py_compile src/services/deslocado_neural_dataset.py src/core/neural/deslocado_cnn.py src/scripts/train_deslocado_cnn.py tests/test_deslocado_cnn.py
+      - name: Test extraction and proxy CNN training
+        run: python -m unittest tests.test_deslocado_cnn -v
