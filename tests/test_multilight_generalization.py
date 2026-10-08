@@ -155,6 +155,65 @@ class GeneralMultiLightFusionTests(unittest.TestCase):
         self.assertEqual(result["verdict"], "DEFEITO REAL")
         self.assertEqual(result["detail"]["fusion_rule"], "multilight_strong_single")
 
+    def test_event_691e95_side_false_hard_missing_has_independent_witnesses(self):
+        analyses = {
+            "SIDE": _analysis("SIDE", final_score=1.0, physical_score=1.0, is_defect=True),
+            "TOP": _analysis("TOP", final_score=0.0, physical_score=1.0, is_defect=False),
+            "MID": _analysis("MID", final_score=0.0, physical_score=0.0, is_defect=False),
+        }
+        for mode, sim in (("SIDE", .9124937), ("TOP", .9259532), ("MID", .9414898)):
+            analyses[mode]["detail"].update({"best_match_label": "OK", "best_similarity": sim})
+        analyses["SIDE"]["detail"].update({
+            "dominant_engine": "missing",
+            "missing_hard_absence": True,
+            "missing_global_envelope_coarse_similarity": .528,
+            "missing_global_envelope_background_exposure": .2156,
+        })
+        analyses["TOP"]["detail"].update({
+            "dominant_engine": "knn", "missing_hard_absence": False,
+            "missing_global_envelope_support": True,
+            "missing_active": True, "missing_is_defect": True,
+            "missing_score": 1.0, "missing_tolerance": .36,
+        })
+        analyses["MID"]["detail"].update({
+            "dominant_engine": "knn", "missing_hard_absence": False,
+            "missing_active": True, "missing_is_defect": False,
+            "missing_score": .12, "missing_tolerance": .36,
+        })
+        fused = fuse_multilight(analyses, "FALTANDO")
+        self.assertEqual(fused["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertFalse(fused["is_defect"])
+        self.assertTrue(fused["production_review_required"])
+        self.assertEqual(fused["detail"]["fusion_rule"], "multilight_missing_physical_disagreement")
+        self.assertEqual(fused["detail"]["multilight_dominant_mode"], "SIDE")
+        self.assertEqual(fused["detail"]["multilight_dominant_local_engine"], "missing")
+        self.assertTrue(fused["detail"]["decision_trace"]["raw_hard_missing_evidence"])
+        self.assertFalse(fused["detail"]["decision_trace"]["hard_missing_evidence"])
+        self.assertEqual(fused["detail"]["decision_trace"]["weights"], {"physical": 0.0, "knn": 0.0})
+        self.assertIn("SIDE sinalizou", fused["reason"])
+
+    def test_side_hard_missing_without_independent_witness_stays_defect(self):
+        analyses = {
+            "SIDE": _analysis("SIDE", final_score=1., physical_score=1., is_defect=True),
+            "TOP": _analysis("TOP", final_score=0., physical_score=.9, is_defect=False),
+            "MID": _analysis("MID", final_score=0., physical_score=.02, is_defect=False),
+        }
+        for mode in analyses:
+            analyses[mode]["detail"].update({"best_match_label": "OK", "best_similarity": .93})
+        analyses["SIDE"]["detail"].update({
+            "dominant_engine": "missing", "missing_hard_absence": True,
+        })
+        analyses["TOP"]["detail"].update({
+            "missing_global_envelope_support": True, "missing_hard_absence": False,
+        })
+        analyses["MID"]["detail"].update({
+            "missing_active": True, "missing_is_defect": True,
+            "missing_score": .87, "missing_tolerance": .36,
+        })
+        fused = fuse_multilight(analyses, "FALTANDO")
+        self.assertEqual(fused["verdict"], "DEFEITO REAL")
+        self.assertEqual(fused["detail"]["fusion_rule"], "multilight_strong_single")
+
     def test_single_moderate_positive_requires_review(self):
         analyses = {
             "SIDE": _analysis(
