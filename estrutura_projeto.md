@@ -1,5 +1,91 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — CNN FALTANDO v2 integrada à análise normal (com revisão humana em Produção)
+
+**Replay real recebido da fábrica:** `archive_replay_v2.json` e
+`archive_replay_v2.txt`, gerados às **16:27:54 UTC** no Windows 10.
+O checkpoint testado foi exatamente
+`reports/faltando_neural/models/experiment_v2_20261008T155311_256670Z/faltando_cnn_v2_candidate.pt`
+(`sha256=6e4a31e8826d7b2afa18fbecb579a4d8979067713faa032d329f37f54729b599`,
+**época 18**). O manifesto utilizado manteve SHA-256
+`049c351fa19f8afdec5dbcc23df1dbe34c0fa1a14768e268b609fe0963473245`.
+
+**Resultado comprovado no acervo conhecido** (inferência pura, KNN desligado):
+117/117 imagens corretas; 67/67 eventos corretos; nenhum falso OK,
+nenhum falso NG. Breakdown:
+- SIDE legado: 42/42 (32 OK, 10 NG).
+- SIDE atual: 25/25 OK.
+- TOP atual: 25/25 OK.
+- MID atual: 25/25 OK.
+- Resultado por evento: 57 OK e 10 NG corretamente identificados.
+- `passed_known_archive_regression=true`; os originais não foram modificados.
+
+**Limite:** o replay é **in-sample/known-archive**, não teste cego.
+Oito NG SIDE usados em treinamento, dois NG SIDE no desenvolvimento
+anterior da v1. **Não existe nenhum NG real TOP/MID**.
+Resultado de 100% NÃO comprova generalização para novas ausências.
+Scores de sigmoid são **não calibrados**.
+
+**Integração autorizada e implementada no código normal:**
+
+- `src/core/neural/faltando_live.py`: carregamento preguiçoso
+  (somente quando surge FALTANDO), CPU, checkpoint fixado pelo
+  caminho e SHA-256 do replay, `torch.load(weights_only=True)`,
+  schema, metadados e forma de entrada verificados. Usa o mesmo
+  pré-processamento da v2 (gabarito/teste; imagem total e zoom central
+  70%; SIDE/TOP/MID). Não retreina.
+- Hook instalado em `main.py` **após os demais wrappers de
+  `MoEOrchestrator.inspect`**. `FALTANDO`/`MISSING`
+  usa **somente CNN v2** para a decisão local: não executa
+  MissingExpert/Shift/Silk/SSIM/Semantic nem consulta KNN.
+  As outras categorias continuam exatamente na rota anterior.
+  `_replay_without_memory` e o PhysicalOnlyOrchestrator do runner
+  continuam fisicamente isolados da nova rota.
+- A operação multilight existente executa SIDE, TOP, MID e
+  `fuse_multilight` normalmente, reutilizando a evidência
+  CNN de cada luz. Um evento com uma luz NG forte continua NG.
+- Entradas inválidas, luz ausente, pesos ausentes, alterados ou
+  erro de carregamento -> `REVISÃO OBRIGATÓRIA`, **nunca
+  `FALHA FALSA`**.
+  Scores NG intermediários (`0,10 < score < 0,90`) também forçam
+  revisão. Esses limiares NÃO são calibração certificada.
+- A interface `src/ui/control_panel.py` exibe o veredito CNN
+  mesmo sem `bounding_box` físico e registra a trilha CNN no
+  `detail`/`decision_trace`.
+- **Trava temporária de segurança no Modo Produção**:
+  `src/ui/production_confidence_gate.py` converte toda proposta
+  `FALHA FALSA` proveniente desta CNN **experimental**
+  para `REVISÃO OBRIGATÓRIA` na política produtiva,
+  exigindo o operador `0=OK/1=NG`; não transmite `0`
+  automaticamente à AOI. `DEFEITO REAL` já exigia operador.
+  Somente a decisão visual da categoria FALTANDO foi substituída,
+  não a política de liberação segura; demais categorias preservam
+  seu comportamento autônomo pré-existente.
+
+**Como atualizar na estação real:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python main.py
+```
+
+O `faltando_cnn_v2_candidate.pt` **não é versionado no GitHub**;
+deve continuar no mesmo caminho local indicado no replay. Ao
+testar, conferir `active_engines: faltando_cnn_v2.py`,
+`detail.cnn_v2_checkpoint_verified=True` e
+`detail.cnn_v2_status=INFERENCE_OK`. Se pesar modelo falhar,
+a resposta FALTANDO será revisão obrigatória e deverá ser
+investigada, nunca corrigida por aprovação automática.
+
+**Estado:** integração de decisão CNN implementada; **não afirmamos
+teste AOI em tempo real ainda**. Para qualquer futura liberação
+automática de OK com CNN exigir validação independente
+e controle da incerteza; dados conhecidos sozinhos não bastam.
+
+---
+
+
 ## 08/10/2026 — CNN FALTANDO v2: replay de 100% do acervo conhecido (implementado)
 
 **Pedido aprovado pelo operador:** reprocessar todos os screenshots de

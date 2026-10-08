@@ -333,3 +333,52 @@ O script:
 **Integração KNN→CNN FALTANDO no ODIN normal:** condicionada
 a analisar o relatório real. O replay em si não altera os
 motores da produção ou o gate de inicialização.
+
+## Replay completo aprovado e integração no ODIN — 08/10/2026
+
+O operador executou `python -m src.scripts.replay_faltando_cnn_v2`
+com os pesos v2 de **época 18**, hash SHA-256
+`6e4a31e8826d7b2afa18fbecb579a4d8979067713faa032d329f37f54729b599`.
+
+Resultados: **117/117 PNGs, 67/67 eventos**, com
+**10/10 NG e 107/107 OK**, zero FP e zero FN.
+SIDE legado: 32 OK + 10 NG; SIDE atual, TOP e MID:
+25 OK cada. Não existe NG real TOP/MID. São **casos
+conhecidos usados no desenvolvimento/treino**, portanto
+não é medida independente de segurança em produção.
+
+**Integração técnica publicada:**
+
+- `main.py` instala `install_faltando_cnn_live(MoEOrchestrator)`
+  depois de todos os wrappers físicos, substituindo a decisão
+  da categoria `FALTANDO/MISSING` pelo `FaltandoCNNV2`
+  diretamente. Nenhum KNN, MissingExpert ou SSIM é consultado
+  para esta categoria. Demais categorias continuam normais.
+- O checkpoint é lido somente quando necessário e tem caminho
+  e SHA fixados ao artefato verificado no replay; se estiver ausente,
+  incompatível ou danificado, a rede não libera peça: `REVISÃO OBRIGATÓRIA`.
+- A rede recebe referência, teste e foco central, como no treino.
+  SIDE legado e SIDE/TOP/MID passam pela máscara de iluminação.
+  A fusão multilight final conserva o mecanismo geral da AOI.
+- Telemetria registra score NG **não calibrado**, hash dos pesos,
+  iluminação e motor CNN no `detail`/`decision_trace`.
+- O `production_decision_policy` **bloqueia AUTO-OK** para decisões
+  desta CNN experimental até validação independente. O Modo Produção
+  permite revisão humana 0=OK/1=NG, sem alterar a automatização
+  das demais categorias. Respostas NG já exigiam operador.
+- A interface de inspeção mostra o veredito CNN mesmo quando o
+  motor não produz retângulos físicos de defeito.
+
+Para atualizar e abrir:
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python main.py
+```
+
+**Importante:** não criar `models/` no GitHub nem enviar pesos:
+o checkpoint reside na pasta local já existente. Confirmar no
+debug `cnn_v2_status=INFERENCE_OK` e
+`cnn_v2_checkpoint_verified=True`. Nenhum teste físico
+de AOI foi reportado após ativar esta integração.

@@ -79,6 +79,22 @@ O projeto combina diferentes abordagens para aumentar a confiabilidade da análi
 
 ---
 
+## CNN FALTANDO v2 na análise normal do ODIN
+
+O replay real da CNN v2 obteve **117/117 imagens (67/67 eventos) corretos**
+nos arquivos `ok_archive/ng_archive` sem KNN. A integração em
+`main.py` encaminha apenas `FALTANDO` diretamente para a
+**CNN v2 carregada do checkpoint local fixado por SHA-256**;
+as outras categorias mantêm o MoE anterior. SIDE/TOP/MID e
+capturas SIDE legadas são suportados. Sem checkpoint válido,
+a análise exige `REVISÃO OBRIGATÓRIA`. A produção **não
+envia OK automático** de resultado experimental CNN: o
+operador confirma 0/1, mesmo quando a rede diz FALHA FALSA.
+O replay de imagens usadas no treino **não é teste cego**.
+Mais detalhes em [documentação FALTANDO](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+
+---
+
 ## CNN FALTANDO v2 — replay de todos os arquivos OK/NG
 
 O comando `python -m src.scripts.replay_faltando_cnn_v2` executa

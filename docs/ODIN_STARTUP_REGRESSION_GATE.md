@@ -690,3 +690,15 @@ Seu sucesso integral significa somente não regressão nos casos
 conhecidos, porque o próprio acervo também alimentou o treino v2.
 A avaliação independente continua necessária para liberação
 automática de novas peças.
+
+### 08/10/2026 — CNN FALTANDO v2 na análise normal, gate geral independente
+
+O replay separado `replay_faltando_cnn_v2.py` processou com
+sucesso todas as **117 imagens FALTANDO / 67 eventos** conhecidos
+(10 NG, 107 OK; zero falhas). A CNN v2 foi incorporada ao fluxo
+normal da categoria FALTANDO, mas **não equivale à implementação do
+gate geral de regressão bloqueante na inicialização**.
+A regressão histórica passa, porém casos inéditos não foram
+testados. No Modo Produção, AUTO-OK por CNN experimental
+permanece bloqueado e requer operador. Nenhum comportamento
+de replay isolado foi alterado.
