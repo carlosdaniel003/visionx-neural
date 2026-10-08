@@ -5,7 +5,7 @@ from __future__ import annotations
 
 ENGINE_LABELS = {
     "adhesive": "Fluxo de adesivo",
-    "missing": "Presença do componente",
+    "missing": "Sinal de ausência",
     "inverted": "Assinatura da face",
     "structural": "Comparador estrutural",
     "semantic": "Debug semântico",
@@ -28,10 +28,17 @@ def decision_summary(trace: dict) -> str:
     final_score = float(trace.get("final_score", 0.0))
     cutoff = float(trace.get("cutoff", 0.45))
     confidence = float(trace.get("confidence", 0.5))
-    dominant = ENGINE_LABELS.get(
-        str(trace.get("dominant_engine", "none")),
-        "Nenhum motor dominante",
-    )
+    dominant_key = str(trace.get("dominant_engine", "none"))
+    if dominant_key == "multilight":
+        mode = str(trace.get("multilight_dominant_mode", "") or "").upper()
+        local = str(trace.get("multilight_dominant_local_engine", "") or "")
+        dominant = "Fusão multilight"
+        if mode:
+            dominant += f" • {mode}"
+        if local:
+            dominant += f" (origem: {ENGINE_LABELS.get(local, local)})"
+    else:
+        dominant = ENGINE_LABELS.get(dominant_key, "Nenhum motor dominante")
     return (
         f"Score final {final_score:.0%} • corte {cutoff:.0%} • "
         f"confiança {confidence:.0%} • dominante: {dominant}"
@@ -104,6 +111,9 @@ def influence_rows(trace: dict) -> list[dict]:
     knn_weight = float(weights.get("knn", 0.0))
     physical_score = float(trace.get("physical_score", 0.0))
     dominant_id = str(trace.get("dominant_engine", "none"))
+    multilight = dominant_id == "multilight"
+    if multilight:
+        dominant_id = str(trace.get("multilight_dominant_local_engine", ""))
     physical_source_id = _physical_source_id(trace, engines)
 
     rows = []
@@ -146,11 +156,9 @@ def influence_rows(trace: dict) -> list[dict]:
         rows.append(
             {
                 "id": engine_id,
-                "label": str(
-                    engine.get(
-                        "label",
-                        ENGINE_LABELS.get(engine_id, "Motor"),
-                    )
+                "label": (
+                    ENGINE_LABELS["missing"] if engine_id == "missing"
+                    else str(engine.get("label", ENGINE_LABELS.get(engine_id, "Motor")))
                 ),
                 "active": bool(engine.get("active", False)),
                 "triggered": bool(engine.get("triggered", False)),
@@ -160,6 +168,7 @@ def influence_rows(trace: dict) -> list[dict]:
                 "evidence_score": max(0.0, min(1.0, evidence_score)),
                 "evidence_threshold": max(0.0, min(1.0, evidence_threshold)),
                 "selected": engine_id == dominant_id,
+                "multilight_local_origin": bool(multilight and engine_id == dominant_id),
                 "participates": fusion_weight > 0.0,
                 "fusion_weight": max(0.0, min(1.0, fusion_weight)),
                 "score_contribution": score_contribution,
