@@ -2,7 +2,7 @@
 
 **Etapa atual:** preparação/qualificação offline, sem treinamento ou substituição de motores.
 **Branch:** central. **Máquina de execução:** Windows 10 do ODIN (não o XP).
-**Fonte:** \`public/ok_archive\` e \`public/ng_archive\`, somente leitura.
+**Fonte:** `public/ok_archive` e `public/ng_archive`, somente leitura.
 
 ## Inventário informado pelo operador (08/10/2026)
 
@@ -18,7 +18,7 @@
 
 Converter os screenshots AOI em pares gabarito/teste completos, sem treino e
 sem mudar os rótulos. Reutilizar exclusivamente
-\`ScreenMonitor.process_external_image\`, o extrator da produção. Proteger
+`ScreenMonitor.process_external_image`, o extrator da produção. Proteger
 a imagem inteira, evitar recortes limitados ao epicentro, e gerar relatório
 de qualificação humana antes de qualquer divisão treino/validação/teste.
 
@@ -27,24 +27,24 @@ ou API de Produção. A extração não executa julgamento e não publica modelo
 
 ### Comando
 
-\`\`\`powershell
+```powershell
 cd "C:\visionx-neural-main"
 git pull origin central
 python -m src.services.faltando_neural_dataset
-\`\`\`
+```
 
-Saída local sob \`reports/faltando_neural/run_<timestamp>/\`:
+Saída local sob `reports/faltando_neural/run_<timestamp>/`:
 
-- \`manifest.json\`: hash SHA-256 da origem, rótulo **provisório** da pasta,
+- `manifest.json`: hash SHA-256 da origem, rótulo **provisório** da pasta,
   iluminação, event_id se comprovado por manifesto real, status, pendências de
   qualificação, caminhos de imagens derivadas, tamanhos e OCR observado;
-- \`summary.txt\`: total extraído, falhas, vínculos de evento confirmados e
+- `summary.txt`: total extraído, falhas, vínculos de evento confirmados e
   candidatos por nome;
-- \`pairs/<label>_<hash>/reference.png\`: gabarito completo;
-- \`pairs/<label>_<hash>/test.png\`: teste completo.
+- `pairs/<label>_<hash>/reference.png`: gabarito completo;
+- `pairs/<label>_<hash>/test.png`: teste completo.
 
-Nenhum arquivo em \`public\` é editado, renomeado ou substituído. A pasta
-\`reports/faltando_neural\` é excluída do Git. A saída é um staging técnico,
+Nenhum arquivo em `public` é editado, renomeado ou substituído. A pasta
+`reports/faltando_neural` é excluída do Git. A saída é um staging técnico,
 **não** um dataset de treinamento aprovado.
 
 ## Qualificação obrigatória antes do treino
@@ -66,5 +66,5 @@ Nenhum arquivo em \`public\` é editado, renomeado ou substituído. A pasta
 - Somente depois da qualificação, definir splits por **evento/peça/lote**
   sem vazamento entre treino e avaliação.
 
-A execução informa \`training_ready=false\` em todos os candidatos. Esta
+A execução informa `training_ready=false` em todos os candidatos. Esta
 etapa não altera a decisão operacional nem o startup gate.

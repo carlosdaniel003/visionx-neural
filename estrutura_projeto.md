@@ -1,5 +1,49 @@
 # Estrutura do Projeto: VisionX Neural
 
+## Preparação neural FALTANDO — qualificação offline (08/10/2026)
+
+**Status da etapa:** preparador implementado, sem treinar/classificar automaticamente.
+Após contagem manual do operador em `public/ok_archive` e `public/ng_archive`:
+117 screenshots `FALTANDO`: **107 OK** (56 SIDE legados, 17 SIDE,
+17 TOP, 17 MID explícitos) e **10 NG SIDE legados**.
+Nenhum arquivo possui hash SHA-256 igual a outro e nenhum hash aparece em
+ambos os rótulos. Existem 17 trincas por nome, não 17 eventos comprovados.
+Os dez NG podem ser visões de poucos defeitos independentes; TOP/MID NG não
+possuem cobertura comprovada.
+
+**Implementação desta etapa:**
+
+- `src/services/faltando_neural_dataset.py`: usa o
+  `ScreenMonitor.process_external_image` operacional, sem interface nem
+  comandos XP, extrai gabarito e teste integrais de cada PNG, e gera pares
+  derivados isolados em `reports/faltando_neural/run_*/pairs/`.
+- `manifest.json` e `summary.txt`: hash e origem, rótulo provisório da
+  pasta, iluminação, OCR observado, dimensão do par, status, possível
+  `event_id` **somente via manifesto verificado** e pendências de
+  qualificação humana. Sufixo e horário viram apenas candidatos a grupo;
+  nunca são fundidos automaticamente em uma peça.
+- `tests/test_faltando_neural_dataset.py`: segurança de diretório, integridade
+  das fontes, formação de pares, falha de recorte e grupos multilight
+  não comprovados. Workflow Windows específico.
+- `.gitignore` exclui integralmente o staging derivado de `reports/faltando_neural/`.
+- Documentação operacional: `docs/FALTANDO_CNN_DATASET_PREPARATION.md`.
+
+**Executar no Windows 10 do ODIN:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.faltando_neural_dataset
+```
+
+**Não é treino e não habilita decisão neural:** `training_ready=False`
+para todos até validar rótulos humanos e contexto das peças. Não carrega KNN,
+não altera `public`, dataset, modelo, decisão ou startup gate. Próximas
+etapas só mediante novo OK do operador, depois de revisar o relatório real.
+
+---
+
+
 ## 08/10/2026 — Etapa 2: telemetria física do replay SIDE sem KNN
 
 **Contexto:** o primeiro replay real do acervo histórico SIDE teve

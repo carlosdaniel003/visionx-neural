@@ -79,6 +79,16 @@ O projeto combina diferentes abordagens para aumentar a confiabilidade da análi
 
 ---
 
+## Preparação offline do dataset para CNN FALTANDO
+
+Ferramenta disponível: `python -m src.services.faltando_neural_dataset`.
+Reusa a extração gabarito/teste da AOI e produz pares derivados e manifestos
+locais em `reports/faltando_neural/`. Não treina modelo, altera rótulos
+ou interfere na Produção. Antes do treino, todos os exemplos exigem revisão
+humana, incluindo a identidade dos eventos SIDE/TOP/MID. Consulte
+[Preparação CNN FALTANDO](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+
+---
 ## Planejado — validação obrigatória do acervo OK/NG na inicialização
 
 **Ainda não implementado.** A evolução planejada é reanalisar **todos** os

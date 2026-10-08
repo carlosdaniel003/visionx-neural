@@ -19,3 +19,5 @@ public/debug_crop
 public/debug_ocr
 # Relatórios locais do inventário de regressões ODIN
 reports/startup_regression/
+# Dados derivados e privados da preparação neural FALTANDO
+reports/faltando_neural/
