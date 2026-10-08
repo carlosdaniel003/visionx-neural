@@ -1,0 +1,30 @@
+name: CNN FALTANDO Experimental Training Tests
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/core/neural/faltando_cnn.py"
+      - "src/scripts/train_faltando_cnn.py"
+      - "tests/test_faltando_cnn_training.py"
+      - ".github/workflows/faltando-cnn-training-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  train-smoke:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU ML dependencies
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python -m pip install numpy opencv-python-headless
+      - name: Compile
+        run: python -m py_compile src/core/neural/faltando_cnn.py src/scripts/train_faltando_cnn.py tests/test_faltando_cnn_training.py
+      - name: Test neural forward, splitting and one training epoch
+        run: python -m unittest tests.test_faltando_cnn_training -v
