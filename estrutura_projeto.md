@@ -1,5 +1,52 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — evento C6~3 FALTANDO e Copiar imagens SIDE/TOP/MID
+
+**Evento:** `691e95c58dab47ed95a233bc08c563b6`, `C6~3`, operador
+identificou `FALHA FALSA`; ODIN classificou `DEFEITO REAL` (99%).
+
+**Debug:** epicentro SIDE correto `[279,56,190,166]`. A fusão
+`multilight_strong_single` foi decidida pela **SIDE**, que acusou
+`missing_hard_absence=True` com score `0.97815`, KNN OK `0.91249`.
+TOP foi OK com KNN OK `0.92595`, `missing_global_envelope_support=True`
+e `missing_hard_absence=False`. MID foi OK com KNN OK `0.94149`,
+`missing_is_defect=False`, `missing_score=0.12`.
+O mecanismo anterior tratava apenas TOP forte isolada, de modo que a
+contradição na SIDE era ignorada.
+
+**Implementado:** `src/core/multilight_fusion.py` trata evidência
+`missing_hard_absence` forte isolada de **SIDE, TOP ou MID** com três
+memórias OK fortes e testemunha de estrutura contextual independente
+de outra iluminação combinada a uma iluminação sem sinal físico local.
+Quando essas condições de contradição ocorrem, o veredito é
+`REVISÃO OBRIGATÓRIA` — nunca OK automático. Na ausência de contraprova
+independente, o NG forte prevalece, inclusive quando só uma luz consegue
+mostrar um defeito real. Não foram alterados pesos de treinamento nem
+limiares físicos do especialista.
+
+**Explicabilidade:** o debug e o cabeçalho passam a distinguir
+`dominant_engine=multilight` de `multilight_dominant_mode=SIDE` e
+`multilight_dominant_local_engine=missing`. No painel, o texto passa
+de "Nenhum motor dominante" para "Fusão multilight • SIDE (origem:
+Sinal de ausência)" e a barra de missing é chamada **Sinal de ausência**.
+Os 98% são score de **divergência/ausência**, não 98% de presença física;
+pesos locais da SIDE não são descritos como fórmula final multilight.
+
+**Clipboard:** o botão único `Copiar imagens SIDE/TOP/MID` indica quando
+existem os três frames completos do mesmo evento. O preview e a cópia
+usam a mesma composição SIDE | TOP | MID, identificada por título e sem
+perder resolução; a captura MSS/legada permanece monoimagem. Não há
+fallback silencioso para frame isolado durante evento multilight parcial.
+
+**Cobertura de teste:** cenário do evento SIDE NG/TOP+MID OK,
+ausência real sem testemunha corroborada, motor dominante no painel e
+clipboard + prévia multilight. O caso ainda requer validação operacional
+real na AOI; a correção elimina NG automático indevido por contradição,
+mas **não atesta ainda FALHA FALSA automática** sem uma prova de presença
+independente dos sinais de iluminação. O agente XP permanece inalterado.
+
+---
+
 ## Correções implementadas — epicentro profundo e contradição multilight FALTANDO (08/10/2026)
 
 **Estado:** implementação técnica; aguarda teste da AOI e confirmação do operador.
