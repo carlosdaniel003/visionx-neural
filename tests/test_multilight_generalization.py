@@ -191,6 +191,9 @@ class GeneralMultiLightFusionTests(unittest.TestCase):
             "top_memory_margin_too_low": lambda d: d["TOP"]["detail"].update(
                 best_match_margin=0.03
             ),
+            "top_malformed_hypotheses": lambda d: d["TOP"]["detail"].update(
+                hypotheses=None
+            ),
             "top_wrong_memory_light": lambda d: d["TOP"]["detail"].update(
                 memory_lighting="SIDE"
             ),
