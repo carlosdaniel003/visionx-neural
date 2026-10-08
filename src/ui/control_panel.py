@@ -559,7 +559,8 @@ class ControlPanel(QWidget):
                 "SIDE concluída. O resultado final será calculado após "
                 "as três iluminações."
             )
-        elif not analysis.get("all_boxes") and not analysis.get("is_defect"):
+        elif (not analysis.get("all_boxes") and not analysis.get("is_defect")
+              and not analysis.get("detail", {}).get("cnn_v2_active")):
              self.lbl_verdict.setText("NENHUMA ANOMALIA DETECTADA")
              self.lbl_verdict.setStyleSheet("color: #3fb950; font-size: 16px; font-weight: bold; border: none;")
              self.lbl_reason.setText("A análise matemática não encontrou diferenças críticas.")
