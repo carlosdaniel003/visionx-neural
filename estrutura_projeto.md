@@ -1,5 +1,76 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — CNN FALTANDO v2: primeiro treino real e diagnóstico
+
+**Arquivos recebidos:** `training_report_v2.json`,
+`holdout_predictions_v2.json`, `training_summary_v2.txt`
+da execução local em 08/10/2026 às 15:53:11 UTC.
+**Fonte:** mesmo `manifest.json` SHA-256
+`049c351fa19f8afdec5dbcc23df1dbe34c0fa1a14768e268b609fe0963473245`
+usado na v1.
+
+**Dataset:** 117 imagens / 67 eventos (57 OK, 10 NG). Split por
+componente + near-duplicate, 45 grupos: 54 eventos no treino
+(46 OK / 8 NG), 13 na validação de **desenvolvimento** (11 OK / 2 NG).
+A v2 executou 25 épocas na CPU, batch 4, entrada 160×160 e
+recorte central de foco 70%, sampler balanceado.
+**Não é teste cego**, pois estes 13 eventos já tinham sido
+analisados durante o desenvolvimento da v1.
+
+**Matriz de confusão na validação de desenvolvimento v2:**
+
+| Verdade | Predito OK | Predito NG |
+|---|---:|---:|
+| OK | 11 | 0 |
+| NG | 0 | **2** |
+
+Acurácia 13/13 = **100%**, recall NG 2/2 = **100%**,
+especificidade OK 11/11 = **100%**, FN_NG_as_OK = **0**.
+A CNN v1 havia previsto todos os 13 como OK: 11 OK corretos
+e dois NG perdidos (recall NG 0%). Os dois NG SIDE antes
+ignorados foram identificados agora:
+
+- `2026-10-01_07-53-17-716_FALTANDO.png`: score NG
+  **0,999785** (99,9785%).
+- `2026-10-01_09-53-18-089_FALTANDO.png`: score NG
+  **0,999793** (99,9793%).
+
+Para os 11 OK, os scores NG ficaram entre
+0,000016 e 0,000243. Esses são **scores de modelo não
+calibrados**, não uma precisão garantida de 99,9%.
+A curva apresentou NG recuperados desde a primeira época,
+mas inicialmente nove falsos NG (FP); na época 3,
+TP=2, TN=11, FP=0, FN=0 no mesmo conjunto de desenvolvimento.
+
+**Achado de engenharia no seletor de checkpoint:**
+o relatório original declarou `best_epoch=18` e perda
+de desenvolvimento **0,000099**, embora a época 23
+tenha atingido **0,000070** (época 25: 0,000081).
+Isso ocorreu porque o código misturava uma tolerância fixa
+`min_delta=0,0001` para early stopping com a seleção da
+melhor época. A correção `dd092fa` separou seleção
+por **menor perda efetiva** e tolerância apenas para
+`patience`; adicionou teste específico de pequenas
+melhorias. **O checkpoint local antigo continua com
+os pesos da época 18**, pois a correção só vale para
+novos treinamentos. A época 23 também acertou 13/13,
+mas só uma nova execução salvará seu estado como melhor.
+
+**Estado operacional:** CNN v2 permanece experimental
+(`production_approved=False`), sem tocar KNN,
+fusão física, modo Produção, comando XP, interface ou
+gate de regressão. Há somente **dois NG avaliados**,
+todos SIDE, e não há NG reais TOP/MID. O conjunto
+de desenvolvimento já foi usado para orientar a evolução
+da v1 para v2, portanto o resultado de 100% **não comprova
+generalização** nem autoriza liberação automática de peças.
+Próxima etapa técnica recomendada: **teste cego e shadow
+inference com novos casos reais independentes, incluindo
+NG TOP/MID**, sem retreinar nos casos destinados ao teste.
+
+---
+
+
 ## 08/10/2026 — CNN FALTANDO v1: treino real reprovado; evolução v2
 
 **Resultado real da CNN v1 recebido do operador:**

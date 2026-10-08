@@ -79,6 +79,20 @@ O projeto combina diferentes abordagens para aumentar a confiabilidade da análi
 
 ---
 
+## Resultado real da CNN FALTANDO v2 (08/10/2026)
+
+Na validação de **desenvolvimento** da v2, após 25 épocas na CPU,
+a rede acertou **13/13 eventos (11 OK e 2 NG)**, recuperando os dois
+NG SIDE que a v1 não detectava. O modelo original selecionou
+a época 18 como checkpoint; o código foi corrigido para escolher
+a menor perda efetiva nas próximas execuções.
+**Acurácia de 100% nesse conjunto reutilizado não constitui
+teste cego nem aprovação para produção**: ainda faltam
+NG TOP/MID e novos defeitos independentes.
+Ver [histórico e limitações](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+
+---
+
 ## CNN FALTANDO v2 — treinamento experimental e diagnóstico real v1
 
 O primeiro treinamento da v1 concluiu 25 épocas sobre 117 frames/67 eventos,

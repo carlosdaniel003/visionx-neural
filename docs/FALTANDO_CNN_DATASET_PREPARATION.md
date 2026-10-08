@@ -230,3 +230,47 @@ Salva localmente em `reports/faltando_neural/models/experiment_v2_*/`:
 A v2 permanece desligada no ODIN, com
 `production_approved=False`. Enviar os três relatórios
 para avaliação antes de discutir roteador KNN/CNN.
+
+## Resultados reais da v2 — 08/10/2026
+
+Arquivos recebidos: `training_report_v2.json`,
+`holdout_predictions_v2.json` e `training_summary_v2.txt`.
+Foram usados os **117 frames / 67 eventos** já existentes, com
+54 eventos no treino (46 OK / 8 NG) e 13 na validação de
+desenvolvimento (11 OK / 2 NG); 25 épocas, CPU, batch 4,
+imagem 160×160, recorte de foco 70%.
+
+| Indicador de desenvolvimento | CNN v1 | CNN v2 |
+|---|---:|---:|
+| NG detectados (TP) | 0/2 | **2/2** |
+| NG liberados como OK (FN) | 2 | **0** |
+| OK corretos (TN) | 11/11 | **11/11** |
+| Falsos NG em OK (FP) | 0 | 0 |
+| Acurácia | 84,62% | **100%** |
+| Recall NG | 0% | **100%** |
+
+Os dois NG SIDE recuperados: `2026-10-01_07-53-17-716_FALTANDO.png`
+(score NG 0,999785) e
+`2026-10-01_09-53-18-089_FALTANDO.png` (score NG 0,999793).
+Scores NG dos 11 OK ficaram entre 0,000016 e 0,000243.
+**Scores sigmoid não são probabilidades calibradas de precisão operacional.**
+
+**Achado da seleção de checkpoint:** o relatório original selecionou
+época 18 (loss 0,000099), embora a menor perda na curva
+seja na época 23 (0,000070). Causa: um limiar absoluto
+`0.0001` afetava tanto a escolha dos pesos quanto
+a paciência do early stopping. Correção publicada em
+`src/scripts/train_faltando_cnn_v2.py`: pesos agora
+seguem a menor perda registrada, mantendo tolerância
+somente para `patience`. O checkpoint local original
+continua sendo o da época 18; requer novo treino para
+reproduzir a seleção corrigida.
+
+**Atenção à evidência:** esses 13 eventos são o mesmo
+conjunto examinado durante a v1. O resultado é promissor,
+mas é **validação de desenvolvimento, não teste cego**.
+Apenas 2 NG SIDE foram avaliados e não há NG reais TOP/MID.
+Não habilitar CNN ou roteador KNN→CNN automaticamente por
+este resultado. Próxima etapa: teste independente com novos
+OK/NG reais, particularmente NG TOP/MID, idealmente shadow
+inference sem comandar produção.
