@@ -691,10 +691,11 @@ def copy_network_image_to_clipboard(panel) -> bool:
     from PyQt6.QtWidgets import QApplication
 
     QApplication.clipboard().setImage(qimage)
+    composite = _multilight_event_matches(panel)
     _set_button_feedback(
         getattr(panel, "btn_copy_network_image", None),
-        "Imagem copiada",
-        "Copiar imagem",
+        "3 imagens copiadas" if composite else "Imagem copiada",
+        "Copiar imagens SIDE/TOP/MID" if composite else "Copiar imagem",
     )
     return True
 
@@ -717,6 +718,20 @@ def sync_network_debug_controls(panel) -> None:
 
     if image_button is not None:
         try:
+            composite_ready = (
+                _multilight_event_matches(panel)
+                and multilight_copy_image_snapshot(panel) is not None
+            )
+            image_button.setText(
+                "Copiar imagens SIDE/TOP/MID" if composite_ready
+                else "Copiar imagem"
+            )
+            image_button.setToolTip(
+                "Copia uma única imagem com os três frames completos SIDE/TOP/MID."
+                if composite_ready else
+                "Copia a captura do evento atual; para multilight, aguarde "
+                "as três iluminações."
+            )
             image_button.setEnabled(image_available)
         except Exception:
             pass
