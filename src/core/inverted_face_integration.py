@@ -120,23 +120,31 @@ def install_inverted_face_integration(orchestrator_cls) -> None:
             detail,
             inverted.get("inverted_anomaly_mask"),
         )
-        signature = build_anomaly_signature(
-            full_gab,
-            full_test,
-            signature_detail,
-            aoi_info,
-            focus,
+        # A revisão de INVERTIDO refaz a assinatura/memória por padrão;
+        # no replay offline o mesmo bypass precisa impedir essa consulta.
+        no_memory_replay = bool(
+            (aoi_info or {}).get("_replay_without_memory", False)
         )
-        knn_expert = self.experts["knn"]
-        _normalize_knn_memory_categories(knn_expert)
-        knn_result = knn_expert.analyze(
-            full_gab,
-            full_test,
-            None,
-            None,
-            aoi_info,
-            anomaly_signature=signature,
-        )
+        signature = None
+        knn_result = None
+        if not no_memory_replay:
+            signature = build_anomaly_signature(
+                full_gab,
+                full_test,
+                signature_detail,
+                aoi_info,
+                focus,
+            )
+            knn_expert = self.experts["knn"]
+            _normalize_knn_memory_categories(knn_expert)
+            knn_result = knn_expert.analyze(
+                full_gab,
+                full_test,
+                None,
+                None,
+                aoi_info,
+                anomaly_signature=signature,
+            )
 
         final_score, is_defect, confidence, reason, trace = _fusion_with_inverted(
             self,
@@ -154,7 +162,8 @@ def install_inverted_face_integration(orchestrator_cls) -> None:
             trace.get("operator_review_required", False)
         )
         analysis["reason"] = reason
-        detail.update(knn_result)
+        if knn_result:
+            detail.update(knn_result)
         detail.update(
             {
                 "anomaly_signature": signature,
@@ -167,6 +176,12 @@ def install_inverted_face_integration(orchestrator_cls) -> None:
                 "decision_trace": trace,
             }
         )
+        if no_memory_replay:
+            detail["replay_without_memory"] = True
+            detail["replay_memory_consulted"] = False
+            analysis["active_engines"] = [
+                item for item in active_engines if "knn" not in item.lower()
+            ]
         return analysis
 
     orchestrator_cls.inspect = inspect
