@@ -71,7 +71,8 @@ class MemoryFirstFixture(unittest.TestCase):
 
     def make_record(self, label: str = "NG", *, info: dict | None = None,
                     ref=None, tst=None, folder=None, human_label=None,
-                    save_images=True, schema="visionx.memory.v3") -> dict:
+                    save_images=True, schema="visionx.memory.v3",
+                    source="button") -> dict:
         details = dict(self.info if info is None else info)
         reference = self.reference if ref is None else ref
         test = self.test if tst is None else tst
@@ -86,9 +87,10 @@ class MemoryFirstFixture(unittest.TestCase):
             cv2.imwrite(str(file_parent/"t.png"), test)
         item = {
             "schema": schema, "label": label,
-            "decision": {"operator_label": (
-                label if human_label is None else human_label
-            )},
+            "decision": {
+                "operator_label": label if human_label is None else human_label,
+                "source": source,
+            },
             "aoi_info": details,
             "storage": {
                 "reference_image_file": "r.png" if save_images else "",
@@ -211,6 +213,28 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
         self.assertEqual(
             self.inspect(system)["detail"]["recognition_route"], "NEW_CNN"
         )
+
+    def test_auto_labeled_record_never_bypasses_cnn(self):
+        system = self.create_router()
+        system.experts["knn"].signatures_ok.append(
+            self.make_record("OK", source="production_auto")
+        )
+        result = self.inspect(system)
+        self.assertEqual(result["detail"]["recognition_route"], "NEW_CNN")
+
+    def test_aoi_value_changed_requires_new_specialist_inspection(self):
+        system = self.create_router()
+        known = dict(self.info, value="0 <= 17 <= 35 FALTANDO")
+        system.experts["knn"].signatures_ng.append(
+            self.make_record("NG", info=known)
+        )
+        same = self.inspect(system, info=known)
+        self.assertEqual(same["detail"]["recognition_route"], "KNOWN_KNN")
+        changed = self.inspect(
+            system,
+            info=dict(known, value="0 <= 18 <= 35 FALTANDO")
+        )
+        self.assertEqual(changed["detail"]["recognition_route"], "NEW_CNN")
 
     def test_changed_or_missing_source_images_do_not_authorize_known(self):
         system = self.create_router()
