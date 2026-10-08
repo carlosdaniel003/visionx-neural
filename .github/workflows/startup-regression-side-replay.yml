@@ -1,0 +1,40 @@
+name: Startup Regression SIDE Replay
+
+on:
+  push:
+    branches:
+      - central
+    paths:
+      - "src/services/startup_regression/**"
+      - "src/services/screen_monitor.py"
+      - "src/core/anomaly_memory_integration.py"
+      - "src/core/inverted_face_integration.py"
+      - "tests/test_startup_regression_replay.py"
+      - ".github/workflows/startup-regression-side-replay.yml"
+  workflow_dispatch:
+
+jobs:
+  replay:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: "offscreen"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install replay dependencies
+        shell: pwsh
+        run: |
+          python -m pip install numpy opencv-python-headless scipy scikit-image scikit-learn mss PyQt6 pytesseract
+      - name: Compile replay and operational modules
+        shell: pwsh
+        run: |
+          python -m py_compile src/services/screen_monitor.py src/core/anomaly_memory_integration.py src/core/inverted_face_integration.py src/services/startup_regression/inspection_runner.py src/services/startup_regression/side_replay.py tests/test_startup_regression_replay.py
+      - name: Verify replay never uses KNN
+        shell: pwsh
+        run: |
+          python -m unittest tests.test_startup_regression_replay tests.test_startup_regression_inventory -v
