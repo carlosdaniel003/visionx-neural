@@ -75,6 +75,75 @@ class GeneralMultiLightFusionTests(unittest.TestCase):
             "TOP",
         )
 
+    def test_real_top_missing_false_positive_requires_review_when_three_ok_witnesses_disagree(self):
+        analyses = {
+            "SIDE": _analysis("SIDE", final_score=0.0, physical_score=0.88, is_defect=False),
+            "TOP": _analysis("TOP", final_score=1.0, physical_score=1.0, is_defect=True),
+            "MID": _analysis("MID", final_score=0.1316, physical_score=0.85, is_defect=False),
+        }
+        for mode, sim in (("SIDE", 0.9234), ("TOP", 0.9075), ("MID", 0.8976)):
+            analyses[mode]["detail"]["best_match_label"] = "OK"
+            analyses[mode]["detail"]["best_similarity"] = sim
+        top = analyses["TOP"]["detail"]
+        top["dominant_engine"] = "missing"
+        top["missing_hard_absence"] = True
+        top["missing_global_envelope_coarse_similarity"] = 0.77256
+        top["missing_global_envelope_background_exposure"] = 0.0
+
+        result = fuse_multilight(analyses, "FALTANDO")
+        self.assertEqual(result["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertFalse(result["is_defect"])
+        self.assertTrue(result["production_review_required"])
+        self.assertEqual(
+            result["detail"]["fusion_rule"],
+            "multilight_missing_physical_disagreement",
+        )
+        self.assertTrue(result["detail"]["multilight_physical_disagreement"])
+        self.assertIn("Revisão humana", result["reason"])
+        self.assertTrue(result["detail"]["missing_hard_absence"])
+
+    def test_real_single_top_missing_remains_ng_when_context_does_not_corrob_or_memory_is_weak(self):
+        for context, ok_similarity in ((0.15, 0.91), (0.77, 0.62)):
+            with self.subTest(context=context, ok_similarity=ok_similarity):
+                analyses = {
+                    "SIDE": _analysis("SIDE", final_score=0.0, physical_score=0.15, is_defect=False),
+                    "TOP": _analysis("TOP", final_score=1.0, physical_score=1.0, is_defect=True),
+                    "MID": _analysis("MID", final_score=0.02, physical_score=0.12, is_defect=False),
+                }
+                for mode in ("SIDE", "TOP", "MID"):
+                    analyses[mode]["detail"]["best_match_label"] = "OK"
+                    analyses[mode]["detail"]["best_similarity"] = ok_similarity
+                top = analyses["TOP"]["detail"]
+                top["dominant_engine"] = "missing"
+                top["missing_hard_absence"] = True
+                top["missing_global_envelope_coarse_similarity"] = context
+                top["missing_global_envelope_background_exposure"] = 0.0
+
+                result = fuse_multilight(analyses, "FALTANDO")
+                self.assertEqual(result["verdict"], "DEFEITO REAL")
+                self.assertEqual(result["detail"]["fusion_rule"], "multilight_strong_single")
+                self.assertFalse(result["detail"]["multilight_physical_disagreement"])
+
+    def test_missing_disagreement_does_not_change_other_categories(self):
+        analyses = {
+            "SIDE": _analysis("SIDE", final_score=0.0, physical_score=0.12, is_defect=False),
+            "TOP": _analysis("TOP", final_score=1.0, physical_score=1.0, is_defect=True),
+            "MID": _analysis("MID", final_score=0.1, physical_score=0.14, is_defect=False),
+        }
+        for mode in analyses:
+            analyses[mode]["detail"]["best_match_label"] = "OK"
+            analyses[mode]["detail"]["best_similarity"] = 0.94
+        top = analyses["TOP"]["detail"]
+        top.update({
+            "dominant_engine": "missing",
+            "missing_hard_absence": True,
+            "missing_global_envelope_coarse_similarity": 0.85,
+            "missing_global_envelope_background_exposure": 0.0,
+        })
+        result = fuse_multilight(analyses, "DESLOCADO")
+        self.assertEqual(result["verdict"], "DEFEITO REAL")
+        self.assertEqual(result["detail"]["fusion_rule"], "multilight_strong_single")
+
     def test_single_moderate_positive_requires_review(self):
         analyses = {
             "SIDE": _analysis(

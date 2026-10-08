@@ -25,6 +25,9 @@ LIGHTING_ORDER = ("SIDE", "TOP", "MID")
 ADHESIVE_CATEGORY = "MUITO ADESIVO"
 GENERIC_STRONG_SCORE = 0.80
 GENERIC_DECISION_CUTOFF = 0.50
+MISSING_INTERLIGHT_OK_MIN_SIMILARITY = 0.88
+MISSING_INTERLIGHT_MIN_CONTEXT_SIMILARITY = 0.70
+MISSING_INTERLIGHT_MAX_GLOBAL_BACKGROUND = 0.03
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -117,6 +120,61 @@ def _lighting_evidence(mode: str, analysis: dict) -> dict:
             detail.get("best_similarity", 0.0)
         ),
     }
+
+
+def _isolated_missing_disagreement(
+    category: str,
+    source: dict[str, dict],
+    evidence: dict[str, dict],
+) -> bool:
+    """Recusa NG automático por uma TOP isolada, quando há conflito físico.
+
+    Não transforma a peça em OK: a ausência local continua auditável, mas a
+    discordância entre iluminação, contexto e três memórias OK independentes
+    exige revisão humana. Casos de ausência real sem todas essas testemunhas
+    continuam seguindo a fusão forte padrão.
+    """
+    if category != "FALTANDO":
+        return False
+
+    positive = [mode for mode in LIGHTING_ORDER
+                if evidence[mode]["local_is_defect"]]
+    if positive != ["TOP"] or not evidence["TOP"]["strong_positive"]:
+        return False
+
+    top_detail = _detail(source["TOP"])
+    if (
+        not top_detail.get("missing_hard_absence", False)
+        or evidence["TOP"]["dominant_engine"] != "missing"
+    ):
+        return False
+
+    if any(
+        evidence[mode]["memory_label"] != "OK"
+        or evidence[mode]["memory_similarity"]
+        < MISSING_INTERLIGHT_OK_MIN_SIMILARITY
+        for mode in LIGHTING_ORDER
+    ):
+        return False
+
+    if any(
+        evidence[mode]["local_is_defect"]
+        or evidence[mode]["local_review_required"]
+        for mode in ("SIDE", "MID")
+    ):
+        return False
+
+    # Necessária testemunha de contexto: o quadro completo ainda mantém
+    # parte de sua geometria, e não há substituição por fundo no envelope.
+    # Memória KNN sozinha nunca contradiz uma ausência física forte.
+    return bool(
+        _safe_float(top_detail.get(
+            "missing_global_envelope_coarse_similarity", 0.0,
+        )) >= MISSING_INTERLIGHT_MIN_CONTEXT_SIMILARITY
+        and _safe_float(top_detail.get(
+            "missing_global_envelope_background_exposure", 1.0,
+        ), 1.0) <= MISSING_INTERLIGHT_MAX_GLOBAL_BACKGROUND
+    )
 
 
 def _dominant_mode(evidence: dict[str, dict]) -> str:
@@ -219,7 +277,15 @@ def fuse_multilight(
     ]
     dominant_mode = _dominant_mode(evidence)
 
-    if strong_positive_modes:
+    physical_disagreement = _isolated_missing_disagreement(
+        canonical_category, source, evidence,
+    )
+    if physical_disagreement:
+        verdict = "REVISÃO OBRIGATÓRIA"
+        is_defect = False
+        review_required = True
+        rule = "multilight_missing_physical_disagreement"
+    elif strong_positive_modes:
         verdict = "DEFEITO REAL"
         is_defect = True
         review_required = False
@@ -279,6 +345,12 @@ def fuse_multilight(
             _summary(evidence),
         )
     )
+    if physical_disagreement:
+        reason += (
+            " | TOP sinalizou ausência física isolada, mas SIDE/MID não "
+            "confirmaram, as três memórias locais apontam OK e o envelope "
+            "TOP ainda preserva geometria. Revisão humana obrigatória."
+        )
 
     dominant_analysis.update(
         {
@@ -310,6 +382,7 @@ def fuse_multilight(
             "multilight_review_modes": list(review_modes),
             "multilight_evidence": deepcopy(evidence),
             "multilight_memory_role": "per_lighting_audit",
+            "multilight_physical_disagreement": bool(physical_disagreement),
             "operator_review_required": bool(review_required),
             "eligible_for_final_decision": True,
         }

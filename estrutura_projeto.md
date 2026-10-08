@@ -1,5 +1,44 @@
 # Estrutura do Projeto: VisionX Neural
 
+## Correções implementadas — epicentro profundo e contradição multilight FALTANDO (08/10/2026)
+
+**Estado:** implementação técnica; aguarda teste da AOI e confirmação do operador.
+Evento de regressão: `2eac69d849b04b5bb205ec191d9f130c`.
+
+1. `EpicenterExtractor.select_radar_candidate`: quando existem três molduras
+   (`[2,2,549,274]` global, `[24,24,522,230]` intermediária e
+   `[76,56,189,166]` interna), descarta como foco qualquer caixa que
+   contenha outra candidata claramente menor. O desempate de IoU contra
+   o TESTE é aplicado **somente entre candidatas do nível mais profundo**.
+   Mantém o Radar, o fallback por linhas cruzadas, a análise de contexto
+   maior e os testes de ROI alta/estreita.
+2. `src/core/multilight_fusion.py`: em `FALTANDO`, uma **única TOP**
+   `missing_hard_absence=True` não produzirá automaticamente NG quando
+   SIDE/MID foram negativas, **as três iluminações têm melhor memória OK
+   forte (>=0.88)** e o envelope TOP mantém estrutura (coarse >=0.70,
+   fundo global exposto <=0.03). Nessas condições a divergência é
+   `REVISÃO OBRIGATÓRIA` (`multilight_missing_physical_disagreement`),
+   **não é liberada como OK automaticamente**. A evidência TOP e o
+   `missing_hard_absence` bruto continuam no debug. Esse tratamento
+   impede a falsa confirmação automática com evidência contraditória,
+   mas não substitui uma prova independente da presença física.
+3. Uma TOP com ausência forte e sem a tripla contradição de memória/contexto
+   continua `DEFEITO REAL`. `MUITO ADESIVO` e demais categorias
+   preservam suas regras de fusão.
+
+**Regressões novas:** molduras em três níveis com IoU favorecendo caixa
+intermediária, conflito de ausência física TOP versus SIDE/MID e três
+memórias OK, ausência real/sem suporte contextual e isolamento por categoria.
+
+**Limitação explícita:** o operador informou que a peça está OK, mas esta
+proteção inicialmente devolve `REVISÃO OBRIGATÓRIA`, não um OK automático.
+Para automatizar OK de maneira segura será necessário reproduzir a decisão
+física com imagens originais gabarito/teste (não somente o screenshot de debug),
+validar presença do corpo em TOP e executar regressões NG reais. Não forçar
+OK apenas pelo KNN, nem reduzir indiscriminadamente os limiares.
+
+---
+
 ## Validação em AOI real e novo falso positivo — 08/10/2026
 
 ### Caso anterior C6~2 / DESLOCADO — confirmação do operador

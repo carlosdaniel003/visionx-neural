@@ -100,8 +100,23 @@ class EpicenterExtractor:
             ]
 
         if inner_candidates:
-            # A marcação encontrada no TESTE fornece confirmação espacial,
-            # mas nunca supera uma caixa sem correspondência no GABARITO.
+            # A AOI pode apresentar três níveis de borda:
+            # contorno externo da tela, caixa geral do componente e epicentro.
+            # Uma caixa não é foco quando contém outro retângulo verde
+            # independente e comprovadamente menor. Contornos duplicados da
+            # espessura da mesma linha não contam como outro nível (<15%).
+            deepest = [
+                candidate for candidate in inner_candidates
+                if not any(
+                    nested(smaller, candidate)
+                    for smaller in inner_candidates
+                    if smaller != candidate
+                )
+            ]
+            inner_candidates = deepest or inner_candidates
+
+            # O TESTE desempata epicentros do MESMO nível. Um IoU perfeito
+            # com a caixa geral nunca tem precedência sobre uma ROI interna.
             confirmed = []
             for box in inner_candidates:
                 matches = [

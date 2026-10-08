@@ -162,6 +162,32 @@ class EpicenterExtractorRegressionTests(unittest.TestCase):
         self.assertEqual(focus_reference.shape, focus_test.shape)
         self.assertLess(w * h, 0.35 * 525 * 230)
 
+    def test_three_nested_green_frames_select_deepest_real_epicenter(self):
+        """Regressão do evento real 2eac69d: uma moldura intermediária
+        corresponde perfeitamente ao TESTE, mas não é o epicentro.
+        """
+        reference = np.full((276, 570, 3), BACKGROUND, dtype=np.uint8)
+        test = reference.copy()
+        for image in (reference, test):
+            cv2.rectangle(image, (2, 2), (548, 274), GREEN, 2)
+            cv2.rectangle(image, (25, 25), (545, 253), GREEN, 2)
+            cv2.rectangle(image, (76, 56), (264, 221), GREEN, 2)
+
+        epicenters, focus_reference, focus_test = EpicenterExtractor.extract_focus(
+            reference, test,
+            old_epicenters=[(25, 25, 522, 229), (79, 57, 188, 166)],
+            global_box_info={"x": 2, "y": 2, "w": 549, "h": 274, "detected": True},
+        )
+
+        self.assertEqual(len(epicenters), 1)
+        x, y, width, height = epicenters[0]
+        self.assertAlmostEqual(x, 76, delta=4)
+        self.assertAlmostEqual(y, 56, delta=4)
+        self.assertAlmostEqual(width, 189, delta=5)
+        self.assertAlmostEqual(height, 166, delta=5)
+        self.assertEqual(focus_reference.shape, focus_test.shape)
+        self.assertLess(width * height, 0.35 * 522 * 230)
+
     def test_outer_frame_without_inner_is_not_accepted_at_83_percent_height(self):
         reference = np.full((276, 570, 3), BACKGROUND, dtype=np.uint8)
         cv2.rectangle(reference, (25, 25), (548, 254), GREEN, 2)
