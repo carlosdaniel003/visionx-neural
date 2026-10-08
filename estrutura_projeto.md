@@ -200,7 +200,9 @@ linhas interrompidas, moldura isolada, linha espúria e integração com
 
 ## Planejado — 08/10/2026 — gate de regressão visual antes da inicialização
 
-**Status: especificado e organizado; ainda NÃO implementado.**
+**Status em 08/10/2026:** **Etapa 1 — ferramenta de inventário
+implementada, aguardando análise do acervo real**. O gate bloqueante e o
+replay de classificação **ainda NÃO estão implementados**.
 
 Documento técnico completo (fonte única deste plano):
 [`docs/ODIN_STARTUP_REGRESSION_GATE.md`](docs/ODIN_STARTUP_REGRESSION_GATE.md).
@@ -238,9 +240,39 @@ bloquearão a operação e produzirão relatório técnico, sem mandar comandos 
 4. Instalar gate bloqueante e tela restrita de progresso/diagnóstico.
 5. Adicionar regressões automatizadas e validar o acervo real na fábrica.
 
-**Regra de execução:** trabalhar em **uma etapa por vez** e avançar somente
-após aceite expresso do operador. Nesta atualização foram criados
-**somente documentos**, sem modificação do código do ODIN nem do agente XP.
+**Etapa 1 implementada (sem alterar o motor operacional):**
+
+- `src/services/startup_regression/archive_inventory.py`: inspeção
+  somente leitura dos PNGs, dimensões, hashes, duplicatas, categorias sugeridas
+  pelo nome, iluminação SIDE/TOP/MID e manifestos reais.
+- `src/services/startup_regression/archive_inventory_report.py`: relatório
+  JSON integral e resumo TXT, gravados fora de archives/dataset.
+- `src/services/startup_regression/__main__.py`: CLI de execução manual.
+- `tests/test_startup_regression_inventory.py`: testes com casos sintéticos,
+  arquivos antigos, manifestos, conflitos e PNG inválido.
+- `.github/workflows/startup-regression-inventory.yml`: validação no Windows.
+
+Execução no computador real, com o código atualizado:
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression
+```
+
+Arquivos produzidos (não subir no Git):
+
+```text
+reports/startup_regression/inventory_<data>.json
+reports/startup_regression/inventory_<data>.txt
+```
+
+O inventário **não** executa OCR, especialistas, MoE, KNN ou valida OK/NG;
+essas responsabilidades são de etapas seguintes. O `main.py` e agente XP
+não foram alterados. **Ainda faltam os relatórios reais e a aprovação da
+Etapa 1**.
+
+**Regra de execução:** trabalhar em **uma etapa por vez**, avançando somente
+após aceite expresso do operador.
 
 ---
 
