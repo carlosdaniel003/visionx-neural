@@ -1,6 +1,6 @@
 # ODIN — Gate de regressão visual na inicialização
 
-**Status:** PLANEJADO — especificação e organização; **não implementado**.  
+**Status:** Etapa 1 concluída pelo inventário real; **Etapa 2 implementada para diagnóstico SIDE sem memória**, aguardando resultado no computador da fábrica. Etapas 3–5 e gate bloqueante não implementados.  
 **Registro:** 08/10/2026.  
 **Escopo:** aplicação do computador novo, branch `central`; arquivos visuais `public/ok_archive/` e `public/ng_archive/`.  
 **Documento-mestre do histórico:** [`estrutura_projeto.md`](../estrutura_projeto.md).
@@ -225,7 +225,7 @@ OCR Board/Parts/Value + normalização da categoria
     ↓
 detect_anomalies / EpicenterExtractor
     ↓
-MoEOrchestrator.inspect + especialistas e KNN atuais
+MoEOrchestrator.inspect + especialistas físicos SEM KNN
     ↓
 resultado local SIDE/TOP/MID
     ↓
@@ -246,21 +246,37 @@ O replay recebe imagens **do disco**, nunca manda
 MSS, não abre servidor/receptor da AOI, não envia `PRESS_0/PRESS_1`, não
 incrementa métricas de produção e não usa estados de botões do operador.
 
-A memória KNN e os modelos devem estar carregados exatamente com as extensões
-da aplicação real (dual-scale, full-frame, protótipos, hipóteses e restrições),
-mas **somente para consulta**. Não chamar rotinas de `save_label`,
-`DatasetManager.save_sample`, realimentação do KNN nem arquivamento durante
-a validação. Distinguir etapas iniciais que possuam efeitos colaterais e
-isolar o `inspection_runner` da UI.
+**Atualização obrigatória aprovada pelo operador — replay cego à memória:**
+o replay NÃO deve instanciar nem consultar KNN, dataset de exemplos,
+protótipos, vizinhos, similaridades persistidas ou memórias episódicas.
+A mesma imagem pode estar no dataset: sua presença não pode tornar a
+aprovação mais fácil. A decisão deve se apoiar exclusivamente nos detectores,
+na geometria, nas regras físicas e nos modelos visuais não baseados na busca de
+amostras. O score da memória é zero; não há `memory_veto`, `best_match` ou
+`memory_priority`. A regra vale para SIDE histórico e para a futura fusão
+multilight, inclusive `INVERTIDO`, cuja extensão de análise consultava
+novamente o KNN.
+
+A CNN ou outro modelo de parâmetros previamente treinados continua elegível
+se não procurar a imagem atual em uma base de exemplos durante a inferência;
+não se permite consulta/reuso de correspondência exata com o acervo.
+O replay jamais chama `save_label`, `DatasetManager.save_sample`, recarga
+da memória ou arquivamento. Qualquer tentativa de acesso KNN é erro de
+isolamento e invalida a execução. A operação normal mantém sua memória
+habilitada; o bypass é exclusivo do modo diagnóstico offline.
 
 **Cuidado do quadrado menor:** usar sempre o gabarito/teste **completos** da
-área da AOI, com a memória de epicentro, contexto maior e quadro completo.
-Não validar apenas a ROI pequena: o defeito pode estar fora dela.
+área da AOI, com análise física local/contextual **e da área de inspeção completa**.
+A terceira escala de *memória* full-frame NÃO é consultada nesse replay;
+a exigência de imagem completa diz respeito aos detectores visuais,
+não a uma comparação com assinaturas antigas. Não validar só a ROI pequena:
+o defeito pode estar fora dela.
 
-O teste com um PNG gravado no mesmo dataset do KNN **pode passar por
-autocorrespondência**; portanto o gate demonstra compatibilidade com o
-histórico, não mede acurácia futura de generalização. Manter, separadamente,
-uma suíte de avaliação independente/holdout quando houver dados qualificados.
+**Não há autocorrespondência com o dataset neste replay:** a consulta
+KNN/memória é impedida por construção. Ainda assim, usar as imagens
+históricas para calibrar repetidamente os mesmos limiares pode superajustar
+o resultado ao acervo; manter também uma validação independente/holdout
+quando houver dados qualificados.
 
 ## 5. Sequência de inicialização — bloqueio antes da produção
 
@@ -269,7 +285,7 @@ python main.py
     ↓
 QApplication / tela mínima de validação (sem produção)
     ↓
-carrega configurações, especialistas, modelos e memória em modo consulta
+carrega configurações e especialistas físicos SEM carregar KNN/memória
     ↓
 inventaria 100% dos arquivos OK/NG e manifestos
     ↓
@@ -467,8 +483,8 @@ as pendências. Somente com aceite do inventário avançar para a Etapa 2.
 ### Etapa 2 — Runner de replay monoimagem SIDE
 
 - Separar pré-processamento de screenshot AOI da interface Qt.
-- Reutilizar recorte completo, OCR, pipeline físico/semântico, KNN e políticas
-  da operação real.
+- Reutilizar recorte completo, OCR, pipeline físico/semântico e políticas
+  da operação real **sem qualquer consulta KNN ou memória episódica**.
 - Executar casos antigos `OK` e `NG` em leitura e registrar veredito,
   revisão e divergências.
 - Garantir que o quadrado menor não limita o campo de evidências.
@@ -476,6 +492,49 @@ as pendências. Somente com aceite do inventário avançar para a Etapa 2.
 
 **Aceite:** todos os PNGs legados são processados ou falham com erro explícito;
 replay não altera dataset/arquivos nem aciona hardware.
+
+#### Implementação da Etapa 2 — motor físico sem memória
+
+**Regra irrevogável no gate de regressão:** replay cego aos exemplos antigos.
+O KNN não é instanciado; a extensão de fusão física e a rota específica
+`INVERTIDO` recebem `_replay_without_memory=True` e não computam nem
+consultam assinaturas armazenadas. A análise física continua reutilizando o
+`detect_anomalies → EpicenterExtractor → MoEOrchestrator`.
+
+```text
+src/services/startup_regression/inspection_runner.py
+src/services/startup_regression/side_replay.py
+tests/test_startup_regression_replay.py
+.github/workflows/startup-regression-side-replay.yml
+```
+
+**Comando no PowerShell com o código `central` atualizado:**
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.side_replay
+```
+
+**Saída:** `reports/startup_regression/side_replay_<data>.json` e
+`side_replay_<data>.txt`. O comando avalia **somente os 119 screenshots
+históricos sem sufixo**; as 90 imagens com `SIDE/TOP/MID` explícitos
+aguardam o replay por evento na Etapa 3.
+
+A leitura utiliza o mesmo `ScreenMonitor.process_external_image` que a
+produção para encontrar barras, recortar gabarito/teste completos e recuperar
+OCR. No replay, `_replay_no_debug=True` impede a gravação de PNGs temporários
+em `public/debug_crop`. Um OCR indisponível/incompleto, divergência de
+categoria ou erro físico retorna `INVALIDO`, jamais aprovação.
+
+Para garantir o isolamento, `SideInspectionRunner` rejeita resultados que
+declarem motor KNN ativo, memória consultada ou peso KNN diferente de zero.
+A CPU executa os mesmos especialistas físicos, sem carregar os exemplos do
+dataset. A avaliação não abre o painel, não captura MSS, não envia comandos XP,
+não ensina a IA e **ainda não bloqueia** a inicialização operacional.
+
+O resultado real do PC deve ser revisado antes de declarar esta etapa
+aprovada. Falhas de Tesseract ou dependências também devem aparecer no
+relatório e ser corrigidas, não ignoradas.
 
 ### Etapa 3 — Manifesto e replay por evento multilight
 
@@ -536,10 +595,16 @@ bloqueio opera corretamente diante de regressões injetadas.
 
 ## 10. Estado e próximo passo
 
-- **Etapa 1: ferramenta de inventário implementada**; relatório do acervo real
-  da fábrica ainda precisa ser executado e revisado.
-- **Etapas 2 a 5 e gate bloqueante: NÃO implementados**.
+- **Etapa 1 concluída e aprovada:** inventário real em 08/10/2026,
+  209 PNG válidos (119 SIDE históricos; 90 multilight explícitos sem manifesto).
+  192 OK e 17 NG; nenhuma duplicata pixel a pixel. Os vínculos das 90
+  iluminações multilight ficam para qualificação na Etapa 3.
+- **Etapa 2: motor e CLI de replay SIDE sem memória implementados; aguardando
+  execução dos 119 arquivos reais e análise de divergências.**
+- **Etapas 3 a 5 e gate bloqueante: NÃO implementados**.
 - O `main.py`, decisão em produção, dataset de aprendizado e
   `agente_industrial_xp.py` permanecem inalterados.
-- **Próximo trabalho nesta etapa:** receber e qualificar o JSON/TXT gerados
-  no computador real. Não iniciar a Etapa 2 antes do aceite explícito.
+- **Próxima ação:** executar `python -m src.services.startup_regression.side_replay`
+  no PC da fábrica, enviar os relatórios `side_replay_*.json` e
+  `side_replay_*.txt` e qualificar cada divergência, sem alterar rótulos.
+  Não iniciar a Etapa 3 antes do aceite explícito.
