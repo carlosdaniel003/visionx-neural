@@ -76,6 +76,136 @@ class GeneralMultiLightFusionTests(unittest.TestCase):
             "TOP",
         )
 
+    @staticmethod
+    def _event_17eee_c2_recorded_ok():
+        # Valores do debug industrial 08/10/2026 08:40:37, evento
+        # 17eee0c0e2b446208d2a12ea5b806ef5; frames brutos nao inclusos.
+        analyses = {
+            "SIDE": _analysis("SIDE", final_score=0.0, physical_score=1.0, is_defect=False),
+            "TOP": _analysis("TOP", final_score=1.0, physical_score=1.0, is_defect=True),
+            "MID": _analysis("MID", final_score=0.0, physical_score=0.0, is_defect=False),
+        }
+        for mode, similarity in (
+            ("SIDE", 0.9113767808169126),
+            ("TOP", 0.9260289137601854),
+            ("MID", 0.9572043755613951),
+        ):
+            analyses[mode]["detail"].update({
+                "memory_category": "FALTANDO",
+                "memory_lighting": mode,
+                "best_match_label": "OK",
+                "best_similarity": similarity,
+            })
+        analyses["SIDE"]["detail"].update({
+            "fusion_rule": "hard_missing_invariant_presence_ok_witness",
+            "dominant_engine": "knn",
+            "missing_hard_absence": True,
+            "missing_component_body_present": True,
+            "missing_global_envelope_invariant_support": True,
+            "missing_body_coarse_similarity": 0.7229543924331665,
+            "missing_body_silhouette_dice": 0.8761214455877135,
+            "missing_global_envelope_background_exposure": 0.0,
+            "roi_consistent": True,
+        })
+        analyses["TOP"]["detail"].update({
+            "dominant_engine": "missing",
+            "fusion_rule": "missing_hard_absence",
+            "missing_hard_absence": True,
+            "missing_global_envelope_coarse_similarity": 0.7482467889785767,
+            "missing_global_envelope_background_exposure": 0.23009969294071198,
+            "best_match_margin": 0.9260289137601854,
+            "hypotheses": {
+                "OK": {
+                    "available": True,
+                    "similarity_breakdown": {
+                        "full_frame_similarity": 0.9569675529003143,
+                        "previous": {
+                            "context_similarity": 0.950197941660881,
+                            "epicenter_similarity": 0.9046212449669839,
+                        },
+                    },
+                },
+            },
+        })
+        analyses["MID"]["detail"].update({
+            "dominant_engine": "knn",
+            "missing_active": True,
+            "missing_is_defect": False,
+            "missing_hard_absence": False,
+            "missing_score": 0.26866959136649077,
+            "missing_tolerance": 0.36,
+            "missing_global_envelope_support": True,
+            "missing_global_envelope_background_exposure": 0.0,
+        })
+        return analyses
+
+    def test_event_17eee_c2_previously_seen_ok_returns_false_failure(self):
+        analyses = self._event_17eee_c2_recorded_ok()
+        result = fuse_multilight(analyses, "FALTANDO")
+        self.assertEqual(result["verdict"], "FALHA FALSA")
+        self.assertFalse(result["is_defect"])
+        self.assertFalse(result["production_review_required"])
+        self.assertEqual(result["detail"]["final_score"], 0.0)
+        self.assertEqual(result["detail"]["fusion_rule"], "multilight_missing_verified_presence")
+        self.assertTrue(result["detail"]["multilight_missing_verified_presence"])
+        witnesses = result["detail"]["multilight_missing_presence_witnesses"]
+        self.assertEqual(
+            (witnesses["suspect_mode"], witnesses["body_mode"], witnesses["clear_mode"]),
+            ("TOP", "SIDE", "MID"),
+        )
+        trace = result["detail"]["decision_trace"]
+        self.assertTrue(trace["raw_hard_missing_evidence"])
+        self.assertFalse(trace["hard_missing_evidence"])
+        self.assertFalse(trace["operator_review_required"])
+        self.assertIn("SIDE confirmou corpo", result["reason"])
+        debug = decision_record(result, {"category": "FALTANDO"})
+        self.assertEqual(debug["verdict"], "FALHA FALSA")
+        self.assertFalse(debug["operator_review_required"])
+        self.assertFalse(debug["hard_missing_evidence"])
+
+    def test_event_17eee_c2_does_not_return_ok_without_all_independent_witnesses(self):
+        mutations = {
+            "side_body_missing": lambda d: d["SIDE"]["detail"].update(
+                missing_component_body_present=False
+            ),
+            "side_invariant_missing": lambda d: d["SIDE"]["detail"].update(
+                missing_global_envelope_invariant_support=False
+            ),
+            "side_roi_inconsistent": lambda d: d["SIDE"]["detail"].update(
+                roi_consistent=False
+            ),
+            "mid_not_physically_clear": lambda d: d["MID"]["detail"].update(
+                missing_is_defect=True, missing_score=0.88
+            ),
+            "mid_no_envelope": lambda d: d["MID"]["detail"].update(
+                missing_global_envelope_support=False
+            ),
+            "top_memory_context_too_low": lambda d: d["TOP"]["detail"][
+                "hypotheses"]["OK"]["similarity_breakdown"]["previous"].update(
+                    context_similarity=0.80
+                ),
+            "top_memory_full_frame_too_low": lambda d: d["TOP"]["detail"][
+                "hypotheses"]["OK"]["similarity_breakdown"].update(
+                    full_frame_similarity=0.85
+                ),
+            "top_memory_margin_too_low": lambda d: d["TOP"]["detail"].update(
+                best_match_margin=0.03
+            ),
+            "top_wrong_memory_light": lambda d: d["TOP"]["detail"].update(
+                memory_lighting="SIDE"
+            ),
+            "second_positive_light": lambda d: d["SIDE"].update(
+                verdict="DEFEITO REAL", is_defect=True
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                analyses = self._event_17eee_c2_recorded_ok()
+                mutate(analyses)
+                result = fuse_multilight(analyses, "FALTANDO")
+                self.assertNotEqual(result["verdict"], "FALHA FALSA")
+                self.assertFalse(result["detail"]["multilight_missing_verified_presence"])
+
     def test_real_top_missing_false_positive_requires_review_when_three_ok_witnesses_disagree(self):
         analyses = {
             "SIDE": _analysis("SIDE", final_score=0.0, physical_score=0.88, is_defect=False),
