@@ -34,6 +34,9 @@ LIGHTS = ("SIDE", "TOP", "MID")
 # Futuros especialistas apenas registram categoria, entrypoint e versão.
 SPECIALIST_TRAINERS = {
     "FALTANDO": "src.scripts.train_faltando_cnn_v2_online",
+    # DESLOCADO permanece com os motores físicos até NG reais independentes.
+    # Este treinador atualiza somente CANDIDATOS, nunca a CNN em produção.
+    "DESLOCADO": "src.scripts.train_deslocado_cnn_online",
 }
 
 
@@ -45,6 +48,13 @@ def _known_human_source(source: str) -> bool:
 def _is_novel_specialist(analysis: dict, category: str) -> bool:
     details = analysis.get("detail", {}) if isinstance(analysis, dict) else {}
     details = details if isinstance(details, dict) else {}
+    if category == "DESLOCADO":
+        routes = details.get("recognition_light_routes", {})
+        return (
+            details.get("recognition_route") == "NEW_EXPERTS"
+            or (isinstance(routes, dict)
+                and "NEW_EXPERTS" in routes.values())
+        )
     if category == "FALTANDO":
         if details.get("recognition_route") == "NEW_CNN":
             return True
