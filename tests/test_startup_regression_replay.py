@@ -41,6 +41,47 @@ class SideReplayContractTests(TestCase):
             orchestrator = create_physical_orchestrator()
         self.assertNotIn("knn", orchestrator.experts)
 
+    def test_real_fusion_and_inverted_path_have_zero_memory_weight(self):
+        from src.core.adhesive_multilight_analysis import analyze_lighting
+
+        rng = np.random.default_rng(43)
+        reference = rng.integers(
+            30, 180, size=(96, 160, 3), dtype=np.uint8
+        )
+        test = reference.copy()
+        test[28:60, 48:85] = 0
+
+        with patch(
+            "src.core.experts.knn_expert.KNNExpert.analyze",
+            side_effect=AssertionError("Consulta KNN não pode ocorrer"),
+        ):
+            orchestrator = create_physical_orchestrator()
+            for category in ("FALTANDO", "INVERTIDO"):
+                info = {
+                    "board": "B1",
+                    "parts": "U2~5",
+                    "category": category,
+                    "value": category,
+                    "lighting_mode": "SIDE",
+                    "_replay_without_memory": True,
+                }
+                result = analyze_lighting(
+                    orchestrator, reference, test, info, "SIDE",
+                )
+                self.assertIsInstance(result, dict)
+                detail = result["detail"]
+                self.assertFalse(detail["replay_memory_consulted"])
+                self.assertEqual(
+                    detail["decision_trace"]["weights"]["knn"],
+                    0.0,
+                )
+                self.assertTrue(
+                    all(
+                        "knn" not in name.lower()
+                        for name in result["active_engines"]
+                    )
+                )
+
     def test_runner_refuses_knn_even_if_stub_returns_success(self):
         class Bad:
             experts = {"knn": object()}
