@@ -1,3 +1,16 @@
+## Diagnóstico DESLOCADO v1.1 — disponível para execução
+
+Foi criada uma alternativa ao método de registro visual global da v1:
+**ORB + AKAZE / RANSAC**, com bloqueios geométricos, comparação automática
+com a v1 e SEM máscaras manuais, KNN, CNN treinada ou alterações de Produção.
+A utilidade real será avaliada nos 34 pares OK da fábrica.
+
+`python -m src.scripts.diagnose_deslocado_ok_geometry_v11`
+
+Consulte [o protocolo DESLOCADO](docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md).
+
+---
+
 ## DESLOCADO — diagnóstico automático sem desenho (etapa disponível)
 
 `python -m src.scripts.diagnose_deslocado_ok_geometry` analisa todo o

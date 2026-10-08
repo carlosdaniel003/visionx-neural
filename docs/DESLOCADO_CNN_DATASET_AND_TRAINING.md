@@ -811,3 +811,56 @@ enquanto o relatório registra hashes atuais dos recortes, sem provar
 automaticamente que recortes previamente preparados não foram alterados
 após a extração; na dúvida reexecute a preparação.
 
+
+
+---
+
+## 08/10/2026 — DESLOCADO geometria v1.1: correspondências ORB/AKAZE e RANSAC
+
+**Implementado somente como experimento offline, sem KNN nem máscara manual.**
+O script novo __src/scripts/diagnose_deslocado_ok_geometry_v11.py__:
+- Executa primeiro o diagnóstico v1 existente, validando as fontes do
+  inventário do momento e produzindo linha de base independente.
+- Calcula pontos característicos ORB e AKAZE apenas nas bandas externas
+  normalizadas, com centro/possível inscrição excluído. BFMatcher exige
+  correspondências binárias um-para-um (não consulta memória KNN).
+- Estima semelhança afim limitada (RANSAC) entre TESTE e GABARITO. Exige
+  número mínimo de correspondências/inliers, dispersão por quadrantes,
+  baixo erro de reprojeção e parâmetros plausíveis de escala, ângulo e
+  translação. Se ORB e AKAZE discordarem, rejeita; se só um funcionar,
+  exige suporte mais forte. Alinhamento que piora o contexto também falha.
+- Não altera automaticamente rótulos nem substitui um resultado
+  insuficiente por OK. Apenas com registro tecnicamente aceito calcula
+  divergência central de luminância e bordas periféricas. Todas as imagens
+  geram diagnóstico, mesmo que nenhuma supere o gate.
+- Produz novo __deslocado_ok_geometry_v11.json__ e
+  __deslocado_ok_geometry_v11.txt__, com comparação v1 vs v1.1 total e
+  SIDE/TOP/MID, resultados dos três falsos NG anteriores, motivo de falha
+  e detalhes dos candidatos por método.
+- Mantém integralmente diagnóstico v1, arquivo original, roteador,
+  CNN FALTANDO e motor DESLOCADO de Produção inalterados.
+
+**Comandos Windows (ambiente Python atual, OpenCV e torch existentes):**
+
+~~~powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.scripts.diagnose_deslocado_ok_geometry_v11
+~~~
+
+Se o inventário tiver mudado, primeiro executar
+__python -m src.services.deslocado_neural_dataset__
+e então repetir o diagnóstico v1.1.
+
+**Cuidado metodológico:** registro global externo NÃO é prova de que
+os pontos correspondentes sejam pads fixos ou de que a peça não tenha
+se deslocado. É uma qualificação de geometrias visuais, não medida
+do deslocamento físico do componente. Mesmo com cobertura 34/34,
+não existe recall NG real: __real_ng_recall=null__ e
+__production_approved=false__. Não treina one-class ainda.
+
+A avaliação feita pelo GitHub Actions usa imagens artificiais. Para
+quantificar melhora sobre os 34 OK reais, enviar ambos os relatórios
+v1.1 produzidos na estação da fábrica. Não aumentar cobertura diminuindo
+limiares até validar a qualidade das correspondências.
+
