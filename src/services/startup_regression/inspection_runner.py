@@ -15,7 +15,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from src.core.adhesive_multilight_analysis import analyze_lighting
+from src.core.adhesive_multilight_analysis import analyze_lighting, build_lighting_context
 from src.core.anomaly_memory_integration import install_anomaly_memory_integration
 from src.core.experts.missing_component_expert import MissingComponentExpert
 from src.core.experts.semantic_calibration import install_semantic_calibration
@@ -30,6 +30,8 @@ from src.core.roi_visual_alignment import install_roi_visual_alignment
 from src.core.semantic_roi_extension import install_semantic_roi_extension
 from src.services import screen_monitor as screen_module
 from src.utils.text_normalizer import CATEGORIES, normalize_aoi_text
+
+from .replay_telemetry import decision_snapshot, geometry_snapshot
 
 
 class ReplayError(Exception):
@@ -150,9 +152,14 @@ class SideInspectionRunner:
         info["lighting_mode"] = "SIDE"
         info["_replay_without_memory"] = True
 
+        # Mesmo contexto geométrico da inspeção operacional. Ele é passado
+        # ao pipeline em vez de ser recalculado para a telemetria: um único
+        # par gabarito/teste, uma única decisão, sem nova inferência.
         with redirect_stdout(StringIO()):
+            context = build_lighting_context(sample, test)
             analysis = analyze_lighting(
                 self.orchestrator, sample, test, info, "SIDE",
+                context=context,
             )
         if not isinstance(analysis, dict):
             raise ReplayError("Motor físico retornou análise inválida")
@@ -204,6 +211,12 @@ class SideInspectionRunner:
             "active_engines": active,
             "memory_consulted": False,
             "knn_enabled": False,
+            "telemetry": {
+                **decision_snapshot(analysis),
+                "geometry": geometry_snapshot(
+                    context, analysis, sample, test,
+                ),
+            },
         }
 
 
