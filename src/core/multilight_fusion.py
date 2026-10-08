@@ -547,8 +547,26 @@ def fuse_multilight(
         }
     )
 
+    # Cada luz pode ser um caso conhecido KNN ou imagem nova da CNN.
+    # Não identificar o evento inteiro pela rota de uma única luz.
+    light_routes = {
+        mode: str(_detail(source[mode]).get("recognition_route", "") or "")
+        for mode in LIGHTING_ORDER
+    }
+    distinct_routes = {value for value in light_routes.values() if value}
+    if len(distinct_routes) == 1 and len(light_routes) == len([
+        value for value in light_routes.values() if value
+    ]):
+        recognition_route = next(iter(distinct_routes))
+    elif distinct_routes:
+        recognition_route = "MULTILIGHT_MIXED"
+    else:
+        recognition_route = ""
+
     detail.update(
         {
+            "recognition_route": recognition_route,
+            "recognition_light_routes": light_routes,
             "final_score": _clamp01(final_score),
             "physical_score": strongest_physical,
             "fusion_rule": rule,
@@ -603,6 +621,8 @@ def fuse_multilight(
             "physical_defect": bool(is_defect),
             "dominant_engine": "multilight",
             "fusion_rule": rule,
+            "recognition_route": recognition_route,
+            "recognition_light_routes": deepcopy(light_routes),
             "operator_review_required": bool(review_required),
             "memory_role": "per_lighting_audit",
             "lighting_evidence": deepcopy(evidence),
