@@ -132,7 +132,7 @@ class OnlineLearningQueue:
             "promoted": promoted,
             "updated_at_utc": datetime.now(timezone.utc).isoformat(),
         }
-        pending = latest.with_suffix(".json.tmp")
+        pending = latest.with_name("latest_event." + uuid4().hex + ".tmp")
         pending.write_text(json.dumps(info, ensure_ascii=False, indent=2),
                            encoding="utf-8")
         pending.replace(latest)
