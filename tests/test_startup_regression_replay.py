@@ -97,9 +97,9 @@ class SideReplayContractTests(TestCase):
                     "src.services.startup_regression.inspection_runner.screen_module.HAS_TESSERACT",
                     True,
                 ),
-                patch.object(
-                    monitor, "_write_debug_crop",
-                    side_effect=AssertionError("Writer de debug acionado"),
+                patch(
+                    "src.services.screen_monitor.cv2.imwrite",
+                    side_effect=AssertionError("Escrita de imagem acionada"),
                 ),
             ):
                 decision = runner.inspect_png(png, "FALTANDO")
