@@ -52,7 +52,20 @@ def _candidate(
             edgeThreshold=9, patchSize=21,
         )
     else:
-        detector = cv2.AKAZE_create(threshold=.0002)
+        akaze_factory = getattr(cv2, "AKAZE_create", None)
+        if not callable(akaze_factory):
+            akaze_class = getattr(cv2, "AKAZE", None)
+            akaze_factory = getattr(akaze_class, "create", None)
+        if not callable(akaze_factory):
+            # Different OpenCV binary builds may omit AKAZE. Fail closed
+            # for this method; do not silently replace with another one.
+            return {
+                "method": name, "status": "EVIDENCIA_INSUFICIENTE",
+                "keypoints_reference": 0, "keypoints_test": 0,
+                "cross_checked_matches": 0, "ransac_inliers": 0,
+                "reasons": ["AKAZE_UNAVAILABLE_IN_OPENCV_BUILD"],
+            }
+        detector = akaze_factory(threshold=.0002)
     keys_ref, desc_ref = detector.detectAndCompute(gray_reference, mask)
     keys_test, desc_test = detector.detectAndCompute(gray_test, mask)
     info = {
