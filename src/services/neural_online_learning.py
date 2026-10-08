@@ -114,6 +114,29 @@ class OnlineLearningQueue:
                 if not (self.statuses / path.name).exists():
                     self._put(path.stem)
 
+    def _write_latest(self, event_id: str, *, state: str,
+                      promoted: bool | None = None) -> None:
+        latest = self.journal / "latest_event.json"
+        # Nunca sobrescrever o status de um evento posterior.
+        if state != "QUEUED" and latest.is_file():
+            try:
+                old = json.loads(latest.read_text(encoding="utf-8"))
+                if old.get("event_id") != event_id:
+                    return
+            except (OSError, ValueError):
+                return
+        info = {
+            "schema": "visionx.neural_online_latest_status.v1",
+            "event_id": event_id,
+            "state": state,
+            "promoted": promoted,
+            "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+        pending = latest.with_suffix(".json.tmp")
+        pending.write_text(json.dumps(info, ensure_ascii=False, indent=2),
+                           encoding="utf-8")
+        pending.replace(latest)
+
     def _put(self, event_id: str) -> None:
         with self._lock:
             if event_id not in self._queued:
@@ -128,7 +151,21 @@ class OnlineLearningQueue:
                 status_file = self.statuses / (name + ".json")
                 if not event.is_file():
                     continue
+                self._write_latest(name, state="TRAINING")
                 result = self._worker_command(event)
+                outcome_file = self.journal / "outcomes" / (name + ".json")
+                outcome = (
+                    json.loads(outcome_file.read_text(encoding="utf-8"))
+                    if result == 0 and outcome_file.is_file()
+                    else {}
+                )
+                promoted = outcome.get("promoted")
+                final_state = (
+                    "PROMOTED" if promoted is True
+                    else "REJECTED" if promoted is False
+                    else "COMPLETED" if result == 0 else "FAILED"
+                )
+                self._write_latest(name, state=final_state, promoted=promoted)
                 state = {
                     "schema": "visionx.neural_online_task_status.v1",
                     "event": name,
@@ -239,6 +276,7 @@ class OnlineLearningQueue:
                 encoding="utf-8",
             )
             draft.replace(journal)
+            self._write_latest(event_id, state="QUEUED")
             self._put(event_id)
             print(
                 "CNN ONLINE: confirmação humana salva. Treino enfileirado "
