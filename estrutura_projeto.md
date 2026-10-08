@@ -1,3 +1,46 @@
+## 08/10/2026 — Mudança de diretriz: DESLOCADO somente OK, sem desenho
+
+**Decisão do operador:** imagem AOI com inscrição diferente, mas corpo e
+terminações aparentemente alinhados. Desenho repetitivo de caixas, polígonos
+ou máscaras pelo operador não é aceitável. **A etapa de anotação manual
+v3/v3.1 foi retirada dos pré-requisitos** para o novo experimento. Os scripts
+e relatórios antigos permanecem no repositório só para auditoria; não serão
+exigidos novamente.
+
+**Fluxo a desenvolver (ainda não implementado):**
+
+1. Carregar os pares gabarito/teste DESLOCADO **OK reais** com proveniência,
+   hashes e iluminação. Inventário de 08/10: 34 observações em 24 eventos,
+   19 SIDE legados e 5 trincas SIDE/TOP/MID.
+2. Aprender **normalidade OK** mediante método one-class/autossupervisionado
+   (possível CNN comparativa), sem desenhos, sem uso da memória KNN e sem
+   fabricar rótulos NG reais. Os pares de OK, mesmo com inscrições diferentes,
+   são exemplos positivos.
+3. Separar o conteúdo da **marcação interna** das pistas de **posicionamento
+   físico** do corpo e das terminações relativamente a pads e referências
+   fixas da PCB. Precisam ser toleradas luz, zoom/captura e marcação. Se a
+   geometria ou as referências fixas forem invisíveis, classificar como
+   EVIDENCIA_INSUFICIENTE, nunca OK forçado.
+4. Separar treino/validação por **evento**, impedindo vazamento de SIDE/TOP/MID
+   de uma mesma peça entre os conjuntos. Manter os três SIDE difíceis como
+   diagnóstico explícito. Reproduzir 100% do acervo OK sem KNN.
+5. A saída experimental é COMPATIVEL_COM_OK, ANOMALIA_REVISAO ou
+   EVIDENCIA_INSUFICIENTE. Com **zero NG reais DESLOCADO**, não existe medida
+   confiável de recall NG. 34/34 OK é necessário para reduzir falsos alarmes,
+   mas é insuficiente para provar detecção de DESLOCADO. Não substituir o
+   motor físico, não habilitar AUTO-OK em Produção.
+6. Não mover apenas letras para construir proxies. Não tratar deslocamentos
+   sintéticos como NG físicos verificados. Não alterar a CNN FALTANDO ou a
+   lógica operacional durante experimentos offline.
+
+**Estado:** documentação do novo rumo somente. Nenhuma CNN one-class v4 foi
+treinada ou ativada. A etapa técnica seguinte é um diagnóstico offline
+automático do conjunto OK, sem máscaras manuais, antes de qualquer treino
+ou alteração de veredito. A implementação só avançará com confirmação
+do operador.
+
+---
+
 ## 08/10/2026 — CNN DESLOCADO v3.1: refinamento de máscaras de pixels
 
 A v3 anterior validava retângulos, não a geometria do componente.

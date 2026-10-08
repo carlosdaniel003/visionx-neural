@@ -1,3 +1,15 @@
+## CNN DESLOCADO — plano novo sem máscaras manuais
+
+A revisão de máscaras v3/v3.1 por desenho foi **descontinuada como requisito**.
+O próximo experimento usará pares **OK** e aprendizado de normalidade,
+com invariância à inscrição e iluminação, sem KNN. Não há NG DESLOCADO
+reais para certificar a rejeição de defeitos. Nenhum modelo ou motor operacional
+foi alterado nesta mudança de diretriz.
+
+Consulte [o protocolo de experimentos](docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md).
+
+---
+
 ## CNN DESLOCADO v3.1 — máscaras reais (offline)
 
 O catálogo v3 anterior registra apenas **retângulos**. O refinamento v3.1
