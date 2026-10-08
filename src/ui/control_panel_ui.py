@@ -1107,8 +1107,9 @@ class ControlPanelUI:
             QSizePolicy.Policy.Fixed,
         )
         window.btn_copy_network_image.setToolTip(
-            "Copia a evidência visual do diagnóstico atual. Em adesivo, gera uma "
-            "única imagem com os frames completos SIDE, TOP e MID lado a lado, "
+            "Copia a evidência visual do diagnóstico atual. Em qualquer ciclo "
+            "multilight completo, gera uma única imagem com os frames "
+            "SIDE, TOP e MID lado a lado, "
             "sem sobreposição."
         )
         window.btn_copy_network_image.clicked.connect(
