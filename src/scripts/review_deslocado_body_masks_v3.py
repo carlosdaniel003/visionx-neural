@@ -114,7 +114,12 @@ def annotate_review(path: Path) -> dict:
                             "Selecionar corpo inteiro - "+view,
                             frame,showCrosshair=True,fromCenter=False
                         )
-                        cv2.destroyWindow("Selecionar corpo inteiro - "+view)
+                        try:
+                            cv2.destroyWindow("Selecionar corpo inteiro - "+view)
+                        except cv2.error:
+                            # Em algumas versões, selectROI fecha a janela
+                            # automaticamente; não perder a anotação por isso.
+                            pass
                         proposal=[int(n) for n in selected]
                         if proposal[2]>0 and proposal[3]>0:
                             try:
