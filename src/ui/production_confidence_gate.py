@@ -75,7 +75,22 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     verdict = _verdict(analysis)
     confidence = normalized_confidence(analysis)
 
-    if verdict == "FALHA FALSA" and not _review_required(analysis):
+    detail = (analysis or {}).get("detail", {}) if isinstance(analysis, dict) else {}
+    detail = detail if isinstance(detail, dict) else {}
+    # O checkpoint v2 passou a regressão de exemplos conhecidos, não um
+    # teste cego de NG novos. Não enviar 0/OK automaticamente a uma AOI
+    # só porque a rede produziu um score extremo não calibrado.
+    cnn_experimental = bool(
+        detail.get("cnn_v2_active") and detail.get("cnn_v2_experimental")
+    )
+
+    if cnn_experimental and verdict == "FALHA FALSA":
+        proposed_decision = ""
+        auto_allowed = False
+        operator_review_required = True
+        verdict = "REVISÃO OBRIGATÓRIA"
+        reason = "faltando_cnn_v2_experimental_requires_operator"
+    elif verdict == "FALHA FALSA" and not _review_required(analysis):
         proposed_decision = "OK"
         auto_allowed = True
         operator_review_required = False
