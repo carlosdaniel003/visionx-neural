@@ -300,6 +300,11 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             # necessário. Não usar KNN por semelhança como atalho.
             match = {"status": "UNAVAILABLE", "reason": str(exc)}
         mode = canonical_memory_lighting(info.get("lighting_mode", "SIDE"))
+        if match["status"] == "UNAVAILABLE":
+            return _review_result(
+                "Verificação exata indisponível: " + str(match.get("reason", "")),
+                mode,
+            )
         if match["status"] == "KNOWN":
             return _recognized_result(match, mode)
         if match["status"] == "CONFLICT":
