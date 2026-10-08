@@ -45,7 +45,7 @@ class DecisionInfluenceWidget(QWidget):
     @staticmethod
     def _status_text(row: dict) -> str:
         if row["selected"]:
-            return "DOMINANTE"
+            return "ORIGEM LOCAL" if row.get("multilight_local_origin", False) else "DOMINANTE"
         if row.get("participates", False):
             return "PARTICIPA"
         if not row["active"]:
@@ -228,11 +228,18 @@ class DecisionInfluenceWidget(QWidget):
 
         footer_y = height - footer_height + 2
         painter.setPen(QColor("#d0d0d0"))
-        formula = (
-            f"Fusão: físico {physical:.0%}×{physical_weight:.0%} + "
-            f"KNN {knn_vote_label} ({knn_vote:.0%} NG)×{knn_weight:.0%} "
-            f"= {final_score:.0%} • match {knn_match:.0%}"
-        )
+        if str(self.trace.get("dominant_engine", "")) == "multilight":
+            origin = str(self.trace.get("multilight_dominant_mode", "-"))
+            formula = (
+                f"Fusão SIDE/TOP/MID • origem: {origin} • "
+                f"veredito: {self.trace.get('verdict', '-')} • score {final_score:.0%}"
+            )
+        else:
+            formula = (
+                f"Fusão: físico {physical:.0%}×{physical_weight:.0%} + "
+                f"KNN {knn_vote_label} ({knn_vote:.0%} NG)×{knn_weight:.0%} "
+                f"= {final_score:.0%} • match {knn_match:.0%}"
+            )
         painter.drawText(
             padding,
             int(footer_y + 14),
