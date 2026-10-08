@@ -399,3 +399,82 @@ julgamento operacional.
 
 ---
 
+
+
+## 08/10/2026 — Resultado real do replay integral CNN DESLOCADO v2: 31/34 OK
+
+**Relatórios recebidos após execução na estação Windows 10:**
+`deslocado_ok_replay_v2.json` e
+`deslocado_ok_replay_v2.txt`. Modelo:
+`visionx.deslocado_comparative_cnn.v2`, melhor época 2,
+checkpoint `experiment_v2_20261008T174851_435041Z/deslocado_cnn_v2_candidate.pt`,
+SHA-256 `1704acee04657784e9518d9963cc246005372f4d90bff2ebafa3b06e15cac62a`.
+Manifesto de avaliação e treino com o mesmo SHA-256
+`6af07429aed97292eb47c14c12669d49936ef470e48c2f643b292c9a0421bd94`.
+Logo, teste de acervo conhecido/in-sample, **não cego**.
+
+**Cobertura completa:** 34 PNG OK / 24 eventos, todas as
+trincas atuais incluídas e 19 SIDE legados. NENHUM
+DESLOCADO NG real disponível. KNN não participou;
+nenhuma imagem re-treinada, checkpoint não promovido,
+produção não alterada.
+
+**Matriz da classe OK:**
+- TOTAL: **31/34 OK reconhecidos**, **3/34 falsos NG**
+  (91,176% de acerto); eventos **21/24 OK**, 3 falsos NG;
+  `historical_ok_archive_regression_passed=false`.
+- SIDE legado: 16/19 OK, 3 falsos NG;
+  SIDE conjunto: 21/24 OK;
+  TOP 5/5 OK e MID 5/5 OK;
+  cinco trincas SIDE/TOP/MID atuais corretas em suas
+  três iluminações.
+- **Falsos NG específicos (todos OK SIDE legado):**
+  - `public/ok_archive/2026-10-02_1349_DESLOCADO.png`,
+    score NG-proxy **0,50294089**;
+  - `public/ok_archive/2026-10-02_1400_DESLOCADO.png`,
+    score **0,50141501**;
+  - `public/ok_archive/2026-10-02_1415_DESLOCADO.png`,
+    score **0,50511873**.
+- Os três erros ficam próximos ao limiar 0,5. **Não
+  corrigir subindo limiar para 0,51**, pois sem NG reais
+  isso pode aumentar falsos OK em defeitos verdadeiros.
+  Os scores não são probabilidades calibradas.
+- Resultado: `safe_to_replace_operational_engine=false`,
+  `safe_for_auto_OK=false`, `real_NG_recall=null`.
+  Um classificador constante OK também acertaria todo
+  acervo, portanto 34/34 tampouco qualificaria
+  automaticamente substituição do motor físico.
+
+**Nova rotina diagnóstica de falsos NG:**
+`src/scripts/diagnose_deslocado_ok_failures.py` carrega
+o relatório e o mesmo manifesto SHA-256 de avaliação,
+verifica imagens fonte e gera em
+`reports/deslocado_neural/diagnostics/ok_false_ng_*/`
+um painel PNG por falha:
+`GABARITO / REFERENCE`,
+`TESTE / REAL OK`,
+`DIFERENCA RGB (NAO E NG)`.
+A diferença é puramente visual, não localiza nem
+segmenta o componente automaticamente; não toca
+dados originais, pesos ou produção.
+O objetivo é determinar se os três casos estão
+associados a variação normal, iluminação, alinhamento
+ou confusão do componente.
+
+**Execução para diagnóstico:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.scripts.diagnose_deslocado_ok_failures
+```
+
+Enviar as **três imagens comparativas geradas** para
+análise; em seguida definir estratégia de máscaras
+do corpo real do componente, e só então novo
+treinamento com separação rigorosa de eventos.
+Com 0 NG reais, manter motor físico, sem ativação
+CNN de liberação em produção.
+
+---
+

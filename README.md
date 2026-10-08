@@ -1,5 +1,24 @@
 # VisionX Neural
 
+## CNN DESLOCADO v2 — replay completo: 31/34 OK
+
+O replay real de `ok_archive` processou 34 imagens e
+24 eventos da categoria DESLOCADO, sem consulta KNN:
+**31/34 OK reconhecidos**, **3 falsos NG**, todos
+na iluminação SIDE legada; TOP/MID 5/5 cada.
+O modelo continua candidato, pois não há NG real
+e a v2 sintética deslocou parte da inscrição `104`,
+não o componente inteiro.
+
+A rotina `python -m src.scripts.diagnose_deslocado_ok_failures`
+gera painéis gabarito/teste/diferença para as três falhas,
+a serem examinados antes de retreinar.
+**Não trocar o motor operacional pelo modelo OK-only.**
+Consulte [documentação DESLOCADO](docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md).
+
+---
+
+
 ## Replay completo dos OK DESLOCADO com CNN v2
 
 Use `python -m src.scripts.replay_deslocado_ok_v2` para
