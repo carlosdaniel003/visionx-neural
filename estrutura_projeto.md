@@ -1,5 +1,56 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — CNN FALTANDO: treinamento experimental com dataset confirmado
+
+**Decisão do operador:** confiar nos rótulos locais de OK/NG e iniciar treinamento
+sem exigir a conclusão do painel de qualificação visual. O painel permanece
+opcional; esta autorização vale para **treino experimental**, não para
+declaração automática de modelo aprovado em Produção.
+
+**Fontes e limitação:** `reports/faltando_neural/run_*/manifest.json` já
+existe no computador novo com 117 pares AOI extraídos, 107 OK e 10 NG SIDE
+históricos. 25 trincas SIDE/TOP/MID OK reconhecidas por nome e OCR
+board/parts/value coerentes; nenhum manifesto AOI com event_id verificável.
+O treinamento pode agrupar essas trincas **provisoriamente** como
+observações da mesma peça, nunca considera as 75 fotos como 75 eventos
+independentes. O modelo não dispõe de NG TOP/MID para validar generalização.
+
+**Novos módulos:**
+
+- `src/core/neural/faltando_cnn.py`: CNN pequena e comparativa com
+  extrator visual compartilhado (gabarito/teste) e fusão multilight
+  conservadora por máximo logit NG entre as luzes disponíveis;
+  aceita SIDE histórico sem TOP/MID. Não há consulta KNN.
+- `src/scripts/train_faltando_cnn.py`: treinamento PyTorch offline,
+  pad/resizing sem esticar a geometria, augmentação de pares sincronizada,
+  BCE ponderada por desbalanceamento, objetivo auxiliar por iluminação,
+  split holdout por componente e pares visualmente quase repetidos.
+  Valida hashes SHA-256 das fontes, cria checkpoint local
+  `faltando_cnn_candidate.pt`, `training_report.json` e
+  `training_summary.txt` em `reports/faltando_neural/models/experiment_*/`.
+  Sempre marca `experimental=True` e `production_approved=False`.
+- `tests/test_faltando_cnn_training.py` e workflow Linux CPU:
+  valida tensor CNN, split sem vazamento, 1 epoch sintético real,
+  proteção de fontes e ausência de autorização à produção.
+
+**Execução no PC novo (após git pull):**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -c "import torch; print(torch.__version__)"
+python -m src.scripts.train_faltando_cnn --epochs 25 --batch-size 4 --size 160 --device cpu
+```
+
+**Segurança:** nenhum modelo é carregado no `main.py`; nenhum especialista
+físico foi retirado ainda; os resultados do holdout e o risco de NG
+classificado como OK precisam ser examinados antes de integração à Produção.
+É possível começar o treino, mas não afirmar precisão operacional a partir
+de dez NG SIDE. O gate de regressão também permanece independente.
+
+---
+
+
 ## 08/10/2026 — Qualificação visual assistida CNN FALTANDO (offline)
 
 **Escopo autorizado:** criar ferramenta local para revisar pares gabarito/teste

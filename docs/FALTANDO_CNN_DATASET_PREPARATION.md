@@ -101,3 +101,58 @@ Os originais em `public`, o dataset e o `manifest.json` não mudam.
 
 Esta revisão é preparatória: `training_ready=False` continua intacto,
 não treina CNN, não cria splits e não interfere no ODIN em Produção.
+
+## Treinamento experimental aprovado pelo operador (08/10/2026)
+
+O operador confirmou que os rótulos do acervo são válidos e **autorizou
+treinamento imediato sem revisão manual obrigatória**. O painel visual
+anterior continua disponível para auditoria opcional. O treinamento acessa
+os recortes **já extraídos**; não renomeia ou move imagens originais.
+
+O modelo `src/core/neural/faltando_cnn.py` é uma CNN comparativa
+(gabarito versus teste) com extrator compartilhado e seleção por
+`SIDE/TOP/MID`. Eventos monoimagem legados usam máscara SIDE; cada
+trinca de três luzes OK com OCR `board/parts/value` coerente
+é agrupada provisoriamente como um evento. As imagens da trinca
+não são três eventos independentes. A saída é um único logit da
+presença/ausência; o maior score NG das iluminações disponíveis
+determina o score do evento. KNN e motores físicos não são consultados.
+
+O treino é executado na máquina nova, no **mesmo ambiente Python**:
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -c "import torch; print(torch.__version__)"
+python -m src.scripts.train_faltando_cnn --epochs 25 --batch-size 4 --size 160 --device cpu
+```
+
+Caso `import torch` falhe, é necessário disponibilizar o pacote PyTorch
+compatível nesse ambiente (sem instalar software com privilégio de
+administrador). Evite alterar o ambiente Python do Windows XP.
+O treinamento pode levar vários minutos na CPU corporativa.
+
+**Saídas do treino** (nenhum arquivo será enviado ao GitHub):
+
+```text
+reports/faltando_neural/models/experiment_<timestamp>/
+    faltando_cnn_candidate.pt
+    training_report.json
+    training_summary.txt
+```
+
+A avaliação utiliza holdout com separação por board/parts e similaridade
+de imagem, evitando que uma trinca apareça parcialmente no treino e no
+holdout. O relatório inclui `FN_NG_as_OK`: NG verdadeiro liberado
+erroneamente como OK. Se não for possível formar holdout com OK/NG
+independentes, o treino falha sem salvar modelo.
+
+**Limites e estado:**
+- Apenas 10 NG SIDE históricos e nenhum NG TOP/MID: métrica pequena, sem
+  cobertura de falhas reais multilight.
+- Rede pequena treinada do zero: demonstrador/linha de base; não alegar
+  transfer learning nem generalização comprovada.
+- Checkpoint `experimental=True`, `production_approved=False`.
+  Nenhuma alteração em `main.py`, no roteador KNN, no modo Produção ou
+  na regressão de startup. Substituição de motores e automação de decisão
+  serão etapas posteriores após avaliar os resultados reais.

@@ -79,6 +79,20 @@ O projeto combina diferentes abordagens para aumentar a confiabilidade da análi
 
 ---
 
+## Treinamento experimental da CNN FALTANDO
+
+Após extrair os pares com `python -m src.services.faltando_neural_dataset`,
+execute `python -m src.scripts.train_faltando_cnn --epochs 25 --device cpu`.
+A rede compara gabarito/teste, usa SIDE histórico e grupos OK SIDE/TOP/MID
+consistentes por nome+OCR (sem inventar event_id), e salva pesos candidatos
+e métricas em `reports/faltando_neural/models/`. Por solicitação do operador,
+o treinamento usa os rótulos das pastas sem exigir o painel de revisão manual.
+O checkpoint é **experimental e não está habilitado em Produção**: não há
+NG TOP/MID, e desempenho em holdout com poucos NG não certifica segurança.
+Detalhes em [Treinamento CNN FALTANDO](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+
+---
+
 ## Qualificação visual offline CNN FALTANDO
 
 Após preparar o acervo, execute `python -m src.ui.faltando_neural_review`
