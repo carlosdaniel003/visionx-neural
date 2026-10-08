@@ -15,6 +15,7 @@ from src.core.best_match_memory import install_best_match_memory
 from src.core.dual_scale_memory import install_dual_scale_memory
 from src.core.full_frame_memory import install_full_frame_memory
 from src.core.neural.faltando_live import install_faltando_cnn_live
+from src.core.verified_memory_router import install_memory_first_router
 from src.core.experts.knn_expert import KNNExpert
 from src.core.experts.missing_component_expert import MissingComponentExpert
 from src.core.experts.semantic_calibration import (
@@ -149,6 +150,9 @@ def main():
     # FALTANDO passa pela CNN v2; as demais categorias preservam MoE/KNN.
     # Modelo experimental: Modo Produção exige confirmação humana antes do OK.
     install_faltando_cnn_live(MoEOrchestrator)
+    # Consulta primeiro apenas memória humana KNN de par EXATO. Para casos
+    # novos ignora KNN e encaminha ao motor de categoria ou CNN FALTANDO.
+    install_memory_first_router(MoEOrchestrator)
 
     # Ordem dos wrappers operacionais:
     # 1. aprendizado humano;
