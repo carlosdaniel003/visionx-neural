@@ -125,7 +125,9 @@ class FaltandoCNNLive:
             }
             self._model = model
             return model
-        except (ImportError, OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+        except Exception as exc:
+            # Fail-closed: qualquer erro de leitura/deserialização do modelo
+            # deve resultar em revisão, não permitir ausência de decisão.
             self._error = (type(exc).__name__, str(exc))
             raise
 
@@ -171,7 +173,8 @@ class FaltandoCNNLive:
                 ng_score = float(torch.sigmoid(score_logit)[0].item())
             if not math.isfinite(ng_score):
                 raise ValueError("CNN emitiu score não finito")
-        except (ImportError, OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+        except Exception as exc:
+            # Falhas inesperadas do PyTorch/OpenCV também são revisão.
             return _fail_review(type(exc).__name__, str(exc), light)
 
         is_defect = ng_score >= .5
