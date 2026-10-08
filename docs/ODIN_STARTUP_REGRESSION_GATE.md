@@ -536,6 +536,17 @@ O resultado real do PC deve ser revisado antes de declarar esta etapa
 aprovada. Falhas de Tesseract ou dependências também devem aparecer no
 relatório e ser corrigidas, não ignoradas.
 
+**Validação técnica:** workflow `Startup Regression SIDE Replay`,
+execução `37780008623` em GitHub Actions Windows,
+**22 testes executados, todos aprovados**, inclusive MoE físico real em
+`FALTANDO` e `INVERTIDO` com KNN bloqueado por teste. Não equivale a
+119/119 imagens reais aprovadas: essa medição depende dos PNGs locais.
+
+**Observação operacional:** quando houver divergência ou falha, o comando
+termina com código de saída 1 **depois de salvar os relatórios**. Isso é
+correto para scripts de diagnóstico e **não** bloqueia o `main.py` nem
+altera o ODIN em operação.
+
 ### Etapa 3 — Manifesto e replay por evento multilight
 
 - Evoluir persistência futura de OK/NG para associar
