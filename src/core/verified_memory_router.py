@@ -346,6 +346,10 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             detail = {}
             result["detail"] = detail
         detail.update({
+            "specialist_candidate": (
+                "DESLOCADO_CNN_V1_BOOTSTRAP_NOT_ACTIVE"
+                if category == "DESLOCADO" else None
+            ),
             "recognition_route": route,
             "recognition_schema": RECOGNITION_SCHEMA,
             "recognition_match": "NOT_FOUND",
