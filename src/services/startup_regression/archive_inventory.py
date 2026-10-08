@@ -13,6 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import zlib
 from typing import Any, Callable
 
 import cv2
@@ -79,6 +80,44 @@ def _hash_file(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _validate_png_chunks(contents: bytes) -> None:
+    """Verifica estrutura, integridade CRC e final IEND além do decode OpenCV."""
+    position = len(PNG_SIGNATURE)
+    saw_ihdr = False
+    saw_idat = False
+    saw_iend = False
+    while position < len(contents):
+        if position + 12 > len(contents):
+            raise ValueError("PNG truncado na estrutura de chunks")
+        size = int.from_bytes(contents[position:position + 4], "big")
+        end = position + 12 + size
+        if end > len(contents):
+            raise ValueError("PNG truncado no payload/CRC do chunk")
+        chunk_type = contents[position + 4:position + 8]
+        if not saw_ihdr and (chunk_type != b"IHDR" or size != 13):
+            raise ValueError("O primeiro chunk deve ser IHDR de 13 bytes")
+        expected_crc = int.from_bytes(contents[end - 4:end], "big")
+        actual_crc = zlib.crc32(contents[position + 4:end - 4]) & 0xFFFFFFFF
+        if expected_crc != actual_crc:
+            raise ValueError("CRC de PNG inválido")
+        if chunk_type == b"IHDR":
+            if saw_ihdr:
+                raise ValueError("IHDR duplicado")
+            saw_ihdr = True
+        elif chunk_type == b"IDAT":
+            saw_idat = True
+        elif chunk_type == b"IEND":
+            if size != 0 or not saw_idat:
+                raise ValueError("IEND inválido ou imagem sem IDAT")
+            saw_iend = True
+            if end != len(contents):
+                raise ValueError("Dados após IEND do PNG")
+            break
+        position = end
+    if not saw_iend:
+        raise ValueError("PNG sem IEND válido")
+
+
 def _inspect_png(path: Path, root: Path, label: str) -> dict[str, Any]:
     relative = path.relative_to(root).as_posix()
     result: dict[str, Any] = {
@@ -95,6 +134,7 @@ def _inspect_png(path: Path, root: Path, label: str) -> dict[str, Any]:
         "channels": None,
         "event_id": None,
         "manifest_path": None,
+        "manifest_links": [],
         "ocr_status": "NOT_EVALUATED_STAGE_1",
         "decision_status": "NOT_EVALUATED_STAGE_1",
         "issues": [],
@@ -108,8 +148,7 @@ def _inspect_png(path: Path, root: Path, label: str) -> dict[str, Any]:
         result["file_sha256"] = _hash_file(contents)
         if not contents.startswith(PNG_SIGNATURE):
             raise ValueError("Assinatura de PNG ausente ou incorreta")
-        if len(contents) < 24 or contents[12:16] != b"IHDR":
-            raise ValueError("Cabeçalho IHDR ausente")
+        _validate_png_chunks(contents)
         width = int.from_bytes(contents[16:20], "big")
         height = int.from_bytes(contents[20:24], "big")
         if not width or not height or width * height > MAX_PIXELS:
@@ -186,6 +225,7 @@ def _read_manifest(
         aoi_info = payload.get("aoi_info")
         if not isinstance(aoi_info, dict):
             issues.append(_issue("MANIFEST_MISSING_OCR", relative, "Sem aoi_info confiável"))
+        pending_links: list[tuple[dict[str, Any], str, str]] = []
         for mode in LIGHTING_ORDER:
             frame = frames.get(mode)
             if not isinstance(frame, dict):
@@ -212,28 +252,33 @@ def _read_manifest(
                 continue
             if current["expected_label"] != label:
                 issues.append(_issue("MANIFEST_LABEL_CONFLICT", relative, frame_relative))
-            if (
-                current["lighting_source"] == "EXPLICIT_SUFFIX"
-                and current["lighting_mode"] != mode
-            ):
-                issues.append(_issue("MANIFEST_LIGHT_CONFLICT", relative, frame_relative))
+            # Uma imagem deduplicada pode ser reutilizada por eventos
+            # diferentes ou iluminações idênticas em pixels. O nome original
+            # não deve anular o vínculo explícito de um manifesto correto.
             provided_hash = str(frame.get("sha256", "") or "").lower()
             if not re.fullmatch(r"[0-9a-f]{64}", provided_hash):
                 issues.append(_issue("MANIFEST_MISSING_HASH", relative, mode))
             elif provided_hash != current["file_sha256"]:
                 issues.append(_issue("MANIFEST_HASH_MISMATCH", relative, frame_relative))
-            if current.get("manifest_path") is not None:
-                issues.append(
-                    _issue("FRAME_CLAIMED_TWICE", relative, frame_relative)
-                )
-            else:
-                current["manifest_path"] = relative
-                current["event_id"] = event_id
-                # O manifesto é a origem explícita da iluminação.
-                current["lighting_mode"] = mode
-                current["lighting_source"] = "MANIFEST"
+            pending_links.append((current, mode, frame_relative))
 
         if not issues:
+            # Vincular somente DEPOIS de validar o manifesto inteiro.
+            # Uma falha em MID não pode criar um evento SIDE/TOP parcialmente
+            # vinculado. A mesma imagem pode servir a vários eventos.
+            for current, mode, _frame_relative in pending_links:
+                link = {
+                    "event_id": event_id,
+                    "lighting_mode": mode,
+                    "manifest_path": relative,
+                }
+                current["manifest_links"].append(link)
+                if len(current["manifest_links"]) == 1:
+                    current["manifest_path"] = relative
+                    current["event_id"] = event_id
+                else:
+                    current["manifest_path"] = None
+                    current["event_id"] = None
             manifest["status"] = "LINKED"
         else:
             manifest["status"] = "NEEDS_QUALIFICATION"
@@ -342,7 +387,7 @@ def inventory_archives(
         if (
             record["status"] == "VALID_PNG"
             and record["lighting_source"] == "EXPLICIT_SUFFIX"
-            and not record.get("manifest_path")
+            and not record.get("manifest_links")
         ):
             issues.append(
                 _issue(
@@ -396,10 +441,10 @@ def inventory_archives(
         ),
         "explicit_unlinked_count": sum(
             r["lighting_source"] == "EXPLICIT_SUFFIX"
-            and not r["manifest_path"] for r in records
+            and not r["manifest_links"] for r in records
         ),
         "manifest_linked_png_count": sum(
-            bool(r["manifest_path"]) for r in records
+            bool(r["manifest_links"]) for r in records
         ),
         "manifest_count": len(manifests),
         "linked_event_count": linked,
