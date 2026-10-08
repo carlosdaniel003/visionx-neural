@@ -1,5 +1,67 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — C2 FALTANDO: revisão indevida apesar de testemunhas OK
+
+**Evento AOI:** `17eee0c0e2b446208d2a12ea5b806ef5`, peça `C2`,
+categoria `FALTANDO`, operador validou como `FALHA FALSA`.
+ODIN retornou `REVISÃO OBRIGATÓRIA` sob
+`multilight_missing_physical_disagreement`.
+
+**Evidência por luz, extraída do debug real:**
+
+- **SIDE:** `FALHA FALSA`; melhor KNN OK 0.9113768; corpo
+  detectado `missing_component_body_present=True`, Dice 0.876121,
+  coarse 0.722954, envelope de massa invariável preservada e
+  `fusion_rule=hard_missing_invariant_presence_ok_witness`.
+- **TOP:** `DEFEITO REAL`; `missing_hard_absence=True`,
+  `missing_score=0.907439`, KNN OK 0.926029. A hipótese OK
+  possui similaridade de **quadro completo** 0.956968,
+  **contexto** 0.950198 e **epicentro** 0.904621.
+- **MID:** `FALHA FALSA`; KNN OK 0.957204; especialista físico
+  `missing_is_defect=False`, score 0.26867 (limite 0.36),
+  envelope contextual preservado e sem exposição de fundo.
+
+**Correção no núcleo:** nova rota
+`multilight_missing_verified_presence` em
+`src/core/multilight_fusion.py`, depois de detectar hard missing
+isolado contradito por outras iluminações. Para liberar
+`FALHA FALSA` exige **simultaneamente**:
+
+1. Uma única luz acusa `missing_hard_absence`, nenhuma outra acusa
+   defeito nem solicita revisão, e todas as memórias são OK da categoria
+   `FALTANDO` e das respectivas iluminações.
+2. Na luz discordante há memória OK 0.92+, margem 0.08+ e evidência
+   de correspondência *multiescala* registrada: quadro completo 0.95+,
+   contexto 0.94+ e epicentro 0.90+.
+3. **Outra iluminação** comprova presença física de corpo com a rota
+   `hard_missing_invariant_presence_ok_witness`, coarse 0.70+,
+   Dice 0.84+, envelope de presença invariável, fundo exposto baixo
+   e auditoria ROI consistente.
+4. **Terceira iluminação distinta** apresenta `missing_is_defect=False`,
+   score abaixo da tolerância, envelope contextual preservado e
+   melhor memória OK 0.93+. Os dois vereditos não-NG precisam ter score
+   final até 0.20.
+5. Em falta de qualquer testemunha, permanece a fusão conservadora
+   anterior (`REVISÃO OBRIGATÓRIA` ou `DEFEITO REAL`).
+   Não liberar OK simplesmente por estar no dataset.
+
+Ao confirmar a rota, o `raw_hard_missing_evidence` permanece
+`True` para auditoria, mas `hard_missing_evidence` efetivo é
+`False`, `operator_review_required=False`, o score NG
+provisório da TOP não contamina o score final OK, e os três
+papéis (`suspect_mode`, `body_mode`, `clear_mode`) são gravados
+em `multilight_missing_presence_witnesses`.
+
+**Testes:** regressão de telemetria real compactada de C2/17eee
+e variações negativas removendo individualmente cada evidência
+para garantir que o ODIN não libere OK sem contraprova.
+Reproduções anteriores SIDE/NG real mantidas. Os arquivos AOI
+brutos e o dataset local não são modificados. Status: correção
+de código preparada; **aguardando replay real na AOI para validar o
+veredito automático**. Nenhuma alteração do agente Windows XP.
+
+---
+
 ## 08/10/2026 — evento C6~3 FALTANDO e Copiar imagens SIDE/TOP/MID
 
 **Evento:** `691e95c58dab47ed95a233bc08c563b6`, `C6~3`, operador
