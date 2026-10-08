@@ -1,5 +1,24 @@
 # VisionX Neural
 
+## Replay completo dos OK DESLOCADO com CNN v2
+
+Use `python -m src.scripts.replay_deslocado_ok_v2` para
+avaliar **todos os arquivos DESLOCADO de `ok_archive`**,
+incluindo SIDE legado e SIDE/TOP/MID, com o checkpoint v2
+existente. O script verifica cobertura integral, hash dos
+arquivos e relata todos os falsos NG por imagem e evento
+em `reports/deslocado_neural/replays/`.
+
+Os previews fornecidos mostraram que o proxy v2 deslocou
+somente parte da inscrição `104`, não o resistor inteiro.
+Assim, **acertar 100% dos OK não basta para substituir
+o motor DESLOCADO**: sem NG reais, a rede que responde
+sempre OK também passaria. A integração física permanece
+inalterada. Veja
+[documentação DESLOCADO](docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md).
+
+---
+
 ## CNN DESLOCADO v2 — correção do treinamento experimental
 
 A CNN DESLOCADO v1 concluiu 15 épocas e acertou os proxies

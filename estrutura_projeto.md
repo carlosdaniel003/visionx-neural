@@ -1,5 +1,89 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — Análise visual das prévias v2 e gate integral de OK DESLOCADO
+
+**Imagens de preview recebidas do operador:**
+`4c3c78bb54d165_SIDE.png` e
+`274a9377eb2e83_SIDE.png`. Nas duas,
+`TEST/ROI HYPOTHESIS` marcou em vermelho apenas uma
+parte branca da inscrição **104** no resistor horizontal,
+e não o corpo inteiro do componente entre seus terminais.
+O `SYNTHETIC SHIFT` deslocou um segmento da inscrição.
+**Diagnóstico:** os proxies v2 são visualmente inadequados
+para representar DESLOCADO real da peça; os números
+`0/2` no dev proxy não autorizam aperfeiçoamento por
+treino de mais épocas e nem substituição de especialistas.
+
+**Pedido atualizado:** reprocessar TODOS os arquivos DESLOCADO
+em `public/ok_archive`, incluindo SIDE legado, SIDE atual,
+TOP e MID. Quando a CNN classificar todos como OK,
+o operador deseja substituir o motor DESLOCADO pelos pesos CNN.
+
+**Implementação de avaliação publicada:**
+`src/scripts/replay_deslocado_ok_v2.py` reusa o mesmo
+checkpoint v2, as quatro entradas de duas escalas e
+a máscara de luz; não cria nenhum proxy e não treina.
+Opera com o manifesto local (OCR/pares) e compara
+**todos os PNGs DESLOCADO atualmente existentes**
+em `public/ok_archive` com os fontes preparados.
+Verifica também NG em `public/ng_archive`. Se houver
+um novo arquivo OK, uma remoção, um hash de origem
+alterado, uma trinca de nomes/OCR inconsistente ou
+qualquer NG real não qualificado, interrompe o replay
+em vez de omitir casos. Após nova preparação, pode
+receber `--manifest` e `--checkpoint` explícitos.
+
+Relatório `reports/deslocado_neural/replays/all_ok_v2_*/`:
+`deslocado_ok_replay_v2.json` e
+`deslocado_ok_replay_v2.txt` com veredictos individuais,
+scores NG-proxy não calibrados, confusão por imagem/evento,
+SIDE legado, SIDE/TOP/MID e lista de falsos NG.
+`historical_ok_archive_regression_passed=true`
+significa SOMENTE que os exemplos OK conhecidos foram
+reconhecidos pela CNN.
+
+**Critério lógico de habilitação:** um classificador
+constante que SEMPRE prevê OK pode alcançar 100% neste
+acervo, logo o teste apenas mede **especificidade de
+OK histórico**, não mede capacidade de detectar um
+NG DESLOCADO real (`real_NG_recall=null`). Como a
+CNN v2 já mostrou `0/2` nos proxies e eles são
+artefatos da inscrição, **não é defensável trocar
+o motor físico por CNN exclusivamente com esse gate**.
+O script reporta `safe_to_replace_operational_engine=false`
+e `safe_for_auto_OK=false` independentemente da
+pontuação. Não gera certificado de produção, não altera
+`MoEOrchestrator`, nem KNN, XP, fusão ou a CNN FALTANDO.
+A CNN DESLOCADO pode permanecer como **candidata para
+observação em sombra**, sem substituir a inspeção física
+até haver evidências NG independentes ou uma validação
+equivalente de detecção/rejeição segura de anomalias.
+
+**Executar na fábrica:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.scripts.replay_deslocado_ok_v2
+```
+
+Se a cobertura for interrompida porque novos OK apareceram,
+executar `python -m src.services.deslocado_neural_dataset`,
+e depois repetir replay, especificando manifesto e checkpoint
+quando necessário. Enviar `deslocado_ok_replay_v2.json`
+e `deslocado_ok_replay_v2.txt` para avaliar a matriz completa.
+**Não afirmar 34/34** antes da execução real local, pois
+o acervo pode ter recebido imagens novas.
+
+Próximo avanço técnico recomendado: identificar o resistor
+inteiro com anotação de ROI/corpo ou correspondência com
+o gabarito, construir desvios geométricos corretos e
+obter NG DESLOCADO independente antes da migração do
+julgamento operacional.
+
+---
+
+
 ## 08/10/2026 — Resultado real da CNN DESLOCADO v2 (relatórios recebidos)
 
 **Fontes recebidas do treinamento real no computador de fábrica:**
