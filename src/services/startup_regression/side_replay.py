@@ -16,6 +16,7 @@ from typing import Any, Callable
 from .archive_inventory import inventory_archives
 from .archive_inventory_report import _atomic_text
 from .inspection_runner import ReplayError, SideInspectionRunner
+from .replay_telemetry import aggregate_replay_cases
 
 
 SCHEMA = "visionx.startup_side_replay.v1"
@@ -122,6 +123,7 @@ def run_side_replay(
         "scope": "LEGACY_SIDE_ONLY",
         "inventory_total_png": inventory["summary"]["png_count"],
         "multilight_explicit_deferred": inventory["summary"]["png_count"] - len(legacy),
+        "diagnostics": aggregate_replay_cases(result),
         "summary": {
             "total": len(legacy),
             "passed": counts["PASSOU"],
@@ -134,8 +136,18 @@ def run_side_replay(
     }
 
 
+def _number_label(value) -> str:
+    if value is None:
+        return "N/D"
+    try:
+        return f"{float(value):.4f}"
+    except (TypeError, ValueError):
+        return "N/D"
+
+
 def human_summary(report: dict) -> str:
     summary = report["summary"]
+    diagnostics = report.get("diagnostics") or {}
     lines = [
         "ODIN | REPLAY SIDE HISTÓRICO | ETAPA 2",
         "=" * 58,
@@ -156,6 +168,27 @@ def human_summary(report: dict) -> str:
             f"{label}: {count['passed']}/{count['total']} aprovados, "
             f"{count['regressions']} regressões, {count['invalid']} inválidos"
         )
+
+    lines.extend(["", "RESUMO POR RÓTULO / CATEGORIA:"])
+    for item in diagnostics.get("by_category_and_label", []):
+        lines.append(
+            f"- {item['label']} / {item['category']}: "
+            f"{item['passed']}/{item['total']} PASSOU, "
+            f"{item['regressions']} REGRESSÃO, "
+            f"{item['invalid']} INVÁLIDO"
+        )
+    lines.extend(["", "MOTORES QUE DISPARARAM NAS REGRESSÕES:"])
+    for key, count in diagnostics.get(
+        "triggered_engines_in_regressions_by_category", {}
+    ).items():
+        lines.append(f"- {key}: {count}")
+    lines.append("  Os motores não são mutuamente exclusivos.")
+    lines.extend(["", "REGRAS DE FUSÃO POR RÓTULO / STATUS:"])
+    for key, count in diagnostics.get(
+        "by_label_status_fusion_rule", {}
+    ).items():
+        lines.append(f"- {key}: {count}")
+
     lines.extend(["", "CASOS NÃO APROVADOS:"])
     failures = [case for case in report["cases"] if case["status"] != "PASSOU"]
     if not failures:
@@ -167,14 +200,78 @@ def human_summary(report: dict) -> str:
             f"obtido={case.get('verdict') or 'SEM VEREDITO'} | "
             f"{case.get('error') or ''}"
         )
+
+    lines.extend([
+        "",
+        "TELEMETRIA INDIVIDUAL — TODOS OS CASOS:",
+        "Scores brutos/efetivos, limiar, região e contribuição real da fusão.",
+        "N/D significa campo não informado, não valor zero.",
+    ])
+    for case in report["cases"]:
+        telemetry = case.get("telemetry") or {}
+        geometry = telemetry.get("geometry") or {}
+        lines.extend([
+            "",
+            f"[{case['status']}] {case['source_path']}",
+            f"  Esperado: {case['expected_verdict']} | "
+            f"Obtido: {case.get('verdict') or 'SEM VEREDITO'} | "
+            f"Categoria: {case.get('category', case.get('category_hint', 'UNKNOWN'))}",
+        ])
+        if case.get("error"):
+            lines.append(f"  ERRO: {case['error']}")
+        if not telemetry:
+            lines.append("  Sem telemetria: análise não concluiu")
+            continue
+        lines.append(
+            f"  Decisão: score={_number_label(telemetry.get('final_score'))}"
+            f" físico={_number_label(telemetry.get('physical_score'))}"
+            f" cutoff={_number_label(telemetry.get('cutoff'))}"
+            f" regra={telemetry.get('fusion_rule') or 'N/D'}"
+            f" dominante={telemetry.get('dominant_engine') or 'N/D'}"
+        )
+        lines.append(f"  Razão: {telemetry.get('reason') or 'N/D'}")
+        lines.append(
+            f"  Área AOI Gabarito="
+            f"{geometry.get('reference_width', 'N/D')}x"
+            f"{geometry.get('reference_height', 'N/D')}"
+            f" Teste={geometry.get('test_width', 'N/D')}x"
+            f"{geometry.get('test_height', 'N/D')}"
+        )
+        lines.append(
+            f"  Caixas: global={geometry.get('global_box') or 'N/D'}"
+            f" epicentro={geometry.get('selected_epicenter_boxes') or 'NENHUM'}"
+            f" final={geometry.get('final_bounding_box') or 'NENHUMA'}"
+        )
+        lines.append(
+            f"  Anomalias={geometry.get('raw_anomaly_count', 'N/D')}"
+            f" especialistas={geometry.get('specialist_boxes') or '{}'}"
+        )
+        for engine in telemetry.get("engines", []) or []:
+            lines.append(
+                f"    {engine.get('id', 'N/D')}:"
+                f" ativo={engine.get('active')}"
+                f" disparou={engine.get('triggered')}"
+                f" selecionado={engine.get('selected')}"
+                f" bruto={_number_label(engine.get('raw_score'))}"
+                f" efetivo={_number_label(engine.get('effective_score'))}"
+                f" limite={_number_label(engine.get('threshold'))}"
+                f" influencia={_number_label(engine.get('final_influence'))}"
+                f" | {engine.get('summary') or ''}"
+            )
+        readings = telemetry.get("physical_readings") or {}
+        if readings:
+            lines.append(
+                "  Leituras físicas auxiliares: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(readings.items()))
+            )
     lines.extend([
         "",
         "PASSOU indica somente concordância do motor físico com o rótulo",
         "do arquivo. Não utiliza imagens idênticas da memória.",
+        "Regressão NÃO implica defeito real: revisar evidências físicas.",
         "A existência de erro não pode ser convertida em OK automaticamente.",
     ])
     return "\n".join(lines) + "\n"
-
 
 def write_side_report(report: dict, output_dir: Path) -> tuple[Path, Path]:
     root = Path(report["root"]).resolve()
