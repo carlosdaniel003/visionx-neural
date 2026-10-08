@@ -231,6 +231,10 @@ def train_v2(
     optimizer = torch.optim.AdamW(model.parameters(), lr=.0005, weight_decay=.05)
     # Mesmo acervo analisado na v1: dev validation, não teste cego.
     best_loss = float("inf")
+    # Selecionar checkpoint pela menor perda registrada; um limiar grande
+    # como 1e-4 ignora melhorias legítimas quando a BCE fica próxima de zero.
+    significant_loss = float("inf")
+    min_delta_for_patience = .0001
     best_state = None
     best_epoch = None
     best_rows = []
@@ -267,8 +271,9 @@ def train_v2(
             "dev_validation": metrics,
         }
         history.append(entry)
-        improved = metrics["loss"] < best_loss - .0001
-        if improved:
+        # Salvar SEMPRE a menor perda para ter checkpoint e métrica fiéis.
+        # A tolerância 1e-4 controla apenas patience/early stopping.
+        if metrics["loss"] < best_loss:
             best_loss = metrics["loss"]
             best_epoch = epoch
             best_state = {
@@ -277,6 +282,8 @@ def train_v2(
             }
             best_metrics = metrics
             best_rows = rows
+        if metrics["loss"] < significant_loss - min_delta_for_patience:
+            significant_loss = metrics["loss"]
             wait = 0
         else:
             wait += 1
