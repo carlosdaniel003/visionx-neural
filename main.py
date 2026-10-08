@@ -14,6 +14,7 @@ from src.core.anomaly_memory_integration import install_anomaly_memory_integrati
 from src.core.best_match_memory import install_best_match_memory
 from src.core.dual_scale_memory import install_dual_scale_memory
 from src.core.full_frame_memory import install_full_frame_memory
+from src.core.neural.faltando_live import install_faltando_cnn_live
 from src.core.experts.knn_expert import KNNExpert
 from src.core.experts.missing_component_expert import MissingComponentExpert
 from src.core.experts.semantic_calibration import (
@@ -145,6 +146,9 @@ def main():
     # Deve ser a última extensão do orquestrador: audita o resultado final de
     # todos os motores e garante a categoria correta no Laboratório de Textura.
     install_roi_input_contract(MoEOrchestrator, SSIMExpert, SilkExpert)
+    # FALTANDO passa pela CNN v2; as demais categorias preservam MoE/KNN.
+    # Modelo experimental: Modo Produção exige confirmação humana antes do OK.
+    install_faltando_cnn_live(MoEOrchestrator)
 
     # Ordem dos wrappers operacionais:
     # 1. aprendizado humano;
