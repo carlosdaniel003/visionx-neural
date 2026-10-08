@@ -1,5 +1,87 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — Resultado real da CNN DESLOCADO v2 (relatórios recebidos)
+
+**Fontes recebidas do treinamento real no computador de fábrica:**
+`training_report_deslocado_v2.json`,
+`training_summary_deslocado_v2.txt` e
+`holdout_predictions_deslocado_v2.json`. Manifesto de
+origem `run_20261008T173116_094174Z/manifest.json`,
+SHA-256 `6af07429aed97292eb47c14c12669d49936ef470e48c2f643b292c9a0421bd94`.
+
+**Base e treino:** 34 imagens OK reais, agrupadas em 24 eventos
+(18 para treino, 6 para desenvolvimento); **0 NG reais**.
+Treino configurado para 25 épocas, interrompido após 10 com
+paciência 8; melhor checkpoint na **época 2**. Tamanho 160,
+batch 4, seed 42, 3 variantes sintéticas por evento treinável.
+
+**Resultado v2 (modelo selecionado na própria validação de
+desenvolvimento):**
+- **DESENVOLVIMENTO:** 6/6 eventos REAL_OK corretos,
+  0 falsos NG reais; 2/2 OK reconstruídos corretos;
+  **0/2 proxies sintéticos de deslocamento detectados**.
+  O gate de OK reais passou, o gate combinado REPROVOU.
+  Os scores proxy sintético ficaram **abaixo**, não acima,
+  dos respectivos OK originais:
+  `2026-10-02_1358`: OK 0,413231, deslocado 0,405022;
+  `2026-10-02_1408`: OK 0,412305, deslocado 0,408717.
+  Score sigmoide NÃO é probabilidade calibrada de defeito real.
+- **TREINO (checkpoint selecionado):** 15/18 OK reais,
+  9/12 OK reconstruídos e 5/12 proxies detectados.
+  Portanto nem mesmo os OK usados no treinamento foram
+  todos preservados (3 falsos NG).
+- **SEGMENTAÇÃO:** 6/18 eventos do treino e 4/6 do
+  desenvolvimento não geraram proxy (`AMBIGUOUS_OR_MISSING_COMPONENT_MASK`);
+  **14/24 eventos** permitiram algum deslocamento sintético.
+  As **cinco trincas atuais SIDE/TOP/MID** estão entre os
+  eventos em que o gerador não conseguiu segmentar adequadamente
+  em todas as luzes. Há 36 instâncias de proxy para treino
+  porque 12 eventos viáveis receberam 3 variantes;
+  somente 2 proxies únicos no desenvolvimento.
+- **Comparação com v1:** v1 havia falhado em 6/6 OK do
+  desenvolvimento, detectando 6/6 deslocamentos antigos
+  (artefatos de patch). v2 preservou 6/6 OK do desenvolvimento
+  mas deixou passar 2/2 proxies novos. **Não declarar avanço
+  na capacidade de detectar NG**: muda o equilíbrio, sem
+  medição de NG real. O sucesso do holdout de OK está sujeito
+  à seleção do checkpoint pelo próprio conjunto de desenvolvimento.
+
+**Estado:** `development_combined_gate_passed=false`,
+`production_approved=false`, `activation_disabled=true`.
+Checkpoint `deslocado_cnn_v2_candidate.pt` somente experimental.
+NÃO substituir motores físicos DESLOCADO, NÃO alterar CNN FALTANDO,
+NÃO promover pesos na produção.
+
+**Próximas verificações propostas (sem implementar v3 ainda):**
+1. Solicitar e inspecionar as duas prévias da pasta
+   `proxy_previews/` produzidas no experimento:
+   `4c3c78bb54d165_SIDE.png` e
+   `274a9377eb2e83_SIDE.png`.
+   É preciso saber se a máscara marcou de fato o componente
+   e se o inpainting não criou pistas não industriais.
+   Estas imagens não foram enviadas junto dos relatórios.
+2. Se a segmentação automática for ruim, usar ROI/contorno
+   configurado pela AOI ou máscara de componente confirmada
+   pelo operador, em vez de inventar deslocamento de uma
+   região de contraste qualquer. Reavaliar as cinco trincas
+   SIDE/TOP/MID sem omitir suas dificuldades.
+3. Testar perdas comparativas pareadas que imponham, para
+   o **mesmo** evento e luz, score de proxy deslocado maior
+   que o OK reconstruído, junto com classificação OK genuína
+   e regularização, mantendo grupos de placa/componente
+   isolados. Isso é ideia de experimento, não desempenho medido.
+4. Obter NG DESLOCADO reais, e reservar casos inéditos
+   para avaliação independente por iluminação. Não converter
+   proxies em verdades-terreno NG nem relaxar o gate de
+   produção para chegar a um número maior.
+
+**Critério para prosseguir:** conhecer a qualidade visual
+dos proxies e seus motivos de falha antes de retreinar.
+Não usar somente a acurácia combinada para aprovar a CNN.
+
+---
+
+
 ## 08/10/2026 — CNN DESLOCADO v1 reprovada; correção v2 por máscara de componente
 
 **Treino real v1 recebido da fábrica:** `training_report_deslocado.json`
