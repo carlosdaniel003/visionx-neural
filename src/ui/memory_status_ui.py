@@ -88,6 +88,16 @@ def install_memory_status_ui(control_panel_cls) -> None:
                     "", "Memória KNN ignorada nesta decisão.",
                     "Motores da categoria consultados como primeira ocorrência.",
                 ]
+                if detail.get("specialist_candidate") == (
+                    "DESLOCADO_CNN_V1_BOOTSTRAP_NOT_ACTIVE"
+                ):
+                    tooltip_lines += [
+                        "", "CNN DESLOCADO: EM TREINAMENTO EXPERIMENTAL.",
+                        "NG DESLOCADO reais conhecidos: nenhum no acervo inicial.",
+                        "OK/NG humano novo é enfileirado para treino candidato.",
+                        "A CNN DESLOCADO NÃO substitui os motores atuais.",
+                        "A ativação exigirá NG real e avaliação independente.",
+                    ]
             if isinstance(routes, dict) and routes:
                 tooltip_lines += [
                     "", "POR ILUMINAÇÃO:",
