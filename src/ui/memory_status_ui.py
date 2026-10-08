@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from src.ui.memory_status_model import memory_status_from_detail, memory_summary_text
 
 
@@ -50,7 +53,36 @@ def install_memory_status_ui(control_panel_cls) -> None:
                     "", "Memória KNN ignorada nesta decisão.",
                     "Motor: CNN FALTANDO v2, com referência e teste.",
                     "Em Produção, o OK da CNN experimental exige operador.",
+                    "",
+                    "APRENDIZADO INCREMENTAL:",
+                    "Após OK/NG confirmado por operador (Teste/Produção/Sombra),",
+                    "o treino CPU é enfileirado sem interromper a AOI.",
+                    "O checkpoint ativo muda só quando o candidato passa",
+                    "a regressão do arquivo e dos novos casos confirmados.",
                 ]
+                try:
+                    status_path = (
+                        Path(__file__).resolve().parents[2]
+                        / "reports" / "neural_online" / "latest_event.json"
+                    )
+                    if status_path.is_file():
+                        latest = json.loads(status_path.read_text(encoding="utf-8"))
+                        status = str(latest.get("state", ""))
+                        display = {
+                            "QUEUED": "NA FILA",
+                            "TRAINING": "TREINANDO EM SEGUNDO PLANO",
+                            "PROMOTED": "NOVOS PESOS ATIVADOS",
+                            "REJECTED": "CANDIDATO REPROVADO (PESOS ANTIGOS ATIVOS)",
+                            "FAILED": "FALHA NO TREINAMENTO",
+                            "COMPLETED": "EXECUÇÃO CONCLUÍDA",
+                        }
+                        if status in display:
+                            tooltip_lines += [
+                                "Último treino: " + display[status],
+                                "Evento: " + str(latest.get("event_id", "")),
+                            ]
+                except (OSError, ValueError, TypeError):
+                    pass
             elif route == "NEW_EXPERTS":
                 tooltip_lines += [
                     "", "Memória KNN ignorada nesta decisão.",
