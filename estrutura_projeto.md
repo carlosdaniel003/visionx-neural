@@ -1,5 +1,99 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — Roteamento MEMÓRIA KNN → Especialista por ocorrência
+
+**Regra de decisão solicitada:** a análise normal do ODIN distingue uma
+inspeção **já conhecida** de uma **nova** antes de executar especialistas.
+
+```text
+AOI → gabarito/teste + OCR categoria/placa/componente/iluminação
+      ↓
+Verificador de memória KNN (par exato, rótulo humano validado)
+      ├── CONHECIDO OK/NG → usar só o rótulo do caso KNN conhecido
+      ├── CONFLITO       → REVISÃO OBRIGATÓRIA
+      ├── INDISPONÍVEL   → REVISÃO OBRIGATÓRIA
+      └── NOVO           → ignorar voto KNN e delegar por categoria
+                           ├── FALTANDO → CNN FALTANDO v2
+                           └── OUTRAS   → motores/especialistas anteriores
+```
+
+**Implementação:** `src/core/verified_memory_router.py`
+(`install_memory_first_router`) é instalado em `main.py`
+**depois** de `install_faltando_cnn_live`. Para evitar falso
+reconhecimento de um defeito como OK, *conhecido* só existe
+quando são **idênticas** as imagens RGB de gabarito e teste
+(duas impressões digitais SHA-256 de pixels), no mesmo
+`board`, `parts`, `category`, `lighting_mode` e
+valor da AOI (`value`). Exige:
+- JSON `visionx.memory.v3` carregado pelo índice da KNN;
+- `label` + `decision.operator_label` coerentes com a pasta;
+- `decision.source` indicando **operador humano**, nunca
+  `production_auto` ou `auto`;
+- PNG do gabarito e PNG do teste presentes, legíveis e coerentes
+  com `storage.test_image_fingerprint`.
+- Se JSON é legado/sem imagens, aproximações 90%/99%,
+  conflito de rótulo, OCR diferente ou gabarito diferente:
+  **não** acionar atalho de memória. Casos diferentes seguem
+  para especialista; conflito exato exige revisão humana.
+
+A rota KNN conhecida usa **recuperação da classe do registro
+humano exato** da própria memória KNN, não votação de vizinhos
+aproximados. Como os dois PNGs precisam estar presentes, JSONs
+antigos apenas com assinatura não são promovidos artificialmente
+a conhecidos. Se a UI salvar memória nova, `reload_memory`
+invalida o índice e ele é reconstruído a partir dos registros
+atuais da KNN.
+
+Para casos novos de `FALTANDO`, usa a mesma CNN v2 e
+checkpoint já integrados, sem consulta KNN. Para outras
+categorias novas, `_replay_without_memory=True` aciona
+os especialistas existentes **sem** KNN. O runner
+PhysicalOnlyOrchestrator/retrospectiva offline permanece isolado.
+
+**Interface/tooltip visíveis:**
+- `CASO CONHECIDO • MEMÓRIA KNN`
+- `CASO NOVO • CNN FALTANDO v2`
+- `CASO NOVO • MOTORES DA CATEGORIA`
+- `MULTILIGHT • KNN + ESPECIALISTAS`
+- `MEMÓRIA CONTRADITÓRIA • REVISÃO`
+
+A linha já existente `lbl_db_info` exibe a rota, enquanto
+seus tooltips e os de `lbl_reason`/`lbl_verdict`
+explicam o motivo, o registro reconhecido e a rota por
+iluminação SIDE/TOP/MID. `fuse_multilight` preserva
+`recognition_light_routes` para não confundir a rota
+de uma luz com a do evento inteiro.
+
+**Produção e segurança:** o motor da categoria FALTANDO ainda
+é experimental. Se houver **qualquer luz nova analisada pela CNN**,
+o gate de Produção não envia OK automático: requer operador.
+Para o caso KNN conhecido por **par exato e rótulo humano**,
+a política produtiva preexistente permite OK automático quando
+o veredito final for `FALHA FALSA` sem revisão; NG continua
+exigindo operador. O mesmo comportamento das demais categorias
+já configuradas é preservado.
+
+**Limite operacional:** pixels idênticos entre duas capturas reais
+são pouco comuns. Este primeiro roteador é intencionalmente
+restritivo e tende a classificar grande parte dos casos futuros
+como novos. Os 117 PNGs do arquivo histórico não são
+automaticamente memória KNN: é necessário que existam registros
+humanos KNN com **ambos os PNGs** e metadados coerentes.
+Uma futura expansão para reconhecimento aproximado requer
+validação controlada de falso OK e não pode reduzir esse gate
+para uma similaridade arbitrária.
+
+**Testes**: suíte `tests/test_verified_memory_router.py`
+cobre caso conhecido OK/NG, casos novos, alteração de um
+único pixel, OCR/contexto, iluminação, fonte humana vs
+automática, conflito OK/NG, JSON sem imagens, recarga da
+memória, replay físico isolado e mistura multilight. Estes
+são testes sintéticos de software; o roteador ainda precisa
+ser exercitado com capturas reais no PC da fábrica.
+
+---
+
+
 ## 08/10/2026 — CNN FALTANDO v2 integrada à análise normal (com revisão humana em Produção)
 
 **Replay real recebido da fábrica:** `archive_replay_v2.json` e

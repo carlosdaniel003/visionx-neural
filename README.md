@@ -79,6 +79,30 @@ O projeto combina diferentes abordagens para aumentar a confiabilidade da análi
 
 ---
 
+## Roteamento inteligente da inspeção — memória KNN ou especialistas
+
+Antes de iniciar a análise de um componente, o ODIN verifica se o
+**par gabarito/teste** já consta em um **registro humano validado da
+memória KNN**, com a mesma placa, componente, categoria, iluminação
+e valor da AOI. Quando o par é **exatamente igual**, recupera seu
+rótulo OK/NG da memória, dispensando motores/CNN. Casos novos não
+recebem voto KNN: `FALTANDO` segue para CNN v2 e outras categorias
+seguem para seus motores. Um registro contraditório ou entrada
+inválida exige revisão. Similaridade aproximada não é suficiente.
+
+O painel mostra **CASO CONHECIDO • MEMÓRIA KNN** ou
+**CASO NOVO • CNN/MOTORES**, com tooltip explicativo e, em
+multilight, a rota de cada luz. A CNN FALTANDO experimental
+continua sem AUTO-OK em Produção; um evento com pelo menos
+uma luz CNN nova também requer confirmação do operador.
+
+Este critério é conservador: registros sem os dois PNGs ou
+sem rótulo comprovadamente humano **não** são reconhecidos
+automaticamente. Veja
+[documentação do roteador](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+
+---
+
 ## CNN FALTANDO v2 na análise normal do ODIN
 
 O replay real da CNN v2 obteve **117/117 imagens (67/67 eventos) corretos**
