@@ -628,7 +628,9 @@ def _qimage_from_bgr(image: np.ndarray):
 
 
 def network_debug_image_snapshot(panel) -> np.ndarray | None:
-    """Retorna exatamente a evidência visual resolvida por Copiar imagem."""
+    """Prévia e Copiar imagem usam o mesmo conteúdo do evento atual."""
+    if _multilight_event_matches(panel):
+        return multilight_copy_image_snapshot(panel)
     return current_copy_image_snapshot(panel)
 
 
