@@ -127,54 +127,64 @@ def _isolated_missing_disagreement(
     source: dict[str, dict],
     evidence: dict[str, dict],
 ) -> bool:
-    """Recusa NG automático por uma TOP isolada, quando há conflito físico.
+    """Exige revisão para uma única ausência física com contraprova multilight.
 
-    Não transforma a peça em OK: a ausência local continua auditável, mas a
-    discordância entre iluminação, contexto e três memórias OK independentes
-    exige revisão humana. Casos de ausência real sem todas essas testemunhas
-    continuam seguindo a fusão forte padrão.
+    A memória sozinha não anula hard missing. Outras iluminações precisam
+    fornecer evidência física independente, e a peça nunca vira OK aqui.
     """
     if category != "FALTANDO":
         return False
 
-    positive = [mode for mode in LIGHTING_ORDER
-                if evidence[mode]["local_is_defect"]]
-    if positive != ["TOP"] or not evidence["TOP"]["strong_positive"]:
+    positive = [mode for mode in LIGHTING_ORDER if evidence[mode]["local_is_defect"]]
+    if len(positive) != 1:
         return False
-
-    top_detail = _detail(source["TOP"])
-    if (
-        not top_detail.get("missing_hard_absence", False)
-        or evidence["TOP"]["dominant_engine"] != "missing"
+    culprit = positive[0]
+    suspect = _detail(source[culprit])
+    if not (
+        evidence[culprit]["strong_positive"]
+        and evidence[culprit]["dominant_engine"] == "missing"
+        and bool(suspect.get("missing_hard_absence", False))
     ):
         return False
 
     if any(
-        evidence[mode]["memory_label"] != "OK"
-        or evidence[mode]["memory_similarity"]
-        < MISSING_INTERLIGHT_OK_MIN_SIMILARITY
+        evidence[mode]["memory_label"].strip().upper() != "OK"
+        or evidence[mode]["memory_similarity"] < MISSING_INTERLIGHT_OK_MIN_SIMILARITY
         for mode in LIGHTING_ORDER
     ):
         return False
 
+    others = [mode for mode in LIGHTING_ORDER if mode != culprit]
     if any(
-        evidence[mode]["local_is_defect"]
-        or evidence[mode]["local_review_required"]
-        for mode in ("SIDE", "MID")
+        evidence[mode]["local_is_defect"] or evidence[mode]["local_review_required"]
+        for mode in others
     ):
         return False
 
-    # Necessária testemunha de contexto: o quadro completo ainda mantém
-    # parte de sua geometria, e não há substituição por fundo no envelope.
-    # Memória KNN sozinha nunca contradiz uma ausência física forte.
-    return bool(
-        _safe_float(top_detail.get(
-            "missing_global_envelope_coarse_similarity", 0.0,
-        )) >= MISSING_INTERLIGHT_MIN_CONTEXT_SIMILARITY
-        and _safe_float(top_detail.get(
-            "missing_global_envelope_background_exposure", 1.0,
-        ), 1.0) <= MISSING_INTERLIGHT_MAX_GLOBAL_BACKGROUND
+    # Rota original: contexto da própria luz positiva preserva geometria.
+    own_context = bool(
+        _safe_float(suspect.get("missing_global_envelope_coarse_similarity", 0.0))
+        >= MISSING_INTERLIGHT_MIN_CONTEXT_SIMILARITY
+        and _safe_float(suspect.get("missing_global_envelope_background_exposure", 1.0), 1.0)
+        <= MISSING_INTERLIGHT_MAX_GLOBAL_BACKGROUND
     )
+
+    # Rota multilight: outra luz mantém o envelope alinhado, e outra
+    # observação confirma ausência de divergência física local.
+    # Footprint escuro sozinho não basta para liberar peça.
+    context_witness = any(
+        bool(_detail(source[mode]).get("missing_global_envelope_support", False))
+        and not bool(_detail(source[mode]).get("missing_hard_absence", False))
+        for mode in others
+    )
+    clear_witness = any(
+        bool(_detail(source[mode]).get("missing_active", False))
+        and not bool(_detail(source[mode]).get("missing_is_defect", True))
+        and _safe_float(_detail(source[mode]).get("missing_score", 1.0), 1.0)
+        <= _safe_float(_detail(source[mode]).get("missing_tolerance", 0.0))
+        for mode in others
+    )
+    return bool(own_context or (context_witness and clear_witness))
 
 
 def _dominant_mode(evidence: dict[str, dict]) -> str:
@@ -347,9 +357,9 @@ def fuse_multilight(
     )
     if physical_disagreement:
         reason += (
-            " | TOP sinalizou ausência física isolada, mas SIDE/MID não "
-            "confirmaram, as três memórias locais apontam OK e o envelope "
-            "TOP ainda preserva geometria. Revisão humana obrigatória."
+            f" | {positive_modes[0]} sinalizou ausência física isolada; "
+            "outras iluminações não confirmaram, três memórias OK e "
+            "testemunha contextual divergente. Revisão humana obrigatória."
         )
 
     dominant_analysis.update(
@@ -375,6 +385,7 @@ def fuse_multilight(
             "multilight_final": True,
             "multilight_category": canonical_category,
             "multilight_dominant_mode": dominant_mode,
+            "multilight_dominant_local_engine": evidence[dominant_mode]["dominant_engine"],
             "multilight_positive_modes": list(positive_modes),
             "multilight_strong_positive_modes": list(
                 strong_positive_modes
@@ -407,6 +418,8 @@ def fuse_multilight(
                 raw_hard_missing and not physical_disagreement
             ),
             "multilight_physical_disagreement": bool(physical_disagreement),
+            "multilight_dominant_mode": dominant_mode,
+            "multilight_dominant_local_engine": evidence[dominant_mode]["dominant_engine"],
             "cutoff": GENERIC_DECISION_CUTOFF,
             "final_score": detail["final_score"],
             "confidence": dominant_analysis["confidence"],
@@ -418,6 +431,9 @@ def fuse_multilight(
             "operator_review_required": bool(review_required),
             "memory_role": "per_lighting_audit",
             "lighting_evidence": deepcopy(evidence),
+            # A formula local de SIDE nao representa o peso efetivo da
+            # decisao multilight. Evidencias locais continuam no trace.
+            "weights": {"physical": 0.0, "knn": 0.0},
         }
     )
     return dominant_analysis
