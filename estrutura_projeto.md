@@ -423,7 +423,8 @@ Documento técnico completo (fonte única deste plano):
 
 **Objetivo:** a cada inicialização do ODIN, reprocessar integralmente os casos
 confirmados pelo operador em `public/ok_archive/` e `public/ng_archive/`,
-utilizando o pipeline real de inspeção, OCR, especialistas, memória e fusão.
+utilizando o pipeline real de inspeção, OCR, especialistas físicos e fusão,
+mas **sem consultar KNN, protótipos ou qualquer memória episódica**.
 O painel operacional só poderá abrir depois da validação **100% aprovada**.
 Regressão, revisão obrigatória, arquivo inválido, conflito ou evento incompleto
 bloquearão a operação e produzirão relatório técnico, sem mandar comandos à AOI.
@@ -439,8 +440,8 @@ bloquearão a operação e produzirão relatório técnico, sem mandar comandos 
 - Novo manifesto associará `event_id`, OCR, rótulo humano e arquivos
   SIDE/TOP/MID, sem agrupar peças por coincidência de horário/nome.
 - O replay preservará o **gabarito/teste completos**. O quadrado menor e a
-  caixa contextual não limitam a evidência global; a terceira escala
-  `full_frame` continua relevante.
+  caixa contextual não limitam a evidência global; a imagem completa pode
+  ser usada pelos motores físicos, sem consulta à memória `full_frame`.
 - O gate será **somente leitura**: não retreina KNN/CNN, não altera rótulos,
   não limpa o dataset, não arquiva novas imagens e não aciona o Windows XP.
 - O relatório distinguirá `PASSOU`, `REGRESSÃO`, `INVÁLIDO`,
