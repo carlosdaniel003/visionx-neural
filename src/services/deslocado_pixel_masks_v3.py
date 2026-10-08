@@ -274,9 +274,11 @@ def validate_pixel_review(review_file: Path) -> tuple[dict, Path]:
             raise ValueError("Máscara sem revisão: " + row["source_path"])
         if not str(row.get("review_notes", "")).strip():
             raise ValueError("Confirmação humana ausente: " + row["source_path"])
-        if any(row.get("proposal_" + item + "_type") ==
-               "RECTANGLE_PLACEHOLDER_EDIT_REQUIRED" for item in ("reference", "test")) \
-                and row.get("edited_" + item) is not True:
+        if any(
+            row.get("proposal_" + item + "_type") == "RECTANGLE_PLACEHOLDER_EDIT_REQUIRED"
+            and row.get("edited_" + item) is not True
+            for item in ("reference", "test")
+        ):
             raise ValueError("Placeholder retangular exige edição real: " + row["source_path"])
         frames, masks, paths, boxes = [], [], [], []
         for part in ("reference", "test"):
