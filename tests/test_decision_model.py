@@ -60,6 +60,30 @@ class DecisionModelTests(unittest.TestCase):
         self.assertIn("confiança 79%", text)
         self.assertIn("Memória local KNN", text)
 
+    def test_multilight_dominant_identifies_mode_local_origin_and_absence_label(self):
+        trace = {
+            "final_score": .5, "cutoff": .5, "confidence": .5,
+            "dominant_engine": "multilight",
+            "multilight_dominant_mode": "SIDE",
+            "multilight_dominant_local_engine": "missing",
+            "weights": {"physical": 0.0, "knn": 0.0},
+            "engines": [{
+                "id": "missing", "label": "Presença do componente",
+                "active": True, "raw_score": .98,
+                "effective_score": .98, "threshold": .36,
+            }],
+        }
+        summary = decision_summary(trace)
+        self.assertIn("Fusão multilight", summary)
+        self.assertIn("SIDE", summary)
+        self.assertIn("Sinal de ausência", summary)
+        self.assertNotIn("Nenhum motor dominante", summary)
+        rows = influence_rows(trace)
+        self.assertEqual(rows[0]["label"], "Sinal de ausência")
+        self.assertTrue(rows[0]["multilight_local_origin"])
+        self.assertTrue(rows[0]["selected"])
+        self.assertEqual(rows[0]["fusion_weight"], 0.0)
+
     def test_fusion_summary_exposes_real_weights(self):
         text = fusion_summary(self.trace)
         self.assertIn("Memória substituiu", text)
