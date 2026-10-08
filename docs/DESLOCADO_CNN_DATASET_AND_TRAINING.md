@@ -211,6 +211,17 @@ git pull origin central
 python -m src.scripts.train_deslocado_cnn_v2 --epochs 25 --batch-size 4 --size 160
 ```
 
+**Revisão visual dos proxies:** a v2 também gera
+`proxy_previews/` dentro da pasta `experiment_v2_*`.
+Cada imagem mostra lado a lado o teste com a hipótese de
+contorno do componente (vermelho), o OK recomposto,
+o deslocamento sintético e a diferença entre ambos.
+**Conferir que o contorno realmente corresponde ao componente**,
+e não a um pad/trilha/texto, antes de confiar nos exemplos
+artificiais. O JSON lista os PNGs em
+`development_proxy_preview_images` e os não segmentados em
+`development_proxy_unresolved`.
+
 **Após executar:** enviar os três relatórios JSON/TXT da v2.
 Não há motivo para substituir o motor físico mesmo que a v2
 alcance seis OK corretos, sem NG reais de deslocamento.
