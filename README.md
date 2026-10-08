@@ -113,6 +113,18 @@ Os 90 PNGs SIDE/TOP/MID explícitos ficam para a Etapa 3, que também deverá
 ignorar a memória. Este modo NÃO altera a decisão de produção nem bloqueia
 a abertura atual do ODIN.
 
+**Telemetria física do replay SIDE (Etapa 2 em diagnóstico):** a primeira
+execução do acervo histórico encontrou 17/119 casos aprovados (17 NG),
+101 falsos NG entre casos OK e 1 OCR inválido. O replay agora produz
+`cases[].telemetry` no JSON com trilha por especialista
+(`raw_score`, `threshold`, `effective_score`, `final_influence`,
+motor dominante e regra) e `geometry` (gabarito/teste completos, caixa
+global, epicentro, anomalias e caixas dos motores). O TXT apresenta
+evidências de **todos** os OK e NG para comparação. A telemetria é coletada
+após a inferência, não altera vereditos, e a consulta KNN continua proibida.
+Executar novamente o comando acima e enviar os dois relatórios atualizados
+para investigação. **Nenhum bloqueio de startup foi ativado.**
+
 **Etapa 1 disponível — inventário de leitura (não é gate de decisão).**
 Com o código atualizado, executar no PowerShell:
 
