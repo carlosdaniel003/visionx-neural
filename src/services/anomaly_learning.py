@@ -64,13 +64,23 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
     ).strip()
     multilight_samples = _multilight_learning_snapshot(panel)
 
+    info = dict(getattr(panel, "current_aoi_info", {}) or {})
+    analysis = getattr(panel, "current_analysis", None) or {}
+    # Capturas NOVAS confirmadas por humano alimentam a CNN inclusive
+    # quando o operador concorda com a IA (não só hard negatives).
+    from src.services.neural_online_learning import eligible_online_case
+    eligible = eligible_online_case({
+        "aoi_info": info, "analysis": analysis,
+        "source": source, "label": normalized,
+    })
+
     return {
         "ng_image": _image_snapshot(getattr(panel, "current_ng", None)),
         "label": normalized,
         "sample_image": _image_snapshot(getattr(panel, "current_sample", None)),
-        "aoi_info": dict(getattr(panel, "current_aoi_info", {}) or {}),
-        "analysis": getattr(panel, "current_analysis", None) or {},
-        "save_images": bool(ai_decision != normalized),
+        "aoi_info": info,
+        "analysis": analysis,
+        "save_images": bool(eligible or ai_decision != normalized),
         "source": source,
         "ai_decision": ai_decision,
         "event_id": event_id,
