@@ -289,7 +289,7 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
     torch.manual_seed(42)
     random.seed(42)
     np.random.seed(42)
-    _on_disk_event(event, root)
+    newest = _on_disk_event(event, root)
     _, prior = _base_model(root)
     historical = _historical(root, prior)
     online = _all_online(root)
@@ -314,6 +314,12 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
         sampler=sampler, num_workers=0
     )
     opt = torch.optim.AdamW(net.parameters(), lr=.00002, weight_decay=.02)
+    # Garantir gradiente da amostra nova em TODA época, em vez de
+    # depender de sua seleção probabilística no replay balanceado.
+    fresh_loader = DataLoader(
+        PairDataset([newest], size, focus), batch_size=1,
+        shuffle=False, num_workers=0,
+    )
     net.train()
     for ix in range(1, epochs+1):
         average = 0.
@@ -332,6 +338,21 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
             nn.utils.clip_grad_norm_(net.parameters(), 2.)
             opt.step()
             average += float(loss.item())
+        # Atualização supervisionada obrigatória para o novo evento, com
+        # SIDE/TOP/MID na mesma amostra (uma decisão humana por peça).
+        for r, t, rf, tf, mask, truth in fresh_loader:
+            logits, by_light = net(r, t, rf, tf, mask)
+            primary = nn.functional.binary_cross_entropy_with_logits(logits, truth)
+            aux = nn.functional.binary_cross_entropy_with_logits(
+                by_light, truth[:, None].expand_as(by_light), reduction="none"
+            )
+            loss = primary + .15 * (aux * mask).sum()/mask.sum().clamp_min(1)
+            if not bool(torch.isfinite(loss)):
+                raise ValueError("Perda neural não finita no evento novo")
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            nn.utils.clip_grad_norm_(net.parameters(), 2.)
+            opt.step()
         print(f"CNN FALTANDO ONLINE época {ix}/{epochs} loss={average/len(loader):.6f}",
               flush=True)
 
@@ -376,6 +397,7 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
         "created_at_utc": when.isoformat(),
         "category": "FALTANDO",
         "train_epochs": epochs,
+        "new_event_forced_each_epoch": True,
         "training_event_count": len(examples),
         "online_events": len(online),
         "online_illuminations": dict(Counter(
