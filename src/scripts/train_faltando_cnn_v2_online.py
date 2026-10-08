@@ -419,6 +419,24 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
                        encoding="utf-8")
         # Troca atômica: se cair energia aqui, champion anterior permanece.
         os.replace(tmp, pointer)
+    # Resultado de máquina para o journal/status da UI. A promoção só
+    # ocorre pelo ponteiro após a validação; um candidato rejeitado permanece
+    # auditável no disco, sem tocar o modelo ativo.
+    outcomes = root / "reports" / "neural_online" / "outcomes"
+    outcomes.mkdir(parents=True, exist_ok=True)
+    outcome = outcomes / (event.stem + ".json")
+    temp = outcome.with_suffix(".json.tmp")
+    temp.write_text(json.dumps({
+        "event_id": event.stem,
+        "promoted": accepted,
+        "validation_report": report_path.relative_to(root).as_posix(),
+        "candidate": target.relative_to(root).as_posix(),
+        "historical_correct_images": new_result["correct_images"],
+        "historical_images": new_result["images"],
+        "online_correct_images": new_online["correct_images"],
+        "online_images": new_online["images"],
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temp, outcome)
     print(
         f"CNN ONLINE: candidato {'PROMOVIDO' if accepted else 'REJEITADO'}; "
         f"histórico={new_result['correct_images']}/{new_result['images']}, "
