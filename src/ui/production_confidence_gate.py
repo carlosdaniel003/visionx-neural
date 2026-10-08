@@ -80,8 +80,13 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     # O checkpoint v2 passou a regressão de exemplos conhecidos, não um
     # teste cego de NG novos. Não enviar 0/OK automaticamente a uma AOI
     # só porque a rede produziu um score extremo não calibrado.
+    multilight_routes = detail.get("recognition_light_routes", {})
+    multilight_routes = (
+        multilight_routes if isinstance(multilight_routes, dict) else {}
+    )
     cnn_experimental = bool(
-        detail.get("cnn_v2_active") and detail.get("cnn_v2_experimental")
+        (detail.get("cnn_v2_active") and detail.get("cnn_v2_experimental"))
+        or any(route == "NEW_CNN" for route in multilight_routes.values())
     )
 
     if cnn_experimental and verdict == "FALHA FALSA":
