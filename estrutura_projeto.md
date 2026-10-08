@@ -1,5 +1,80 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — Inspeção das três imagens dos falsos NG SIDE legados
+
+**Materiais recebidos e mapeamento por `diagnostic_summary.json`:**
+- `5d90d5e44c9c0071_SIDE.png` = `2026-10-02_1349_DESLOCADO.png`, score NG-proxy `0.50294089`;
+- `8fd9737c94650934_SIDE.png` = `2026-10-02_1400_DESLOCADO.png`, score `0.50141501`;
+- `2cabb17d15d59173_SIDE.png` = `2026-10-02_1415_DESLOCADO.png`, score `0.50511873`.
+
+**Observação visual comum aos três painéis:**
+- Gabarito: resistor/componente preto vertical com marcação
+  central clara aproximadamente oval/vertical;
+  teste OK confirmado: marcação clara menor/mais
+  horizontal/retangular. **A diferença marcante está
+  na gravação visual interna, não em desaparecimento do corpo.**
+- O corpo escuro retangular permanece na mesma região
+  geral do AOI, entre regiões metálicas superior e
+  inferior. O painel de diferença RGB realça fortemente
+  a inscrição e variações de textura/brilho dos terminais
+  e pads (cobre avermelhado). Esse painel é diferença
+  de pixel, **não mapa físico de deslocamento**.
+- As três comparações são visualmente muito semelhantes;
+  podem representar repetições ou mesma família de peça
+  em condições próximas. Não contar três imagens como
+  três demonstrações independentes de generalização sem
+  confirmar board/parts/event_id e grupo de similares.
+- É plausível que a CNN DESLOCADO v2 penalize a grande
+  divergência de marcação interna (e/ou contraste das
+  extremidades), embora os exemplos tenham sido
+  confirmados como OK pelo operador. **Causa interna
+  exata da rede não foi comprovada**: falta teste
+  de atribuição/ablação e avaliação quantitativa
+  de contorno/alinhamento. Scores próximos ao limiar
+  corroboram decisão pouco robusta.
+
+**Distinção importante:** as prévias sintéticas da
+v2 mostraram deslocamento do caractere **104** em vez
+do componente. Os três falsos NG reais agora mostram
+**variação de marcação central entre gabarito e teste**.
+Os dois fenômenos reforçam o mesmo problema metodológico:
+tratar diferenças da marcação como prova de DESLOCADO,
+em vez de reconhecer geometria externa do corpo e
+localização relativa aos pads.
+
+**Correção proposta (AINDA NÃO IMPLEMENTADA):**
+1. Identificar o **corpo inteiro e contatos**, não
+   letras/números internos, usando contornos confirmados
+   pela AOI ou ROI anotado pelo operador e geometria de
+   pads. Evitar segmentação central só por brilho/contraste.
+2. Criar pares OK positivos de **variação de marcação**
+   e variação moderada de brilho, mantendo mesma geometria,
+   para a CNN aprender que inscrição interna diferente
+   não constitui deslocamento. A marcação não deve
+   servir de pista de classe.
+3. Só gerar proxy DESLOCADO negativo quando o **corpo
+   inteiro** mudar de posição de forma verificável
+   relativamente aos pads; rejeitar proxy que altera
+   apenas marcação e conservar preview auditável.
+4. Avaliar separadamente SIDE legado, SIDE atual,
+   TOP e MID, repetidos/near-duplicates agrupados
+   antes do split. Preservar replay integral de OK
+   como regressão de falsos NG, mas **não usá-lo como
+   critério único de aprovação**, pois não há NG reais.
+5. Até haver NG independentes e validação de rejeição
+   de deslocamento verdadeiro, **não substituir o
+   motor físico** nem permitir OK automático CNN.
+
+**Estado desta etapa:** revisão visual concluída e
+registrada; **nenhum checkpoint retreinado,
+nenhum limiar alterado e nenhum motor operacional
+substituído**. Próximo experimento requer máscara/ROI
+do componente físico corretamente anotado, com
+uma prévia verificável antes de treinar v3.
+
+---
+
+
 ## 08/10/2026 — Resultado real do replay integral CNN DESLOCADO v2: 31/34 OK
 
 **Relatórios recebidos após execução na estação Windows 10:**
