@@ -493,6 +493,61 @@ as pendências. Somente com aceite do inventário avançar para a Etapa 2.
 **Aceite:** todos os PNGs legados são processados ou falham com erro explícito;
 replay não altera dataset/arquivos nem aciona hardware.
 
+#### Diagnóstico real e telemetria adicional — 08/10/2026
+
+Primeira execução industrial do `side_replay` (119 SIDE históricos):
+
+- `OK`: 0/102 aprovados; 101 classificados como `DEFEITO REAL` e
+  1 inválido por OCR ausente (imagem de 1920×1080).
+- `NG`: 17/17 aprovados; todos `DEFEITO REAL`.
+- `KNN`: explicitamente desabilitado em todas as observações.
+- **Conclusão operacional:** replay físico ainda NÃO distingue
+  adequadamente OK e NG; não ativar o gate de inicialização. Não ajustar
+  limiares para fazer o histórico passar sem investigar os especialistas.
+
+Foi adicionada a telemetria de inspeção **somente ao executor de replay**:
+`src/services/startup_regression/replay_telemetry.py`.
+
+O relatório agora traz para **cada caso**:
+
+```text
+telemetry.schema = visionx.side_replay_telemetry.v1
+telemetry.reason / fusion_rule / dominant_engine / final_score / cutoff
+telemetry.engines[]:
+   id, label, active, triggered, selected
+   raw_score, effective_score, threshold, final_influence, summary
+telemetry.physical_readings:
+   leituras escalares presentes em detail (sem inventar campos ausentes)
+telemetry.geometry:
+   dimensões completas da imagem de referência e teste
+   global_box (AOI)
+   old_epicenters / selected_epicenters / raw_anomaly_boxes
+   final_bounding_box / specialist_boxes
+   fonte coordenadas = AOI_EXTRACTED_IMAGE_XYWH
+diagnostics:
+   por categoria + rótulo
+   por regra de fusão + status
+   por motor dominante + status
+   motores disparados nas regressões (não mutuamente exclusivos)
+```
+
+O `build_lighting_context` do motor existente é executado uma vez e
+compartilhado com a inferência; coletar telemetria **não** executa
+inferência duas vezes e **não** modifica a decisão. O registro serializa
+somente campos seguros, evitando máscaras binárias, imagens e assinaturas
+de memória. O modo sem KNN continua obrigatório; dados ausentes são `N/D`.
+
+Com o repositório atualizado, executar novamente:
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.side_replay
+```
+
+Coletar os novos `side_replay_*.json` e `side_replay_*.txt` para comparar
+pontuação dos especialistas e a seleção de região em **OK e NG** da mesma
+categoria. **Etapa 2 ainda aberta; Etapa 3 e gate bloqueante não iniciados.**
+
 #### Implementação da Etapa 2 — motor físico sem memória
 
 **Regra irrevogável no gate de regressão:** replay cego aos exemplos antigos.
@@ -610,8 +665,9 @@ bloqueio opera corretamente diante de regressões injetadas.
   209 PNG válidos (119 SIDE históricos; 90 multilight explícitos sem manifesto).
   192 OK e 17 NG; nenhuma duplicata pixel a pixel. Os vínculos das 90
   iluminações multilight ficam para qualificação na Etapa 3.
-- **Etapa 2: motor e CLI de replay SIDE sem memória implementados; aguardando
-  execução dos 119 arquivos reais e análise de divergências.**
+- **Etapa 2: primeiro replay real diagnosticado** (17/119 aprovados,
+  101 regressões e 1 OCR inválido); telemetria física detalhada adicionada
+  e aguardando novo relatório industrial. KNN permanece desabilitado.
 - **Etapas 3 a 5 e gate bloqueante: NÃO implementados**.
 - O `main.py`, decisão em produção, dataset de aprendizado e
   `agente_industrial_xp.py` permanecem inalterados.
