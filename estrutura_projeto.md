@@ -1,5 +1,65 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — Etapa 2: telemetria física do replay SIDE sem KNN
+
+**Contexto:** o primeiro replay real do acervo histórico SIDE teve
+**119** casos: **17 PASSOU** (17/17 NG), **101 REGRESSÃO**
+(101/102 OK julgados como `DEFEITO REAL`) e **1 INVÁLIDO**
+(OCR incompleto em `2026-10-02_1542_FALTANDO.png`).
+Os 90 PNGs multilight novos continuam fora do replay legado.
+Todos os registros declararam `memory_consulted=False` e
+`knn_enabled=False`. **O gate bloqueante permanece DESATIVADO.**
+
+**Objetivo desta correção:** diagnosticar por que o MoE físico decide NG
+para praticamente todos os OK, **sem** alterar scores, pesos, thresholds,
+rótulos, especialistas, dataset, CNN, fusão ou decisão de Produção.
+Não presumir que os NG aprovados representem discriminação real até
+confrontar evidências físicas dos OK e NG por categoria.
+
+**Implementação isolada no replay:**
+
+- `src/services/startup_regression/replay_telemetry.py`: normalização
+  somente leitura dos campos reais de `detail.decision_trace`: por motor,
+  `id`, `active`, `triggered`, `selected`, `raw_score`,
+  `effective_score`, `threshold`, `final_influence` e `summary`;
+  score/limiar final, motor dominante, regra de fusão, razão física,
+  `physical_readings` disponíveis. Arrays de máscaras, imagens,
+  assinaturas KNN e objetos não seriais não entram no relatório.
+- `src/services/startup_regression/inspection_runner.py`: extrai o
+  `build_lighting_context` **uma única vez**, entrega o mesmo contexto
+  para a análise já existente e registra `geometry` com resolução do
+  gabarito/teste completos, caixa global, candidatos da AOI, epicentros
+  selecionados, anomalias brutas e caixas dos especialistas. Não executa
+  uma segunda análise para explicar o veredito.
+- `src/services/startup_regression/side_replay.py`: JSON inclui
+  `cases[].telemetry` e `diagnostics` agregados por
+  `expected_label + category`, regra da fusão, motor dominante e motores
+  disparados em regressões. TXT apresenta as mesmas evidências de **cada**
+  caso OK e NG, inclusive os aprovados, para comparação lado a lado.
+- `tests/test_startup_regression_telemetry.py`: valida fidelidade da
+  trilha, geometria, JSON sem NaN/array/KNN, agregações, casos NG/OK e
+  não mutação dos resultados; incorporado ao workflow Windows dedicado.
+
+**Invariantes:**
+`_replay_without_memory=True`; especialista KNN não é criado/consultado;
+peso KNN continua zero. Se o motor físico não informar um campo, o
+relatório indica `N/D` (não inventa zero). Nenhum replay altera a
+operação normal, grava PNGs ou autoriza inicialização bloqueante.
+
+**Como reproduzir no PC real (branch `central` atualizada):**
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.side_replay
+```
+
+Enviar os novos `reports/startup_regression/side_replay_*.json` e
+`side_replay_*.txt`. A análise seguinte será **diagnóstica**: comparar
+escores e caixas físicos que disparam em OK versus NG, depois propor
+correções com salvaguardas dos 17 NG. Não avançar à Etapa 3 até aceite.
+
+---
+
 ## 08/10/2026 — C2 FALTANDO: revisão indevida apesar de testemunhas OK
 
 **Evento AOI:** `17eee0c0e2b446208d2a12ea5b806ef5`, peça `C2`,
