@@ -147,6 +147,21 @@ class ModelTests(unittest.TestCase):
             self.assertEqual(clf.inspect(a, b, light)["verdict"], "REVISÃO OBRIGATÓRIA")
         self.assertIsNone(clf._model)
 
+
+    def test_unexpected_model_exception_forces_review(self):
+        class BrokenModel:
+            def __call__(self, *inputs):
+                raise AssertionError("falha inesperada no motor neural")
+
+        clf = FaltandoCNNLive(self.checkpoint, self.hash)
+        clf._model = BrokenModel()
+        clf._metadata = {"image_size": 64, "focus_fraction": .70}
+        r, t = pair()
+        result = clf.inspect(r, t, "SIDE")
+        self.assertEqual(result["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertEqual(result["detail"]["cnn_v2_status"], "AssertionError")
+        self.assertTrue(result["production_review_required"])
+
     def test_pin_uses_approved_archive_digest(self):
         self.assertEqual(
             PINNED_CHECKPOINT_SHA256,
