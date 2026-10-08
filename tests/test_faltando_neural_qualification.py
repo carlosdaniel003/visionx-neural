@@ -174,7 +174,7 @@ class QualificationCoreTests(QualificationFixtures):
             QualificationStore(moved)
 
     def test_latest_manifest_uses_lexical_run_order(self):
-        self.assertEqual(latest_manifest(self.root), self.manifest_path)
+        self.assertEqual(latest_manifest(self.root).resolve(), self.manifest_path.resolve())
 
 
 class QualificationWindowTests(QualificationFixtures):
@@ -193,7 +193,6 @@ class QualificationWindowTests(QualificationFixtures):
         self.assertEqual(window.items.count(), 5)
         self.assertEqual(window.selected[0], "GROUP")
         self.assertIn("TRINCA CANDIDATA", window.heading.text())
-        self.assertTrue(window.confirm_group.isVisible() is False or True)
         window.items.setCurrentRow(1)
         self.assertEqual(window.selected[0], "CASE")
         window.confirm_box.setChecked(True)
