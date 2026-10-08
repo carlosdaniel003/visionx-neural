@@ -1261,6 +1261,23 @@ class AdhesiveMultiLightDebugTests(unittest.TestCase):
             (70, 80, 90),
         )
 
+    def test_non_adhesive_composite_copy_button_and_preview_match_clipboard(self):
+        panel = self._panel("aoi-missing-composite")
+        panel.adhesive_multilight_last_category = "FALTANDO"
+        sync_network_debug_controls(panel)
+        self.assertTrue(panel.btn_copy_network_image.isEnabled())
+        self.assertEqual(
+            panel.btn_copy_network_image.text(),
+            "Copiar imagens SIDE/TOP/MID",
+        )
+        preview = network_debug_image_snapshot(panel)
+        self.assertIsNotNone(preview)
+        self.assertEqual(preview.shape, (54, 82, 3))
+        self.assertTrue(copy_network_image_to_clipboard(panel))
+        copied = QApplication.clipboard().image()
+        self.assertEqual(copied.width(), 82)
+        self.assertEqual(copied.height(), 54)
+
     def test_incomplete_adhesive_set_disables_copy_image(self):
         panel = self._panel()
         panel.adhesive_multilight_last_source_frames.pop("MID")
