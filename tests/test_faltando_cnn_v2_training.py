@@ -166,6 +166,39 @@ class FaltandoCNNV2Tests(CNNV2Fixture):
                             for p, digest in self.sources))
         self.assertEqual(list((self.root/"public").rglob("*.pt")), [])
 
+    def test_best_checkpoint_follows_small_loss_improvement(self):
+        """Mesmo abaixo de min_delta de patience, registrar a menor BCE."""
+        from unittest.mock import patch
+
+        values = iter((1.0, 0.000100, 0.000090))
+
+        def mocked_evaluate(model, loader, device):
+            loss = next(values)
+            return {
+                "cases": 2, "TP_NG": 1, "TN_OK": 1,
+                "FP_OK_as_NG": 0, "FN_NG_as_OK": 0,
+                "loss": loss,
+            }, [
+                {"event_id_or_group_hint": "synthetic", "label": "NG",
+                 "predicted": "NG", "ng_score": .9, "correct": True}
+            ]
+
+        with patch(
+            "src.scripts.train_faltando_cnn_v2._evaluate",
+            side_effect=mocked_evaluate,
+        ):
+            report, output = train_v2(
+                self.manifest_path, epochs=3, batch_size=4,
+                size=64, patience=7,
+            )
+        self.assertEqual(report["training_parameters"]["best_epoch"], 3)
+        self.assertEqual(report["best_dev_validation"]["loss"], 0.000090)
+        checkpoint = torch.load(
+            output / "faltando_cnn_v2_candidate.pt",
+            map_location="cpu", weights_only=True,
+        )
+        self.assertEqual(checkpoint["best_epoch"], 3)
+
     def test_changed_source_refuses_training(self):
         source, _ = self.sources[0]
         source.write_bytes(source.read_bytes()+b"modified")
