@@ -274,3 +274,62 @@ Não habilitar CNN ou roteador KNN→CNN automaticamente por
 este resultado. Próxima etapa: teste independente com novos
 OK/NG reais, particularmente NG TOP/MID, idealmente shadow
 inference sem comandar produção.
+
+
+## Replay CNN v2 do acervo FALTANDO completo (08/10/2026)
+
+**Objetivo:** julgar com os pesos v2 existentes os casos OK/NG
+de `public/ok_archive` e `public/ng_archive`:
+esperado no último inventário: 10 NG SIDE legado,
+32 OK SIDE legado, 25 SIDE OK explícitos, 25 TOP OK e
+25 MID OK; **117 PNGs / 67 eventos** (25 trincas
+por nome+OCR). Este número não é fixo: o replay compara
+o acervo atual com todos os itens do `manifest.json`.
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.scripts.replay_faltando_cnn_v2
+```
+
+**Saídas do replay**:
+
+```text
+reports/faltando_neural/replays/archive_v2_<timestamp>/
+    archive_replay_v2.json
+    archive_replay_v2.txt
+```
+
+O script:
+
+1. Carrega a rede treinada em modo inferência puro; **não usa KNN**,
+   nem ensina a CNN, nem altera imagens ou memória da produção.
+2. Valida que checkpoint v2 e manifesto possuem o mesmo SHA-256
+   da preparação; verifica os PNGs originais por hash e a contagem
+   total de arquivos atuais. Se o arquivo mudou, falha em vez de
+   omitir casos. Se houver outra preparação, informe
+   `--manifest "caminho\manifest.json"` e, se necessário,
+   `--checkpoint "caminho\faltando_cnn_v2_candidate.pt"`.
+3. Avalia SIDE legado como monoimagem. Avalia cada luz da trinca
+   individualmente, mas a decisão multilight final é **por evento**:
+   máximo logit NG entre as luzes, consistente com o treino.
+4. Registra por evento e por PNG scores de NG, rótulo, decisão
+   e erros, mais matriz de confusão por modo e total.
+5. Não ativa automaticamente o modelo no ODIN mesmo com 100%.
+
+**Como interpretar:**
+
+- `passed_known_archive_regression = true`:
+  nenhum dos exemplos conhecidos falhou no replay. É útil para
+  identificar se o checkpoint reconhece seu acervo.
+- `passed_known_archive_regression = false`:
+  alguma imagem/evento falhou. O JSON mostra exatamente qual.
+- Nenhum resultado desse comando sozinho comprova
+  generalização da CNN em NG de novas peças. Grande parte
+  das imagens já esteve no treinamento ou no desenvolvimento.
+- Ainda não existem NG reais em TOP/MID; a CNN não teve como
+  demonstrar essa classe sob as duas luzes.
+
+**Integração KNN→CNN FALTANDO no ODIN normal:** condicionada
+a analisar o relatório real. O replay em si não altera os
+motores da produção ou o gate de inicialização.

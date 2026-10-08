@@ -675,3 +675,18 @@ bloqueio opera corretamente diante de regressões injetadas.
   no PC da fábrica, enviar os relatórios `side_replay_*.json` e
   `side_replay_*.txt` e qualificar cada divergência, sem alterar rótulos.
   Não iniciar a Etapa 3 antes do aceite explícito.
+
+
+### 08/10/2026 — Verificador CNN FALTANDO v2 do acervo conhecido (isolado)
+
+Foi criado `src/scripts/replay_faltando_cnn_v2.py` para julgar offline
+todos os `FALTANDO` do `ok_archive` e `ng_archive` usando pesos
+CNN v2 já treinados, com SIDE legado e SIDE/TOP/MID. Os resultados
+por foto e evento ficam em
+`reports/faltando_neural/replays/archive_v2_*/`.
+**Esse verificador NÃO implementa o gate bloqueante de inicialização**,
+não usa KNN, não altera modelo e não reconfigura Produção.
+Seu sucesso integral significa somente não regressão nos casos
+conhecidos, porque o próprio acervo também alimentou o treino v2.
+A avaliação independente continua necessária para liberação
+automática de novas peças.

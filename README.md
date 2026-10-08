@@ -79,6 +79,21 @@ O projeto combina diferentes abordagens para aumentar a confiabilidade da análi
 
 ---
 
+## CNN FALTANDO v2 — replay de todos os arquivos OK/NG
+
+O comando `python -m src.scripts.replay_faltando_cnn_v2` executa
+inferência offline (sem KNN) em todos os PNGs FALTANDO de
+`public/ok_archive/` e `public/ng_archive/`, conferindo que não
+há fotos omitidas, e produz resultados por iluminação, imagem e
+evento em `reports/faltando_neural/replays/`.
+O modelo é o **checkpoint v2 já treinado**, não reentreinado.
+Aprovar 100% do acervo conhecido é **teste de regressão histórica**,
+não prova de generalização, pois há imagens vistas no treino.
+O modo Produção e a lógica de julgamento não foram alterados.
+Veja [documentação FALTANDO](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+
+---
+
 ## Resultado real da CNN FALTANDO v2 (08/10/2026)
 
 Na validação de **desenvolvimento** da v2, após 25 épocas na CPU,

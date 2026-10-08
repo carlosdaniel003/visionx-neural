@@ -1,5 +1,86 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — CNN FALTANDO v2: replay de 100% do acervo conhecido (implementado)
+
+**Pedido aprovado pelo operador:** reprocessar todos os screenshots de
+`C:\visionx-neural-main\public\ng_archive` e
+`C:\visionx-neural-main\public\ok_archive` com a CNN FALTANDO v2 já
+treinada, nas iluminações SIDE legado e SIDE/TOP/MID. Se passar tudo,
+avaliar integração no ODIN normal com preferência CNN FALTANDO sobre
+especialistas físicos. Não reinterpretar sucesso em treino como
+prova de generalização.
+
+**Diagnóstico e situação antes desse pedido:** a CNN v2 foi avaliada
+somente em 13 eventos (11 OK + 2 NG) e acertou os 13 na validação
+de desenvolvimento. **Ainda NÃO havia sido executado o replay total
+do acervo de 117 PNGs**. No último inventário real: 117 fotos de
+categoria FALTANDO, incluindo 10 NG SIDE legados, 32 OK SIDE legados
+e 25 trincas OK SIDE/TOP/MID (75 imagens); 67 eventos quando trincas
+coerentes por nome+OCR são agrupadas. Os números deverão ser
+revalidados a cada execução, pois o arquivo é dinâmico.
+
+**Implementação:** `src/scripts/replay_faltando_cnn_v2.py`
+
+- Seleciona o checkpoint CNN FALTANDO v2 já salvo localmente em
+  `reports/faltando_neural/models/experiment_v2_*/faltando_cnn_v2_candidate.pt`
+  e o `manifest.json` do staging (pode informar ambos explicitamente).
+- Carrega modelo em `eval()`/`torch.inference_mode()`, sem treino,
+  sem KNN, sem especialistas físicos, sem acesso a rede, sem comandos AOI/XP.
+  Usa **exatamente o mesmo** `DualScaleEventDataset` do treinamento
+  (gabarito/teste, full + focus, luzes e parâmetros do checkpoint).
+- Exige correspondência SHA-256 do manifesto com o checkpoint,
+  verifica hashes atuais dos PNGs e compara a lista atual inteira de
+  PNGs FALTANDO com os itens do manifesto: novos, removidos ou
+  corrompidos bloqueiam a aprovação. Não omitir casos silenciosamente.
+- Reprocessa cada arquivo **individualmente por iluminação**,
+  emitindo o score NG por luz para SIDE/TOP/MID, e também calcula
+  **veredito final por evento** (máximo logit NG entre luzes observadas,
+  como na v2). Trincas completas contam como um único evento
+  multilight. Para NG multilight futuro, o veredito do evento é
+  central; por segurança o relatório também destaca divergências
+  individuais por luz.
+- Gera `archive_replay_v2.json` e `archive_replay_v2.txt` em
+  `reports/faltando_neural/replays/archive_v2_<timestamp>/` com
+  contagem por PNG e evento, legacy SIDE e por luz,
+  confusão FP/FN, scores e identificadores de todas as observações.
+- Falha com código de retorno diferente de zero se qualquer
+  acerto faltar; **não** ativa CNN automaticamente, mesmo se 100%.
+  `passed_known_archive_regression` significa apenas
+  acerto no acervo **conhecido**; `ready_for_automatic_production=False`
+  permanece explícito.
+
+**Execução no Windows 10 do ODIN:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.scripts.replay_faltando_cnn_v2
+```
+
+Se houver nova preparação desde o treino, pode ser necessário
+informar `--manifest` com o manifesto exato registrado em
+`training_report_v2.json`; o replay não deve tentar
+supor automaticamente o vínculo com outro staging.
+
+**Critério de decisão:** se o replay reprovar, **não substituir**
+os especialistas atuais. Se aprovar 100% do acervo conhecido,
+o resultado será um gate de **não regressão histórica** e
+a integração CNN poderá ser implementada em modo observação
+ou guardada por flag, mas não liberar peças automaticamente
+sem avaliação externa e tratamento de incerteza. O motivo:
+a maioria das 117 imagens foi usada para ajustar pesos v2,
+os únicos NG reais são SIDE e apenas 2 NG não participavam
+do treino. Não há NG reais em TOP/MID; acertar todas as
+imagens já conhecidas não prova detecção de NG inéditos.
+
+**Nenhuma integração operacional implementada nesta etapa:**
+sem alteração de `src/core/moe_orchestrator.py`,
+`main.py`, KNN, controles do XP ou startup blocking gate.
+Aguardar replay executado na estação real e revisar resultados.
+
+---
+
+
 ## 08/10/2026 — CNN FALTANDO v2: primeiro treino real e diagnóstico
 
 **Arquivos recebidos:** `training_report_v2.json`,
