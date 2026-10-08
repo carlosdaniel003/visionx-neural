@@ -95,6 +95,21 @@ multilight novos exigirão manifesto com `event_id`, OCR compartilhado,
 rótulo e vínculo confiável das três imagens. A implementação começará
 por inventário/qualificação do acervo real e será executada em etapas.
 
+**Etapa 1 disponível — inventário de leitura (não é gate de decisão).**
+Com o código atualizado, executar no PowerShell:
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression
+```
+
+Serão criados `reports/startup_regression/inventory_<data>.json` e
+`inventory_<data>.txt` com quantidades OK/NG, iluminação legada e explícita,
+dimensões, problemas de integridade, duplicatas e pendências de associação
+multilight. O script não modifica imagens ou dataset; não executa OCR nem
+classificação OK/NG. O gate de bloqueio continuará desativado até as etapas
+seguintes.
+
 **Especificação e checklist de implementação:**
 [`docs/ODIN_STARTUP_REGRESSION_GATE.md`](docs/ODIN_STARTUP_REGRESSION_GATE.md).
 
