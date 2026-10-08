@@ -400,6 +400,70 @@ evidências e mudanças; avançar somente após a aprovação explícita do usu�
 
 **Aceite:** relatório reprodutível do acervo real, com pendências explícitas.
 
+#### Implementação da ferramenta de Etapa 1 — 08/10/2026
+
+**Implementado no código:** inventariador independente, somente leitura.
+**Pendente para aceitar a Etapa 1:** rodá-lo com as duas pastas reais do
+computador da fábrica e examinar o relatório. Nenhuma contagem de arquivos
+reais foi presumida com base no print.
+
+Arquivos criados:
+
+```text
+src/services/startup_regression/archive_inventory.py
+src/services/startup_regression/archive_inventory_report.py
+src/services/startup_regression/__main__.py
+tests/test_startup_regression_inventory.py
+.github/workflows/startup-regression-inventory.yml
+```
+
+**Comando no PowerShell do computador com o código atualizado:**
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression
+```
+
+A raiz do projeto é detectada automaticamente. Caso a execução seja iniciada
+fora da pasta do projeto, usar:
+
+```powershell
+python -m src.services.startup_regression --root "C:\visionx-neural-main"
+```
+
+O comando lê `public/ok_archive/` e `public/ng_archive/`, inclusive arquivos
+em subpastas; **não altera nenhum PNG, não renomeia, não cria arquivos nas
+pastas e não toca no dataset**. A saída fica em:
+
+```text
+reports/startup_regression/inventory_<data>.json
+reports/startup_regression/inventory_<data>.txt
+```
+
+A pasta de relatórios é ignorada pelo Git via `.gitignore`. O relatório JSON
+contém o inventário completo e os fingerprints; o TXT traz resumo e pendências
+para leitura rápida. Pedir esses relatórios para concluir o diagnóstico real.
+
+Nesta etapa são verificados: arquivos descobertos, assinatura e estrutura
+PNG/CRC, decodificação OpenCV, dimensões, hash do arquivo, fingerprint dos
+pixels, categoria **sugerida apenas pelo nome**, iluminação explícita ou
+SIDE legada, repetição exata de imagens, conflitos entre OK e NG, além de
+manifestos reais quando existirem.
+
+**Uma imagem sem manifesto não é agrupada com outras por horário/nome.**
+Um único PNG deduplicado pode ser citado por dois eventos ou até mais de uma
+iluminação no manifesto; a ferramenta mantém vínculos separados. Manifesto
+corrompido ou incompleto nunca ganha vínculo parcial válido.
+
+**Limite explícito:** o inventário não executa OCR, não confirma categoria
+por leitura da tela, não chama o MoE/KNN nem produz qualquer veredito da IA.
+Itens cuja categoria só possa ser recuperada pelo OCR ficam pendentes para
+a Etapa 2. A ferramenta **não bloqueia a inicialização**, não altera
+`main.py`, não treina a memória e não aciona o Windows XP.
+
+**Próxima ação:** executar no PC real, trazer os arquivos JSON/TXT e revisar
+as pendências. Somente com aceite do inventário avançar para a Etapa 2.
+
 ### Etapa 2 — Runner de replay monoimagem SIDE
 
 - Separar pré-processamento de screenshot AOI da interface Qt.
@@ -472,10 +536,10 @@ bloqueio opera corretamente diante de regressões injetadas.
 
 ## 10. Estado e próximo passo
 
-- **Projeto documentado**, **nenhum serviço de gate implementado** nesta
-  etapa de organização.
-- Atual `README.md` e `estrutura_projeto.md` devem apontar para esta
-  especificação como plano, não como funcionalidade já disponível.
-- **Próximo trabalho autorizado por etapa:** começar pela
-  **Etapa 1 — Inventário e diagnóstico do acervo**, validando a realidade
-  dos arquivos locais antes de alterar o fluxo de inicialização.
+- **Etapa 1: ferramenta de inventário implementada**; relatório do acervo real
+  da fábrica ainda precisa ser executado e revisado.
+- **Etapas 2 a 5 e gate bloqueante: NÃO implementados**.
+- O `main.py`, decisão em produção, dataset de aprendizado e
+  `agente_industrial_xp.py` permanecem inalterados.
+- **Próximo trabalho nesta etapa:** receber e qualificar o JSON/TXT gerados
+  no computador real. Não iniciar a Etapa 2 antes do aceite explícito.
