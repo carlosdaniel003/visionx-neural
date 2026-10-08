@@ -1,5 +1,98 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — CNN DESLOCADO v3: gate de máscara de corpo inteiro, antes de treinar
+
+**Gatilho:** os três falsos NG SIDE legados
+(`2026-10-02_1349_DESLOCADO.png`,
+`2026-10-02_1400_DESLOCADO.png`,
+`2026-10-02_1415_DESLOCADO.png`) possuem
+**marcação interna distinta** entre gabarito e teste,
+mas sem evidência visual clara de deslocamento do
+corpo completo. Os previews sintéticos v2
+deslocavam apenas a inscrição `104` em vez da peça.
+Uma segmentação só por brilho/contraste não é
+confiável para produzir exemplos NG artificiais.
+
+**Próximo passo executado — apenas anotação/previews, sem treino:**
+
+- `src/services/deslocado_body_masks_v3.py` usa
+  o mesmo manifesto e recortes AOI auditados por hash
+  SHA-256. Gera **uma proposta de corpo inteiro em
+  cada referência e cada teste** da categoria,
+  com prévia em grade de coordenadas. Sugestões
+  geométricas iniciais são hipóteses, não detecções
+  comprovadas; **`approved=false` em todas**.
+  Nenhum `test` ou `reference` original é modificado.
+- `src/scripts/prepare_deslocado_body_masks_v3.py`:
+  `python -m src.scripts.prepare_deslocado_body_masks_v3`
+  cria `reports/deslocado_neural/body_masks/review_*/`
+  contendo `body_masks_review.json`, `summary.txt`
+  e `preview_proposals/*.png`. É preciso revisar
+  **todos os pares**, inclusive SIDE legado e
+  trincas SIDE/TOP/MID.
+- A caixa `body_box_reference_xywh` é distinta
+  de `body_box_test_xywh`, coordenadas absolutas
+  `[x,y,w,h]` no **recorte original**, não no preview.
+  O operador deve delimitar corpo completo + terminais
+  móveis e **excluir pads de cobre fixos da PCB**.
+  Os overlays laranja são palpites; não mudam treino.
+- `src/scripts/review_deslocado_body_masks_v3.py`
+  oferece anotação gráfica opcional (OpenCV HighGUI
+  no Windows): `python -m src.scripts.review_deslocado_body_masks_v3 --review "CAMINHO\\body_masks_review.json"`.
+  Teclas: **a** aprovar, **e** redesenhar
+  gabarito/teste usando mouse, **s** pular,
+  **q** salvar/sair. Aprovar ainda solicita
+  confirmação explícita **s** para declarar que
+  corpo e terminais estão delimitados, sem pads.
+  Salva cada confirmação imediatamente.
+  Se OpenCV não tiver HighGUI, editar JSON
+  manualmente, revisando preview por preview.
+- `python -m src.scripts.prepare_deslocado_body_masks_v3 --review "CAMINHO\\body_masks_review.json"`
+  verifica hash de manifesto e cada par de PNGs,
+  correspondência de arquivo/evento/iluminação,
+  `approved=true` + `review_notes` não vazia,
+  dimensões relativas compatíveis entre
+  referência/teste e caixas físicas mínimas
+  (para impedir que se marque só uma letra).
+  Qualquer imagem faltante/alterada, caixa
+  pequena, grande, inconsistente ou não aprovada
+  **bloqueia a validação integral**.
+- Após validar todas, gera
+  `reports/deslocado_neural/body_masks/validated_*/`
+  com `validated_body_masks.json` e
+  `preview_validated/*.png` (contornos verdes).
+  Nenhum PNG da fábrica, memória KNN, CNN
+  FALTANDO, CNN DESLOCADO atual ou motor físico
+  foi alterado.
+- **Não foi implementado treino v3 ainda:**
+  validar a localização real do componente
+  e inspecionar overlays é PRÉ-REQUISITO.
+  O catálogo de máscaras revistas não aciona
+  treino automático nem promove pesos.
+  Mesmo com revisão integral de todos os OK,
+  a sensibilidade para NG reais segue desconhecida:
+  `production_approved=false`.
+
+**Procedimento prático na fábrica:**
+
+```powershell
+cd "C:\\visionx-neural-main"
+git pull origin central
+python -m src.scripts.prepare_deslocado_body_masks_v3
+# usar o caminho exibido do body_masks_review.json abaixo:
+python -m src.scripts.review_deslocado_body_masks_v3 --review "CAMINHO\\body_masks_review.json"
+python -m src.scripts.prepare_deslocado_body_masks_v3 --review "CAMINHO\\body_masks_review.json"
+```
+
+Enviar `body_masks_review.json`, `validated_body_masks.json`
+(se gerado), `summary.txt` e previews representativos,
+especialmente os três OK SIDE legados falhos e uma
+trinca SIDE/TOP/MID. A próxima etapa só ocorrerá
+quando esses contornos físicos forem conferidos.
+
+---
+
+
 ## 08/10/2026 — Inspeção das três imagens dos falsos NG SIDE legados
 
 **Materiais recebidos e mapeamento por `diagnostic_summary.json`:**

@@ -1,5 +1,36 @@
 # VisionX Neural
 
+## CNN DESLOCADO v3 — verificação da máscara do componente
+
+As três imagens SIDE que a CNN v2 confundiu com NG
+mostram marcações internas diferentes, embora os corpos
+dos componentes pareçam alinhados. O simulador v2,
+além disso, moveu o caractere `104`, não o corpo inteiro.
+
+Implementei um **gate de revisão do corpo físico** que
+gera `body_masks_review.json` e previsualizações de
+cada par gabarito/teste. Todas as caixas começam
+**sem aprovação**, e precisam ser verificadas antes
+do próximo treino:
+
+```powershell
+python -m src.scripts.prepare_deslocado_body_masks_v3
+```
+
+Existe revisão gráfica opcional:
+`python -m src.scripts.review_deslocado_body_masks_v3 --review "CAMINHO\\body_masks_review.json"`
+(`a` aprovar, `e` editar, `s` pular, `q` sair).
+Valide as caixas confirmadas com
+`python -m src.scripts.prepare_deslocado_body_masks_v3 --review "CAMINHO\\body_masks_review.json"`.
+O arquivo de saída validado gera previews verdes.
+
+Nenhuma CNN v3 foi treinada e o motor DESLOCADO
+permanece físico. Veja
+[documentação DESLOCADO](docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md).
+
+---
+
+
 ## CNN DESLOCADO v2 — replay completo: 31/34 OK
 
 O replay real de `ok_archive` processou 34 imagens e
