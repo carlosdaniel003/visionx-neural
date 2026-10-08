@@ -768,24 +768,34 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
                 float(signature_detail.get("missing_pct", 0.0)),
                 float(missing_result.get("missing_coverage", 0.0)),
             )
-        signature = build_anomaly_signature(
-            full_gab,
-            full_test,
-            signature_detail,
-            aoi_info,
-            focus,
+        # Replay de regressão: a imagem é tratada como inédita. O motor de
+        # memória sequer é acessado, e a fusão recebe knn_result=None.
+        # Este marcador é reservado ao runner offline; captura normal
+        # continua com o fluxo inalterado.
+        no_memory_replay = bool(
+            (aoi_info or {}).get("_replay_without_memory", False)
         )
+        signature = None
+        knn_result = None
+        if not no_memory_replay:
+            signature = build_anomaly_signature(
+                full_gab,
+                full_test,
+                signature_detail,
+                aoi_info,
+                focus,
+            )
 
-        knn_expert = self.experts["knn"]
-        _normalize_knn_memory_categories(knn_expert)
-        knn_result = knn_expert.analyze(
-            full_gab,
-            full_test,
-            None,
-            None,
-            aoi_info,
-            anomaly_signature=signature,
-        )
+            knn_expert = self.experts["knn"]
+            _normalize_knn_memory_categories(knn_expert)
+            knn_result = knn_expert.analyze(
+                full_gab,
+                full_test,
+                None,
+                None,
+                aoi_info,
+                anomaly_signature=signature,
+            )
 
         (
             final_score,
@@ -812,7 +822,8 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
         )
         analysis["reason"] = reason
 
-        detail.update(knn_result)
+        if knn_result:
+            detail.update(knn_result)
         detail.update(
             {
                 "anomaly_signature": signature,
@@ -826,7 +837,13 @@ def install_anomaly_memory_integration(orchestrator_cls) -> None:
             }
         )
 
-        if "knn_expert.py" not in active_engines:
+        if no_memory_replay:
+            detail["replay_without_memory"] = True
+            detail["replay_memory_consulted"] = False
+            analysis["active_engines"] = [
+                item for item in active_engines if "knn" not in item.lower()
+            ]
+        elif "knn_expert.py" not in active_engines:
             active_engines.append("knn_expert.py")
         return analysis
 
