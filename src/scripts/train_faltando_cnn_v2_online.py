@@ -174,6 +174,13 @@ def _all_online(root: Path) -> list[dict]:
     rows = []
     # Uma amostra validada por operador equivale a um evento (3 luzes = 1).
     for path in sorted(folder.glob("*.json")):
+        entry = json.loads(path.read_text(encoding="utf-8"))
+        if entry.get("schema") != ONLINE_SCHEMA:
+            raise ValueError("Schema de evento incremental desconhecido")
+        # Treinadores de futuras CNNs compartilharão a mesma fila,
+        # mas não poderão contaminar o dataset de FALTANDO.
+        if entry.get("category") != "FALTANDO":
+            continue
         rows.append(_on_disk_event(path, root))
     by_identity = {}
     for row in rows:
