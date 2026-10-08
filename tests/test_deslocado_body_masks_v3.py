@@ -9,10 +9,12 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import cv2
 import numpy as np
 
+from src.scripts.review_deslocado_body_masks_v3 import annotate_review
 from src.services.deslocado_body_masks_v3 import (
     SCHEMA, RESULT_SCHEMA, check_box, propose_box,
     prepare_body_masks, validate_body_masks,
@@ -124,6 +126,34 @@ class FullBodyReviewTests(DeslocadoFixtures):
         self.review_file.write_text(json.dumps(raw,ensure_ascii=False))
         with self.assertRaisesRegex(ValueError,"Dimensões relativas"):
             validate_body_masks(self.review_file)
+
+
+    def test_operator_gui_approval_requires_explicit_double_confirmation(self):
+        # HighGUI mockado (CI headless): 'a' escolhe aprovar e 's'
+        # confirma que a caixa inclui corpo+terminais e exclui pads.
+        with patch("cv2.namedWindow"), patch("cv2.imshow"), \
+             patch("cv2.waitKey", side_effect=[ord("a"),ord("s")]*6), \
+             patch("cv2.destroyAllWindows"):
+            report=annotate_review(self.review_file)
+        self.assertEqual(report["approved"],6)
+        self.assertEqual(report["remaining"],0)
+        saved=json.loads(self.review_file.read_text(encoding="utf-8"))
+        self.assertTrue(all(r["approved"] for r in saved["rows"]))
+        validated,_=validate_body_masks(self.review_file)
+        self.assertEqual(validated["total_approved"],6)
+
+    def test_operator_can_refuse_approval_and_preserve_progress(self):
+        with patch("cv2.namedWindow"), patch("cv2.imshow"), \
+             patch("cv2.waitKey", side_effect=[ord("a"),ord("n"),ord("q")]), \
+             patch("cv2.destroyAllWindows"):
+            result=annotate_review(self.review_file)
+        self.assertEqual(result["approved"],0)
+        self.assertEqual(result["remaining"],6)
+        self.assertFalse(
+            any(r["approved"] for r in json.loads(
+                self.review_file.read_text(encoding="utf-8")
+            )["rows"])
+        )
 
     def test_ref_and_test_annotations_are_distinct(self):
         raw=self._approve()
