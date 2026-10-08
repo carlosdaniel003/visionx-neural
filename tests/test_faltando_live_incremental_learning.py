@@ -21,6 +21,7 @@ from src.scripts.train_faltando_cnn_v2_online import (
     _on_disk_event, _all_online, train_online, PairDataset, POINTER_SCHEMA,
 )
 from src.services.anomaly_learning import _decision_task
+from src.services.decision_persistence import DecisionPersistenceQueue
 
 
 class OnlineFixtures(unittest.TestCase):
@@ -145,6 +146,80 @@ class EventSpoolingTests(OnlineFixtures):
             "is_defect": False, "detail": {"recognition_route": "KNOWN_KNN"}
         }
         self.assertFalse(_decision_task(panel, "OK", "button", "OK")["save_images"])
+
+
+class PersistenceIntegrationTests(OnlineFixtures):
+    def test_human_new_case_saved_then_enqueued_for_online_training(self):
+        class Database:
+            saved = []
+            @classmethod
+            def save_sample(cls, **kwargs):
+                cls.saved.append(kwargs)
+                return "/tmp/example-memory.json"
+
+        class Orchestrator:
+            reloads = 0
+            def reload_memory(self):
+                self.reloads += 1
+
+        initiated = []
+        with patch(
+            "src.services.decision_persistence.OnlineLearningQueue"
+        ) as factory:
+            def make_queue():
+                worker = unittest.mock.MagicMock()
+                initiated.append(worker)
+                return worker
+            factory.side_effect = make_queue
+            org = Orchestrator()
+            persist = DecisionPersistenceQueue(org, Database)
+            persist.submit({**self.task("OK", source="button"),
+                            "save_images": True})
+            persist.wait_until_idle()
+
+        self.assertEqual(len(Database.saved), 1)
+        self.assertEqual(len(initiated), 1)
+        initiated[0].submit_saved.assert_called_once()
+        self.assertEqual(org.reloads, 1)
+
+    def test_auto_decision_and_known_knn_do_not_enqueue_training(self):
+        class Database:
+            @staticmethod
+            def save_sample(**kwargs):
+                return "/tmp/example-memory.json"
+
+        class Orchestrator:
+            def reload_memory(self):
+                return None
+
+        with patch(
+            "src.services.decision_persistence.OnlineLearningQueue"
+        ) as factory:
+            persist = DecisionPersistenceQueue(Orchestrator(), Database)
+            persist.submit(self.task("OK", source="production_auto"))
+            persist.submit(self.task("NG", route="KNOWN_KNN"))
+            persist.wait_until_idle()
+            factory.assert_not_called()
+
+    def test_multilight_requires_all_three_saves_before_learning(self):
+        class Database:
+            index = 0
+            @classmethod
+            def save_sample(cls, **kwargs):
+                cls.index += 1
+                return "" if cls.index == 2 else "/tmp/example-memory.json"
+
+        class Orchestrator:
+            def reload_memory(self):
+                pass
+
+        with patch(
+            "src.services.decision_persistence.OnlineLearningQueue"
+        ) as factory:
+            persist = DecisionPersistenceQueue(Orchestrator(), Database)
+            persist.submit(self.task("NG", multilight=True))
+            persist.wait_until_idle()
+            factory.assert_not_called()
 
 
 class ChampionGateTests(OnlineFixtures):
