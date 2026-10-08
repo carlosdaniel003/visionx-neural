@@ -119,6 +119,10 @@ class DeslocadoV2TrainingTests(DeslocadoFixtures):
         self.assertTrue(
             (modeldir/"training_summary_deslocado_v2.txt").is_file()
         )
+        previews = result["development_proxy_preview_images"]
+        self.assertGreaterEqual(len(previews), 1)
+        self.assertTrue(all((modeldir/name).is_file() for name in previews))
+        self.assertTrue(all(name.startswith("proxy_previews/") for name in previews))
         ckpt = torch.load(
             modeldir/"deslocado_cnn_v2_candidate.pt",
             map_location="cpu", weights_only=True
