@@ -55,7 +55,6 @@ except ImportError:
 
 
 DEBUG_DIR = Path("public/debug_crop")
-DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class ScreenMonitor(QThread):
@@ -69,6 +68,15 @@ class ScreenMonitor(QThread):
         # Momento monotônico em que o frame MSS aceito terminou de ser
         # capturado. Usado como início real do Tempo de análise local.
         self.last_capture_received_at = 0.0
+        # No replay SIDE histórico, as fotos são lidas do disco e nenhum
+        # arquivo de depuração pode ser escrito. Operação normal: False.
+        self._replay_no_debug = False
+
+    def _write_debug_crop(self, path, image) -> None:
+        if self._replay_no_debug:
+            return
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(path), image)
 
     # =================================================================
     # DETECÇÃO DE BARRAS
@@ -240,7 +248,7 @@ class ScreenMonitor(QThread):
         strip = frame_bgr[y1:y2, x1:x2].copy()
         strip_h, strip_w = strip.shape[:2]
 
-        cv2.imwrite(str(DEBUG_DIR / f"{label}_01_strip.png"), strip)
+        self._write_debug_crop(DEBUG_DIR / f"{label}_01_strip.png"), strip)
 
         # Máscara de cinza
         gray_mask = self._build_interface_gray_mask(strip)
@@ -273,7 +281,7 @@ class ScreenMonitor(QThread):
                 print(f"   [{label}] Nenhum cinza → foto = strip inteiro")
             else:
                 print(f"⚠️ [{label}] Sem foto detectada — fallback")
-                cv2.imwrite(str(DEBUG_DIR / f"{label}_FALLBACK.png"), strip)
+                self._write_debug_crop(DEBUG_DIR / f"{label}_FALLBACK.png"), strip)
 
                 gm_rows = np.zeros((strip_h, 40, 3), dtype=np.uint8)
                 for row in range(strip_h):
@@ -284,7 +292,7 @@ class ScreenMonitor(QThread):
                 thresh_x = int(0.75 * 35)
                 cv2.line(gm_rows, (thresh_x, 0), (thresh_x, strip_h),
                           (0, 255, 255), 1)
-                cv2.imwrite(str(DEBUG_DIR / f"{label}_graymap_rows.png"),
+                self._write_debug_crop(DEBUG_DIR / f"{label}_graymap_rows.png"),
                               gm_rows)
                 return strip
 
@@ -321,8 +329,8 @@ class ScreenMonitor(QThread):
         debug_vis = strip.copy()
         cv2.rectangle(debug_vis, (left, top), (right, bottom),
                        (0, 255, 0), 2)
-        cv2.imwrite(str(DEBUG_DIR / f"{label}_03_detected.png"), debug_vis)
-        cv2.imwrite(str(DEBUG_DIR / f"{label}_04_photo.png"), photo)
+        self._write_debug_crop(DEBUG_DIR / f"{label}_03_detected.png"), debug_vis)
+        self._write_debug_crop(DEBUG_DIR / f"{label}_04_photo.png"), photo)
 
         # Graymap linhas
         gm_rows = np.zeros((strip_h, 40, 3), dtype=np.uint8)
@@ -336,7 +344,7 @@ class ScreenMonitor(QThread):
         thresh_x = int(0.75 * 35)
         cv2.line(gm_rows, (thresh_x, 0), (thresh_x, strip_h),
                   (0, 255, 255), 1)
-        cv2.imwrite(str(DEBUG_DIR / f"{label}_graymap_rows.png"), gm_rows)
+        self._write_debug_crop(DEBUG_DIR / f"{label}_graymap_rows.png"), gm_rows)
 
         # Graymap colunas
         gm_cols = np.zeros((40, strip_w, 3), dtype=np.uint8)
@@ -353,7 +361,7 @@ class ScreenMonitor(QThread):
         thresh_y = 40 - int(0.75 * 35)
         cv2.line(gm_cols, (0, thresh_y), (strip_w, thresh_y),
                   (0, 255, 255), 1)
-        cv2.imwrite(str(DEBUG_DIR / f"{label}_graymap_cols.png"), gm_cols)
+        self._write_debug_crop(DEBUG_DIR / f"{label}_graymap_cols.png"), gm_cols)
 
         return photo
 
