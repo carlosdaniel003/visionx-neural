@@ -1,3 +1,13 @@
+## CNN DESLOCADO v3.1 — máscaras reais (offline)
+
+O catálogo v3 anterior registra apenas **retângulos**. O refinamento v3.1
+produz propostas de máscaras binárias com revisão humana obrigatória,
+editor de pixels e exclusão explícita de recortes cortados. Nada é treinado
+ou ligado ao motor operacional. Execute o fluxo no
+[guia DESLOCADO](docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md).
+
+---
+
 # VisionX Neural
 
 ## CNN DESLOCADO v3 — verificação da máscara do componente

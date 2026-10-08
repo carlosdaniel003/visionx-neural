@@ -1,3 +1,17 @@
+## 08/10/2026 — CNN DESLOCADO v3.1: refinamento de máscaras de pixels
+
+A v3 anterior validava retângulos, não a geometria do componente.
+O novo refinamento offline cria propostas GrabCut não aprovadas, editor
+pincel para gabarito/teste, verificação por hashes e cobertura integral,
+exclusão explícita para recortes cortados e catálogo binário.
+Scripts: `src/services/deslocado_pixel_masks_v3.py`,
+`src/scripts/refine_deslocado_body_masks_v3.py`,
+`tests/test_deslocado_pixel_masks_v3.py`.
+Documentação: `docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md`.
+Nenhum simulador/treino/CNN ou motor operacional foi alterado.
+
+---
+
 # Estrutura do Projeto: VisionX Neural
 
 ## 08/10/2026 — CNN DESLOCADO v3: gate de máscara de corpo inteiro, antes de treinar

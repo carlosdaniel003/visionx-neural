@@ -648,3 +648,55 @@ quando esses contornos físicos forem conferidos.
 
 ---
 
+
+
+## 08/10/2026 — DESLOCADO v3.1: máscara de pixels corrigida
+
+A revisão v3 aprovou 34 *caixas retangulares*, não máscaras de pixels.
+A auditoria visual encontrou áreas de fundo/pads dentro da caixa e
+componentes possivelmente cortados. Portanto o catálogo retangular é
+**somente histórico** e não autoriza simulação de deslocamento.
+
+O novo serviço `src/services/deslocado_pixel_masks_v3.py` mantém a
+rastreabilidade SHA-256 do manifesto, catálogo anterior, gabarito e teste.
+A partir de cada retângulo antigo, propõe máscara binária de pixels 0/255
+por GrabCut. **Nenhuma proposta é confiável ou aprovada automaticamente**.
+Em falha de GrabCut, gera placeholder que EXIGE edição manual.
+
+O novo script `src/scripts/refine_deslocado_body_masks_v3.py` abre editor
+para pintar pixels incluídos (botão esquerdo), apagar fundo/pads (direito),
+ajustar pincel com `[` / `]`, limpar com `c`, aceitar com `Enter` ou
+cancelar com `Esc`. Na janela principal: `e` editar gabarito/teste,
+`a` aprovar mais `s` para confirmar corpo e terminais completos,
+`x` excluir intencionalmente (motivo `c` componente cortado ou
+`u` segmentação incerta, seguido de `s`), `s` pular ou `q` sair.
+Propostas são laranjas; resultados validados são verdes.
+
+A validação recusa máscaras com poucos pixels (somente inscrição), fundo
+excessivo, fragmentação, bordas do crop tocadas, proporções incompatíveis,
+hash adulterado, exclusão sem motivo ou imagem não revisada.
+Todos os 34 pares devem ser aprovados ou explicitamente excluídos.
+A exclusão aparece no relatório e não vira NG sintético. O catálogo final
+`validated_component_masks.json` contém os PNGs binários aprovados.
+
+**Procedimento no PowerShell (reutilizar o catálogo retangular anterior):**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+
+$catalog = "C:\visionx-neural-main\reports\deslocado_neural\body_masks\validated_20261008T183734_004264Z\validated_body_masks.json"
+python -m src.scripts.refine_deslocado_body_masks_v3 --from-validated "$catalog"
+
+$dir = Get-ChildItem ".\reports\deslocado_neural\body_masks" -Directory -Filter "pixel_review_*" | Sort-Object Name -Descending | Select-Object -First 1
+$review = Join-Path $dir.FullName "pixel_masks_review.json"
+python -m src.scripts.refine_deslocado_body_masks_v3 --review "$review"
+python -m src.scripts.refine_deslocado_body_masks_v3 --validate "$review"
+```
+
+**Limitações:** a segmentação assistida ainda pode confundir terminais,
+inscrições e pads. Inspecione cada par antes de aprovar. O componente que
+estiver cortado deve ser excluído até obter crop AOI mais completo.
+**Treino, simulador e motor de Produção permanecem inalterados;
+`production_approved=false`.** Continuar somente após aprovação dos
+resultados pelo operador.
