@@ -745,3 +745,69 @@ automático do conjunto OK, sem máscaras manuais, antes de qualquer treino
 ou alteração de veredito. A implementação só avançará com confirmação
 do operador.
 
+
+
+---
+
+## 08/10/2026 — DESLOCADO OK-only: diagnóstico automático SEM desenho (etapa executável)
+
+O comando \`python -m src.scripts.diagnose_deslocado_ok_geometry\` executa,
+somente na estação Windows 10, uma **qualificação DESCRITIVA dos pares OK**
+extraídos do mesmo pipeline AOI. Reutiliza o último manifesto DESLOCADO,
+sem abrir editor, desenhar caixas ou depender das revisões manuais v3/v3.1.
+
+1. \`load_ok_events\` verifica hashes dos PNGs originais, origem,
+   categoria, classe OK e integralidade dos pares extraídos.
+   \`all_archived_deslocado\` exige cobertura completa do \`ok_archive\`
+   atual e ausência de qualquer PNG DESLOCADO em \`ng_archive\`.
+   Arquivos novos/removidos bloqueiam a análise até preparar novo manifesto.
+2. Por observação (SIDE legado, SIDE, TOP, MID) registra hash de
+   gabarito/teste, dimensões, evento candidato, iluminação e qualidade do
+   contexto visual. As trincas por nome + OCR permanecem marcadas
+   \`UNVERIFIED_NAME_OCR_CANDIDATE\` — **não viram event_id comprovado**.
+3. Sem segmentar peças, mede contraste/arestas em janelas relativas ao crop:
+   região central (frequentemente inscrição), banda intermediária (estrutura)
+   e área externa (hipóteses de referência na PCB). A correlação de fase
+   estima somente registro visual global, com checagens de textura por setor,
+   dimensão e confiança. **Não são máscara, detector de pads fixos, classificação
+   OK/NG, prova de deslocamento nem saída de CNN.**
+4. Se não houver contexto suficiente, registra \`EVIDENCIA_INSUFICIENTE\`,
+   sem inventar resposta OK. Em outros pares,
+   \`METRICAS_DESCRITIVAS_DISPONIVEIS\` indica somente medidas calculáveis,
+   jamais aprovação física. Relata especialmente os três SIDE legados
+   anteriormente confundidos pela CNN v2, casos repetidos por hash exato e
+   splits candidatos por board/parts para avaliar risco de vazamento depois.
+5. Exporta arquivos \`deslocado_ok_geometry.json\` e
+   \`deslocado_ok_geometry.txt\` em
+   \`reports/deslocado_neural/diagnostics/ok_only_geometry_*/\`.
+   Nenhum artefato é salvo nos arquivos OK/NG originais.
+
+**Comando (sem necessidade de máscara ou desenho):**
+
+\`\`\`powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.scripts.diagnose_deslocado_ok_geometry
+\`\`\`
+
+Se o inventário tiver novas imagens OK, execute primeiro:
+
+\`\`\`powershell
+python -m src.services.deslocado_neural_dataset
+python -m src.scripts.diagnose_deslocado_ok_geometry
+\`\`\`
+
+O usuário deverá enviar o **JSON e TXT** para verificar a qualidade real
+das evidências antes de qualquer novo treinamento one-class. Esta etapa
+**não implementa CNN, não treina, não consulta KNN, não simula NG**,
+não substitui especialista físico nem mexe em \`main.py\`.
+\`production_approved=false\`, \`real_ng_recall=null\`.
+
+**Limitações metodológicas**: as janelas normalizadas não garantem que
+a inscrição esteja exatamente no centro nem que o anel externo represente
+pads fixos. O valor da correlação é qualidade de registro, não confiança de
+classificação. O manifesto de extração contém hashes dos originais,
+enquanto o relatório registra hashes atuais dos recortes, sem provar
+automaticamente que recortes previamente preparados não foram alterados
+após a extração; na dúvida reexecute a preparação.
+

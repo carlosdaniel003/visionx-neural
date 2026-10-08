@@ -1,3 +1,13 @@
+## DESLOCADO — diagnóstico automático sem desenho (etapa disponível)
+
+`python -m src.scripts.diagnose_deslocado_ok_geometry` analisa todo o
+acervo DESLOCADO OK, conferindo hashes e cobertura do inventário e emitindo
+métricas geométricas exploratórias, **sem máscaras manuais, KNN, CNN, treino
+ou alteração da Produção**. Isso não classifica defeitos NG. Consulte
+[os procedimentos](docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md).
+
+---
+
 ## CNN DESLOCADO — plano novo sem máscaras manuais
 
 A revisão de máscaras v3/v3.1 por desenho foi **descontinuada como requisito**.

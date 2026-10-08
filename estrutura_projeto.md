@@ -1,3 +1,26 @@
+## 08/10/2026 — DESLOCADO: diagnóstico offline sem desenho (implementado)
+
+Novo serviço src/services/deslocado_ok_geometry.py e CLI
+src/scripts/diagnose_deslocado_ok_geometry.py. Processa 100% do acervo OK
+DESLOCADO extraído, por gabarito/teste e iluminação, com hashes do original
+e dos pares derivados. Verifica divergência do inventário, ausência de NG,
+qualidade de referências visuais e separa diferenças centrais de bordas
+periféricas, sem desenhar máscaras ou classificar NG. Os três SIDE falsos
+NG anteriores permanecem explicitamente identificados no relatório.
+
+Saída: reports/deslocado_neural/diagnostics/ok_only_geometry_*/
+deslocado_ok_geometry.json e deslocado_ok_geometry.txt.
+Comando: python -m src.scripts.diagnose_deslocado_ok_geometry
+Testes: tests/test_deslocado_ok_geometry.py
+Workflow: .github/workflows/deslocado-ok-geometry-tests.yml
+
+Somente diagnóstico: não há CNN one-class treinada, não há KNN,
+não altera o motor físico, o main.py ou a CNN FALTANDO.
+Os status não são certificados de alinhamento ou de detecção NG real.
+Processo de desenho manual v3/v3.1 permanece descontinuado.
+Consulte docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md.
+
+---
 ## 08/10/2026 — Mudança de diretriz: DESLOCADO somente OK, sem desenho
 
 **Decisão do operador:** imagem AOI com inscrição diferente, mas corpo e
