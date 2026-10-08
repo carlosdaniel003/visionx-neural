@@ -75,6 +75,7 @@ class FaltandoCNNLive:
     def __init__(
         self, checkpoint_path: Path | None = None,
         expected_sha256: str = PINNED_CHECKPOINT_SHA256,
+        online_root: Path | None = None,
     ):
         self.path = (
             Path(checkpoint_path).expanduser().resolve()
@@ -86,11 +87,15 @@ class FaltandoCNNLive:
         self._metadata = {}
         self._error: tuple[str, str] | None = None
         self._online_pointer_seen = False
+        self._online_root = (
+            Path(online_root).resolve() if online_root is not None
+            else Path(__file__).resolve().parents[3]
+        )
 
     def _refresh_live_pointer(self) -> None:
         """Ativa atomicamente pesos online SOMENTE após o gate de regressão."""
         from src.scripts.train_faltando_cnn_v2_online import POINTER_SCHEMA
-        root = Path(__file__).resolve().parents[3]
+        root = self._online_root
         pointer = root / "reports" / "neural_online" / "live_active.json"
         if not pointer.exists():
             if self._online_pointer_seen:
