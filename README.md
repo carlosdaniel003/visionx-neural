@@ -95,6 +95,24 @@ multilight novos exigirão manifesto com `event_id`, OCR compartilhado,
 rótulo e vínculo confiável das três imagens. A implementação começará
 por inventário/qualificação do acervo real e será executada em etapas.
 
+**Etapa 2 disponível — replay SIDE histórico SEM MEMÓRIA (diagnóstico).**
+Com os módulos do repositório atualizados, executar:
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.side_replay
+```
+
+O comando reprocessa os **119 screenshots SIDE históricos** com o mesmo
+extrator de barras/OCR e motores visuais do ODIN, **sem construir ou consultar
+o KNN, sem acessar o dataset de memória e sem salvar imagens**. Os resultados
+vão para `reports/startup_regression/side_replay_<data>.json` e
+`side_replay_<data>.txt`. Qualquer imagem não classificável por OCR ou falha
+de um especialista aparece como `INVÁLIDO` e não é aprovada.
+Os 90 PNGs SIDE/TOP/MID explícitos ficam para a Etapa 3, que também deverá
+ignorar a memória. Este modo NÃO altera a decisão de produção nem bloqueia
+a abertura atual do ODIN.
+
 **Etapa 1 disponível — inventário de leitura (não é gate de decisão).**
 Com o código atualizado, executar no PowerShell:
 
