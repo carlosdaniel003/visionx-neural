@@ -1,5 +1,38 @@
 # Estrutura do Projeto: VisionX Neural
 
+
+## Correção 08/10/2026 — epicentro oculto por molduras verdes cruzadas
+
+**Escopo:** validação AOI/Windows XP, sem alteração do agente XP ou de decisões OK/NG.
+
+**Caso real:** componente D6~2, categoria `DESLOCADO`, iluminação `SIDE`.
+O gabarito e o teste mostram duas molduras verdes muito próximas, que se
+cruzam na parte superior e são cortadas na borda inferior. Os contornos
+tradicionais se fundiam; o Radar de `EpicenterExtractor` via uma caixa gigante
+(378×524 no recorte 394×540), a descartava por largura e altura superiores
+a 85%, e os fragmentos restantes não passavam pelo mínimo de 15 px.
+A validação encerrava como `missing_epicenter`, apesar do epicentro visível.
+
+**Correção:** `src/core/epicenter_line_recovery.py` complementa o Radar somente
+quando ele não seleciona nenhuma caixa. Usa aberturas morfológicas direcionais
+para identificar laterais verticais e topos horizontais, exige duas molduras
+independentes e seleciona a caixa de laterais internas; permite que o topo da
+caixa menor esteja acima do topo externo e que as bordas inferiores saiam da
+imagem. Se existirem pequenas interrupções, faz uma segunda passagem de
+reconexão limitada. Sem provas de duas molduras, não gera epicentro fictício.
+
+A escolha original do Radar e o fallback legado permanecem preservados.
+As ROIs de análise continuam coexistindo com contexto do componente e
+quadro completo; a correção não altera fusão, KNN, OCR, dataset ou replay
+de inicialização planejado.
+
+**Regressões:** foram acrescentados cenários de caixas cruzadas/cortadas,
+linhas interrompidas, moldura isolada, linha espúria e integração com
+`validate_network_inspection`. O agente no Windows XP não precisa ser atualizado.
+
+---
+
+
 ## Planejado — 08/10/2026 — gate de regressão visual antes da inicialização
 
 **Status: especificado e organizado; ainda NÃO implementado.**

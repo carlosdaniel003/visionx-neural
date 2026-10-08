@@ -11,6 +11,7 @@ on:
       - "src/ui/network_image_cycle_gate.py"
       - "src/core/inspection.py"
       - "src/core/epicenter_extractor.py"
+      - "src/core/epicenter_line_recovery.py"
       - "main.py"
       - "tests/test_network_aoi_intake_filter.py"
       - "tests/test_image_cycle_gate.py"

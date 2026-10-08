@@ -138,5 +138,58 @@ class EpicenterExtractorRegressionTests(unittest.TestCase):
         self.assertEqual(focus_reference.shape, focus_test.shape)
 
 
+    def test_crossing_frames_clipped_at_bottom_recover_inner_roi(self):
+        """Caso real 08/10: os dois topos se cruzam e os fundos saem da tela."""
+        reference = np.full((540, 394, 3), BACKGROUND, dtype=np.uint8)
+        test = reference.copy()
+        for image in (reference, test):
+            cv2.rectangle(image, (15, 27), (377, 550), GREEN, 2)
+            cv2.rectangle(image, (29, 14), (365, 550), GREEN, 2)
+
+        epicenters, focus_reference, focus_test = EpicenterExtractor.extract_focus(
+            reference,
+            test,
+            old_epicenters=[],
+            global_box_info={},
+        )
+
+        self.assertEqual(len(epicenters), 1)
+        x, y, width, height = epicenters[0]
+        self.assertAlmostEqual(x, 29, delta=4)
+        self.assertAlmostEqual(y, 14, delta=4)
+        self.assertAlmostEqual(width, 338, delta=6)
+        self.assertGreater(height, 510)
+        self.assertEqual(focus_reference.shape, focus_test.shape)
+
+    def test_small_interruptions_in_crossing_frames_can_be_recovered(self):
+        reference = np.full((540, 394, 3), BACKGROUND, dtype=np.uint8)
+        cv2.rectangle(reference, (15, 27), (377, 550), GREEN, 2)
+        cv2.rectangle(reference, (29, 14), (365, 550), GREEN, 2)
+        reference[150:156, 28:32] = BACKGROUND
+        reference[260:266, 364:368] = BACKGROUND
+
+        epicenters, _, _ = EpicenterExtractor.extract_focus(
+            reference,
+            reference.copy(),
+            old_epicenters=[],
+            global_box_info={},
+        )
+        self.assertEqual(len(epicenters), 1)
+        self.assertAlmostEqual(epicenters[0][0], 29, delta=4)
+
+    def test_outer_frame_and_unrelated_line_do_not_invent_epicenter(self):
+        reference = np.full((540, 394, 3), BACKGROUND, dtype=np.uint8)
+        cv2.rectangle(reference, (15, 27), (377, 550), GREEN, 2)
+        cv2.line(reference, (28, 80), (28, 525), GREEN, 2)
+
+        epicenters, _, _ = EpicenterExtractor.extract_focus(
+            reference,
+            reference.copy(),
+            old_epicenters=[],
+            global_box_info={},
+        )
+        self.assertEqual(epicenters, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -404,6 +404,27 @@ class NetworkInspectionValidationTests(unittest.TestCase):
         self.assertGreater(selected["height_ratio"], 0.85)
         self.assertLess(selected["width_ratio"], 0.50)
 
+    def test_crossed_green_frames_do_not_block_xp_intake(self):
+        sample = np.full((540, 394, 3), (28, 30, 34), dtype=np.uint8)
+        test = sample.copy()
+        green = (0, 255, 0)
+        for image in (sample, test):
+            cv2.rectangle(image, (15, 27), (377, 550), green, 2)
+            cv2.rectangle(image, (29, 14), (365, 550), green, 2)
+
+        valid, reason, audit = validate_network_inspection(sample, test)
+
+        self.assertTrue(valid, msg=f"{reason}: {audit}")
+        self.assertEqual(reason, "epicentro válido")
+        self.assertEqual(audit["real_epicenter_count"], 1)
+        self.assertAlmostEqual(audit["focus_box"][0], 29, delta=4)
+        self.assertAlmostEqual(audit["focus_box"][1], 14, delta=4)
+        self.assertIsNone(
+            audit["green_detection"]["epicenter_radar_sample"][
+                "candidate_selected_by_radar"
+            ]
+        )
+
     def test_only_global_frame_is_still_rejected(self):
         sample = np.full((540, 345, 3), (28, 30, 34), dtype=np.uint8)
         test = sample.copy()

@@ -2,7 +2,13 @@
 import cv2
 import numpy as np
 import math
-from typing import Tuple, List
+from typing import Tuple
+
+from src.core.epicenter_line_recovery import (
+    RADAR_GREEN_LOWER,
+    RADAR_GREEN_UPPER,
+    recover_nested_frame_focus,
+)
 
 class EpicenterExtractor:
     """
@@ -23,8 +29,8 @@ class EpicenterExtractor:
         # =====================================================================
         try:
             hsv = cv2.cvtColor(sample_crop, cv2.COLOR_BGR2HSV)
-            lower_green = np.array([50, 150, 100])
-            upper_green = np.array([75, 255, 255])
+            lower_green = RADAR_GREEN_LOWER
+            upper_green = RADAR_GREEN_UPPER
             
             mask = cv2.inRange(hsv, lower_green, upper_green)
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
@@ -58,6 +64,13 @@ class EpicenterExtractor:
                 
         except Exception as e:
             print(f"⚠️ Erro no Radar Euclidiano: {e}")
+
+        # Recupera duas molduras verdes cruzadas/cortadas na borda da AOI.
+        # Sem duas molduras independentes, não inventa epicentro.
+        if not real_epicenters:
+            recovered_focus = recover_nested_frame_focus(sample_crop)
+            if recovered_focus is not None:
+                real_epicenters.append(recovered_focus)
 
         # Fallback 1: Antigo sistema de hierarquia invertida
         if not real_epicenters:

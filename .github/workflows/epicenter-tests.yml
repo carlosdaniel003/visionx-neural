@@ -7,6 +7,7 @@ on:
     paths:
       - "src/config/settings.py"
       - "src/core/epicenter_extractor.py"
+      - "src/core/epicenter_line_recovery.py"
       - "src/core/inspection.py"
       - "tests/test_epicenter_extractor.py"
       - ".github/workflows/epicenter-tests.yml"
@@ -34,6 +35,7 @@ jobs:
           python -m py_compile \
             src/config/settings.py \
             src/core/epicenter_extractor.py \
+            src/core/epicenter_line_recovery.py \
             src/core/inspection.py
 
       - name: Unit tests
