@@ -1,5 +1,27 @@
 # VisionX Neural
 
+## CNN DESLOCADO — nova especialidade em preparação
+
+A categoria **DESLOCADO** passa a ter pipeline próprio de dados, modelo
+e aprendizado incremental, espelhando a estrutura da CNN FALTANDO.
+**Ainda não há NG DESLOCADO real**: o treinamento inicial utiliza OK
+e alterações locais sintéticas apenas como proxy experimental.
+
+Execute `python -m src.services.deslocado_neural_dataset` para
+extrair o acervo e `python -m src.scripts.train_deslocado_cnn --epochs 15`
+para inicializar o checkpoint. Novos rótulos humanos de
+DESLOCADO, em Teste/Produção/Sombra, são coletados pela fila
+incremental com pesos **apenas candidatos**.
+
+A CNN DESLOCADO **não está ativa na decisão**: os motores físicos
+permanecem, pois não há NG reais independentes para avaliar
+sua capacidade de detectar deslocamento. Veja
+[dataset e treinamento DESLOCADO](docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md).
+
+---
+
+
+
 ![Python](https://img.shields.io/badge/Python-100%25-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-Vis%C3%A3o%20Computacional-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)
 ![PyQt6](https://img.shields.io/badge/PyQt6-Interface-41CD52?style=for-the-badge&logo=qt&logoColor=white)

@@ -1,5 +1,65 @@
 # Estrutura do Projeto: VisionX Neural
 
+## 08/10/2026 — CNN especializada DESLOCADO: preparação, bootstrap e coleta incremental
+
+**Situação informada:** nenhum NG DESLOCADO real no acervo local;
+há OK SIDE legados e OK SIDE/TOP/MID atuais. Contagem exata
+somente após o inventário no PC. **Não confundir falta de NG
+com treinamento aprovado.**
+
+Arquitetura implementada, paralela ao fluxo CNN FALTANDO:
+
+- `src/services/deslocado_neural_dataset.py` extrai com ScreenMonitor
+  as imagens gabarito/teste de DESLOCADO e cria manifesto
+  por classe e iluminação, mantendo fontes intactas.
+- `src/core/neural/deslocado_cnn.py` cria modelo especializado
+  próprio, baseado em duas escalas comparativas e três luzes;
+  pesos DESLOCADO são distintos dos da CNN FALTANDO.
+- `src/scripts/train_deslocado_cnn.py` inicializa o protótipo
+  usando **OK reais vs deslocamentos LOCAIS SINTÉTICOS**,
+  rotulados explicitamente como proxy (não são NG reais).
+  Checkpoint `production_approved=False` e
+  `allow_automatic_classification=False`, não integrado em
+  `main.py`. Pode receber NG **reais humanos** de forma
+  separada em novos treinos online, sem autopromoção.
+- `src/services/neural_online_learning.py` já registra treinadores
+  por categoria. Foi adicionado DESLOCADO, ativado quando
+  `recognition_route=NEW_EXPERTS` e rótulo OK/NG
+  realmente fornecido por operador. O mesmo
+  `DecisionPersistenceQueue` atua em Teste/Produção/Sombra,
+  preservando gabarito/teste e três iluminações de uma peça
+  como evento agrupado. Nunca treina com rótulo automático.
+- `src/scripts/train_deslocado_cnn_online.py` carrega
+  os novos eventos de DESLOCADO, valida SHA-256 e origem
+  humana, reaprende com histórico + casos OK/NG adicionais
+  em CPU. Modelos são **somente candidatos**.
+- O roteador KNN conhecido continua intacto. Novos DESLOCADO
+  continuam usando **motores físicos anteriores**, não a
+  CNN incipiente, e o tooltip indica explicitamente
+  `DESLOCADO_CNN_V1_BOOTSTRAP_NOT_ACTIVE`.
+
+**Segurança:** sem exemplos reais NG, não existe recall
+NG validado, e os exemplos sintéticos podem induzir
+aprendizado de artefatos. Não substituir a análise em
+produção até haver NG reais independentes, avaliação
+adequada por luz e aprovação separada. Nenhum NG fictício
+deve ser salvo nos arquivos reais nem na memória KNN.
+
+**Execução no Windows 10** (sem mexer no computador XP):
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.deslocado_neural_dataset
+python -m src.scripts.train_deslocado_cnn --epochs 15 --batch-size 4 --size 160
+```
+
+Detalhes, entradas, saídas e pendências em
+`docs/DESLOCADO_CNN_DATASET_AND_TRAINING.md`.
+
+---
+
+
 ## 08/10/2026 — Aprendizado incremental ao vivo de CNNs especializadas
 
 **Solicitação operacional:** toda captura **nova**, reconhecida por rota

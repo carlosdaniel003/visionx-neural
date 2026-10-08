@@ -24,3 +24,6 @@ reports/faltando_neural/
 
 # Aprendizado incremental CNN local: eventos/pesos/logs privados
 reports/neural_online/
+
+# Treino DESLOCADO: fotos AOI derivadas e pesos locais privados
+reports/deslocado_neural/
