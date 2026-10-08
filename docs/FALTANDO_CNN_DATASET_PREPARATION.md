@@ -1,6 +1,6 @@
 # Preparação do dataset neural — FALTANDO
 
-**Etapa atual:** preparação/qualificação offline, sem treinamento ou substituição de motores.
+**Etapa atual (08/10/2026):** CNN FALTANDO v2 integrada à inspeção normal, com aprendizado incremental disparado por decisões humanas novas em Teste/Produção/Sombra, promoção de checkpoint condicionada a replay de regressão. Validação na estação real deste fluxo incremental ainda pendente.
 **Branch:** central. **Máquina de execução:** Windows 10 do ODIN (não o XP).
 **Fonte:** `public/ok_archive` e `public/ng_archive`, somente leitura.
 
