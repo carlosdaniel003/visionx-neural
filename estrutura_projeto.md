@@ -1,5 +1,51 @@
 # Estrutura do Projeto: VisionX Neural
 
+## Planejado — 08/10/2026 — gate de regressão visual antes da inicialização
+
+**Status: especificado e organizado; ainda NÃO implementado.**
+
+Documento técnico completo (fonte única deste plano):
+[`docs/ODIN_STARTUP_REGRESSION_GATE.md`](docs/ODIN_STARTUP_REGRESSION_GATE.md).
+
+**Objetivo:** a cada inicialização do ODIN, reprocessar integralmente os casos
+confirmados pelo operador em `public/ok_archive/` e `public/ng_archive/`,
+utilizando o pipeline real de inspeção, OCR, especialistas, memória e fusão.
+O painel operacional só poderá abrir depois da validação **100% aprovada**.
+Regressão, revisão obrigatória, arquivo inválido, conflito ou evento incompleto
+bloquearão a operação e produzirão relatório técnico, sem mandar comandos à AOI.
+
+**Regra de avaliação por geração de dados:**
+
+- PNGs históricos sem iluminação identificada: `SIDE` monoimagem;
+  `ok_archive` exige `FALHA FALSA`; `ng_archive` exige
+  `DEFEITO REAL`, sem `REVISÃO OBRIGATÓRIA`.
+- Novos eventos SIDE/TOP/MID: três análises locais independentes e **um
+  veredito final da fusão**. As três iluminações não precisam ter o mesmo
+  resultado local; o resultado final precisa corresponder ao rótulo OK/NG.
+- Novo manifesto associará `event_id`, OCR, rótulo humano e arquivos
+  SIDE/TOP/MID, sem agrupar peças por coincidência de horário/nome.
+- O replay preservará o **gabarito/teste completos**. O quadrado menor e a
+  caixa contextual não limitam a evidência global; a terceira escala
+  `full_frame` continua relevante.
+- O gate será **somente leitura**: não retreina KNN/CNN, não altera rótulos,
+  não limpa o dataset, não arquiva novas imagens e não aciona o Windows XP.
+- O relatório distinguirá `PASSOU`, `REGRESSÃO`, `INVÁLIDO`,
+  `INCOMPLETO`, `CONFLITO` e `SEM COBERTURA`.
+
+**Ordem aprovada para implementação futura, em etapas independentes:**
+
+1. Inventariar e qualificar os arquivos locais existentes (SIDE e multilight).
+2. Reutilizar o pipeline real em replay monoimagem SIDE, sem Qt produtivo.
+3. Criar manifesto e replay de eventos multilight com fusão final.
+4. Instalar gate bloqueante e tela restrita de progresso/diagnóstico.
+5. Adicionar regressões automatizadas e validar o acervo real na fábrica.
+
+**Regra de execução:** trabalhar em **uma etapa por vez** e avançar somente
+após aceite expresso do operador. Nesta atualização foram criados
+**somente documentos**, sem modificação do código do ODIN nem do agente XP.
+
+---
+
 ## Atualização operacional — 07/10/2026 — multilight geral para todas as categorias AOI
 
 O padrão multilight que foi validado primeiro em `MUITO ADESIVO` passa a ser o
