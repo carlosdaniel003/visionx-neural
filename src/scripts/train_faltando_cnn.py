@@ -172,20 +172,31 @@ def _union_component_groups(events: list[dict], data: dict) -> list[list[int]]:
                 if frame is None:
                     raise ValueError("Recorte indecifrável: " + source)
                 reduced = cv2.resize(frame, (9, 8), interpolation=cv2.INTER_AREA)
-                signatures[(i, light, filekey)] = np.packbits(
+                digest = np.packbits(
                     (reduced[:, 1:] > reduced[:, :-1]).flatten()
                 ).tobytes()
+                thumbnail = cv2.resize(
+                    frame, (32, 32), interpolation=cv2.INTER_AREA
+                )
+                signatures[(i, light, filekey)] = (digest, thumbnail)
     for i, a in enumerate(events):
         for j in range(i+1, len(events)):
             b = events[j]
             common = set(a["observations"]) & set(b["observations"])
             for light in common:
-                dist = []
+                dist, error = [], []
                 for filekey in ("reference_path", "test_path"):
-                    h1 = int.from_bytes(signatures[i, light, filekey], "big")
-                    h2 = int.from_bytes(signatures[j, light, filekey], "big")
-                    dist.append((h1 ^ h2).bit_count())
-                if max(dist) <= 4:
+                    (h1, t1) = signatures[i, light, filekey]
+                    (h2, t2) = signatures[j, light, filekey]
+                    dist.append((int.from_bytes(h1, "big") ^
+                                 int.from_bytes(h2, "big")).bit_count())
+                    error.append(
+                        float(np.abs(t1.astype(np.float32) -
+                                     t2.astype(np.float32)).mean() / 255.)
+                    )
+                # dHash isolado confunde footprints parecidos, por isso
+                # exigir TAMBÉM similaridade absoluta dos dois recortes.
+                if max(dist) <= 4 and max(error) <= .025:
                     union(i, j)
                     break
 
