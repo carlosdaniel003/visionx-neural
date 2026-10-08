@@ -174,21 +174,37 @@ def _proxy_displace(test: np.ndarray, seed: int) -> np.ndarray:
 class DeslocadoProxyDataset(Dataset):
     def __init__(self, events: list[dict], data: dict, size=160, focus=.70):
         self.events, self.data, self.size, self.focus = events, data, size, focus
+        # NG humano REAL possui um exemplo, OK possui o original e
+        # um proxy artificial separado, jamais rotulado como NG real.
+        self.instances = [
+            (event, kind)
+            for event in events
+            for kind in (
+                ("REAL_NG",) if event.get("label") == "NG"
+                else ("REAL_OK", "SYNTHETIC_PROXY_SHIFT")
+            )
+        ]
 
     def __len__(self):
-        return len(self.events)*2
+        return len(self.instances)
 
     def __getitem__(self, index: int):
-        event = self.events[index//2]
-        proxy = bool(index % 2)
+        event, kind = self.instances[index]
+        proxy = kind == "SYNTHETIC_PROXY_SHIFT"
         images = [torch.zeros((3, 3, self.size, self.size)) for _ in range(4)]
         mask = torch.zeros(3, dtype=torch.float32)
         for position, light in enumerate(LIGHTS):
             if light not in event["observations"]:
                 continue
-            item = self.data["samples"][event["observations"][light]]
-            reference = _read(_safe_png(self.data["run"], item["reference_path"]))
-            test = _read(_safe_png(self.data["run"], item["test_path"]))
+            observed = event["observations"][light]
+            if observed in self.data.get("online_views", {}):
+                paths = self.data["online_views"][observed]
+                reference = _read(paths["reference"])
+                test = _read(paths["test"])
+            else:
+                item = self.data["samples"][observed]
+                reference = _read(_safe_png(self.data["run"], item["reference_path"]))
+                test = _read(_safe_png(self.data["run"], item["test_path"]))
             if proxy:
                 key = int(sha256(
                     (event["id"]+":"+light).encode()
@@ -202,7 +218,9 @@ class DeslocadoProxyDataset(Dataset):
             for j, frame in enumerate(frames):
                 images[j][position] = _letterbox_rgb(frame, self.size)
             mask[position] = 1.
-        return *images, mask, torch.tensor(float(proxy)), event["id"]
+        return *images, mask, torch.tensor(
+            float(proxy or kind == "REAL_NG")
+        ), event["id"], kind
 
 
 def _evaluate(net: DeslocadoCNN, events: list[dict],
@@ -214,27 +232,30 @@ def _evaluate(net: DeslocadoCNN, events: list[dict],
         batch_size=4, num_workers=0
     )
     with torch.inference_mode():
-        for a, b, c, d, mask, actual, names in loader:
+        for a, b, c, d, mask, actual, names, kinds in loader:
             logits, lights = net(a,b,c,d,mask)
             for j, name in enumerate(names):
                 score = float(torch.sigmoid(logits[j]))
                 records.append({
                     "event": name,
-                    "truth_type": "SYNTHETIC_PROXY_SHIFT" if actual[j] else "REAL_OK",
+                    "truth_type": kinds[j],
                     "ng_proxy_score": round(score, 6),
                     "predicted_proxy": score >= .5,
                     "correct_proxy": (score >= .5) == bool(actual[j]),
                 })
     ok = [r for r in records if r["truth_type"] == "REAL_OK"]
-    proxy = [r for r in records if r["truth_type"] != "REAL_OK"]
+    proxy = [r for r in records if r["truth_type"] == "SYNTHETIC_PROXY_SHIFT"]
+    ng = [r for r in records if r["truth_type"] == "REAL_NG"]
     return {
         "real_ok": len(ok),
         "synthetic_proxy": len(proxy),
+        "real_ng_count": len(ng),
         "ok_correct": sum(not r["predicted_proxy"] for r in ok),
         "synthetic_correct": sum(r["predicted_proxy"] for r in proxy),
-        "real_ng_count": 0,
-        "real_ng_recall": None,
-        "real_ng_validation_available": False,
+        "real_ng_correct": sum(r["predicted_proxy"] for r in ng),
+        "real_ng_recall": (round(sum(r["predicted_proxy"] for r in ng)/len(ng), 4)
+                           if ng else None),
+        "real_ng_validation_available": bool(ng),
         "predictions": records,
     }
 
@@ -242,12 +263,25 @@ def _evaluate(net: DeslocadoCNN, events: list[dict],
 def train_deslocado(
     manifest_path: Path, *, epochs: int = 15,
     size: int = 160, batch_size: int = 4, seed: int = 42,
+    online_events: list[dict] | None = None,
+    online_views: dict[str, dict] | None = None,
 ) -> tuple[dict, Path]:
     if not 1 <= epochs <= 100 or not 1 <= batch_size <= 64:
         raise ValueError("Parâmetros de treino inválidos")
     if not 64 <= size <= 512 or size % 32:
         raise ValueError("Tamanho de entrada inválido")
     events, data = load_ok_events(manifest_path)
+    new_events = list(online_events or [])
+    if any(
+        e.get("label") not in ("OK", "NG")
+        or not e.get("observations")
+        or any(identifier not in (online_views or {})
+               for identifier in e["observations"].values())
+        for e in new_events
+    ):
+        raise ValueError("Amostra online inválida ou sem imagens verificadas")
+    data["online_views"] = online_views or {}
+    events += new_events
     torch.set_num_threads(max(1, min(2, torch.get_num_threads())))
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -261,7 +295,13 @@ def train_deslocado(
         groups[event["split_key"]].append(event)
     unique = sorted(groups)
     random.Random(seed).shuffle(unique)
-    holdout_keys = set(unique[:max(1, round(len(unique)*.2))]) if len(unique) >= 3 else set()
+    # Casos novos humanos são obrigatoriamente usados na atualização,
+    # não podem ficar somente no conjunto de desenvolvimento.
+    online_groups = {e["split_key"] for e in new_events}
+    eligible_groups = [key for key in unique if key not in online_groups]
+    holdout_keys = set(
+        eligible_groups[:max(1, round(len(unique)*.2))]
+    ) if len(eligible_groups) >= 2 and len(unique) >= 3 else set()
     training = [e for e in events if e["split_key"] not in holdout_keys]
     development = [e for e in events if e["split_key"] in holdout_keys]
     if not training:
@@ -274,7 +314,7 @@ def train_deslocado(
     for epoch in range(1, epochs+1):
         model.train()
         total = 0.
-        for a,b,c,d,mask,truth,_ in dl:
+        for a,b,c,d,mask,truth,_,kind in dl:
             out, each = model(a,b,c,d,mask)
             loss = nn.functional.binary_cross_entropy_with_logits(out, truth)
             aux = nn.functional.binary_cross_entropy_with_logits(
@@ -306,7 +346,7 @@ def train_deslocado(
         "source_manifest_sha256": source_sha,
         "experimental": True, "production_approved": False,
         "allow_automatic_classification": False,
-        "real_ng_used": 0,
+        "real_ng_used": sum(e.get("label") == "NG" for e in events),
     }, folder/"deslocado_cnn_candidate.pt")
     report = {
         "schema": TRAIN_SCHEMA,
@@ -317,9 +357,13 @@ def train_deslocado(
         "experiments": "REAL_OK_VS_SYNTHETIC_LOCAL_SHIFT",
         "training_events": len(training),
         "development_events": len(development),
-        "total_real_ok_events": len(events),
-        "ng_real_events": 0,
-        "can_measure_real_ng_recall": False,
+        "total_real_ok_events": sum(e.get("label", "OK") == "OK" for e in events),
+        "ng_real_events": sum(e.get("label") == "NG" for e in events),
+        "new_online_events_used": len(new_events),
+        "can_measure_real_ng_recall": bool(
+            sum(e.get("label") == "NG" for e in development)
+        ),
+        "independent_real_ng_validation": False,
         "production_approved": False,
         "activation_disabled": True,
         "split_by_board_part": True,
@@ -328,7 +372,7 @@ def train_deslocado(
         "development_results": dev_metrics,
         "training_history": history,
         "limitations": [
-            "Sem nenhum NG DESLOCADO real: modelo apenas distingue exemplos OK de transformações artificiais.",
+            "Se não houver NG real, apenas proxy geométrico. Mesmo com NG online, o treino não tem validação independente suficiente para produção.",
             "Um deslocamento sintético de patch central não equivale ao movimento real de um componente.",
             "Possíveis artefatos nas bordas do patch podem ser aprendidos indevidamente.",
             "Não usar sigmoid nem acurácia proxy como garantia para NG reais.",
@@ -340,7 +384,7 @@ def train_deslocado(
     )
     (folder/"training_summary_deslocado.txt").write_text(
         "ODIN CNN DESLOCADO — CANDIDATO EXPERIMENTAL\n"
-        f"OK reais: {len(events)} eventos; NG reais: ZERO.\n"
+        f"OK reais: {report['total_real_ok_events']} eventos; NG reais: {report['ng_real_events']}.\n"
         f"Treino {len(training)}, desenvolvimento {len(development)}.\n"
         f"Experimento: OK vs deslocamento LOCAL SINTÉTICO.\n"
         f"Avaliação de desenvolvimento: {dev_metrics}\n"
