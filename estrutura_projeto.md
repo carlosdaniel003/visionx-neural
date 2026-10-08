@@ -1,5 +1,133 @@
 # Estrutura do Projeto: VisionX Neural
 
+## Validação em AOI real e novo falso positivo — 08/10/2026
+
+### Caso anterior C6~2 / DESLOCADO — confirmação do operador
+
+**Situação: VALIDADO NA FÁBRICA para a captura anteriormente reportada.**
+O operador confirmou que a revisão da hierarquia de molduras na branch
+`central`, commit `92555f1`, resolveu a escolha incorreta do quadrado
+externo naquele teste. Preservar essa regressão: quando o recorte apresenta
+a moldura global `[25,25,525,230]` e a interna `[76,56,189,166]`,
+o epicentro correto é a **interna**. A área global e a imagem inteira
+continuam disponíveis como contexto para análise física e memória.
+
+Esta validação confirma o caso específico testado na AOI, não todos os
+arranjos de molduras; o caso novo abaixo mostra uma variante ainda não
+coberta.
+
+### Novo caso C5~2 (OCR aproximado) / FALTANDO — falso positivo
+
+**Situação: DIAGNOSTICADO; correção ainda NÃO implementada.**
+**Rótulo humano:** OK / `FALHA FALSA`. **Saída ODIN:**
+`DEFEITO REAL` com confiança de 99% e score 100%.
+Evidência: screenshot multilight SIDE/TOP/MID e debug
+`Texto colado(20261008-120524).txt`, evento
+`2eac69d849b04b5bb205ec191d9f130c`, horário
+`2026-10-08T08:04:05.625`, categoria `FALTANDO`.
+O OCR do componente no debug aparece como `CS~2`; conferir o
+identificador na AOI antes de usar como chave de regressão.
+
+**Evidência visual:** a captura mostra corpo do componente e terminais
+metálicos em gabarito e teste (especialmente SIDE/TOP); existem diferenças
+de luminosidade, contraste e posição, mas o componente **não está faltando**,
+conforme julgamento do operador. Na MID há saturação/clipping claro, não
+evidência independente de ausência.
+
+**Saídas por iluminação:**
+
+| Iluminação | Veredito local | Score final | Física | KNN |
+|---|---|---:|---:|---|
+| SIDE | `FALHA FALSA` | 0% | 88% | Melhor OK 92,34% |
+| TOP | `DEFEITO REAL` | 100% | 100% | Melhor OK 90,75%, suprimido pelo hard missing |
+| MID | `FALHA FALSA` | 13,16% | 85% | Melhor OK 89,76% |
+
+A fusão `multilight_strong_single` tratou **uma única TOP positiva
+forte** como suficiente para `DEFEITO REAL`, sem confirmação de SIDE/MID.
+O erro nasce na evidência física da TOP; não resolver diminuindo
+indiscriminadamente o peso da fusão nem permitindo que o KNN anule
+qualquer ausência física real.
+
+**Indícios técnicos da TOP que precisam ser investigados:**
+
+- O `missing_expert` gerou `missing_hard_absence=True`,
+  `missing_score≈1.0`, `missing_changed_coverage=0.6616`,
+  `missing_background_exposure=0.4967`,
+  `missing_structure_loss=0.8736` e
+  `missing_body_presence_veto=False`, afirmando que o componente
+  foi substituído pelo fundo, apesar da evidência visual de presença.
+- O alinhamento visual tentou corrigir `dx=12 px, dy=9 px`,
+  `alignment_score≈0.673` e ganho `≈0.178`;
+  na ROI pequena uma variação de iluminação/posição pode estar
+  sendo confundida com perda física. Esta explicação é **hipótese
+  técnica**, não causa definitivamente comprovada por replay.
+- O corpo preservado não passou nos critérios geométricos:
+  `coarse_similarity≈0.477`, `silhouette_dice≈0.583`,
+  `area_ratio≈1.688`, `centroid_shift≈0.151`.
+  O envelope global também não confirmou presença
+  (`coarse_similarity≈0.773`, perfis horizontais/verticais
+  `≈0.809/0.801`, `invariant_support=False`).
+- `dual_scale_triggered=False` porque o motor declarou
+  `escala local já confirmou ausência física`; o segundo exame
+  não pôde contradizer o hard missing local. A trilha TOP registra
+  `roi_consistent=False`; verificar se a diferença é apenas
+  transformação de alinhamento do SSIM ou perda de identidade do
+  recorte entre especialistas.
+- O melhor exemplo de memória TOP estava rotulado OK
+  (`similarity=0.907532`), mas foi usado só para auditoria,
+  pela regra que dá precedência à ausência física forte.
+
+**Outra variante do problema do epicentro na entrada SIDE:**
+
+O debug de validação do mesmo evento informa
+`global_box_info=[2,2,549,274]`,
+`focus_box=[24,24,522,230]`,
+`candidate_selected_by_radar=[24,24,522,230]`
+e `selection_rule=inner_frame_confirmed_by_test`, enquanto os
+contornos revelam também a ROI realmente interna
+`[76,56,189,166]`, com a correspondente no TESTE
+`[79,57,188,166]`.
+A detecção da moldura ainda mais externa `[2,2,...]`
+faz `[24,24,522,230]` parecer interna; o desempate por IoU
+com `old_epicenters` pode premiar a moldura intermediária,
+em vez do **menor retângulo independente**. Portanto a
+correção C6~2 foi validada, mas a seleção de **três níveis de
+moldura** permanece problemática. Esse foco equivocado ocorreu
+na validação/SIDE; a TOP efetivamente analisou a ROI
+`[76,56,189,166]`. Não atribuir automaticamente o hard missing
+da TOP ao problema da SIDE.
+
+**Critérios para futura correção, pendente de autorização:**
+
+1. Reproduzir os dois contextos com os frames reais e criar
+   regressões independentes: molduras 2 níveis e 3 níveis,
+   `FALTANDO` presente sob TOP com variação visual, e
+   `FALTANDO` verdadeiramente ausente.
+2. Distinguir moldura global/contextual, moldura intermediária
+   e ROI de epicentro com evidência geométrica robusta;
+   não assumir que a caixa mais central nem o melhor IoU
+   sempre define a ROI. Preservar leitura da imagem inteira.
+3. Auditar o alinhamento e os sinais de presença física da TOP,
+   usando estrutura/corpo/pads do componente e confirmação
+   contextual independentemente da variação de iluminação.
+   Ausência física forte só deve superar memória OK quando
+   houver evidência física suficientemente confiável; incerteza
+   deve conservar `REVISÃO OBRIGATÓRIA` conforme segurança do
+   processo, em vez de forçar OK.
+4. Verificar o `roi_audit` dos especialistas e o tempo real
+   de processamento (ciclo informado: `26.143 s`).
+5. Preservar as regressões já aprovadas e casos NG reais,
+   antes de alterar a lógica de julgamento. Não mexer em
+   rótulos do dataset ou no agente XP como atalho.
+
+**Escopo desta atualização:** somente documentação e diagnóstico.
+Não há correção de código nem resultado validado para este novo
+falso positivo.
+
+---
+
+
+
 
 ## Correção 08/10/2026 — moldura global confundida com epicentro (C6~2)
 
