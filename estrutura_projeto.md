@@ -1,3 +1,25 @@
+## STATUS FINAL — CNN DESLOCADO: DESENVOLVIMENTO ABORTADO (08/10/2026)
+
+**Decisão do operador:** suspender definitivamente esta linha de desenvolvimento
+até uma eventual nova decisão expressa. **0 NG DESLOCADO reais**; não é possível
+validar detecção de deslocamento físico, medir falsos OK de NG nem autorizar
+substituição do motor operacional. **Não retomar treinamento, desenho de máscaras,
+diagnósticos geométricos ou ativação de checkpoint como continuação deste plano.**
+
+**Placar histórico (métricas de tarefas diferentes):** CNN v1 **0/6 OK de
+desenvolvimento**; CNN v2 **31/34 OK conhecidos** no replay sem KNN, com
+**3 falsos NG** e **0 NG reais avaliados**; geometria v1 **7/34 com métricas
+disponíveis** (não classificação); geometria v1.1 **0/34 registros aceitos**.
+As máscaras v3/v3.1 e o plano one-class **não produziram CNN v3 validada**.
+
+**[Retrospectiva técnica, metodologia, falhas e lições](docs/DESLOCADO_CNN_POSTMORTEM_2026-10-08.md)**
+
+**Os comandos e as propostas das seções antigas abaixo são histórico, não
+instruções para continuar o projeto.** O ODIN operacional, a CNN FALTANDO, as
+imagens do acervo e os checkpoints históricos não foram alterados por esta decisão.
+
+---
+
 ## 08/10/2026 — DESLOCADO geometria v1.1: correspondências ORB/AKAZE e RANSAC
 
 **Implementado somente como experimento offline, sem KNN nem máscara manual.**
