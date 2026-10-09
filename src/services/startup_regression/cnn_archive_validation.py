@@ -1,10 +1,10 @@
-"""Validação independente de CNNs sobre todo o arquivo OK/NG da AOI.
+"""Validação CNN FALTANDO V2 e MEMÓRIA KNN sobre o acervo OK/NG da AOI.
 
-Sem KNN, MoE/especialistas físicos, treinamento, decisões XP ou mudanças
-nas fotos. Não instalar como gate produtivo até ambas as CNNs existirem.
+Sem MoE/especialistas físicos, treinamento, decisões XP ou mudanças
+nas fotos. KNN só compara o par AOI com memórias humanas exatas e verificadas.
 
 CNN FALTANDO v2: FALTANDO/EMBORCADO/INVERTIDO/DESLOCADO.
-CNN MEMÓRIA: TODAS as categorias (adaptador ainda não presente na central).
+MEMÓRIA KNN: TODAS as categorias, inclusive MUITO ADESIVO.
 
 O arquivo é avaliado por PNG/luz, sem inventar event_id a partir de nome.
 """
@@ -24,9 +24,9 @@ from src.services.faltando_cross_category_audit import (
 from src.services.startup_regression.archive_inventory import inventory_archives
 from src.services.startup_regression.archive_inventory_report import _atomic_text
 
-SCHEMA = "visionx.startup_cnn_archive_validation.v1"
+SCHEMA = "visionx.startup_cnn_knn_archive_validation.v2"
 MODEL_FALTANDO = "CNN_FALTANDO_V2"
-MODEL_MEMORY = "CNN_MEMORIA"
+MODEL_MEMORY = "MEMORIA_KNN"
 MODEL_NAMES = (MODEL_FALTANDO, MODEL_MEMORY)
 MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
 KNOWN_ADHESIVE = frozenset({"MUITO ADESIVO", "MUCH ADHESIVE", "ADESIVO"})
@@ -62,6 +62,9 @@ def _result_row(name: str, item: dict, scope: str) -> dict:
         "verdict": None,
         "ng_score_uncalibrated": None,
         "checkpoint_sha256": None,
+        "memory_status": None,
+        "memory_label": None,
+        "memory_source_json": None,
         "error": None,
     }
 
@@ -79,28 +82,33 @@ def _check_model_response(name: str, output: dict) -> tuple[str, float | None, s
         return verdict, score, detail.get("cnn_v2_checkpoint_sha256")
     if name == MODEL_MEMORY:
         detail = output.get("detail") or {}
-        # Não confundir a recuperação de rótulos da KNN com inferência de CNN.
         if (
             not isinstance(detail, dict)
-            or detail.get("model_kind") != "cnn_memoria"
-            or detail.get("checkpoint_verified") is not True
+            or detail.get("model_kind") != "knn_verified_exact"
         ):
-            raise ValueError(
-                "CNN MEMÓRIA sem contrato de modelo/checkpoint próprio; "
-                "resultado KNN não é aceito"
-            )
+            raise ValueError("Resposta não veio da memória KNN exata verificada")
         verdict = str(output.get("verdict", "")).strip().upper()
         if verdict not in {"DEFEITO REAL", "FALHA FALSA", "REVISÃO OBRIGATÓRIA"}:
-            raise ValueError("Veredito CNN MEMÓRIA inválido")
-        score = detail.get("ng_score_uncalibrated")
-        if score is not None:
-            score = float(score)
-            if not 0.0 <= score <= 1.0:
-                raise ValueError("Score CNN MEMÓRIA inválido")
-        digest = detail.get("checkpoint_sha256")
-        if not isinstance(digest, str) or len(digest) != 64:
-            raise ValueError("SHA-256 CNN MEMÓRIA não informado")
-        return verdict, score, digest
+            raise ValueError("Veredito MEMÓRIA KNN inválido")
+        status = str(detail.get("memory_status", ""))
+        if status == "KNOWN":
+            if detail.get("verified_exact_match") is not True:
+                raise ValueError("Memória KNN sem correspondência exata humana")
+            label = detail.get("memory_label")
+            expected_verdict = (
+                "DEFEITO REAL" if label == "NG"
+                else "FALHA FALSA" if label == "OK"
+                else None
+            )
+            if verdict != expected_verdict:
+                raise ValueError("Veredito inconsistente com rótulo KNN")
+        elif status in {"NEW", "UNAVAILABLE", "CONFLICT"}:
+            if verdict != "REVISÃO OBRIGATÓRIA" or detail.get("verified_exact_match"):
+                raise ValueError("Memória sem cobertura não pode produzir OK/NG")
+        else:
+            raise ValueError("Estado KNN inválido")
+        # KNN não possui checkpoint CNN nem score probabilístico calibrado.
+        return verdict, None, None
     raise ValueError("Nome de modelo inválido")
 
 
@@ -111,10 +119,10 @@ def validate_archive_cnns(
     predictors: dict | None = None,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> dict[str, Any]:
-    """Avalia cada PNG elegível de cada CNN separadamente; falha se faltar modelo.
+    """Avalia CNN e KNN separadamente, sem transformar ausência em acerto.
 
-    Na ausência de CNN MEMÓRIA, reporta explicitamente MODEL_UNAVAILABLE
-    para todas suas imagens, sem fingir ter validado aquele modelo.
+    A memória KNN deve recuperar cada exemplo de registro humano verificado.
+    Um PNG sem registro de memória é SEM COBERTURA, não classificação correta.
     """
     root = Path(root).expanduser().resolve()
     evidence = inventory if inventory is not None else inventory_archives(root)
@@ -129,8 +137,14 @@ def validate_archive_cnns(
     if MODEL_FALTANDO not in predictor_map:
         from src.core.neural.faltando_live import FaltandoCNNLive
         predictor_map[MODEL_FALTANDO] = FaltandoCNNLive()
-    # CNN MEMÓRIA não pode ter fallback para KNN, Faltando ou simulação.
-    predictor_map.setdefault(MODEL_MEMORY, None)
+    knn_init_error = None
+    if MODEL_MEMORY not in predictor_map:
+        try:
+            from .knn_archive_predictor import KNNArchivePredictor
+            predictor_map[MODEL_MEMORY] = KNNArchivePredictor(root=root)
+        except Exception as exc:
+            knn_init_error = f"{type(exc).__name__}: {exc}"
+            predictor_map[MODEL_MEMORY] = None
 
     conflicting = {
         path for group in evidence.get("cross_label_conflicts", [])
@@ -167,7 +181,7 @@ def validate_archive_cnns(
                 raise ValueError("Mesmo PNG visual rotulado OK e NG")
             if model is None:
                 row["status"] = MODEL_UNAVAILABLE
-                row["error"] = "CNN MEMÓRIA não implementada/conectada na branch central"
+                row["error"] = knn_init_error or "Memória KNN indisponível"
             else:
                 key = row["source_path"]
                 if key != current_path:
@@ -177,7 +191,7 @@ def validate_archive_cnns(
                     try:
                         frame = _archive_image(root, item)
                         reference, test, _aoi_info = extractor(frame)
-                        current_pair = (reference, test)
+                        current_pair = (reference, test, _aoi_info)
                     except Exception as exc:
                         current_extract_error = exc
                 if current_extract_error is not None:
@@ -186,18 +200,54 @@ def validate_archive_cnns(
                     ) from current_extract_error
                 if current_pair is None:
                     raise ValueError("Par de imagens ausente")
-                reference, test = current_pair
-                verdict, score, digest = _check_model_response(
-                    name,
-                    model.inspect(reference, test, row["lighting_mode"]),
-                )
+                reference, test, _aoi_info = current_pair
+                if name == MODEL_MEMORY:
+                    # A memória exige o OCR real da imagem. Nunca emprestar
+                    # category/Board/Parts da pasta para fabricar um match.
+                    if not isinstance(_aoi_info, dict):
+                        raise ValueError("OCR da AOI indisponível para KNN")
+                    observed_info = dict(_aoi_info)
+                    original = str(row["category_hint"] or "").strip().upper()
+                    from src.core.strict_category_memory import canonical_memory_category
+                    if (
+                        original not in {"", "UNKNOWN"}
+                        and canonical_memory_category(original)
+                        != canonical_memory_category(observed_info.get("category", ""))
+                    ):
+                        raise ValueError(
+                            "Categoria OCR da imagem diverge do nome arquivado"
+                        )
+                    output = model.inspect(
+                        reference, test, row["lighting_mode"], observed_info
+                    )
+                else:
+                    output = model.inspect(
+                        reference, test, row["lighting_mode"]
+                    )
+                verdict, score, digest = _check_model_response(name, output)
                 row["verdict"] = verdict
                 row["ng_score_uncalibrated"] = score
                 row["checkpoint_sha256"] = digest
-                # REVISÃO nunca é OK/NG; para gate histórico é uma regressão.
-                row["status"] = (
-                    "PASSOU" if verdict == row["expected_verdict"] else "REGRESSAO"
-                )
+                if name == MODEL_MEMORY:
+                    detail = output["detail"]
+                    row["memory_status"] = detail["memory_status"]
+                    row["memory_label"] = detail.get("memory_label")
+                    row["memory_source_json"] = detail.get("memory_source_json")
+                    # Ausência de memória é lacuna de cobertura; não culpar
+                    # a CNN nem classificar NEW como falso NG/OK.
+                    if detail["memory_status"] != "KNOWN":
+                        row["status"] = "SEM_COBERTURA"
+                    else:
+                        row["status"] = (
+                            "PASSOU" if verdict == row["expected_verdict"]
+                            else "REGRESSAO"
+                        )
+                else:
+                    # Revisão nunca é aprovação de treino.
+                    row["status"] = (
+                        "PASSOU" if verdict == row["expected_verdict"]
+                        else "REGRESSAO"
+                    )
         except Exception as exc:
             row["status"] = "INVALIDO"
             row["error"] = f"{type(exc).__name__}: {exc}"
@@ -214,6 +264,7 @@ def validate_archive_cnns(
             "passed": statuses["PASSOU"],
             "regressions": statuses["REGRESSAO"],
             "invalid": statuses["INVALIDO"],
+            "without_memory_coverage": statuses["SEM_COBERTURA"],
             "model_unavailable": statuses[MODEL_UNAVAILABLE],
             "expected_OK": labels["OK"],
             "expected_NG": labels["NG"],
@@ -227,18 +278,19 @@ def validate_archive_cnns(
         "mode": "DIAGNOSTIC_NOT_ATTACHED_TO_MAIN",
         "production_blocking_enabled": False,
         "training_enabled": False,
-        "knn_used": False,
-        "specialist_moe_used": False,
         "full_archive_png_count": len(items),
         "model_order": list(MODEL_NAMES),
         "models": counts,
-        "both_cnns_passed": complete,
+        "cnn_and_knn_passed": complete,
         "can_release_operational_startup": complete,
-        "memory_model_present": predictor_map[MODEL_MEMORY] is not None,
+        "knn_model_present": predictor_map[MODEL_MEMORY] is not None,
+        "knn_used": predictor_map[MODEL_MEMORY] is not None,
+        "knn_policy": "VERIFIED_EXACT_PAIR_HUMAN_MEMORY",
+        "specialist_moe_used": False,
         "notes": [
             "Imagens históricas são teste de retenção, não teste independente.",
             "Registros multilight são verificados por PNG sem inferir vínculos de eventos.",
-            "Somente após conectar e validar a CNN MEMÓRIA pode-se instalar gate no main.py.",
+            "KNN conhecido exige par exato humano verificado; NEW/CONFLICT são lacunas de cobertura.",
             "Mesmo 100% histórico não certifica capacidade de reconhecer NG novos.",
         ],
         "cases": all_rows,
@@ -259,8 +311,8 @@ def write_cnn_report(report: dict, output: Path) -> tuple[Path, Path]:
         json_path, json.dumps(report, indent=2, ensure_ascii=False) + "\n"
     )
     lines = [
-        "ODIN — VALIDAÇÃO DO ACERVO CNN — SOMENTE DIAGNÓSTICO",
-        "KNN: DESABILITADO | TREINO: DESABILITADO",
+        "ODIN — CNN FALTANDO V2 + MEMÓRIA KNN — DIAGNÓSTICO",
+        "KNN: CONSULTA EXATA VERIFICADA | TREINO: DESABILITADO",
         "Não é o gate bloqueante do main.py.",
         "",
     ]
@@ -272,9 +324,10 @@ def write_cnn_report(report: dict, output: Path) -> tuple[Path, Path]:
             f"  Regressões: {counts['regressions']}",
             f"  Inválidos: {counts['invalid']}",
             f"  Modelo ausente: {counts['model_unavailable']}",
+            f"  Sem cobertura KNN: {counts['without_memory_coverage']}",
             f"  Resultado: {'PASSOU' if counts['passed_all'] else 'FALHOU'}",
         ])
-    lines.append("Ambas CNNs passaram: " + str(report["both_cnns_passed"]))
+    lines.append("CNN e KNN passaram: " + str(report["cnn_and_knn_passed"]))
     lines.append("")
     lines.append("CASOS NÃO APROVADOS:")
     for row in report["cases"]:
