@@ -146,6 +146,9 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
             f"Par humano reconhecido • Rótulo {m['memory_label'] or '?'}"
             + (f" • Registro {m['memory_source']}" if m["memory_source"] else ""),
         )
+    if m["memory_route"] == "MEMORY_CONFLICT":
+        return ("MEMÓRIA CONTRADITÓRIA • REVISÃO",
+                "Par exato com registros humanos conflitantes. Conferência obrigatória.")
     if m["memory_route"] == "MULTILIGHT_MIXED":
         routes = m["memory_routes"]
         return ("KNN + CNN • ROTAS MISTAS",
@@ -157,4 +160,8 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
     if m["memory_route"] == "NEW_EXPERTS":
         return ("CASO NOVO • MOTORES DA CATEGORIA",
                 "Nenhum par KNN humano exato; especialistas físicos consultados.")
-    return ("MEMÓRIA • SEM ROTA REGISTRADA", m["memory_reason"] or "Sem dados de roteamento.")
+    if m["cnn_active"]:
+        return ("CNN ATIVA • ROTA KNN NÃO INFORMADA",
+                "A CNN executou, mas o resultado não informa se o par já estava na memória.")
+    return ("MEMÓRIA • CONSULTA NÃO DISPONÍVEL",
+            m["memory_reason"] or "Não foi registrada pesquisa KNN nesta inspeção.")
