@@ -130,19 +130,54 @@ class NeuralEvidenceQtTests(unittest.TestCase):
         QApplication.processEvents()
         self.assertEqual(bar.value(),0)
 
-    def test_all_six_views_populate_and_reflow_without_clipping_source(self):
+    def test_six_cards_are_exclusively_neural_and_async_after_analysis(self):
         p=NeuralEvidencePanel()
         self.addCleanup(p.deleteLater)
         ref,test,ctx=sample_payload()
         payload=build_adhesive_view_payload(ref,test,ctx)
-        p.set_visual_payload(payload)
-        p.update_data(knn_analysis()["detail"],knn_analysis())
+        with patch("src.ui.widgets.neural_evidence.QThreadPool.globalInstance") as pool:
+            p.set_visual_payload(payload)
+            self.assertFalse(pool.return_value.start.called)
+            self.assertTrue(all(tile.image._source.isNull() for tile in p.tiles))
+            p.update_data(knn_analysis()["detail"],knn_analysis())
+            self.assertTrue(pool.return_value.start.called)
         self.assertIn("KNN",p.heading.text())
-        for section in p.sections.values():
-            self.assertIn("Δ",section.metrics.text())
-            self.assertEqual(len(section.tiles),3)
-            self.assertTrue(all(not tile.image._source.isNull() for tile in section.tiles))
-            self.assertIn("NÃO é atenção",section.tiles[1].toolTip())
+        self.assertEqual([tile.mode for tile in p.tiles[:3]],
+                         ["DIF. LATENTE", "GRAD-CAM", "ATIVAÇÃO CNN"])
+        self.assertTrue(all(tile.image._source.isNull() for tile in p.tiles))
+        maps={}
+        for key, reference in (("major", payload["large"]), ("minor", payload["small"])):
+            h,w=reference.shape[:2]
+            maps[key]={
+                "neural":True, "dimensions":(w,h),
+                "layer":"encoder.4","target_class":"OK",
+                "images":tuple(np.full((h,w,3), 60+i*60, np.uint8) for i in range(3)),
+                "raw_feature_means":[.1,.2,.3],
+            }
+        p._on_probe_finished(p._epoch, maps, "")
+        self.assertTrue(all(not tile.image._source.isNull() for tile in p.tiles))
+        self.assertTrue(all("CNN" in tile.toolTip() or "Grad-CAM" in tile.toolTip()
+                            or "encoder" in tile.toolTip() or "features" in tile.toolTip()
+                            for tile in p.tiles))
+        self.assertNotIn("CINZA / DIFERENÇAS / BLOCOS",p.footer.text())
+
+    def test_stale_worker_cannot_render_previous_inspection(self):
+        p=NeuralEvidencePanel()
+        self.addCleanup(p.deleteLater)
+        p.set_visual_payload({"large":np.ones((30,30,3),np.uint8)})
+        earlier=p._epoch
+        p.clear_data()
+        p._on_probe_finished(earlier,{"major":{"neural":True}}, "")
+        self.assertTrue(all(tile.image._source.isNull() for tile in p.tiles))
+
+    def test_adhesive_does_not_start_auxiliary_cnn(self):
+        p=NeuralEvidencePanel()
+        self.addCleanup(p.deleteLater)
+        p.set_visual_payload({"_cnn_explain_allowed":False})
+        with patch("src.ui.widgets.neural_evidence.QThreadPool.globalInstance") as pool:
+            p.update_data({"recognition_route":"NEW_EXPERTS"},knn_analysis())
+            self.assertFalse(pool.return_value.start.called)
+        self.assertIn("fora do escopo",p.footer.text())
 
     def test_multilight_reuses_payload_even_when_knn_skips_cnn(self):
         view=AdhesiveMultiLightAnalysisView()
@@ -151,9 +186,11 @@ class NeuralEvidenceQtTests(unittest.TestCase):
         payload=build_adhesive_view_payload(ref,test,ctx)
         self.assertTrue(view.set_visual_payload("SIDE",payload))
         lane=view.lanes["SIDE"]
-        self.assertTrue(view.set_analysis("SIDE",knn_analysis()))
+        with patch("src.ui.widgets.neural_evidence.QThreadPool.globalInstance"):
+            self.assertTrue(view.set_analysis("SIDE",knn_analysis()))
         self.assertFalse(lane.neural_evidence.isHidden())
-        self.assertFalse(lane.neural_evidence.sections["major"].tiles[0].image._source.isNull())
+        self.assertTrue(lane.neural_evidence.sections["major"].tiles[0].image._source.isNull())
+        self.assertIn("PROCESSANDO CNN",lane.neural_evidence.tiles[0].metric.text())
         self.assertEqual(
             lane.scroll.verticalScrollBarPolicy(),
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
@@ -165,7 +202,7 @@ class NeuralEvidenceQtTests(unittest.TestCase):
         self.assertEqual(lane.neural_evidence.scroll.verticalScrollBarPolicy(),
                          Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.assertEqual(lane.neural_evidence.tiles[0].heading.text(),
-                         "EPICENTRO MAIOR • CINZA")
+                         "EPICENTRO MAIOR • DIF. LATENTE")
         self.assertIn("border:1px solid #d3a900",
                       lane.neural_evidence.tiles[0].styleSheet())
         view.clear_all()

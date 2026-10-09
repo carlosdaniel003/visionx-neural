@@ -569,6 +569,13 @@ def _store_view(
         ng_crop,
         context=context,
     )
+    # Sondas visuais SOMENTE em categorias do escopo real FALTANDO v2.
+    # ADESIVO e categorias desconhecidas nunca executam a rede em paralelo.
+    from src.core.neural.faltando_category_scope import uses_faltando_v2
+    info = getattr(panel, "current_aoi_info", None)
+    payload["_cnn_explain_allowed"] = uses_faltando_v2(
+        info.get("category", "") if isinstance(info, dict) else ""
+    )
     panel.adhesive_multilight_views[normalized] = payload
 
     view = getattr(panel, "adhesive_multilight_view", None)

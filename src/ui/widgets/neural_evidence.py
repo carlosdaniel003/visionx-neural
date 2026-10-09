@@ -1,20 +1,48 @@
-"""Painel de evidência visual AOI: seis imagens em faixa horizontal única.
+"""Painel horizontal com 6 MAPAS DERIVADOS DA CNN FALTANDO v2.
 
-SIDE/TOP/MID: MAIOR (cinza, diferenças, blocos) + MENOR (mesmas visões).
-Não são ativações internas ou Grad-CAM da CNN FALTANDO v2.
-Uma única QScrollArea horizontal, sem qualquer rolagem vertical interna.
+Sondas dos epicentros AOI em worker Qt; jamais filtros da imagem original.
+A decisão operacional KNN/CNN não é alterada.
 """
 from __future__ import annotations
 
 import cv2
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QObject, QRunnable, QThreadPool, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
     QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from src.ui.neural_evidence_model import EPICENTERS, VIEWS, epicenter_evidence
+from src.ui.neural_evidence_model import EPICENTERS
+
+VIEWS = ("DIF. LATENTE", "GRAD-CAM", "ATIVAÇÃO CNN")
+
+
+class _Signals(QObject):
+    done = pyqtSignal(int, object, str)
+
+
+class _NeuralProbeTask(QRunnable):
+    """Executa torch fora da thread Qt. Objetos QPixmap só na GUI."""
+
+    def __init__(self, epoch: int, crops: dict):
+        super().__init__()
+        self.epoch = epoch
+        self.crops = crops
+        self.signals = _Signals()
+        self.setAutoDelete(True)
+
+    def run(self):
+        try:
+            from src.core.neural.faltando_explainability import explain_epicenters
+            maps = explain_epicenters(self.crops)
+            self.signals.done.emit(self.epoch, maps, "")
+        except Exception as exc:
+            self.signals.done.emit(
+                self.epoch, None,
+                "CNN indisponível: " + type(exc).__name__ + " • " + str(exc)[:170]
+            )
+
 
 CARD_WIDTH = 252
 CARD_HEIGHT = 245
@@ -121,33 +149,34 @@ class _EpicenterSection(QWidget):
         self._columns = 3
 
     def render_evidence(self, data):
-        if data is None:
-            self.metrics.setText("EPICENTRO INDISPONÍVEL")
-            for tile in self.tiles:
-                tile.render_data(None, "SEM RECORTE", (
-                    "O epicentro não foi encontrado nesta iluminação."
-                ))
+        if not isinstance(data, dict) or data.get("neural") is not True:
+            self.render_status("MAPA CNN INDISPONÍVEL", "Sem resultado neural validado")
             return
-        w, h = data["dimensions"]
-        mean = data["difference_mean"]
-        contrast = data["contrast_std"]
         self.metrics.setText(
-            f"{w}×{h}px • Δ {mean:.2f}/255 • σ {contrast:.2f}"
+            f"{data['dimensions'][0]}×{data['dimensions'][1]} • "
+            f"{data['layer']} • classe local {data['target_class']}"
         )
         notes = (
-            "Cinza: transformação dos pixels do teste. A CNN usa RGB.",
-            "Calor: diferença entre gabarito e teste; NÃO é atenção CNN.",
-            "Blocos: médias locais dos pixels; NÃO é reconstrução CNN.",
+            "Diferença das features convolucionais entre (ref,teste) e (ref,ref). "
+            "Projeção da CNN, relativa a esta ROI.",
+            "Grad-CAM REAL do logit local " + data['target_class'] +
+            ". Sonda ROI, não voto operacional da peça.",
+            "Energia RMS das features do encoder. "
+            "Projeção interna sem decoder nem reconstrução literal RGB.",
         )
-        summaries = (
-            f"{w}×{h} px • CINZA",
-            f"Δ média {mean:.2f}/255",
-            f"Contraste σ {contrast:.2f}",
-        )
-        for tile, frame, label, tip in zip(
-            self.tiles, data["images"], summaries, notes
+        vals = data.get("raw_feature_means", [None, None, None])
+        for index, (tile, frame, note) in enumerate(
+            zip(self.tiles, data["images"], notes)
         ):
-            tile.render_data(frame, label, tip)
+            value = vals[index] if index < len(vals) else None
+            text = (f"energia {value:.4f}" if value is not None
+                    else "sem métrica")
+            tile.render_data(frame, text, note)
+
+    def render_status(self, status: str, detail: str):
+        self.metrics.setText(status)
+        for tile in self.tiles:
+            tile.render_data(None, status, detail)
 
 
 class NeuralEvidencePanel(QFrame):
@@ -252,7 +281,7 @@ class NeuralEvidencePanel(QFrame):
         root.addWidget(self.scroll)
 
         self.footer = QLabel(
-            "PIXELS AOI • CINZA / DIFERENÇAS / BLOCOS"
+            "SONDAS DA CNN • NÃO ALTERAM A DECISÃO KNN / CNN"
         )
         self.footer.setStyleSheet(
             "color:#aaa; font:9px Consolas;"
@@ -266,6 +295,9 @@ class NeuralEvidencePanel(QFrame):
         )
         self._last_payload = None
         self._last_analysis = None
+        self._epoch = 0
+        self._requested_epoch = -1
+        self._jobs = {}
         self._columns = 6
         self._refresh_arrows()
         QTimer.singleShot(0, self._refresh_arrows)
@@ -299,26 +331,84 @@ class NeuralEvidencePanel(QFrame):
                   "KNN EXATO" if route == "KNOWN_KNN" else "AOI")
         self.heading.setText(f"PAINEL NEURAL EXPLICÁVEL • {suffix}")
         self.footer.setText(
-            "VISUALIZAÇÃO DE PIXELS • NÃO É ATENÇÃO CNN"
+            "CNN operacional + sondas explicativas das ROIs"
             if active else
-            "VISUALIZAÇÃO DE PIXELS • CNN NÃO EXECUTADA NESTA LUZ"
+            "DECISÃO KNN • CNN em paralelo APENAS para mapas"
         )
+        # Apenas APÓS o resultado operacional: nunca disputar CPU durante
+        # a decisão do motor CNN ou da KNN da iluminação.
+        self._start_probe_after_decision()
+
+    def _on_probe_finished(self, epoch: int, maps: object, error: str):
+        self._jobs.pop(epoch, None)
+        if epoch != self._epoch:
+            return  # Resultado de peça/luz anterior: NUNCA exibir.
+        if error or not isinstance(maps, dict):
+            self._show_unavailable(error or "Resposta neural inválida")
+        else:
+            for key in EPICENTERS:
+                self.sections[key].render_evidence(maps.get(key))
+            self.footer.setText(
+                "MAPAS DA CNN VERIFICADA • SONDAS ROI • "
+                "NÃO SÃO RECONSTRUÇÕES RGB NEM VOTO OPERACIONAL"
+            )
+        self._refresh_arrows()
+
+    def _show_unavailable(self, reason: str):
+        for section in self.sections.values():
+            section.render_status("CNN INDISPONÍVEL", reason)
+        self.footer.setText(reason)
+        self.setToolTip(reason)
+
+    def _start_probe_after_decision(self):
+        payload = self._last_payload
+        if not isinstance(payload, dict) or self._requested_epoch == self._epoch:
+            return
+        self._requested_epoch = self._epoch
+        if payload.get("_cnn_explain_allowed") is False:
+            self._show_unavailable(
+                "Categoria fora do escopo CNN FALTANDO v2 • sem sonda"
+            )
+            return
+        crops = {
+            key: payload.get(key).copy()
+            for key in ("large_reference", "large", "small_reference", "small")
+            if getattr(payload.get(key), "ndim", 0) == 3
+        }
+        if len(crops) < 2:
+            self._show_unavailable("Pares gabarito/teste AOI indisponíveis")
+            return
+        for section in self.sections.values():
+            section.render_status("PROCESSANDO CNN...", "Capturando ativações reais")
+        task = _NeuralProbeTask(self._epoch, crops)
+        task.signals.done.connect(self._on_probe_finished)
+        self._jobs[self._epoch] = task
+        QThreadPool.globalInstance().start(task, -1)
 
     def set_visual_payload(self, payload: dict | None):
+        if payload is self._last_payload and isinstance(payload, dict):
+            return
+        self._epoch += 1
         self._last_payload = payload
-        result = epicenter_evidence(payload)
-        for key in EPICENTERS:
-            self.sections[key].render_evidence(result.get(key))
+        self._requested_epoch = -1
+        self._last_analysis = None
         self.scroll.horizontalScrollBar().setValue(0)
+        for section in self.sections.values():
+            section.render_status(
+                "AGUARDANDO JULGAMENTO",
+                "Sondas CNN serão executadas após resultado da iluminação"
+            )
         self._refresh_arrows()
 
     def clear_data(self):
+        self._epoch += 1  # cancela logicamente qualquer conclusão pendente
+        self._requested_epoch = -1
         self._last_payload = None
         self._last_analysis = None
         self.heading.setText("PAINEL NEURAL EXPLICÁVEL")
         self.footer.setText("AGUARDANDO SIDE / TOP / MID")
         for section in self.sections.values():
-            section.render_evidence(None)
+            section.render_status("AGUARDANDO CNN", "Sem inferência auxiliar")
         self.scroll.horizontalScrollBar().setValue(0)
         self._refresh_arrows()
 
