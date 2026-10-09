@@ -1,3 +1,76 @@
+## 09/10/2026 — Nova política do startup: validação SOMENTE por duas CNNs
+
+**Decisão do operador (substitui o plano anterior de replay MoE):**
+antes de abrir o ODIN, o gate de regressão deve validar o acervo
+`public/ok_archive` e `public/ng_archive` com **dois modelos CNN
+independentes**, em modo `eval/inference`, sem treino, sem KNN, sem
+especialistas físicos, sem autoajuste de limiar e sem escrever arquivos
+no acervo.
+
+| Validação obrigatória | Categorias cobertas |
+|---|---|
+| **CNN FALTANDO V2** | FALTANDO, EMBORCADO, INVERTIDO, DESLOCADO — **exclui MUITO ADESIVO** |
+| **CNN MEMÓRIA** | **todas**: FALTANDO, EMBORCADO, INVERTIDO, DESLOCADO, MUITO ADESIVO e demais categorias válidas |
+
+Contrato: cada PNG elegível da pasta OK deve resultar `FALHA FALSA`
+e cada PNG da pasta NG deve resultar `DEFEITO REAL`. `REVISÃO
+OBRIGATÓRIA`, modelo ausente, exceção, PNG corrompido, associação
+contraditória ou cobertura incompleta reprova **aquela CNN**.
+Não permitir que um modelo compense a reprovação do outro. SIDE legado
+é avaliado como SIDE, novos SIDE/TOP/MID são identificados pela iluminação
+do arquivo; **não inferir vínculo entre peças por horário ou nome**.
+Fusão por evento só poderá ser adicionada com `event_id` confiável,
+sem apagar as falhas por PNG.
+
+**Implementação parcial segura nesta alteração:**
+
+- `src/services/startup_regression/cnn_archive_validation.py`:
+  verificação de cobertura e resultados **separados** para as duas CNNs,
+  com extração do par integral por `AOIPairExtractor`, inventário/hashes
+  do arquivo e rótulo esperado pela pasta. Usa
+  `FaltandoCNNLive.inspect` **diretamente**, sem `MoEOrchestrator`,
+  sem KNN e sem especialistas. A camada de CNN MEMÓRIA não aceita
+  respostas KNN fingindo ser rede neural; exige checkpoint validado.
+- `src/services/startup_regression/cnn_archive_validation_cli.py`:
+  diagnóstico manual, gera JSON/TXT em `reports/startup_regression/`.
+- `tests/test_startup_regression_cnns.py`: testes de escopos,
+  adesivo, cobertura, NG falsamente chamado OK, revisão, arquivo
+  inválido e obrigatoriedade do segundo modelo.
+- `.github/workflows/startup-regression-cnns.yml`: CI Windows.
+
+**Pendência impeditiva para instalar o gate em `main.py`:**
+na branch `central` foi localizado `FaltandoCNNV2` com checkpoint,
+mas **não existe um modelo/classe/checkpoint identificado como
+`CNN MEMÓRIA`**. O módulo chamado `verified_memory_router.py`
+e a `MEMÓRIA KNN` usam recuperação de registros conhecidos, **não
+são uma segunda CNN de inferência OK/NG**. O antigo
+`neural_judge.DatasetMemory` usa MobileNet para embeddings seguidos
+de KNN, também não cumpre a exigência de um segundo classificador CNN
+independente. **É necessário obter o nome, módulo e pesos da CNN
+MEMÓRIA junto ao operador**, então implementar seu adaptador real e
+os testes contra todo o acervo antes de colocar a trava na inicialização.
+Não instalar um bloqueio que deixe a máquina indisponível só por estar
+faltando a integração.
+
+**Estado:** validadores e contrato preparados; `main.py` ainda
+**não** bloqueia a inicialização. O script antigo `side_replay` de
+múltiplos especialistas passa a ser diagnóstico histórico e **não**
+pode determinar a aprovação do novo gate. O acerto do acervo de treino
+não é evidência independente de generalização.
+
+**Comando de diagnóstico parcial, após atualização da branch:**
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.cnn_archive_validation_cli
+```
+
+A saída da CNN FALTANDO V2 mede seu escopo real; a CNN MEMÓRIA
+será declarada `MODEL_UNAVAILABLE` até conectar o segundo modelo.
+O programa retorna código 1 e não bloqueia o ODIN.
+
+---
+
 ## 09/10/2026 — Telemetria visual CNN FALTANDO v2 + KNN e debug XP
 
 **Objetivo:** eliminar painéis vazios quando o ODIN decide com
