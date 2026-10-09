@@ -28,6 +28,7 @@ class NetworkReceiver(QThread):
     image_received = pyqtSignal(np.ndarray, str)
     log_updated = pyqtSignal(str)
     command_received = pyqtSignal(str)
+    xp_peer_discovered = pyqtSignal(str)
 
     SIGNATURE_WIDTH = 128
     SIGNATURE_HEIGHT = 96
@@ -40,6 +41,7 @@ class NetworkReceiver(QThread):
         super().__init__()
         self.port = port
         self._is_running = True
+        self._announced_xp_peer = ""
         self._image_gate = ImageCycleGate()
         self._state_lock = threading.RLock()
 
@@ -348,6 +350,11 @@ class NetworkReceiver(QThread):
 
                 try:
                     ip_origem = endereco[0]
+                    # Disponibilizar IP XP desde o primeiro pacote, antes da
+                    # estabilidade de dois frames do gate principal.
+                    if ip_origem != self._announced_xp_peer:
+                        self._announced_xp_peer = ip_origem
+                        self.xp_peer_discovered.emit(ip_origem)
                     cabecalho_str = conexao.recv(16).decode("utf-8").strip()
                     if not cabecalho_str:
                         conexao.close()

@@ -42,6 +42,37 @@ TECLAS_VIRTUAIS = {
 
 user32 = ctypes.WinDLL('user32', use_last_error=True)
 
+# Modo rapido ativado EXCLUSIVAMENTE pelo ODIN via comando TCP.
+# O lease impede o XP de ficar em modo rapido apos falha/reinicio do ODIN.
+DEFAULT_CAPTURE_PAUSE_SECONDS = 3.0
+SHADOW_CAPTURE_PAUSE_SECONDS = 0.18
+SHADOW_LEASE_SECONDS = 25.0
+_shadow_capture_until = 0.0
+_shadow_capture_wakeup = threading.Event()
+
+def configurar_captura_sombra(habilitado):
+    global _shadow_capture_until
+    _shadow_capture_until = (
+        time.time() + SHADOW_LEASE_SECONDS if habilitado else 0.0
+    )
+    if habilitado:
+        # Acorda a primeira espera de 3s assim que o ODIN ativa Sombra.
+        _shadow_capture_wakeup.set()
+
+def pausa_pos_envio():
+    if time.time() < _shadow_capture_until:
+        return SHADOW_CAPTURE_PAUSE_SECONDS
+    return DEFAULT_CAPTURE_PAUSE_SECONDS
+
+def aguardar_proximo_envio():
+    pausa = pausa_pos_envio()
+    despertou = _shadow_capture_wakeup.wait(pausa)
+    if despertou:
+        _shadow_capture_wakeup.clear()
+        # Nao usar captura instantanea apos mudanca de luz.
+        if pausa_pos_envio() < DEFAULT_CAPTURE_PAUSE_SECONDS:
+            time.sleep(SHADOW_CAPTURE_PAUSE_SECONDS)
+
 
 def eh_azul(cor):
     r = cor & 0xFF
@@ -165,7 +196,13 @@ def servidor_de_comandos():
             conexao, _ = servidor.accept()
             comando = conexao.recv(1024).decode('utf-8').strip()
 
-            if comando == "PRESS_0":
+            if comando == "VISIONX_SHADOW_ON":
+                configurar_captura_sombra(True)
+                conexao.sendall(b"ACK_SHADOW_ON")
+            elif comando == "VISIONX_SHADOW_OFF":
+                configurar_captura_sombra(False)
+                conexao.sendall(b"ACK_SHADOW_OFF")
+            elif comando == "PRESS_0":
                 apertar_tecla_fisica("0")
             elif comando == "PRESS_1":
                 apertar_tecla_fisica("1")
@@ -323,8 +360,10 @@ def loop_vigia_tela():
                 servidor_ia.sendall(dados_zip)
                 servidor_ia.close()
 
-                print("-> Imagem enviada com sucesso. Pausa de 3s...")
-                time.sleep(3)
+                # Sem comando do ODIN, mantem a pausa original de 3 s.
+                # Sombra: captura mais frequente, SEM eliminar os dois
+                # frames estaveis exigidos no PC VisionX.
+                aguardar_proximo_envio()
 
             except Exception as e:
                 print(

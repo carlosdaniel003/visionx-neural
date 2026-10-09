@@ -1136,3 +1136,15 @@ Isso vale tanto para os atalhos locais do ODIN quanto para `CMD_OK/CMD_NG` envia
 O feedback é implementado somente no computador novo em `src/ui/decision_key_feedback.py`. Ele aparece no canto inferior direito da interface, usa o mesmo visual escuro/amarelo do ODIN e acrescenta verde para OK ou vermelho para NG. Ele não altera os pacotes de rede, as portas, `PRESS_0/PRESS_1`, `CMD_OK/CMD_NG` nem a lógica do agente.
 
 Portanto, **esta funcionalidade não exige atualizar manualmente o `agente_industrial_xp.py` no Windows XP**.
+
+
+## 09/10/2026 — Captura XP acelerada e isolada no Modo Sombra
+
+- O agente XP aceita `VISIONX_SHADOW_ON` / `VISIONX_SHADOW_OFF` na porta TCP 5000 e confirma com `ACK_SHADOW_ON` / `ACK_SHADOW_OFF`. Nenhum deles é uma tecla 0/1.
+- Quando o ODIN está em **Modo Sombra**, o agente reduz a pausa posterior a cada imagem de **3,0 s para 0,18 s**. Nos modos Teste e Produção, permanece **3,0 s**. Isso altera apenas o intervalo de envio, não o classificador, OCR, julgamento, corte da imagem nem a estabilidade obrigatória de dois frames no receptor.
+- A ativação usa lease de **25 s** renovado pelo ODIN a cada **8 s**, somente em Sombra. Se o ODIN cair/desconectar, o XP retorna automaticamente à pausa convencional. O comando OFF também restaura imediatamente a pausa convencional.
+- Compatibilidade: um agente XP anterior ignora o novo comando; nesse caso as análises continuam funcionando, mas a pausa rápida **não** entra em operação. A confirmação ACK é necessária para considerar a ativação real.
+- **Instalação manual obrigatória:** atualizar `agente_industrial_xp.py` no computador AOI Windows XP e reiniciar o agente. Atualizar somente o GitHub não instala nada no XP. Validar primeiro com uma peça supervisionada, conferindo se as duas imagens estáveis são realmente da mesma iluminação.
+- **Meta 2–3 s ainda não validada fisicamente.** Cronometrar XP→rede→SIDE/TOP/MID→veredito na fábrica; a latência real depende também de atualização da AOI, OCR, inferência e rede.
+
+A partir do primeiro pacote de rede recebido, o receptor anuncia o IP do XP. Assim o ODIN ativa Sombra **antes de completar a dupla de frames estáveis**. Quando o agente estiver na pausa original, o comando ON desperta a espera atual e aplica um intervalo de estabilização (0,18 s). Isso reduz o gargalo inicial sem eliminar a validação de dois frames no VisionX.

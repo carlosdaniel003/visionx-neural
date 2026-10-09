@@ -91,6 +91,7 @@ class ControlPanel(QWidget):
         self.network_receiver = NetworkReceiver(port=5001)
         self.network_receiver.image_received.connect(self.handle_network_image)
         self.network_receiver.command_received.connect(self.handle_physical_keyboard)
+        self.network_receiver.xp_peer_discovered.connect(self.handle_xp_peer_discovered)
         self.network_receiver.log_updated.connect(self.update_network_status)
         
         self.network_receiver.start()
@@ -100,7 +101,15 @@ class ControlPanel(QWidget):
     def _setup_ui(self):
         self.ui_builder = ControlPanelUI()
         self.ui_builder.setup_ui(self)
-        
+
+        # Lease XP apenas para Modo Sombra. A manutencao ocorre a cada 8 s,
+        # sempre sem enviar PRESS_0/PRESS_1 ao equipamento.
+        self._xp_shadow_lease_timer = QTimer(self)
+        self._xp_shadow_lease_timer.setInterval(8000)
+        self._xp_shadow_lease_timer.timeout.connect(self._renew_xp_shadow_lease)
+        self.combo_mode.currentTextChanged.connect(self._on_xp_mode_changed)
+        self._on_xp_mode_changed(self.combo_mode.currentText())
+
         if hasattr(self, 'btn_light_mid'):
             self.btn_light_mid.clicked.connect(
                 lambda: self.change_lighting("MID", "odin_control")
@@ -113,6 +122,65 @@ class ControlPanel(QWidget):
             )
         
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def handle_xp_peer_discovered(self, ip: str) -> None:
+        """Sincroniza Sombra desde a primeira transmissao XP."""
+        new_ip = str(ip or "").strip()
+        if not new_ip:
+            return
+        if new_ip != str(getattr(self, "last_xp_ip", "") or ""):
+            self._xp_shadow_last_attempt = None
+        self.last_xp_ip = new_ip
+        self._send_xp_shadow_control(
+            self.combo_mode.currentText() == "Modo Sombra"
+        )
+
+    def _send_xp_shadow_control(self, enabled: bool, *, force: bool = False) -> bool:
+        """Solicita pausa reduzida ao agente XP somente em Modo Sombra.
+
+        Um XP antigo simplesmente ignora o comando: a captura legada continua
+        funcionando sem reduzir a pausa. ACK distingue deploy real de desejo UI.
+        """
+        ip = str(getattr(self, "last_xp_ip", "") or "").strip()
+        if not ip:
+            return False
+        enabled = bool(enabled)
+        target = (ip, enabled)
+        if not force and getattr(self, "_xp_shadow_last_attempt", None) == target:
+            return getattr(self, "_xp_shadow_last_ack", None) == target
+        self._xp_shadow_last_attempt = target
+        command = (
+            b"VISIONX_SHADOW_ON" if enabled else b"VISIONX_SHADOW_OFF"
+        )
+        expected = b"ACK_SHADOW_ON" if enabled else b"ACK_SHADOW_OFF"
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+                connection.settimeout(0.3)
+                connection.connect((ip, 5000))
+                connection.sendall(command)
+                response = connection.recv(32).strip()
+            if response == expected:
+                self._xp_shadow_last_ack = target
+                return True
+            self._xp_shadow_last_ack = None
+            return False
+        except (OSError, TimeoutError):
+            self._xp_shadow_last_ack = None
+            return False
+
+    def _on_xp_mode_changed(self, mode: str) -> None:
+        shadow = str(mode or "") == "Modo Sombra"
+        timer = getattr(self, "_xp_shadow_lease_timer", None)
+        if timer is not None:
+            if shadow:
+                timer.start()
+            else:
+                timer.stop()
+        self._send_xp_shadow_control(shadow, force=True)
+
+    def _renew_xp_shadow_lease(self) -> None:
+        if self.combo_mode.currentText() == "Modo Sombra":
+            self._send_xp_shadow_control(True, force=True)
 
     def keyPressEvent(self, event):
         # As setas de iluminação usam QShortcut em nível de janela.
@@ -238,6 +306,11 @@ class ControlPanel(QWidget):
     def handle_network_image(self, img_bgr: np.ndarray, ip: str):
         self.is_locked = True
         self.last_xp_ip = ip
+        # Na primeira peça após conectar, sincronizar o modo selecionado com
+        # o agente XP. O controle fica restrito ao modo; sem eco 0/1.
+        sender = getattr(self, "_send_xp_shadow_control", None)
+        if callable(sender):
+            sender(self.combo_mode.currentText() == "Modo Sombra")
         received_at = float(
             getattr(
                 self.network_receiver,

@@ -1100,3 +1100,8 @@ NG/OK, teclas 0/1 ou modo Produção.
 - Os registros de mesmo evento mantem event_id e lighting_mode por foto. Imagens sao salvas mesmo quando a IA concorda; a deduplicacao de arquivo existente permanece ativa. A persistencia no disco e a recarga KNN ocorrem fora da thread da interface.
 - Medir tempo real no notebook com frames XP e hardware de fabrica. Meta 2-3 segundos e objetivo, nao benchmark aprovado. O envio pela rede, duas imagens estaveis, OCR inicial e latencia fisica das trocas de luz continuam influenciando o tempo.
 - Testes: test_shadow_fast_capture.py, test_shadow_partial_persistence.py, test_adhesive_multilight_automation.py, test_multilight_learning.py e test_fast_xp_decision_cycle.py.
+
+
+### Agente XP opcional para reduzir o intervalo de captura em Sombra (09/10/2026)
+
+O ODIN envia um controle separado de 0/1 ao XP para reduzir o intervalo fixo entre fotos de 3 s para 0,18 s **somente em Modo Sombra**. Sem confirmação do novo protocolo a captura antiga permanece funcional e mais lenta. O receptor continua exigindo dois frames estáveis e os rótulos 0/1 continuam exclusivos do humano. É indispensável atualizar o arquivo `agente_industrial_xp.py` manualmente no XP; ver `docs/AGENTE_INDUSTRIAL_WINDOWS_XP.md`. Metas de tempo aguardam medição física.
