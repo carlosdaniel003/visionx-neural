@@ -267,7 +267,8 @@ class ImageCycleContractTests(unittest.TestCase):
         self.assertIn("self._stage_latest_candidate", source)
         self.assertIn("self._last_rejected_signature", source)
         self.assertIn("self._reserved_signature", source)
-        self.assertIn("if not self._image_gate.is_open()", source)
+        self.assertIn("gate_open = self._image_gate.is_open()", source)
+        self.assertIn("if not gate_open and not auxiliary_delivery", source)
         self.assertIn("self._discard_payload(conexao, tamanho_total)", source)
         self.assertIn("self._require_image_change", source)
         self.assertIn("self._same_signature", source)
@@ -292,7 +293,7 @@ class ImageCycleContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertLess(
             source.index('if cabecalho_str.startswith("CMD_")'),
-            source.index("if not self._image_gate.is_open()"),
+            source.index("if not gate_open and not auxiliary_delivery"),
         )
 
 
