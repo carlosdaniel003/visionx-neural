@@ -227,7 +227,7 @@ def format_network_debug_report(record: dict | None) -> str:
         cnn = cnn if isinstance(cnn, dict) else {}
         route = decision.get("recognition", {})
         route = route if isinstance(route, dict) else {}
-        if cnn.get("active"):
+        if cnn.get("active") or route.get("route") == "KNOWN_KNN":
             unused_prefixes = (
                 "Missing ", "Dual-scale ", "Presença ", "Corpo presente:",
                 "Veto por corpo", "Fonte da presença:", "Caixa da presença:",
@@ -238,6 +238,7 @@ def format_network_debug_report(record: dict | None) -> str:
                 item for item in lines
                 if not item.startswith(unused_prefixes)
             ]
+        if cnn.get("active"):
             score = cnn.get("ng_score_uncalibrated")
             score_text = f"{score:.6%}" if isinstance(score, (int, float)) else "N/D"
             per_light = cnn.get("light_diagnostics", {})
@@ -266,6 +267,7 @@ def format_network_debug_report(record: dict | None) -> str:
                     f"{entry.get('verdict', '-') or '-'} • score NG {display} "
                     f"• checkpoint {'OK' if entry.get('checkpoint_verified') else 'não verificado'}"
                 )
+        if route.get("route"):
             lines.extend([
                 "", "MEMÓRIA KNN (ROTA EFETIVA)", "-" * 72,
                 f"Rota: {route.get('route', '-')}",
