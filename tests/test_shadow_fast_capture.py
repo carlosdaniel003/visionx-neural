@@ -131,6 +131,18 @@ class ShadowFastInspectionTests(unittest.TestCase):
                 ControlPanel.process_aoi_images(p,g,g,{"value":"FALTANDO"})
         self.assertEqual(p.shown,1)
 
+    def test_shadow_hard_block_xp_zero_one_even_if_called_directly(self):
+        p=ShadowFake()
+        p.last_xp_ip="127.0.0.1"
+        p.messages=[]
+        p.update_network_status=lambda msg:p.messages.append(msg)
+        with patch("src.ui.control_panel.socket.socket") as socket:
+            self.assertFalse(ControlPanel.send_command_to_xp(p,"0"))
+            self.assertFalse(ControlPanel.send_command_to_xp(p,"1"))
+            self.assertFalse(ControlPanel.send_command_to_xp(p,"PRESS_0"))
+            socket.assert_not_called()
+        self.assertEqual(len(p.messages),3)
+
     def test_shadow_auxiliary_ocr_reuses_same_part_without_tesseract(self):
         monitor=ScreenMonitor()
         monitor._shadow_fast=True
