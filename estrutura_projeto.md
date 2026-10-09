@@ -1,3 +1,65 @@
+## 09/10/2026 — Compatibilidade legado, simulação somente leitura (continuação)
+
+**Contexto real, gerado na estação:** reconciliação do acervo
+`reconciliation_20261009_164855_144364` encontrou 212 PNGs,
+952 JSONs de memória: **860 excluídos por SCHEMA_NAO_SUPORTADO** e
+**92 VERIFICADO_KNN**. Entre os PNGs, 92 `PAR_VERIFICADO`,
+99 `REGISTRO_COMPATIVEL_INELEGIVEL`, 20
+`CATEGORIA_LUZ_COM_OCR_DIFERENTE` e 1 `OCR_INVALIDO`.
+Nenhum dos 17 NG históricos está coberto por KNN exata atual.
+Os candidatos antigos baseados apenas em placa/peça/categoria não
+são prova de uma imagem nem prova de equivalência entre rótulos.
+
+**Implementação aprovada pelo operador — primeira fase de compatibilidade
+SEM escrita no dataset:**
+
+- Novo `src/services/startup_regression/legacy_memory_compat.py`
+  audita os 860 JSONs excluídos, classifica schemas originais
+  (`SEM_SCHEMA` se ausente) e motivos específicos de reprovação:
+  fonte humana/label ausentes, assinatura de anomalia ausente,
+  PNG de referência/teste ausentes, registro deduplicado sem par,
+  metadados OCR insuficientes, hashes inconsistentes, PNGs ilegíveis.
+- Apenas se houver **fonte e rótulo humanos coerentes**, assinatura,
+  dois PNGs locais efetivos, identidade exata dos pixels (SHA-256),
+  OCR completo e declaração de hash consistente, calcula uma
+  `would_be_key` usando `VerifiedKNNMemory._key`.
+- `archive_reconciler.py` compara essa identidade com a extraída
+  do screenshot em execução **na memória do processo**, identifica
+  `LEGADO_PAR_SIMULADO_CONCORDA`,
+  `LEGADO_PAR_SIMULADO_DIVERGE`,
+  `LEGADO_CONFLITO_EXATO` e `SEM_PAR_LEGADO_AUDITAVEL`.
+  Conflitos com a memória v3 são destacados. Nenhum registro
+  legado é inserido na KNN real nem contado como `PAR_VERIFICADO`.
+- O JSON de reconciliação agora inclui
+  `legacy_memory_profiles.schema_distribution`,
+  `legacy_memory_profiles.eligibility_reasons`,
+  `legacy_record_diagnostics[]`,
+  `legacy_case_status_counts` e
+  `cases[].legacy_compatibility`. O TXT inclui os resumos
+  correspondentes e candidatos limitados por caso.
+- Novo `tests/test_legacy_memory_compat.py`; workflow dedicado
+  Windows existente inclui sintaxe e testes de integração.
+- **Não** modifica `main.py`, CNN FALTANDO V2, `KNNExpert`,
+  `VerifiedKNNMemory`, screenshots, rótulos ou checkpoints;
+  **não** altera o treinamento nem ativa bloqueio de startup.
+
+**Como rodar o diagnóstico novo após atualizar `central`:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.archive_reconciler_cli
+```
+
+Enviar os novos `reports/startup_regression/reconciliation_*.json`
+e `reconciliation_*.txt`. **Não esperar automaticamente 212/212**:
+o simulador pode identificar 0 memórias legadas verificáveis quando
+o dataset antigo não tem PNGs de auditoria ou decisão humana.
+A próxima decisão (migração ou recuperação) depende dos fatos
+retornados, sem fabricação de resultados.
+
+---
+
 ## 09/10/2026 — Sincronizador de diagnóstico: arquivo visual x memória KNN
 
 **Motivo:** operador solicitou solução via código, sem envio manual de
