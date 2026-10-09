@@ -205,8 +205,10 @@ def _check_extraction(
         "declared_reference_hash_matches": None,
         "declared_test_hash_matches": None,
     }
-    info_old = data.get("aoi_info") or {}
-    storage = data.get("storage") or {}
+    info_old = data.get("aoi_info")
+    info_old = info_old if isinstance(info_old, dict) else {}
+    storage = data.get("storage")
+    storage = storage if isinstance(storage, dict) else {}
     try:
         frame = _bgr(root / source_path)
         reference, test, observed = extractor(frame)
