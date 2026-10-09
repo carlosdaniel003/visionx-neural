@@ -33,7 +33,7 @@ def write_full_history_cnn_report(report: dict, output_dir: Path):
     lines = [
         "ODIN — REPLAY CNN DE TODO ACERVO VISUAL OK/NG",
         "CNN SOMENTE | SEM KNN | SEM TREINO | SEM GATE",
-        f"Meta histórica (todos os PNGs): {report['expected_retention_rate']:.0%}",
+        f"Meta informativa para acervo inteiro: {report['expected_retention_rate']:.0%}",
         f"PNGs inventariados: {report['inventory_png_count']}",
         f"Elegíveis à CNN existente: {overall['cnn_scoped']}",
         f"Sem CNN para categoria: {overall['unsupported']}",
@@ -119,17 +119,24 @@ def write_full_history_cnn_report(report: dict, output_dir: Path):
             )
     lines.extend([
         "",
-        "CASOS QUE NÃO PASSARAM:",
+        "CASOS PENDENTES NO ESCOPO CNN (NAO CONTAM COMO ACERTO):",
     ])
     for case in report["cases"]:
-        if case["status"] == "PASSOU":
+        if case["model"] is None or case["status"] == "PASSOU":
             continue
         lines.append(
             f"- {case['status']} | {case['source_path']} | "
             f"esperado={case['expected_label']} | "
-            f"CNN={case['model'] or 'SEM MODELO'} | "
-            f"resposta={case['verdict']} | scoreNG={case['ng_score_uncalibrated']} "
-            f"| {case['error'] or ''}"
+            f"CNN={case['model']} | resposta={case['verdict']} | "
+            f"scoreNG={case['ng_score_uncalibrated']} | {case['error'] or ''}"
+        )
+    lines.extend(["", "EXCLUIDOS DO ESCOPO CNN (ADESIVO PRESERVADO):"])
+    for case in report["cases"]:
+        if case["model"] is not None:
+            continue
+        lines.append(
+            f"- {case['source_path']} | esperado={case['expected_label']} "
+            f"| status={case['status']}"
         )
     lines.extend(["", "OCR COM IDENTIFICACAO INCOMPLETA (CNN EXECUTADA):"])
     for case in report["cases"]:
