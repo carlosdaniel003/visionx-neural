@@ -47,6 +47,7 @@ def observation(path, expected, vote, similarity=.96):
         "path": path, "category": "FALTANDO", "lighting_mode": "SIDE",
         "expected_human_label": expected,
         "score_ng": vote, "best_similarity": similarity,
+        "baseline_vote_ng": vote, "baseline_best_similarity": similarity,
         "has_exact_query_copy": False,
         "has_conflicting_neighbor_signatures": False,
     }
