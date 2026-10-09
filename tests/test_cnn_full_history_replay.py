@@ -190,6 +190,63 @@ class FullHistoryReplayTests(unittest.TestCase):
         self.assertEqual(events["events_with_explicit_manifest"], 1)
         self.assertEqual(events["status_counts"], {"PASSOU_3_LUZES": 1})
 
+    def test_three_light_event_with_different_checkpoints_is_not_passed(self):
+        for light in ("SIDE", "TOP", "MID"):
+            self.png("OK", f"2026-10-09_1000_FALTANDO_{light}.png", 51)
+        inventory = inventory_archives(self.root)
+        for row in inventory["images"]:
+            row["event_id"] = "event-confirmed"
+            row["manifest_links"] = [{
+                "event_id": "event-confirmed",
+                "lighting_mode": row["lighting_mode"],
+                "manifest_path": "valid_manifest.json",
+            }]
+        baseline = self.model.inspect
+        def different_model(ref, test, mode):
+            output = baseline(ref, test, mode)
+            output["detail"]["cnn_v2_checkpoint_sha256"] = (
+                "d" * 64 if mode == "MID" else "c" * 64
+            )
+            return output
+        self.model.inspect = different_model
+        report = self.run_replay(inventory=inventory)
+        self.assertEqual(
+            report["multilight_explicit_events"]["status_counts"],
+            {"CHECKPOINTS_DIFERENTES_NO_EVENTO": 1}
+        )
+        self.assertEqual(report["overall"]["passed"], 3)
+        self.assertFalse(report["production_approved"])
+
+    def test_98_percent_boundary_and_two_errors_in_fifty(self):
+        for i in range(50):
+            self.png("OK", f"2026-10-09_{1000+i:04d}_FALTANDO_SIDE.png", 51)
+        inventory = inventory_archives(self.root)
+        original = self.model.inspect
+        calls = [0]
+        def one_bad(ref, test, light):
+            calls[0] += 1
+            result = original(ref, test, light)
+            if calls[0] in {1, 2}:
+                result["verdict"] = "DEFEITO REAL"
+                result["detail"]["cnn_v2_ng_score_uncalibrated"] = .98
+            return result
+        self.model.inspect = one_bad
+        replay = self.run_replay(inventory=inventory)
+        self.assertEqual(replay["overall"]["passed"], 48)
+        self.assertFalse(replay["overall"]["historical_98pct_target_met"])
+        calls[0] = 0
+        def one_error(ref, test, light):
+            calls[0] += 1
+            result = original(ref, test, light)
+            if calls[0] == 1:
+                result["verdict"] = "DEFEITO REAL"
+                result["detail"]["cnn_v2_ng_score_uncalibrated"] = .98
+            return result
+        self.model.inspect = one_error
+        replay = self.run_replay(inventory=inventory)
+        self.assertEqual(replay["overall"]["passed"], 49)
+        self.assertTrue(replay["overall"]["historical_98pct_target_met"])
+
     def test_unlinked_three_similar_images_not_assumed_one_event(self):
         for light in ("SIDE", "TOP", "MID"):
             self.png("OK", f"2026-10-09_1000_FALTANDO_{light}.png", 51)
