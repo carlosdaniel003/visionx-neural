@@ -48,9 +48,16 @@ class NeuralProjectionTests(unittest.TestCase):
         self.assertTrue(data["probe_only"])
         self.assertIn(data["target_class"], {"NG","OK"})
         self.assertTrue(0<=data["probe_ng_score_uncalibrated"]<=1)
+        self.assertEqual(data["visualization"],
+                         "test_original_plus_cnn_overlay_and_reference_thumbnail")
+        self.assertTrue(data["reference_inset"])
         for image in data["images"]:
-            self.assertEqual(image.shape, test.shape)
+            self.assertEqual(image.ndim, 3)
+            self.assertEqual(image.shape[2], 3)
+            self.assertLessEqual(max(image.shape[:2]),640)
             self.assertEqual(image.dtype,np.uint8)
+            # Photo is the background: avoid "heatmap only" visualizations.
+            self.assertGreater(float(np.std(image)),0.01)
         # O encoder é realmente sensível a alterações nos nove canais.
         self.assertGreater(data["raw_feature_means"][0], 1e-6)
         # Não ajusta pesos nem gera gradientes permanentes nos parâmetros.
@@ -69,8 +76,15 @@ class NeuralProjectionTests(unittest.TestCase):
             self.model, ref, ref.copy(), image_size=96, focus_fraction=.70,
         )
         self.assertEqual(data["raw_feature_means"][0],0)
-        # COLORMAP_JET no zero == azul, não mapa de diferença fictício.
-        self.assertTrue(np.all(data["images"][0] == data["images"][0][0,0]))
+        # Um par idêntico produz ZERO diferença no encoder; o card
+        # mostra os pixels do teste, exceto a miniatura do GABARITO.
+        overlay = data["images"][0]
+        h,w=overlay.shape[:2]
+        import cv2
+        original = cv2.resize(ref,(w,h), interpolation=cv2.INTER_LINEAR)
+        self.assertTrue(np.array_equal(overlay[int(h*.75),int(w*.70)],
+                                       original[int(h*.75),int(w*.70)]))
+        self.assertEqual(tuple(overlay[7,7]),(0,215,255))
 
     def test_rejects_missing_crop_and_non_eval_model(self):
         ref,test=pair()

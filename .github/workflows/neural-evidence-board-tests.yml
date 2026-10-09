@@ -8,6 +8,7 @@ on:
       - "src/ui/widgets/neural_evidence.py"
       - "src/ui/adhesive_multilight_analysis.py"
       - "src/ui/adhesive_multilight_inspection.py"
+      - "src/core/neural/faltando_activation_overlay.py"
       - "tests/test_neural_evidence_board.py"
       - ".github/workflows/neural-evidence-board-tests.yml"
   pull_request:

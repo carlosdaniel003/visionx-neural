@@ -5,7 +5,7 @@ A CNN v2 concatena [gabarito, teste, abs(gabarito-teste)] em NOVE canais,
 com encoder compartilhado entre escala completa e central. Portanto não há
 features independentes de referência/teste e não existe decoder treinado.
 
-Três mapas:
+Três mapas (renderizados sobre o teste com miniatura do gabarito):
   1. diferença das ativações do encoder entre (ref,teste) e (ref,ref);
   2. Grad-CAM do logit local, classe prevista por essa própria sonda;
   3. projeção RMS das ativações espaciais do encoder (NÃO reconstrução RGB).
@@ -20,6 +20,7 @@ import math
 import cv2
 import numpy as np
 
+from src.core.neural.faltando_activation_overlay import compose_neural_overlay
 from src.core.neural.faltando_live import FaltandoCNNLive
 from src.scripts.train_faltando_cnn_v2 import _letterbox_rgb, _focus_crop
 
@@ -143,10 +144,12 @@ def generate_explainability_triplet(
         _normalize(_unletterbox(array, test.shape, image_size))
         for array in (latent, cam, activation)
     )
-    images = (
-        _to_bgr(norm_maps[0]),
-        _to_bgr(norm_maps[1]),
-        _to_bgr(norm_maps[2], "gray"),
+    # Não exibir gradientes soltos: imagem real de teste como fundo,
+    # relevância/ativação CNN sobreposta e gabarito em miniatura. A
+    # compositora não altera os valores neurais nem o voto operacional.
+    images = tuple(
+        compose_neural_overlay(test, reference, map_2d, kind=kind)
+        for map_2d, kind in zip(norm_maps, ("latent", "gradcam", "activation"))
     )
     return {
         "images": images,
@@ -161,6 +164,10 @@ def generate_explainability_triplet(
         ],
         "schema": "visionx.cnn_v2_neural_evidence.v1",
         "neural": True,
+        "visualization": "test_original_plus_cnn_overlay_and_reference_thumbnail",
+        "visualization_note": "Projeções CNN locais; sem decoder, não é reconstrução RGB",
+        "reference_inset": True,
+        "overlay_strength_scale": "relative_to_map_max",
         "reconstruction_decoder": False,
         "probe_only": True,
     }

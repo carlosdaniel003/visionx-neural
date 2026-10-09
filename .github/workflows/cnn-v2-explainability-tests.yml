@@ -5,10 +5,12 @@ on:
     branches: [central]
     paths:
       - "src/core/neural/faltando_explainability.py"
+      - "src/core/neural/faltando_activation_overlay.py"
       - "src/core/neural/faltando_explainability_runner.py"
       - "src/ui/widgets/neural_evidence.py"
       - "src/ui/adhesive_multilight_inspection.py"
       - "tests/test_faltando_explainability.py"
+      - "tests/test_faltando_activation_overlay.py"
       - "tests/test_faltando_explainability_crash_isolation.py"
       - "tests/test_neural_evidence_board.py"
       - ".github/workflows/cnn-v2-explainability-tests.yml"
@@ -39,7 +41,7 @@ jobs:
           python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
       - name: Compile neural modules and Qt visual panels
         run: |
-          python -m py_compile src/core/neural/faltando_explainability.py src/core/neural/faltando_explainability_runner.py src/ui/widgets/neural_evidence.py src/ui/adhesive_multilight_inspection.py tests/test_faltando_explainability.py tests/test_neural_evidence_board.py
+          python -m py_compile src/core/neural/faltando_activation_overlay.py src/core/neural/faltando_explainability.py src/core/neural/faltando_explainability_runner.py src/ui/widgets/neural_evidence.py src/ui/adhesive_multilight_inspection.py tests/test_faltando_explainability.py tests/test_neural_evidence_board.py
       - name: Validate REAL CNN maps, KNN shadow mode, and image layouts
         run: |
-          python -m unittest tests.test_faltando_explainability tests.test_faltando_explainability_crash_isolation tests.test_neural_evidence_board tests.test_faltando_cnn_v2_live tests.test_adhesive_multilight_expert_analysis -v
+          python -m unittest tests.test_faltando_activation_overlay tests.test_faltando_explainability tests.test_faltando_explainability_crash_isolation tests.test_neural_evidence_board tests.test_faltando_cnn_v2_live tests.test_adhesive_multilight_expert_analysis -v

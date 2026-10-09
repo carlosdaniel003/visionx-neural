@@ -1,7 +1,7 @@
-"""Painel horizontal com 6 MAPAS DERIVADOS DA CNN FALTANDO v2.
+"""Painel com TESTE ORIGINAL sob sobreposições reais da CNN FALTANDO v2.
 
-Sondas dos epicentros AOI em worker Qt; jamais filtros da imagem original.
-A decisão operacional KNN/CNN não é alterada.
+Seis cartões horizontais, com pequena referência GABARITO em cada imagem.
+Inferência/gradientes continuam isolados no subprocesso Python.
 """
 from __future__ import annotations
 
@@ -121,7 +121,7 @@ class _DiagnosticTile(QFrame):
         root.setContentsMargins(9, 8, 9, 8)
         root.setSpacing(5)
         label = "MAIOR" if epicenter == "major" else "MENOR"
-        self.heading = QLabel(f"EPICENTRO {label} • {mode.upper()}")
+        self.heading = QLabel(f"EPICENTRO {label} • TESTE + {mode.upper()}")
         self.heading.setStyleSheet(
             "color:#f5c518;font-size:11px;font-weight:800"
         )
@@ -165,20 +165,24 @@ class _EpicenterSection(QWidget):
             f"{data['layer']} • classe local {data['target_class']}"
         )
         notes = (
-            "Diferença das features convolucionais entre (ref,teste) e (ref,ref). "
-            "Projeção da CNN, relativa a esta ROI.",
-            "Grad-CAM REAL do logit local " + data['target_class'] +
-            ". Sonda ROI, não voto operacional da peça.",
-            "Energia RMS das features do encoder. "
-            "Projeção interna sem decoder nem reconstrução literal RGB.",
+            "Imagem original do TESTE + diferença das ativações CNN "
+            "(gabarito/teste versus gabarito/gabarito). GAB = referência. "
+            "Azul: baixa; vermelho: alta resposta relativa. "
+            "Sonda visual, não classificação.",
+            "Imagem original do TESTE + Grad-CAM do logit local "
+            + data['target_class'] + ". Áreas mais claras são contribuições "
+            "espaciais relativas. GAB = referência. Não altera voto KNN/CNN.",
+            "Imagem original do TESTE + projeção RMS das ativações do encoder. "
+            "GAB = referência. Não é reconstrução RGB de um decoder treinado.",
         )
         vals = data.get("raw_feature_means", [None, None, None])
         for index, (tile, frame, note) in enumerate(
             zip(self.tiles, data["images"], notes)
         ):
             value = vals[index] if index < len(vals) else None
-            text = (f"energia {value:.4f}" if value is not None
-                    else "sem métrica")
+            units = ("Δ latent.", "Grad-CAM", "RMS encoder")
+            text = (f"{units[index]} {value:.4f} • GAB ↖"
+                    if value is not None else "Sonda indisponível")
             tile.render_data(frame, text, note)
 
     def render_status(self, status: str, detail: str):
@@ -289,7 +293,7 @@ class NeuralEvidencePanel(QFrame):
         root.addWidget(self.scroll)
 
         self.footer = QLabel(
-            "SONDAS DA CNN • NÃO ALTERAM A DECISÃO KNN / CNN"
+            "TESTE ORIGINAL + CNN SOBREPOSTA • GAB ↖"
         )
         self.footer.setStyleSheet(
             "color:#aaa; font:9px Consolas;"
@@ -357,8 +361,8 @@ class NeuralEvidencePanel(QFrame):
             for key in EPICENTERS:
                 self.sections[key].render_evidence(maps.get(key))
             self.footer.setText(
-                "MAPAS DA CNN VERIFICADA • SONDAS ROI • "
-                "NÃO SÃO RECONSTRUÇÕES RGB NEM VOTO OPERACIONAL"
+                "TESTE ORIGINAL + SOBREPOSIÇÃO CNN • "
+                "GAB ↖ REFERÊNCIA • SEM ALTERAR O JULGAMENTO"
             )
         self._refresh_arrows()
 
