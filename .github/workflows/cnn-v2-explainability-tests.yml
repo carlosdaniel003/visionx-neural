@@ -1,0 +1,43 @@
+name: ODIN CNN V2 GradCAM Real Feature Maps
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/core/neural/faltando_explainability.py"
+      - "src/ui/widgets/neural_evidence.py"
+      - "src/ui/adhesive_multilight_inspection.py"
+      - "tests/test_faltando_explainability.py"
+      - "tests/test_neural_evidence_board.py"
+      - ".github/workflows/cnn-v2-explainability-tests.yml"
+  pull_request:
+    branches: [central]
+  workflow_dispatch:
+
+jobs:
+  cnn-explainability:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: "offscreen"
+      PYTHONUTF8: "1"
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Qt native runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0
+      - name: Torch CPU and image packages
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
+      - name: Compile neural modules and Qt visual panels
+        run: |
+          python -m py_compile src/core/neural/faltando_explainability.py src/ui/widgets/neural_evidence.py src/ui/adhesive_multilight_inspection.py tests/test_faltando_explainability.py tests/test_neural_evidence_board.py
+      - name: Validate REAL CNN maps, KNN shadow mode, and image layouts
+        run: |
+          python -m unittest tests.test_faltando_explainability tests.test_neural_evidence_board tests.test_faltando_cnn_v2_live tests.test_adhesive_multilight_expert_analysis -v

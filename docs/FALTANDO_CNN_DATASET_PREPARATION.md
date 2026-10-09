@@ -930,3 +930,68 @@ três imagens empilhadas verticalmente e barra de rolagem vertical
 Mudança estritamente de **apresentação**, não toca CNN FALTANDO v2, KNN,
 training, inferência, julgamento SIDE/TOP/MID ou comandos 0/1 da XP.
 Teste: \`tests/test_neural_evidence_board.py\`.
+
+
+## 09/10/2026 — v2 explicabilidade neural REAL (sem filtros AOI)
+
+**Mudança:** substituir a tríade antiga de cinza/diferenças/blocos (operações
+OpenCV sobre pixels AOI) por mapas computados exclusivamente com as
+atividades internas do checkpoint **CNN FALTANDO v2** validado por SHA-256.
+
+**Modelo e limitação importante:** \`FaltandoCNNV2\` é classificador sem decoder.
+Seu encoder recebe **9 canais** (gabarito, teste e módulo da diferença)
+para cada escala, não encoders RGB independentes. A arquitetura usa
+5 blocos Conv/GroupNorm/SiLU, pooling 2×2 e head linear. O código usa a
+saída espacial de **\`encoder.4\`** antes do pooling.
+
+**Três cartas neurais reais, em cada um dos dois epicentros AOI:**
+
+1. **DIF. LATENTE** — comparar, com os MESMOS pesos \`encoder[:5]\`,
+   as features do par \`(gabarito, teste)\` contra o contrafactual
+   \`(gabarito, gabarito)\`; reduzir por média \`abs(Fpar - Fbase)\`.
+   Diferença zero produz azul, azul→vermelho corresponde à magnitude
+   normalizada RELATIVA de cada mapa, não um score operacional.
+2. **GRAD-CAM** — forward real pela CNN (os quatro tensores de entrada,
+   máscara SIDE e duas escalas), gradiente do logit da classe local
+   (NG se logit≥0, caso contrário OK representado por -logit)
+   sobre a saída de \`encoder.4\` do ramo completo; média dos gradientes
+   sobre o espaço, soma dos canais ponderados, ReLU e normalização.
+3. **ATIVAÇÃO CNN** — energia RMS espacial dos canais de \`encoder.4\`
+   gerados pelo par real de referência/teste, não transformação da
+   imagem original. **NÃO** é decoder nem reconstrução RGB literal.
+
+**Geometria:** cada epicentro é submetido à mesma rotina
+\`_letterbox_rgb\` e \`_focus_crop\` que alimenta o classificador.
+A visualização desfaz o padding para mostrar o mapa apenas no recorte.
+**As imagens são sondagens da CNN sobre as regiões AOI**, não o Grad-CAM
+da inferência operacional original no quadro integral: não deduzem
+o score final nem demonstram causalidade completa. O score local
+é isolado e identificado como não calibrado.
+
+**Roteamento e segurança:**
+- Em \`KNOWN_KNN\`, o resultado 0/1 continua vindo **exclusivamente da
+  memória humana**; a mesma CNN FALTANDO v2 pode rodar após o julgamento
+  para EXPLICAR visualmente o par, sem consultar/modificar a memória.
+- Em \`NEW_CNN\`, a explicação ocorre **após o julgamento CNN original**,
+  em worker Qt auxiliar sem bloquear a thread de interface.
+- ADESIVO e categorias fora de \`uses_faltando_v2\` não iniciam worker CNN.
+- A instância auxiliar usa \`FaltandoCNNLive._load()\`, com a verificação
+  atual de SHA, esquema/versão e ponteiro online, sem treinar ou trocar pesos.
+  A captura do hook de forward/grad e dos contrafactuais é serializada por
+  lock para não cruzar as iluminações; mapas antigos são descartados por
+  ID do ciclo ao receber uma nova inspeção.
+- Em checkpoint ausente, inválido, categoria não suportada, recorte
+  indisponível ou exceção, a interface escreve **CNN INDISPONÍVEL**
+  e **não** substitui imagens por filtros OpenCV, simulados ou scores zero.
+
+**Visual:** seis cards preto/amarelo em uma linha e rolagem horizontal,
+três para o epicentro maior e três para o menor; sem scroll vertical
+interno. O checkpoint continua sendo classificativo; o termo
+"reconstrução de ativação" se refere somente a projeção RMS, não a
+reconstrução em pixels aprendida por decoder.
+
+**Testes:** \`tests/test_faltando_explainability.py\` faz forward real,
+autograd, mapas sobre pares iguais/diferentes, não alteração de pesos,
+verificação de checkpoint e faltas de ROI;
+\`tests/test_neural_evidence_board.py\` cobre worker isolado,
+sem pixel fallback, evento antigo descartado, modo KNN e layout.
