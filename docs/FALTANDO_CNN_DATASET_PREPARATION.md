@@ -809,3 +809,39 @@ Os métodos antigos do módulo de memória independente foram
 preservados para testes/compatibilidade, mas não são instalados por
 __main.py__. A correção é **somente de interface**; sem alterações
 nos modelos, memória, treinamento, julgamento ou produção.
+
+
+## 09/10/2026 — Status visual binário JÁ VI / NUNCA VI e painel KNN por iluminação
+
+**Necessidade observada na AOI:** uma inspeção DESLOCADO teve
+SIDE = \`KNOWN_KNN\` (OK), TOP = \`KNOWN_KNN\` (OK) e
+MID = \`NEW_CNN\` (OK). O aviso "MEMÓRIA MISTA" era tecnicamente
+descritivo, mas não respondia à pergunta operacional "já vi esse caso?".
+Para este evento, a resposta correta na tela é **JÁ VI**.
+
+**Novo contrato de apresentação (não altera decisão):**
+- **JÁ VI**: ao menos uma das luzes SIDE/TOP/MID corresponde exatamente
+  a um par gabarito/teste já confirmado por humano no KNN.
+- **NUNCA VI**: existe consulta válida ao KNN, mas nenhuma luz consultada
+  encontrou par humano exato. Isto NÃO prova que a classe física de defeito
+  seja inédita; apenas que o par exato não foi recuperado.
+- Dados ausentes / rota inválida / conflito sem match verificado: não
+  inventar "NUNCA VI"; o cartão de memória mantém explicação técnica,
+  e o veredito não exibe subtítulo KNN incerto.
+- Nunca mostrar "MEMÓRIA MISTA" ou outra **terceira alternativa** na
+  mensagem flutuante. O debug continua registrando as três rotas individuais.
+
+**Memória de anomalias KNN:**
+- Cabeçalho visual amplo com JÁ VI ou NUNCA VI, preenchimento colorido.
+- Cartões SIDE/TOP/MID, com **verde** para KNN par exato confirmado,
+  **amarelo** para imagem nova direcionada à CNN, **cinza** para dado
+  indisponível; status por luz e rótulos humanos OK/NG preservados.
+- Exemplo DESLOCADO observado: "JÁ VI • 2/3 ILUMINAÇÕES
+  RECONHECIDAS", SIDE verde OK, TOP verde OK, MID amarelo CNN.
+- Porcentagens da CNN não são interpretadas como probabilidades de
+  reconhecimento pela memória. Sem simular similaridade KNN.
+
+**Teste de regressão:** \`tests/test_binary_knn_memory_dashboard.py\`.
+A mudança só afeta os rótulos da interface e o desenho do painel.
+Não altera KNN, CNN, treinamento, decisões em Teste/Sombra/Produção,
+checkpoint, nem o envio de 0/1 à AOI XP.

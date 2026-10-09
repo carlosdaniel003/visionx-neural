@@ -12,35 +12,17 @@ from PyQt6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, Qt
 from PyQt6.QtWidgets import QFrame, QGraphicsOpacityEffect, QLabel, QVBoxLayout
 
 from src.ui.decision_key_feedback import FEEDBACK_FADE_OUT_MS
-from src.ui.neural_telemetry_model import memory_panel_text, neural_summary
+from src.ui.neural_telemetry_model import memory_panel_text, memory_seen_state
 
 
 def memory_feedback_state(analysis: dict | None) -> tuple[str, str, str]:
-    """(título, explicação, tom) sem inferir memória por score CNN."""
-    if not isinstance(analysis, dict) or not analysis:
-        return "", "", ""
-    m = neural_summary(analysis)
-    route = m["memory_route"]
-    routes = m["memory_routes"]
-    if route == "KNOWN_KNN":
-        label = m["memory_label"] or "?"
-        return ("JÁ VISTO • MEMÓRIA KNN",
-                f"Par gabarito/teste humano exato • rótulo {label}", "known")
-    if route == "MEMORY_CONFLICT":
-        return ("MEMÓRIA CONFLITANTE",
-                "Rótulos humanos contraditórios • revisão obrigatória", "review")
-    if route == "MULTILIGHT_MIXED":
-        known = [light for light in ("SIDE", "TOP", "MID")
-                 if routes.get(light) == "KNOWN_KNN"]
-        new = [light for light in ("SIDE", "TOP", "MID")
-               if routes.get(light) in {"NEW_CNN", "NEW_EXPERTS"}]
-        return ("MEMÓRIA MISTA • 3 LUZES",
-                f"Conhecidas: {', '.join(known) or 'nenhuma'} | "
-                f"Novas: {', '.join(new) or 'nenhuma'}", "mixed")
-    if route in {"NEW_CNN", "NEW_EXPERTS"}:
-        return ("CASO NOVO • SEM MATCH EXATO",
-                "ODIN não encontrou este par nos registros humanos KNN.", "new")
-    return ("", "", "")
+    """Consulta binária por pares KNN verificados."""
+    memory = memory_seen_state(analysis)
+    if memory["status"] == "JA_VI":
+        return "JÁ VI", memory_panel_text(analysis)[1], "known"
+    if memory["status"] == "NUNCA_VI":
+        return "NUNCA VI", memory_panel_text(analysis)[1], "new"
+    return "", "", ""
 
 
 class InspectionMemoryFeedbackOverlay(QFrame):

@@ -48,7 +48,7 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
         self.assertTrue(p.show_ai_verdict_feedback(report("NEW_CNN")))
         card = p.ai_verdict_feedback
         self.assertEqual(card.verdict_label.text(), "FALHA FALSA")
-        self.assertEqual(card.memory_state_label.text(), "CASO NOVO • SEM MATCH EXATO")
+        self.assertEqual(card.memory_state_label.text(), "NUNCA VI")
         self.assertFalse(card.memory_state_label.isHidden())
         self.assertEqual(card.height(), VERDICT_FEEDBACK_HEIGHT)
         self.assertFalse(hasattr(p, "inspection_memory_feedback"))
@@ -62,7 +62,7 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
         )))
         card = p.ai_verdict_feedback
         self.assertEqual(card.verdict_label.text(), "DEFEITO REAL")
-        self.assertEqual(card.memory_state_label.text(), "JÁ VISTO • KNN EXATO")
+        self.assertEqual(card.memory_state_label.text(), "JÁ VI")
         self.assertIn("rótulo NG", card.toolTip())
 
     def test_mixed_memory_and_absent_route_are_not_misrepresented(self):
@@ -73,11 +73,11 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
             light_routes={"SIDE": "KNOWN_KNN", "TOP": "NEW_CNN", "MID": "KNOWN_KNN"},
         ))
         card = p.ai_verdict_feedback
-        self.assertEqual(card.memory_state_label.text(), "MEMÓRIA MISTA • 3 LUZES")
+        self.assertEqual(card.memory_state_label.text(), "JÁ VI")
         p.show_ai_verdict_feedback(report(""))
         self.assertEqual(card.memory_state_label.text(), "")
         self.assertTrue(card.memory_state_label.isHidden())
-        self.assertNotIn("CASO NOVO", card.toolTip())
+        self.assertNotIn("NUNCA VI", card.toolTip())
 
     def test_known_and_new_subtitles_follow_exact_same_opacity_timeline(self):
         p = self.panel()

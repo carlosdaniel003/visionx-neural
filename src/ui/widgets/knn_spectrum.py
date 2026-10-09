@@ -7,7 +7,7 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 from src.ui.memory_status_model import memory_status_from_detail
-from src.ui.neural_telemetry_model import memory_panel_text
+from src.ui.neural_telemetry_model import memory_panel_text, memory_seen_state, LIGHTS
 
 
 class KNNSpectrumWidget(QWidget):
@@ -53,6 +53,12 @@ class KNNSpectrumWidget(QWidget):
         self.model = memory_status_from_detail(detail)
         self.recognition_route = str((detail or {}).get("recognition_route", "") or "")
         self.route_header, self.route_explanation = memory_panel_text({"detail": detail})
+        self.seen_state = memory_seen_state({"detail": detail})
+        self.route_labels = {
+            light: str((detail or {}).get("cnn_v2_light_diagnostics", {}).get(light, {}).get("human_memory_label", "") or "")
+            for light in LIGHTS
+        }
+        self.setToolTip(self.route_header + "\n" + self.route_explanation)
         self.is_active = bool(self.model["active"])
         self.has_memory = bool(self.model["has_memory"])
         self.memory_available = bool(self.model["memory_available"])
@@ -321,11 +327,126 @@ class KNNSpectrumWidget(QWidget):
             self._elide(painter, quantity, width),
         )
 
+    def _draw_recognition_dashboard(self, painter: QPainter) -> None:
+        """Área KNN inteira preenchida por indicadores reais de SIDE/TOP/MID.
+
+        As cores representam a existência do par humano EXATO, nunca
+        probabilidade de acerto ou similaridade da CNN.
+        """
+        info = getattr(self, "seen_state", {})
+        state = info.get("status")
+        known = info.get("recognized_lights", [])
+        multilight = bool(info.get("has_multilight"))
+        w, h = float(self.width()), float(self.height())
+
+        # Cabeçalho amplo, bem contrastado, sem fundo vazio.
+        color = QColor("#4ade80" if state == "JA_VI" else
+                       "#f5c518" if state == "NUNCA_VI" else "#8da2b5")
+        painter.setPen(QPen(color, 2))
+        painter.setBrush(QColor("#14231d" if state == "JA_VI" else
+                                "#252012" if state == "NUNCA_VI" else "#182028"))
+        painter.drawRoundedRect(QRectF(8, 8, w-16, 66), 9, 9)
+        painter.setPen(color)
+        painter.setFont(QFont("Consolas", 17, QFont.Weight.Bold))
+        painter.drawText(
+            QRectF(18, 12, w-36, 30),
+            Qt.AlignmentFlag.AlignCenter,
+            info.get("label") or "CONSULTA NÃO CONFIRMADA",
+        )
+        painter.setPen(QColor("#d6e5ed"))
+        painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
+        caption = (
+            f"{len(known)}/3 ILUMINAÇÕES RECONHECIDAS NA MEMÓRIA KNN"
+            if multilight and state else
+            "PAR HUMANO EXATO RECUPERADO" if state == "JA_VI" else
+            "NENHUM PAR EXATO RECUPERADO" if state == "NUNCA_VI" else
+            "NÃO HÁ ROTA KNN VERIFICADA"
+        )
+        painter.drawText(QRectF(18, 43, w-36, 21),
+                         Qt.AlignmentFlag.AlignCenter, caption)
+
+        light_routes = info.get("routes_by_light", {})
+        cards = (
+            [(light, light_routes.get(light, ""), self.route_labels.get(light, ""))
+             for light in LIGHTS]
+            if multilight else
+            [("INSPEÇÃO", self.recognition_route,
+              self.route_labels.get("INSPEÇÃO", self.best_label))]
+        )
+        vertical = w < 660
+        gap = 10
+        left, right, top, bottom = 8.0, 8.0, 88.0, 32.0
+        usable_h = max(75.0, h - top - bottom)
+        if vertical:
+            box_h = max(42.0, (usable_h - gap*(len(cards)-1))/len(cards))
+            box_w = w - left - right
+        else:
+            box_h = usable_h
+            box_w = (w-left-right-gap*(len(cards)-1))/len(cards)
+
+        for i, (light, route, human_label) in enumerate(cards):
+            if vertical:
+                x,y = left, top + i*(box_h + gap)
+            else:
+                x,y = left + i*(box_w + gap), top
+            if route == "KNOWN_KNN":
+                accent, fill = "#4ade80", "#152c20"
+                primary = "JÁ VI"
+                secondary = "KNN • PAR EXATO" + (
+                    f" • {human_label.upper()}" if human_label.upper() in {"OK","NG"} else "")
+            elif route in {"NEW_CNN", "NEW_EXPERTS"}:
+                accent, fill = "#f5c518", "#2a2418"
+                primary = "NUNCA VI"
+                secondary = "CNN FALTANDO v2" if route == "NEW_CNN" else "OUTRO ESPECIALISTA"
+                secondary += " • SEM MATCH EXATO"
+            else:
+                accent, fill = "#8093a3", "#19232a"
+                primary, secondary = "N/D", "SEM CONSULTA CONFIRMADA"
+            rect = QRectF(x,y,box_w,box_h)
+            painter.setPen(QPen(QColor(accent), 1.5))
+            painter.setBrush(QColor(fill))
+            painter.drawRoundedRect(rect, 8, 8)
+
+            # Marcador preenchido: status visual independente de texto.
+            painter.setBrush(QColor(accent))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QRectF(x+15,y+14,13,13))
+            painter.setPen(QColor("#e4edf4"))
+            painter.setFont(QFont("Consolas", 12, QFont.Weight.Bold))
+            painter.drawText(QRectF(x+36,y+7,box_w-48,28),
+                             Qt.AlignmentFlag.AlignVCenter,
+                             light)
+            painter.setPen(QColor(accent))
+            painter.setFont(QFont("Consolas", 13, QFont.Weight.Bold))
+            painter.drawText(QRectF(x+12,y+36,box_w-24,28),
+                             Qt.AlignmentFlag.AlignCenter, primary)
+            painter.setPen(QColor("#cfdae4"))
+            painter.setFont(QFont("Consolas", 8))
+            text_w = box_w - 24
+            painter.drawText(
+                QRectF(x+12, y+67 if box_h>=105 else y+60,
+                       text_w, max(17, box_h-75)),
+                Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+                | Qt.TextFlag.TextWordWrap,
+                secondary if text_w >= 230 else self._elide(painter, secondary, text_w)
+            )
+
+        painter.setPen(QColor("#9caeb8"))
+        painter.setFont(QFont("Consolas", 8))
+        painter.drawText(QRectF(10, h-29, w-20, 23),
+                         Qt.AlignmentFlag.AlignCenter,
+                         "Já vi = ≥1 luz conhecida • Nunca vi = nenhuma luz conhecida • pares exatos")
+
     def paintEvent(self, event):
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor("#101010"))
+
+        if getattr(self, "recognition_route", "") or getattr(self, "seen_state", {}).get("has_multilight"):
+            self._draw_recognition_dashboard(painter)
+            painter.end()
+            return
 
         if not self.is_active:
             painter.setPen(QColor("#6e7681"))
@@ -335,22 +456,6 @@ class KNNSpectrumWidget(QWidget):
                 Qt.AlignmentFlag.AlignCenter,
                 "Memória visual aguardando inspeção",
             )
-            painter.end()
-            return
-
-        if getattr(self, "recognition_route", "") in {
-            "NEW_CNN", "KNOWN_KNN", "MULTILIGHT_MIXED", "NEW_EXPERTS"
-        }:
-            painter.setPen(QColor("#f5c518"))
-            painter.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
-            painter.drawText(self.rect().adjusted(12, 12, -12, -120),
-                             Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
-                             self.route_header)
-            painter.setPen(QColor("#c9d1d9"))
-            painter.setFont(QFont("Consolas", 9))
-            painter.drawText(self.rect().adjusted(12, 92, -12, -12),
-                             Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
-                             self.route_explanation)
             painter.end()
             return
 
