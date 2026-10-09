@@ -1,3 +1,71 @@
+## 09/10/2026 — Auditoria experimental da discriminação NG da KNN
+
+**Base observada em `memory_levels_20261009_173758_183510`**:
+952 assinaturas humanas elegíveis; 925 `CONCORDA`, 27 `DIVERGE`
+no teste leave-one-record-out (top-5). Entre 61 NG, 26 foram
+erroneamente classificados como OK; entre 891 OK, apenas 1
+foi incorretamente NG. A concordância total de 97,16% NÃO
+representa segurança NG (sensibilidade NG = 35/61 = 57,38%).
+Há 59 registros pertencentes a grupos de assinatura duplicada,
+sem conflito exato de rótulos detectado no relatório original.
+
+**Implementação autorizada: comparação offline, sem mudança operacional.**
+
+`src/services/startup_regression/knn_ng_discrimination_audit.py`:
+reutiliza `compare_anomaly_signatures` e
+`KNNExpert._weighted_vote` no baseline. É proibido consultar o
+próprio registro, sair da categoria/iluminação, aceitar evento
+igual quando `event_id` é conhecido ou instanciar modelos.
+A distância entre duas assinaturas é calculada uma vez e
+reutilizada entre os cinco métodos diagnósticos:
+
+- `BASELINE_TOP5`: voto inverso por distância existente;
+- `SEM_DUPLICATAS_TOP5`: remove todas as assinaturas
+  idênticas à consulta, reduz cópias dos vizinhos por hash;
+- `BALANCEADO_3_POR_CLASSE`: até três vizinhos de cada classe,
+  com média do peso inverso de distância por classe;
+- `BALANCEADO_SEM_DUPLICATAS`: balanceamento após exclusão
+  de cópias, empates e assinaturas contraditórias;
+- `BALANCEADO_COM_REVISAO`: mesmo balanceamento e abstinência
+  explícita quando similaridade máxima < 0,80, margem de
+  voto NG em torno de 0,5 menor que 0,10, falta uma classe
+  ou há conflito/empate. **Os limiares são hipóteses
+  exploratórias não calibradas com conjunto independente.**
+
+**Contrato de métricas:** cada modo contabiliza separadamente
+`correct_NG`, `missed_NG_as_OK`, `review_NG`,
+`correct_OK`, `false_NG_on_OK`, `review_OK`.
+Revisão não é contada como detecção NG automática correta.
+Acurácia de decisões automáticas divulga explicitamente
+o denominador após abstenções; a taxa de revisão é informada.
+Resultados por categoria são apresentados separadamente.
+
+`src/services/startup_regression/knn_ng_discrimination_cli.py`
+gera `reports/startup_regression/knn_ng_audit_*.json` e TXT.
+`tests/test_knn_ng_discrimination_audit.py` exercita
+voto baseline, isolamento estrito categoria/luz, exclusão de
+cópias e eventos, balanceamento, revisão, rótulos conflitantes,
+ausência de NG, proibição de writes e de inicialização de modelo.
+Workflow Windows atualizado.
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.knn_ng_discrimination_cli
+```
+
+**Não usar esta comparação como ganho confirmado em imagens novas.**
+Amostras repetidas podem pertencer à mesma placa ou lote sem
+`event_id` declarado; deduplicar vetores não substitui um
+teste segregado por placa/lote/data. Antes de adotar qualquer
+política em produção, calibrar exclusivamente em dados de treino,
+validar em testes independentes (especialmente defeitos NG) e
+manter revisão obrigatória em caso incerto. Nenhuma alteração em
+`main.py`, `KNNExpert`, `public/dataset`, CNN FALTANDO V2
+ou startup gate foi feita.
+
+---
+
 ## 09/10/2026 — Memória KNN em dois níveis, somente SIMULAÇÃO
 
 **Origem da mudança:** após
