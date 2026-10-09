@@ -63,7 +63,7 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
         card = p.ai_verdict_feedback
         self.assertEqual(card.verdict_label.text(), "DEFEITO REAL")
         self.assertEqual(card.memory_state_label.text(), "JÁ VI")
-        self.assertIn("rótulo NG", card.toolTip())
+        self.assertIn("Rótulo NG", card.toolTip())
 
     def test_mixed_memory_and_absent_route_are_not_misrepresented(self):
         p = self.panel()
