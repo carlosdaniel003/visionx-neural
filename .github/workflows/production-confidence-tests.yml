@@ -7,6 +7,7 @@ on:
     paths:
       - "main.py"
       - "src/ui/production_confidence_gate.py"
+      - "src/core/neural/faltando_category_scope.py"
       - "src/services/anomaly_learning.py"
       - "src/ui/operational_controls.py"
       - "tests/test_production_confidence_gate.py"
