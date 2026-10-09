@@ -892,3 +892,41 @@ Os resultados OK/NG e a memória KNN não são afetados.
 
 **Regressões:** \`tests/test_neural_evidence_board.py\`
 junto com testes existentes de inspeção e especialistas SIDE/TOP/MID.
+
+
+## 09/10/2026 — Revisão visual do Painel Neural Explicável (horizontal)
+
+Motivação: o painel de SIDE mostrava card textual "JÁ VI • KNN EXATO"
+à esquerda e o card azul/acinzentado de evidências à direita, com
+três imagens empilhadas verticalmente e barra de rolagem vertical
+*interna*. Isso desperdiçava altura e destoava do tema do ODIN.
+
+**Novo contrato da interface (modo multilight):**
+- Remover o card de **texto KNN/CNN** do setor de especialistas sempre
+  que os recortes visuais do evento estiverem presentes. Os detalhes
+  completos continuam disponíveis nos painéis Memória de Anomalias,
+  Decisão e Confiança, e Copiar debug. Sem alteração de memória.
+- Um **único painel preto com borda amarela** para os recortes AOI.
+  Descartados fundos azul-acinzentados e textos explicativos longos.
+- Uma faixa horizontal contínua com **seis cards** de mesmo tamanho:
+  **MAIOR — Cinza, Diferenças, Blocos**; **MENOR — Cinza,
+  Diferenças, Blocos**; separador sutil entre os epicentros.
+- Uma **barra de rolagem horizontal interna**, com setas ◀/▶,
+  desliza para os lados quando as seis imagens não couberem no espaço.
+  Jamais reorganizar esses cards em colunas verticais. O contêiner
+  neural e o scroll de especialistas não possuem scrollbar vertical.
+- Altura fixa do painel neural, miniaturas completas (aspect ratio
+  preservado) em todos os tamanhos de viewport. Em monitor grande a
+  faixa cabe integralmente; em notebook, deslocamento horizontal.
+- SIDE/TOP/MID permanecem regiões independentes. O controle de
+  navegação horizontal mestre legado continua disponível para
+  especialistas determinísticos; o painel neural tem controle próprio.
+- Quando ROI maior ou menor está ausente, mostrar SEM RECORTE em seus
+  respectivos cards, nunca inventar pixels/score.
+- Grad-CAM e mapas de atenção não são inferidos desses mapas de
+  diferença; as visualizações continuam diagnóstico de pixels
+  externos ao checkpoint.
+
+Mudança estritamente de **apresentação**, não toca CNN FALTANDO v2, KNN,
+training, inferência, julgamento SIDE/TOP/MID ou comandos 0/1 da XP.
+Teste: \`tests/test_neural_evidence_board.py\`.
