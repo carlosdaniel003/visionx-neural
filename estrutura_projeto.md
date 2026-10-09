@@ -28,6 +28,10 @@ Somente 3 dos 45 pares tinham correspondência exata com o acervo
   ambos os recortes; classifica resultado como
   `PAR_RECONSTRUIDO_PARA_REVISAO` **apenas se houver ambas as
   impressões digitais declaradas e correspondentes**.
+  Se o JSON indicar o PNG fonte no **mesmo diretório**, mas não
+  guardar hash da origem, pode extrair para diagnosticar OCR sob
+  `ORIGEM_JSON_LOCAL_SEM_HASH_PARA_REVISAO`; isso nunca comprova
+  proveniência, nem conta como recuperação segura.
 - Outros diagnósticos: `TESTE_POR_HASH_SEM_GABARITO`,
   `DOIS_HASHES_DE_PARES_LOCALIZADOS_PARA_REVISAO`,
   `ARQUIVOS_POR_NOME_SEM_VINCULO_DE_HASH`,
