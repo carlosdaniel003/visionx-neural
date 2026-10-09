@@ -7,6 +7,7 @@ on:
     paths:
       - "src/services/startup_regression/cnn_archive_validation.py"
       - "src/services/startup_regression/cnn_archive_validation_cli.py"
+      - "src/services/startup_regression/knn_archive_predictor.py"
       - "tests/test_startup_regression_cnns.py"
       - ".github/workflows/startup-regression-cnns.yml"
   workflow_dispatch:
@@ -30,7 +31,7 @@ jobs:
       - name: Verificar sintaxe
         shell: pwsh
         run: |
-          python -m py_compile src/services/startup_regression/cnn_archive_validation.py src/services/startup_regression/cnn_archive_validation_cli.py tests/test_startup_regression_cnns.py
+          python -m py_compile src/services/startup_regression/cnn_archive_validation.py src/services/startup_regression/cnn_archive_validation_cli.py src/services/startup_regression/knn_archive_predictor.py tests/test_startup_regression_cnns.py
       - name: Testar escopos e ausência do segundo modelo
         shell: pwsh
         run: |
