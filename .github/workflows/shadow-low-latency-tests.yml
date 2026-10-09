@@ -8,6 +8,7 @@ on:
       - "src/ui/adhesive_multilight_inspection.py"
       - "src/ui/adhesive_multilight_automation.py"
       - "src/services/screen_monitor.py"
+      - "src/services/network_receiver.py"
       - "src/services/anomaly_learning.py"
       - "src/services/decision_persistence.py"
       - "tests/test_shadow_fast_capture.py"
@@ -37,7 +38,7 @@ jobs:
           python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6 pytesseract mss
       - name: Syntax check
         run: |
-          python -m py_compile src/ui/control_panel.py src/ui/adhesive_multilight_inspection.py src/ui/adhesive_multilight_automation.py src/services/screen_monitor.py src/services/anomaly_learning.py src/services/decision_persistence.py tests/test_shadow_fast_capture.py tests/test_shadow_partial_persistence.py tests/test_shadow_xp_adaptive_capture.py agente_industrial_xp.py
+          python -m py_compile src/ui/control_panel.py src/ui/adhesive_multilight_inspection.py src/ui/adhesive_multilight_automation.py src/services/screen_monitor.py src/services/network_receiver.py src/services/anomaly_learning.py src/services/decision_persistence.py tests/test_shadow_fast_capture.py tests/test_shadow_partial_persistence.py tests/test_shadow_xp_adaptive_capture.py agente_industrial_xp.py
       - name: Capture, operator labels, 3-lights dataset, XP safety and regressions
         run: |
           python -m unittest tests.test_shadow_xp_adaptive_capture tests.test_shadow_fast_capture tests.test_shadow_partial_persistence tests.test_adhesive_multilight_inspection tests.test_adhesive_multilight_automation tests.test_fast_xp_decision_cycle tests.test_multilight_learning tests.test_faltando_shared_production -v

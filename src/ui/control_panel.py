@@ -91,6 +91,7 @@ class ControlPanel(QWidget):
         self.network_receiver = NetworkReceiver(port=5001)
         self.network_receiver.image_received.connect(self.handle_network_image)
         self.network_receiver.command_received.connect(self.handle_physical_keyboard)
+        self.network_receiver.xp_peer_discovered.connect(self.handle_xp_peer_discovered)
         self.network_receiver.log_updated.connect(self.update_network_status)
         
         self.network_receiver.start()
@@ -121,6 +122,18 @@ class ControlPanel(QWidget):
             )
         
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def handle_xp_peer_discovered(self, ip: str) -> None:
+        """Sincroniza Sombra desde a primeira transmissao XP."""
+        new_ip = str(ip or "").strip()
+        if not new_ip:
+            return
+        if new_ip != str(getattr(self, "last_xp_ip", "") or ""):
+            self._xp_shadow_last_attempt = None
+        self.last_xp_ip = new_ip
+        self._send_xp_shadow_control(
+            self.combo_mode.currentText() == "Modo Sombra"
+        )
 
     def _send_xp_shadow_control(self, enabled: bool, *, force: bool = False) -> bool:
         """Solicita pausa reduzida ao agente XP somente em Modo Sombra.

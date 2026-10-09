@@ -48,17 +48,30 @@ DEFAULT_CAPTURE_PAUSE_SECONDS = 3.0
 SHADOW_CAPTURE_PAUSE_SECONDS = 0.18
 SHADOW_LEASE_SECONDS = 25.0
 _shadow_capture_until = 0.0
+_shadow_capture_wakeup = threading.Event()
 
 def configurar_captura_sombra(habilitado):
     global _shadow_capture_until
     _shadow_capture_until = (
         time.time() + SHADOW_LEASE_SECONDS if habilitado else 0.0
     )
+    if habilitado:
+        # Acorda a primeira espera de 3s assim que o ODIN ativa Sombra.
+        _shadow_capture_wakeup.set()
 
 def pausa_pos_envio():
     if time.time() < _shadow_capture_until:
         return SHADOW_CAPTURE_PAUSE_SECONDS
     return DEFAULT_CAPTURE_PAUSE_SECONDS
+
+def aguardar_proximo_envio():
+    pausa = pausa_pos_envio()
+    despertou = _shadow_capture_wakeup.wait(pausa)
+    if despertou:
+        _shadow_capture_wakeup.clear()
+        # Nao usar captura instantanea apos mudanca de luz.
+        if pausa_pos_envio() < DEFAULT_CAPTURE_PAUSE_SECONDS:
+            time.sleep(SHADOW_CAPTURE_PAUSE_SECONDS)
 
 
 def eh_azul(cor):
@@ -350,9 +363,7 @@ def loop_vigia_tela():
                 # Sem comando do ODIN, mantem a pausa original de 3 s.
                 # Sombra: captura mais frequente, SEM eliminar os dois
                 # frames estaveis exigidos no PC VisionX.
-                pausa = pausa_pos_envio()
-                print("-> Imagem enviada. Pausa de {0:.2f}s.".format(pausa))
-                time.sleep(pausa)
+                aguardar_proximo_envio()
 
             except Exception as e:
                 print(

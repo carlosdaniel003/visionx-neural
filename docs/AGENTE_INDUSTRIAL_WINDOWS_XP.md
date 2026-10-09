@@ -1146,3 +1146,5 @@ Portanto, **esta funcionalidade não exige atualizar manualmente o `agente_indus
 - Compatibilidade: um agente XP anterior ignora o novo comando; nesse caso as análises continuam funcionando, mas a pausa rápida **não** entra em operação. A confirmação ACK é necessária para considerar a ativação real.
 - **Instalação manual obrigatória:** atualizar `agente_industrial_xp.py` no computador AOI Windows XP e reiniciar o agente. Atualizar somente o GitHub não instala nada no XP. Validar primeiro com uma peça supervisionada, conferindo se as duas imagens estáveis são realmente da mesma iluminação.
 - **Meta 2–3 s ainda não validada fisicamente.** Cronometrar XP→rede→SIDE/TOP/MID→veredito na fábrica; a latência real depende também de atualização da AOI, OCR, inferência e rede.
+
+A partir do primeiro pacote de rede recebido, o receptor anuncia o IP do XP. Assim o ODIN ativa Sombra **antes de completar a dupla de frames estáveis**. Quando o agente estiver na pausa original, o comando ON desperta a espera atual e aplica um intervalo de estabilização (0,18 s). Isso reduz o gargalo inicial sem eliminar a validação de dois frames no VisionX.

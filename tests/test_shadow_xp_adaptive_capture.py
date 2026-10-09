@@ -22,7 +22,7 @@ class XpAdaptiveCaptureTests(unittest.TestCase):
     def _xp_functions(self):
         source = (ROOT / "agente_industrial_xp.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
-        names = {"configurar_captura_sombra", "pausa_pos_envio"}
+        names = {"configurar_captura_sombra", "pausa_pos_envio", "aguardar_proximo_envio"}
         nodes = []
         for node in tree.body:
             if isinstance(node, ast.Assign) and any(
@@ -31,13 +31,15 @@ class XpAdaptiveCaptureTests(unittest.TestCase):
                     "SHADOW_CAPTURE_PAUSE_SECONDS",
                     "SHADOW_LEASE_SECONDS",
                     "_shadow_capture_until",
+                    "_shadow_capture_wakeup",
                 } for t in node.targets
             ):
                 nodes.append(node)
             if isinstance(node, ast.FunctionDef) and node.name in names:
                 nodes.append(node)
         clock = Clock()
-        ns = {"time": clock}
+        import threading
+        ns = {"time": clock, "threading": threading}
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "xp-agent", "exec"), ns)
         return source, clock, ns
 
@@ -53,10 +55,40 @@ class XpAdaptiveCaptureTests(unittest.TestCase):
         xp["configurar_captura_sombra"](True)
         xp["configurar_captura_sombra"](False)
         self.assertEqual(xp["pausa_pos_envio"](), 3.0)
-        self.assertIn("time.sleep(pausa)", source)
+        self.assertIn("aguardar_proximo_envio()", source)
         self.assertIn("ACK_SHADOW_ON", source)
         self.assertIn("ACK_SHADOW_OFF", source)
         ast.parse(source)
+
+    def test_on_wakes_first_three_second_delay(self):
+        _, _, xp = self._xp_functions()
+        sleeper = xp["_shadow_capture_wakeup"]
+        self.assertFalse(sleeper.is_set())
+        xp["configurar_captura_sombra"](True)
+        self.assertTrue(sleeper.is_set())
+        self.assertEqual(xp["pausa_pos_envio"](), 0.18)
+
+    def test_peer_discovery_configures_shadow_before_stability(self):
+        class Mode:
+            def currentText(self):
+                return "Modo Sombra"
+        class Panel:
+            combo_mode = Mode()
+            last_xp_ip = None
+            def __init__(self):
+                self.configured = []
+            def _send_xp_shadow_control(self, enabled):
+                self.configured.append(enabled)
+        panel = Panel()
+        ControlPanel.handle_xp_peer_discovered(panel, "169.254.87.100")
+        self.assertEqual(panel.configured, [True])
+        self.assertEqual(panel.last_xp_ip, "169.254.87.100")
+        receiver = (ROOT / "src/services/network_receiver.py").read_text(encoding="utf-8")
+        self.assertIn("xp_peer_discovered = pyqtSignal(str)", receiver)
+        self.assertLess(
+            receiver.index("self.xp_peer_discovered.emit(ip_origem)"),
+            receiver.index("self._stage_latest_candidate("),
+        )
 
     def test_transport_requires_ack_and_never_emits_zero_one(self):
         class Panel:
