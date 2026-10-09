@@ -4,7 +4,9 @@ Após a reconciliação encontrar 815 registros `visionx.memory.v2`
 sem PNGs de gabarito/teste, há um segundo comando para buscar
 automaticamente PNGs ainda disponíveis, cruzar referências de JSONs,
 hashes de conteúdo visual e tentar reconstrução com OCR somente
-quando houver uma imagem de origem **ligada por hash**.
+quando houver uma imagem de origem **ligada por hash**. Se só houver nome
+explícito no mesmo diretório do JSON, permite análise provisória
+sob `ORIGEM_JSON_LOCAL_SEM_HASH_PARA_REVISAO`, sem validar identidade.
 
 ```powershell
 cd "C:\visionx-neural-main"
