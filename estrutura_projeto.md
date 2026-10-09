@@ -1,3 +1,66 @@
+## 09/10/2026 — Sincronizador de diagnóstico: arquivo visual x memória KNN
+
+**Motivo:** operador solicitou solução via código, sem envio manual de
+212 PNGs/JSONs. Relatórios reais `cnn_validation_20261009_142229_727608`
+indicam CNN FALTANDO V2 = **201/202**, uma revisão em
+`2026-10-09_0857_DESLOCADO_SIDE.png`; memória KNN =
+**89/212**, 122 `SEM_COBERTURA` e 1 OCR inválido. A CNN
+mantém todos os 15 NG de seu escopo aprovados. Não inferir
+que 122 lacunas sejam erros de predição nem marcar como OK.
+
+**Esta etapa implementa apenas reconciliação read-only** do conteúdo
+real de `public/dataset/nao_anomalia` e `public/dataset/anomalia`
+com o acervo. Não treina, não cria memória, não altera `main.py`,
+não reclassifica defeitos nem habilita gate de inicialização.
+
+Módulos e testes:
+
+```text
+src/services/startup_regression/archive_reconciler.py
+src/services/startup_regression/archive_reconciler_cli.py
+tests/test_archive_reconciler.py
+.github/workflows/startup-regression-reconciliation.yml
+```
+
+O diagnóstico analisa **todos os JSONs de memória**, inclusive aqueles
+que o `KNNExpert._load_all` não carregaria. Reutiliza integralmente
+`VerifiedKNNMemory._entry` e `VerifiedKNNMemory._key` para testar
+o mesmo contrato exato da operação: assinatura de anomalia válida,
+`visionx.memory.v3`, fonte humana, rótulos coerentes, dois PNGs
+de auditoria, fingerprint e OCR/contexto. O screenshot fonte é
+verificado apenas como pista adicional, **nunca** como prova de par
+gabarito/teste nem como autorização de rótulo.
+
+Para cada PNG histórico, classifica `PAR_VERIFICADO`,
+`ROTULO_DIVERGENTE`, `CONFLITO_DE_ROTULOS`,
+`PAR_EXATO_METADADOS_DIFERENTES`,
+`TESTE_EXATO_GABARITO_DIFERENTE`,
+`SCREENSHOT_FONTE_ENCONTRADO`,
+`REGISTRO_COMPATIVEL_INELEGIVEL`,
+`CONTEXTO_IGUAL_PAR_VISUAL_DIFERENTE`,
+`CATEGORIA_LUZ_COM_OCR_DIFERENTE`,
+`SEM_REGISTROS_NA_CATEGORIA_LUZ` ou
+estados de OCR/PNG/extrator inválidos. Nenhum indício diferente
+de `PAR_VERIFICADO` pode ser contado como aprovação da KNN.
+
+**Execução Windows na branch `central` atualizada:**
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.archive_reconciler_cli
+```
+
+Saída: `reports/startup_regression/reconciliation_*.json` e
+`reconciliation_*.txt`. Enviar apenas esses dois relatórios.
+**Próximo trabalho, mediante revisão dos resultados:** separar
+recuperação de referências válidas e eventual plano de migração
+dos registros historicamente incompletos com rótulo humano rastreável;
+diagnosticar a revisão CNN e a exceção OCR; só depois discutir a
+ativação do gate bloqueante. Atingir 100% por ajuste artificial
+do rótulo ou forjar memória é proibido.
+
+---
+
 ## 09/10/2026 — Esclarecimento do segundo motor: MEMÓRIA KNN (não CNN)
 
 **Correção expressa do operador:** o nome "CNN MEMÓRIA" mencionado na
