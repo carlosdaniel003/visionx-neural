@@ -7,8 +7,11 @@ on:
     paths:
       - "src/services/startup_regression/cnn_archive_validation.py"
       - "src/services/startup_regression/cnn_archive_validation_cli.py"
+      - "src/services/startup_regression/cnn_full_history_replay.py"
+      - "src/services/startup_regression/cnn_full_history_replay_cli.py"
       - "src/services/startup_regression/knn_archive_predictor.py"
       - "tests/test_startup_regression_cnns.py"
+      - "tests/test_cnn_full_history_replay.py"
       - "tests/test_startup_regression_knn.py"
       - ".github/workflows/startup-regression-cnns.yml"
   workflow_dispatch:
@@ -32,8 +35,8 @@ jobs:
       - name: Verificar sintaxe
         shell: pwsh
         run: |
-          python -m py_compile src/services/startup_regression/cnn_archive_validation.py src/services/startup_regression/cnn_archive_validation_cli.py src/services/startup_regression/knn_archive_predictor.py tests/test_startup_regression_cnns.py tests/test_startup_regression_knn.py
+          python -m py_compile src/services/startup_regression/cnn_archive_validation.py src/services/startup_regression/cnn_archive_validation_cli.py src/services/startup_regression/knn_archive_predictor.py tests/test_startup_regression_cnns.py tests/test_startup_regression_knn.py src/services/startup_regression/cnn_full_history_replay.py src/services/startup_regression/cnn_full_history_replay_cli.py tests/test_cnn_full_history_replay.py
       - name: Testar CNN e KNN de memória
         shell: pwsh
         run: |
-          python -m unittest tests.test_startup_regression_cnns tests.test_startup_regression_knn -v
+          python -m unittest tests.test_startup_regression_cnns tests.test_startup_regression_knn tests.test_cnn_full_history_replay -v
