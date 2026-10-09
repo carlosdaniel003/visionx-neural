@@ -190,6 +190,72 @@ class FullHistoryReplayTests(unittest.TestCase):
         self.assertEqual(events["events_with_explicit_manifest"], 1)
         self.assertEqual(events["status_counts"], {"PASSOU_3_LUZES": 1})
 
+    def test_shared_png_does_not_hide_two_real_manifest_events(self):
+        self.png("OK", "2026-10-09_1000_FALTANDO_SIDE.png", 51)
+        for minute in ("1000", "1001"):
+            for light in ("TOP", "MID"):
+                self.png("OK", f"2026-10-09_{minute}_FALTANDO_{light}.png", 51)
+        inventory = inventory_archives(self.root)
+        for row in inventory["images"]:
+            filename = Path(row["path"]).name
+            if filename.endswith("_SIDE.png"):
+                events = ("e1", "e2")
+                row["event_id"] = None
+            else:
+                events = ("e1",) if "_1000_" in filename else ("e2",)
+                row["event_id"] = events[0]
+            row["manifest_links"] = [{
+                "event_id": event,
+                "lighting_mode": row["lighting_mode"],
+                "manifest_path": f"{event}.json",
+            } for event in events]
+        report = self.run_replay(inventory=inventory)
+        events = report["multilight_explicit_events"]
+        self.assertEqual(events["events_with_explicit_manifest"], 2)
+        self.assertEqual(events["status_counts"], {"PASSOU_3_LUZES": 2})
+        self.assertTrue(report["overall"]["explicit_event_integrity_passed"])
+        self.assertEqual(report["by_model"]["CNN_FALTANDO_V2"]["total"], 5)
+
+    def test_shared_png_assigned_to_another_light_is_not_false_three_light_pass(self):
+        for minute in ("1000", "1001", "1002"):
+            self.png("OK", f"2026-10-09_{minute}_FALTANDO_SIDE.png", 51)
+        inventory = inventory_archives(self.root)
+        for row, light in zip(inventory["images"], ("SIDE", "TOP", "MID")):
+            row["event_id"] = "e1"
+            row["manifest_links"] = [{
+                "event_id": "e1",
+                "lighting_mode": light,
+                "manifest_path": "e1.json",
+            }]
+        report = self.run_replay(inventory=inventory)
+        self.assertEqual(report["overall"]["passed"], 3)
+        self.assertEqual(
+            report["multilight_explicit_events"]["status_counts"],
+            {"ILUMINACAO_CNN_NAO_VERIFICADA": 1},
+        )
+        self.assertFalse(report["overall"]["historical_98pct_target_met"])
+
+    def test_unqualified_manifest_blocks_historical_target(self):
+        self.png("OK", "2026-10-09_1000_FALTANDO_SIDE.png", 51)
+        inventory = inventory_archives(self.root)
+        inventory["manifests"].append({
+            "path": "public/ok_archive/bad.json",
+            "status": "NEEDS_QUALIFICATION",
+        })
+        report = self.run_replay(inventory=inventory)
+        self.assertEqual(report["overall"]["passed"], 1)
+        self.assertFalse(report["overall"]["manifest_integrity_passed"])
+        self.assertFalse(report["overall"]["historical_98pct_target_met"])
+
+    def test_duplicate_manifest_event_ids_block_historical_target(self):
+        self.png("OK", "2026-10-09_1000_FALTANDO_SIDE.png", 51)
+        inventory = inventory_archives(self.root)
+        inventory["issues"].append({"code": "DUPLICATE_EVENT_ID"})
+        report = self.run_replay(inventory=inventory)
+        self.assertEqual(report["overall"]["passed"], 1)
+        self.assertFalse(report["overall"]["manifest_integrity_passed"])
+        self.assertFalse(report["overall"]["historical_98pct_target_met"])
+
     def test_three_light_event_with_different_checkpoints_is_not_passed(self):
         for light in ("SIDE", "TOP", "MID"):
             self.png("OK", f"2026-10-09_1000_FALTANDO_{light}.png", 51)
