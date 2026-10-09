@@ -196,6 +196,38 @@ class HistoricalEvidenceTests(unittest.TestCase):
                          {"ARQUIVOS_POR_NOME_SEM_VINCULO_DE_HASH": 1})
         self.assertFalse(report["cases"][0]["source"]["hash_verified"])
 
+    def test_source_linked_in_same_record_folder_without_hash_is_only_candidate(self):
+        self.png(self.ok / "source.png", self.source)
+        self.record(source_hash=None,
+                    ref_hash=image_fingerprint(self.reference),
+                    test_hash=image_fingerprint(self.test))
+        result = self.run_recovery()
+        self.assertEqual(result["status_counts"], {
+            "ORIGEM_JSON_LOCAL_SEM_HASH_PARA_REVISAO": 1
+        })
+        case = result["cases"][0]
+        self.assertTrue(case["source"]["same_folder_filename_found"])
+        self.assertFalse(case["source"]["hash_verified"])
+        self.assertEqual(case["reconstruction"]["status"],
+                         "RECONSTRUCAO_COM_HASHES_CONFERIDOS")
+        self.assertFalse(case["migration_ready"])
+        self.assertEqual(result["ready_for_migration"], 0)
+
+    def test_nonlocal_name_match_never_runs_extraction_without_hash(self):
+        self.png(self.archive / "source.png", self.source)
+        self.record(source_hash=None, test_hash=None, ref_hash=None)
+        called = []
+
+        def forbidden(_image):
+            called.append(True)
+            raise AssertionError("Não pode extrair sem vínculo local/hash")
+
+        result = inspect_historical_evidence(self.root, extractor=forbidden)
+        self.assertEqual(result["status_counts"], {
+            "ARQUIVOS_POR_NOME_SEM_VINCULO_DE_HASH": 1
+        })
+        self.assertEqual(called, [])
+
     def test_no_registered_images_are_retained_as_no_evidence(self):
         self.record(source_file="", ref_file="", test_file="")
         report = self.run_recovery()
