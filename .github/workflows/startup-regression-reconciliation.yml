@@ -1,0 +1,37 @@
+name: Startup Regression Memory Reconciliation
+
+on:
+  push:
+    branches:
+      - central
+    paths:
+      - "src/services/startup_regression/archive_reconciler.py"
+      - "src/services/startup_regression/archive_reconciler_cli.py"
+      - "tests/test_archive_reconciler.py"
+      - ".github/workflows/startup-regression-reconciliation.yml"
+  workflow_dispatch:
+
+jobs:
+  read_only_reconciliation:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install numpy opencv-python-headless
+      - name: Check syntax
+        shell: pwsh
+        run: |
+          python -m py_compile src/services/startup_regression/archive_reconciler.py src/services/startup_regression/archive_reconciler_cli.py tests/test_archive_reconciler.py
+      - name: Verify reconciliation contracts and PNG inventory
+        shell: pwsh
+        run: |
+          python -m unittest tests.test_archive_reconciler tests.test_startup_regression_inventory -v
