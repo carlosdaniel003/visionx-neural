@@ -50,6 +50,19 @@ sem holdout NG/OK apropriado; primeiro qualificar dados.
 - Eventos TOP/MID/SIDE só são agregados com manifesto
   de três imagens explicitamente vinculado. Não inventar
   evento a partir de nomes semelhantes ou minutos próximos.
+  O replay percorre **todos** os `manifest_links` de cada PNG:
+  um arquivo compartilhado por dois eventos não apaga a auditoria
+  de nenhum deles. Se o papel SIDE/TOP/MID do manifesto não coincide
+  com a iluminação realmente inferida pela CNN, o evento falha
+  em vez de fingir que houve três inferências válidas.
+  Manifestos inválidos e identificadores de evento duplicados
+  impedem a aprovação histórica.
+- Além dos >=98% gerais, **OK e NG separadamente** precisam
+  alcançar >=98% entre seus respectivos PNGs (quando a classe
+  existe no acervo). Isso impede que predominância de OK esconda
+  NG classificados como OK ou enviados à revisão.
+- O TXT apresenta resultados por modelo, classe, categoria e
+  iluminação, além dos eventos explícitos reprovados.
 - Retenção total é acertos / **total de PNGs**, inclusive
   categorias sem CNN. `historical_98pct_target_met` exige
   >=98% do arquivo todo e **cobertura completa por CNN**.
