@@ -1,3 +1,29 @@
+## 09/10/2026 — Correção: segunda verificação é MEMÓRIA KNN
+
+O operador confirmou que **"CNN MEMÓRIA" significa a memória KNN
+existente**, não outra rede CNN. A validação planejada é:
+
+- **CNN FALTANDO V2:** FALTANDO, EMBORCADO, INVERTIDO, DESLOCADO;
+  sem ADESIVO.
+- **MEMÓRIA KNN exata verificada:** todas as categorias,
+  inclusive MUITO ADESIVO. Exige exemplo humano exato no
+  `public/dataset`, com mesma placa/peça/valor/iluminação e mesmo
+  par visual. Ausência de registro = `SEM_COBERTURA`, não OK.
+- Ambas precisam concordar com os rótulos visuais OK/NG.
+  A CNN testa inferência de um modelo treinado; a KNN testa
+  **recuperação do próprio histórico**, e não aprendizado cego.
+
+O validador é **diagnóstico**, sem interferir no fluxo normal.
+O bloqueio da inicialização ainda não foi ativado. Esta correção
+**substitui** a seção anterior que mencionava segunda CNN ausente.
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.cnn_archive_validation_cli
+```
+
+---
+
 ## 09/10/2026 — Nova validação de inicialização por CNN (em integração)
 
 O plano antigo de gate por múltiplos especialistas físicos foi substituído:
