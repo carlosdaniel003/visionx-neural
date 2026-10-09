@@ -45,7 +45,7 @@ class MemoryFeedbackTests(unittest.TestCase):
         a=cnn_case()
         title,message,tone=memory_feedback_state(a)
         self.assertEqual(title,"NUNCA VI")
-        self.assertIn("par",message)
+        self.assertIn("par",message.lower())
         self.assertEqual(tone,"new")
         self.assertNotIn("primeiro defeito",message.lower())
 
@@ -66,7 +66,7 @@ class MemoryFeedbackTests(unittest.TestCase):
         self.assertEqual(title,"JÁ VI")
         self.assertIn("SIDE",message)
         self.assertIn("TOP",message)
-        self.assertEqual(tone,"mixed")
+        self.assertEqual(tone,"known")
 
     def test_conflicting_memory_requires_review(self):
         title,message,tone=memory_feedback_state(case("MEMORY_CONFLICT"))

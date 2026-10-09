@@ -206,19 +206,19 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
             )
         return (
             "JÁ VI • KNN EXATO",
-            f"Par humano registrado • rótulo {memory['human_label'] or '?'}. "
+            f"Par humano registrado • Rótulo {memory['human_label'] or '?'}. "
             "Correspondência exata gabarito/teste.",
         )
     if result == "NUNCA_VI":
         if memory["has_multilight"]:
             return (
                 "NUNCA VI • KNN SEM MATCH EXATO",
-                "Nenhuma das iluminações consultadas tem par humano exato. "
+                "Nenhuma das iluminações consultadas tem par humano exato. Não existe similaridade KNN medida nesta recuperação. "
                 "Imagens analisadas pela CNN não equivalem a memória conhecida.",
             )
         return (
             "NUNCA VI • KNN SEM MATCH EXATO",
-            "Par humano exato não encontrado. O ODIN pode reconhecer a "
+            "KNN consultado: par humano exato não encontrado. Não existe similaridade KNN medida nesta recuperação. O ODIN pode reconhecer a "
             "categoria visual, mas não recuperou esta imagem da memória.",
         )
     if memory["memory_conflict"]:

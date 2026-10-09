@@ -95,7 +95,7 @@ class BinarySeenLogicTests(unittest.TestCase):
         }}
         self.assertEqual(memory_seen_state(analysis)["status"], "JA_VI")
         self.assertEqual(memory_feedback_state(analysis)[0], "JÁ VI")
-        self.assertIn("rótulo NG", memory_panel_text(analysis)[1])
+        self.assertIn("Rótulo NG", memory_panel_text(analysis)[1])
 
     def test_conflict_without_valid_exact_pair_does_not_claim_absence(self):
         analysis = {"verdict": "REVISÃO OBRIGATÓRIA", "detail": {

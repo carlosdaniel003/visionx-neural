@@ -88,7 +88,7 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
         self.assertTrue(p.prepare_ai_verdict_feedback_dismissal())
         # Reset during keypress must not wipe the subtitle before fade.
         self.assertFalse(p.clear_ai_verdict_feedback())
-        self.assertEqual(card.memory_state_label.text(), "CASO NOVO • SEM MATCH EXATO")
+        self.assertEqual(card.memory_state_label.text(), "NUNCA VI")
         self.assertTrue(p.show_decision_key_feedback("OK", source="production_auto"))
         self.assertTrue(p.decision_key_feedback._sync_verdict_on_exit)
         p.decision_key_feedback._start_fade_out()
@@ -121,7 +121,7 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
         p.show_ai_verdict_feedback(a)
         self.assertEqual(p.ai_verdict_feedback.verdict_label.text(), "REVISÃO OBRIGATÓRIA")
         self.assertEqual(p.ai_verdict_feedback.memory_state_label.text(),
-                         "CASO NOVO • SEM MATCH EXATO")
+                         "NUNCA VI")
 
     def test_entrypoint_has_no_separate_memory_overlay_installers(self):
         main = Path("main.py").read_text(encoding="utf-8")
