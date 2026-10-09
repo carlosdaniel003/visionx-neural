@@ -1,8 +1,10 @@
 """Replay SOMENTE-CNN de todos os screenshots OK/NG históricos disponíveis.
 
 Não consulta KNN, não usa memória v2/v3 para decidir e não treina.
-Analisa 100% dos PNGs no inventário e NÃO ignora erros, revisão,
-categorias sem CNN ou imagens ilegíveis ao calcular a meta 98%.
+Analisa 100% dos PNGs no inventário. Mantém indicadores do acervo
+completo separados da meta de 98% do escopo CNN solicitado pelo operador:
+adesivo sem CNN permanece listado, porém fora do denominador da meta
+restrita. Revisões e erros dentro do escopo continuam sendo falhas.
 
 Escopo atual: a CNN FALTANDO V2 atende FALTANDO, EMBORCADO, INVERTIDO
 e DESLOCADO. ADESIVO não possui CNN especializada, portanto fica
@@ -49,6 +51,8 @@ def _row(item: dict):
         "event_id": item.get("event_id"),
         "manifest_links": item.get("manifest_links", []),
         "ocr_observed_category": None,
+        "ocr_identification_complete": None,
+        "ocr_missing_identity_fields": [],
         "model": None,
         "checkpoint_sha256": None,
         "ng_score_uncalibrated": None,
@@ -274,10 +278,16 @@ def replay_full_cnn_history(
                         f"Categoria OCR {detected!r} não corresponde "
                         f"ao arquivo {category_hint!r}"
                     )
-                if not all(str(info.get(k, "") or "").strip() for k in (
-                    "board", "parts", "value"
-                )):
-                    raise ValueError("OCR incompleto para identificação da inspeção")
+                missing_identity = [
+                    field for field in ("board", "parts", "value")
+                    if not str(info.get(field, "") or "").strip()
+                ]
+                row["ocr_missing_identity_fields"] = missing_identity
+                row["ocr_identification_complete"] = not missing_identity
+                # O replay avalia os pixels da CNN, não a identidade para
+                # automação XP/KNN. OCR de categoria coincidente é obrigatório;
+                # board/parts ausentes são auditados, sem impedir inferência.
+                # Isto NÃO relaxa nenhuma checagem operacional do ODIN.
                 predictor = model_map.get(row["model"])
                 if predictor is None:
                     raise ValueError("CNN do escopo indisponível")
@@ -317,6 +327,11 @@ def replay_full_cnn_history(
         for model in sorted({r["model"] or "SEM_MODELO" for r in rows})
     }
     total = _summarize(rows)
+    # A categoria adesivo ficará para futura CNN especializada. Não sumir
+    # com seus arquivos: os dois placares permanecem auditáveis e separados.
+    requested_rows = [r for r in rows if r["model"] is not None]
+    excluded_rows = [r for r in rows if r["model"] is None]
+    requested = _summarize(requested_rows)
     events = _event_report(rows)
     manifests = inv.get("manifests", [])
     manifest_integrity = (
@@ -335,6 +350,14 @@ def replay_full_cnn_history(
     total["historical_98pct_target_met"] = (
         total["historical_98pct_target_met"] and events_valid
     )
+    # Escopo solicitado: somente CNN existente; revisões, OCR inválido
+    # ou NG errados dentro dele nunca são promovidos a acertos.
+    requested["historical_98pct_target_met"] = (
+        requested["historical_98pct_target_met"] and events_valid
+    )
+    total["requested_cnn_scope_98pct_target_met"] = (
+        requested["historical_98pct_target_met"]
+    )
     return {
         "schema": SCHEMA,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -349,6 +372,19 @@ def replay_full_cnn_history(
             "NO_CNN_AVAILABLE": ["MUITOADESIVO"],
         },
         "overall": total,
+        "requested_cnn_scope": {
+            "target_met": requested["historical_98pct_target_met"],
+            "included_categories": sorted({
+                canonical_memory_category(r["category_hint"]) for r in requested_rows
+            }),
+            "excluded_categories": sorted({
+                canonical_memory_category(r["category_hint"]) for r in excluded_rows
+            }),
+            "excluded_total": len(excluded_rows),
+            "excluded_expected_OK": sum(r["expected_label"] == "OK" for r in excluded_rows),
+            "excluded_expected_NG": sum(r["expected_label"] == "NG" for r in excluded_rows),
+            "metrics": requested,
+        },
         "by_category": by_category,
         "by_lighting": by_light,
         "by_model": by_model,
@@ -362,9 +398,13 @@ def replay_full_cnn_history(
         "historical_replay_is_not_independent_validation": True,
         "legacy_952_json_signatures_are_not_pngs": True,
         "note": (
-            "98% significa >=98% dos PNGs totais classificados OK/NG "
-            "conforme rótulos do arquivo; revisão, imagem inválida e "
-            "categoria sem CNN não são acertos. O limiar aplicado ao "
+            "Dois indicadores distintos: (1) acervo completo, incluindo "
+            "adesivo sem CNN e (2) escopo CNN solicitado, que exclui "
+            "adesivo até haver dados suficientes. No escopo CNN, revisão "
+            "e imagem inválida NÃO contam como acertos; nenhum veredito "
+            "é corrigido pelo rótulo do operador. OCR de categoria "
+            "permanece obrigatório, identidade incompleta é relatada. "
+            "O limiar aplicado ao "
             "score bruto de CNN é 0.5 apenas diagnóstico. Não retreinar "
             "com os casos de teste sem separação de eventos/placas. "
             "952 JSONs de memória incluem 815 sem imagens associadas e "
