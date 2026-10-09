@@ -56,7 +56,7 @@ class DeslocadoOnlineTests(DeslocadoFixtures):
             }},
         }))
 
-    def test_production_router_keeps_existing_deslocado_engines(self):
+    def test_router_uses_shared_missing_cnn_without_restarting_deslocado_cnn(self):
         class DemoOrchestrator:
             def __init__(self):
                 self.experts = {"knn": None}
@@ -66,7 +66,8 @@ class DeslocadoOnlineTests(DeslocadoFixtures):
             def inspect(self, a,b,c,info,d,e):
                 self.called.append(dict(info))
                 return {"verdict": "FALHA FALSA", "is_defect": False,
-                        "detail": {}, "active_engines": ["shift_expert.py"]}
+                        "detail": {"cnn_v2_active": True, "cnn_v2_experimental": True},
+                        "active_engines": ["faltando_cnn_v2.py"]}
         install_memory_first_router(DemoOrchestrator)
         r = DemoOrchestrator()
         result = r.inspect(
@@ -74,10 +75,11 @@ class DeslocadoOnlineTests(DeslocadoFixtures):
             {"category": "DESLOCADO", "board": "A", "parts": "R1",
              "lighting_mode": "SIDE"}, {}, []
         )
-        self.assertEqual(result["detail"]["recognition_route"], "NEW_EXPERTS")
-        self.assertEqual(result["detail"]["specialist_candidate"],
-                         "DESLOCADO_CNN_V1_BOOTSTRAP_NOT_ACTIVE")
-        self.assertEqual(result["active_engines"], ["shift_expert.py"])
+        self.assertEqual(result["detail"]["recognition_route"], "NEW_CNN")
+        self.assertIsNone(result["detail"]["specialist_candidate"])
+        self.assertEqual(result["detail"]["cnn_v2_aoi_category"], "DESLOCADO")
+        self.assertEqual(result["active_engines"], ["faltando_cnn_v2.py"])
+        self.assertNotIn("_replay_without_memory", r.called[0])
 
     def test_ok_only_online_model_is_candidate_no_live_pointer(self):
         id = self.queue.submit_saved(self.task("OK"))
