@@ -1,3 +1,30 @@
+## Compatibilidade de memórias antigas — diagnóstico somente leitura
+
+A auditoria do ODIN encontrou **860 JSONs antigos excluídos por schema**
+e 92 memórias verificáveis entre 952 registros. Foi acrescentado
+o adaptador `legacy_memory_compat.py`, que inspeciona
+os formatos legados **sem modificar os arquivos ou a KNN**.
+
+A nova versão da mesma CLI detalha os schemas originais dos registros,
+presença de confirmação humana, assinatura de anomalia, PNGs auditáveis,
+deduplicação, hashes de imagem e compatibilidade potencial com
+screenshots históricos. Uma correspondência simulada de memória antiga
+**não** conta como reconhecimento KNN real e rótulos conflitantes
+impedem aprovação.
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.archive_reconciler_cli
+```
+
+Os relatórios `reconciliation_*.json` / `reconciliation_*.txt`
+em `reports/startup_regression` permitem escolher o próximo passo
+sem enviar os 952 JSONs/PNGs. CNN e operação normais, aprendizado e
+gate do startup permanecem inalterados.
+
+---
+
 ## Reconciliação automática do acervo e memória KNN (diagnóstico)
 
 O comando abaixo investiga por código, no próprio computador, por que
