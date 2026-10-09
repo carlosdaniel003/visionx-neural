@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 
 from src.ui.widgets.radar_chart import RadarChartWidget
 from src.ui.widgets.neural_specialist import NeuralSpecialistWidget, VerifiedMemorySpecialistWidget
+from src.ui.widgets.neural_evidence import NeuralEvidencePanel
 from src.ui.widgets.semantic_dna import SemanticDNAWidget
 from src.ui.widgets.shift_debugger import ShiftDebuggerWidget
 from src.ui.widgets.silk_debugger import SilkDebuggerWidget
@@ -88,8 +89,10 @@ class _LightingExpertLane(QFrame):
         self.scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        # O painel de seis visões pode crescer verticalmente em notebooks.
+        # Mantém o único controle horizontal mestre para SIDE/TOP/MID.
         self.scroll.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
 
         self.scroll_content = QWidget()
@@ -131,6 +134,15 @@ class _LightingExpertLane(QFrame):
         )
         self.radar.setVisible(False)
         self.scroll_layout.addWidget(self.radar)
+        self.visual_payload = None
+        self.neural_evidence = NeuralEvidencePanel()
+        self.neural_evidence.setObjectName("neuralEvidencePanel")
+        self.neural_evidence.setMinimumWidth(EXPERT_MIN_WIDTH)
+        self.neural_evidence.setAccessibleName(
+            f"{self.mode} • PAINEL NEURAL EXPLICÁVEL POR ILUMINAÇÃO"
+        )
+        self.neural_evidence.setVisible(False)
+        self.scroll_layout.addWidget(self.neural_evidence)
         self.scroll_layout.addStretch()
 
         self.scroll.setWidget(self.scroll_content)
@@ -142,9 +154,16 @@ class _LightingExpertLane(QFrame):
         for widget in self.frames.values():
             widget.setVisible(False)
         self.radar.setVisible(False)
+        self.neural_evidence.setVisible(False)
+
+    def set_visual_payload(self, payload: dict | None) -> None:
+        self.visual_payload = payload if isinstance(payload, dict) else None
+        self.neural_evidence.set_visual_payload(self.visual_payload)
 
     def clear_analysis(self) -> None:
         self._hide_all_frames()
+        self.visual_payload = None
+        self.neural_evidence.clear_data()
         self.scroll.setVisible(False)
         self.status_label.setText(
             f"Aguardando análise da iluminação {self.mode}"
@@ -176,16 +195,32 @@ class _LightingExpertLane(QFrame):
             self.radar.setVisible(True)
             visible_count += 1
 
+        # Mesmo quando o KNN exato assume a decisão (e a CNN não executa),
+        # os pixels de cada epicentro continuam disponíveis para inspeção.
+        if self.visual_payload is not None:
+            self.neural_evidence.update_data(detail, analysis)
+            self.neural_evidence.setVisible(True)
+            visible_count += 1
+
         # Mantém a mesma semântica do painel original: só aparecem os motores
         # declarados como ativos; o radar é fallback quando não há especialistas.
+        widths = [
+            item.minimumWidth()
+            for item in (*self.frames.values(), self.radar, self.neural_evidence)
+            if not item.isHidden()
+        ]
+        heights = [
+            item.minimumHeight()
+            for item in (*self.frames.values(), self.radar, self.neural_evidence)
+            if not item.isHidden()
+        ]
         self.scroll_content.setMinimumWidth(
-            max(
-                EXPERT_MIN_WIDTH + 4,
-                visible_count * EXPERT_MIN_WIDTH
-                + max(0, visible_count - 1) * 10
-                + 4,
-            )
+            max(EXPERT_MIN_WIDTH + 4, sum(widths) + max(0, len(widths)-1)*10 + 8)
         )
+        self.scroll_content.setMinimumHeight(
+            max(EXPERT_MIN_HEIGHT + 8, max(heights, default=EXPERT_MIN_HEIGHT) + 8)
+        )
+        self.scroll_content.adjustSize()
 
         if visible_count <= 0:
             self.status_label.setText(
@@ -218,8 +253,9 @@ class AdhesiveMultiLightAnalysisView(QWidget):
         root.setSpacing(7)
 
         hint = QLabel(
-            "MULTILIGHT • análise independente dos especialistas em "
-            "SIDE / TOP / MID • sem fusão de resultado final nesta etapa."
+            "PAINEL NEURAL EXPLICÁVEL POR ILUMINAÇÃO • SIDE/TOP/MID • "
+            "dois epicentros, três visões diagnósticas por epicentro. "
+            "Mapa de diferenças NÃO é mapa de atenção CNN."
         )
         hint.setObjectName("sectionHint")
         hint.setWordWrap(True)
@@ -332,6 +368,15 @@ class AdhesiveMultiLightAnalysisView(QWidget):
         result = lane.set_analysis(analysis)
         QTimer.singleShot(0, self._sync_master_scroll_range)
         return result
+
+    def set_visual_payload(self, mode: str, payload: dict | None) -> bool:
+        """Aceita referência e teste dos mesmos dois epicentros da AOI."""
+        normalized = str(mode or "").strip().upper()
+        lane = self.lanes.get(normalized)
+        if lane is None:
+            return False
+        lane.set_visual_payload(payload)
+        return True
 
     def clear_analysis(self, mode: str) -> bool:
         normalized = str(mode or "").strip().upper()
