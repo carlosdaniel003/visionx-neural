@@ -2,8 +2,9 @@
 
     python -m src.services.startup_regression.cnn_full_history_replay_cli
 
-Não permite apontar saída ao dataset. Não treina, não ativa gate e não
-aceita que a taxa 98% inclua revisão/adesivo sem CNN como acertos.
+Não permite apontar saída ao dataset. Não treina nem ativa gate. Reporta
+separadamente o acervo inteiro e a meta do escopo CNN sem adesivo;
+revisões não contam como acertos.
 """
 from __future__ import annotations
 
@@ -67,7 +68,21 @@ def write_full_history_cnn_report(report: dict, output_dir: Path):
             f"revisao={counts['review']} regressao={counts['regression']} "
             f"invalido={counts['invalid']} sem_cnn={counts['unsupported']}"
         )
+    eligible = report["requested_cnn_scope"]
+    eligible_stats = eligible["metrics"]
     lines.extend([
+        "",
+        "META SOLICITADA: CNN EXISTENTE (ADESIVO EXCLUIDO, NAO APROVADO)",
+        f"Categorias incluidas: {', '.join(eligible['included_categories'])}",
+        f"Categorias excluidas: {', '.join(eligible['excluded_categories'])}",
+        f"Imagens excluidas do denominador: {eligible['excluded_total']} "
+        f"(OK={eligible['excluded_expected_OK']}, NG={eligible['excluded_expected_NG']})",
+        f"Acertos reais CNN: {eligible_stats['passed']}/{eligible_stats['total']}",
+        f"Retencao CNN: {eligible_stats['historical_full_archive_match_rate']}",
+        f"Retencao OK CNN: {eligible_stats['historical_OK_match_rate']}",
+        f"Retencao NG CNN: {eligible_stats['historical_NG_match_rate']}",
+        f"Meta 98% escopo CNN: {eligible['target_met']}",
+        "As exclusoes NAO sao acertos; revisoes seguem como pendencias.",
         "",
         "POR CATEGORIA:",
     ])
@@ -116,6 +131,14 @@ def write_full_history_cnn_report(report: dict, output_dir: Path):
             f"resposta={case['verdict']} | scoreNG={case['ng_score_uncalibrated']} "
             f"| {case['error'] or ''}"
         )
+    lines.extend(["", "OCR COM IDENTIFICACAO INCOMPLETA (CNN EXECUTADA):"])
+    for case in report["cases"]:
+        if case.get("ocr_identification_complete") is False:
+            lines.append(
+                f"- {case['source_path']} | campos ausentes="
+                f"{case['ocr_missing_identity_fields']} | "
+                f"status CNN={case['status']} | veredito={case['verdict']}"
+            )
     lines.extend(["", "LIMITAÇÃO:", report["note"]])
     _atomic_text(txt_path, "\n".join(lines) + "\n")
     return json_path, txt_path
@@ -155,7 +178,12 @@ def main(argv=None):
         f"| NG->OK indevidos={overall['NG_as_OK']}",
         flush=True,
     )
-    print(f"Meta 98% histórica atingida: {overall['historical_98pct_target_met']}", flush=True)
+    print(
+        f"Meta 98% do escopo CNN sem adesivo: "
+        f"{report['requested_cnn_scope']['target_met']} | "
+        f"meta do acervo inteiro: {overall['historical_98pct_target_met']}",
+        flush=True,
+    )
     print(f"JSON: {j}\nTXT: {t}", flush=True)
     print("Nenhuma CNN/KNN/dataset foi alterada; gate não ativado.", flush=True)
     # Regressão não provoca exclusão automática e sempre gera relatório.
