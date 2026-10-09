@@ -1088,3 +1088,15 @@ forward/autograd real, e \`tests/test_neural_evidence_board.py\`
 valida os rótulos e a entrega ao widget PyQt.
 Nenhuma modificação em inferência operacional, memória KNN, classificação
 NG/OK, teclas 0/1 ou modo Produção.
+
+
+## Modo Sombra de baixa latencia - 09/10/2026
+
+- Somente no Modo Sombra: a primeira imagem SIDE continua com OCR. As iluminacoes TOP e MID reutilizam board, parts, value e category da SIDE da mesma peca; nao repetem OCR.
+- Gravar os PNGs de depuracao das barras, renderizar seis visoes neurais e executar as reconstrucoes Grad-CAM nao fazem parte do caminho critico de Sombra. As capturas originais e os dados de aprendizado continuam sendo preservados.
+- Para categorias da CNN FALTANDO v2, a inferencia recebe os pares completos (gabarito/teste) e seu crop interno. Detecao SSIM e extracao geometrica externa sao dispensadas apenas nesta rota de Sombra. Outras categorias mantem sua logica original.
+- Em TOP, o comando de iluminacao MID pode ser enviado apos a captura TOP, antes da analise TOP, sobrepondo rede e CPU. Sao apenas LEFT/RIGHT/DOWN de iluminacao. O ODIN nunca deve enviar PRESS_0 ou PRESS_1 no Sombra.
+- Tecla 0/1 da operadora XP encerra imediatamente a coleta da peca e grava em background somente as luzes efetivamente capturadas ANTES do comando. Isto evita atribuir o rotulo humano aos frames tardios da peca seguinte. Trincas completas SIDE/TOP/MID continuam gerando tres registros com um rotulo; pares parciais sao registrados sem treinamento incremental automatico multilight.
+- Os registros de mesmo evento mantem event_id e lighting_mode por foto. Imagens sao salvas mesmo quando a IA concorda; a deduplicacao de arquivo existente permanece ativa. A persistencia no disco e a recarga KNN ocorrem fora da thread da interface.
+- Medir tempo real no notebook com frames XP e hardware de fabrica. Meta 2-3 segundos e objetivo, nao benchmark aprovado. O envio pela rede, duas imagens estaveis, OCR inicial e latencia fisica das trocas de luz continuam influenciando o tempo.
+- Testes: test_shadow_fast_capture.py, test_shadow_partial_persistence.py, test_adhesive_multilight_automation.py, test_multilight_learning.py e test_fast_xp_decision_cycle.py.

@@ -71,9 +71,13 @@ class ScreenMonitor(QThread):
         # No replay SIDE histórico, as fotos são lidas do disco e nenhum
         # arquivo de depuração pode ser escrito. Operação normal: False.
         self._replay_no_debug = False
+        # No Sombra: sem PNGs de depuração síncronos e sem OCR redundante
+        # nas iluminações auxiliares da MESMA peça.
+        self._shadow_fast = False
+        self._shadow_auxiliary_info = None
 
     def _write_debug_crop(self, path, image) -> None:
-        if self._replay_no_debug:
+        if self._replay_no_debug or self._shadow_fast:
             return
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(path), image)
@@ -386,6 +390,11 @@ class ScreenMonitor(QThread):
             return ""
 
     def _extract_text_info(self, frame_bgr, blue_bar, red_bar) -> dict:
+        # Reutilizar o OCR da SIDE exclusivamente para TOP/MID da mesma peça;
+        # categorias, identificação e valor são os mesmos nas três luzes.
+        aux = getattr(self, "_shadow_auxiliary_info", None)
+        if self._shadow_fast and isinstance(aux, dict):
+            return dict(aux)
         info = {"board": "", "parts": "", "value": "", "raw_text": ""}
         if not HAS_TESSERACT:
             info["raw_text"] = "[OCR não disponível]"

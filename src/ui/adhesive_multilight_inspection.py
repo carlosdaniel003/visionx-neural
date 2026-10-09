@@ -425,16 +425,31 @@ def _finalize_multilight_decision(panel) -> dict | None:
     panel.adhesive_multilight_final_analysis = fused
     panel.adhesive_multilight_last_final_analysis = fused
 
-    # O painel principal e os overlays recebem somente a decisão já fundida.
-    try:
-        panel._update_confidence_panel(fused)
-        panel._update_reference_panel(fused)
-    except Exception as exc:
-        print(f"Falha não fatal ao exibir fusão multilight: {exc}")
-
-    QApplication.processEvents(
-        QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+    shadow = (
+        getattr(getattr(panel, "combo_mode", None), "currentText", lambda:"")()
+        == "Modo Sombra"
     )
+    # No caminho rápido, apenas OK/NG no painel: sem reconstruções,
+    # seis QPixmaps, Grad-CAM nem QApplication.processEvents bloqueante.
+    if shadow:
+        try:
+            panel.lbl_verdict.setText(
+                str(fused.get("verdict", "REVISÃO OBRIGATÓRIA"))
+            )
+            panel.lbl_reason.setText(
+                "SOMBRA RÁPIDA • " + str(fused.get("reason", ""))[:170]
+            )
+        except Exception:
+            pass
+    else:
+        try:
+            panel._update_confidence_panel(fused)
+            panel._update_reference_panel(fused)
+        except Exception as exc:
+            print(f"Falha não fatal ao exibir fusão multilight: {exc}")
+        QApplication.processEvents(
+            QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+        )
     completed_at = time.perf_counter()
     started_at = float(
         getattr(panel, "capture_start_time", 0.0) or 0.0
@@ -463,16 +478,17 @@ def _finalize_multilight_decision(panel) -> dict | None:
 
     # O debug principal deixa de apontar para a decisão provisória SIDE.
     # Mantemos o mesmo event_id e apenas promovemos a decisão final já fundida.
-    try:
-        debug_record = capture_debug_record(panel)
-        if debug_record:
-            debug_record["decision"] = decision_record(
-                fused,
-                getattr(panel, "current_aoi_info", None),
-            )
-            update_capture_debug_record(panel, debug_record)
-    except Exception as exc:
-        print(f"Falha não fatal ao atualizar debug da fusão multilight: {exc}")
+    if not shadow:
+        try:
+            debug_record = capture_debug_record(panel)
+            if debug_record:
+                debug_record["decision"] = decision_record(
+                    fused,
+                    getattr(panel, "current_aoi_info", None),
+                )
+                update_capture_debug_record(panel, debug_record)
+        except Exception as exc:
+            print(f"Falha não fatal ao atualizar debug da fusão multilight: {exc}")
 
     mode = ""
     try:
@@ -511,7 +527,11 @@ def _finalize_multilight_decision(panel) -> dict | None:
     except Exception:
         pass
 
-    _sync_multilight_debug_controls(panel)
+    if shadow:
+        detail["shadow_capture_to_result_seconds"] = round(elapsed, 4)
+        detail["shadow_fast_path"] = True
+    else:
+        _sync_multilight_debug_controls(panel)
     return fused
 
 
@@ -563,6 +583,22 @@ def _store_view(
     normalized = str(mode or "").strip().upper()
     if normalized not in LIGHTING_ORDER:
         return False
+
+    shadow = (
+        getattr(getattr(panel, "combo_mode", None), "currentText", lambda: "")()
+        == "Modo Sombra"
+    )
+    if shadow:
+        # Nenhuma extração de miniaturas, QPixmap ou sonda Grad-CAM no
+        # caminho de aprendizado rápido. A persistência das três imagens
+        # originais acontece em _store_learning_sample().
+        panel.adhesive_multilight_views[normalized] = {
+            "lighting_mode": normalized,
+            "shadow_fast": True,
+            "main": ng_crop.copy(),
+            "sample": sample_crop.copy(),
+        }
+        return True
 
     payload = build_adhesive_view_payload(
         sample_crop,
@@ -677,6 +713,9 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_last_event_id = ""
         self.adhesive_multilight_last_category = ""
         self.adhesive_multilight_last_final_analysis = None
+        self.shadow_pending_operator_label = ""
+        self.shadow_pending_operator_event_id = ""
+        self.shadow_capture_started_at = 0.0
         _switch_inspection_view(self, False)
 
     def handle_network_image(self, img_bgr, ip: str):
@@ -719,10 +758,16 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 if _valid_image(img_bgr)
                 else None
             )
+            shadow = self.combo_mode.currentText() == "Modo Sombra"
+            self.processor_monitor._shadow_fast = shadow
+            self.processor_monitor._shadow_auxiliary_info = (
+                dict(self.current_aoi_info or {}) if shadow else None
+            )
             try:
                 self.processor_monitor.process_external_image(img_bgr)
                 return True
             finally:
+                self.processor_monitor._shadow_auxiliary_info = None
                 # process_external_image emite layout_detected de forma direta
                 # neste caminho. Se falhar antes do sinal, não deixamos estado
                 # auxiliar pendurado para a próxima peça.
@@ -738,9 +783,22 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             getattr(self, "adhesive_multilight_active", False)
         ):
             try:
-                frame_context = build_lighting_context(
-                    sample_crop,
-                    ng_crop,
+                shadow = self.combo_mode.currentText() == "Modo Sombra"
+                from src.core.neural.faltando_category_scope import uses_faltando_v2
+                shadow_neural = shadow and uses_faltando_v2(
+                    category_from_aoi_info(self.current_aoi_info)
+                )
+                # FALTANDO v2 usa imagens integrais+crop central interno;
+                # a geometria SSIM é supérflua em modo sombra.
+                frame_context = (
+                    {
+                        "valid": True, "raw_anomalies": [],
+                        "old_epicenters": [], "global_box_info": {},
+                        "real_epicenters": [], "focus_gab": np.array([]),
+                        "focus_ng": np.array([]),
+                    }
+                    if shadow_neural
+                    else build_lighting_context(sample_crop, ng_crop)
                 )
                 if not frame_context.get("valid", False):
                     return False
@@ -755,9 +813,17 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 if not stored:
                     return False
 
-                # TOP/MID passam pelo mesmo conjunto de especialistas usado por
-                # SIDE, mas o resultado fica isolado por iluminação e não toca
-                # current_analysis nem o veredito final da peça.
+                # Em Sombra TOP é recebido ANTES da análise. Solicitar
+                # MID já neste momento sobrepõe a aquisição pela rede ao
+                # cálculo de TOP (sem emitir tecla 0/1).
+                early_advanced = False
+                if shadow and aux_mode == "TOP":
+                    automation = getattr(self, "adhesive_multilight_automation", None)
+                    advance = getattr(automation, "shadow_top_captured", None)
+                    if callable(advance):
+                        early_advanced = bool(advance())
+
+                # O resultado local continua isolado até a fusão.
                 lighting_analysis = analyze_lighting(
                     getattr(self, "orchestrator", None),
                     sample_crop,
@@ -838,13 +904,14 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     "adhesive_multilight_analysis_view",
                     None,
                 )
-                if analysis_view is not None:
+                if analysis_view is not None and not shadow:
                     analysis_view.set_analysis(
                         aux_mode,
                         lighting_analysis,
                     )
 
-                _switch_inspection_view(self, True)
+                if not shadow:
+                    _switch_inspection_view(self, True)
 
                 # A automação só avança depois que a imagem e sua análise
                 # visual foram concluídas para a iluminação esperada.
@@ -858,10 +925,11 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     "frame_stored",
                     None,
                 )
-                if callable(frame_stored):
+                if callable(frame_stored) and not early_advanced:
                     frame_stored(aux_mode)
 
-                _sync_multilight_debug_controls(self)
+                if not shadow:
+                    _sync_multilight_debug_controls(self)
 
                 try:
                     self.update_brain_status(
@@ -927,6 +995,9 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_last_source_frames = {}
         self.adhesive_multilight_last_category = category
         self.adhesive_multilight_final_analysis = None
+        self.shadow_pending_operator_label = ""
+        self.shadow_pending_operator_event_id = ""
+        self.shadow_capture_started_at = time.perf_counter()
         self.adhesive_multilight_last_final_analysis = None
         self.adhesive_multilight_primary_event_id = getattr(
             self,
@@ -984,7 +1055,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             "adhesive_multilight_analysis_view",
             None,
         )
-        if analysis_view is not None:
+        if analysis_view is not None and self.combo_mode.currentText() != "Modo Sombra":
             # clear_all() reinicia o lane: restaura o payload SIDE já salvo
             # antes de renderizar os novos especialistas do ciclo.
             analysis_view.clear_all()
@@ -997,7 +1068,8 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 getattr(self, "current_analysis", None),
             )
 
-        _switch_inspection_view(self, True)
+        if self.combo_mode.currentText() != "Modo Sombra":
+            _switch_inspection_view(self, True)
         _set_receiver_auxiliary_mode(self, True)
 
         # SIDE não é julgamento final em ciclos multilight. Até TOP/MID terminarem
@@ -1019,7 +1091,8 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         except Exception:
             pass
 
-        _sync_multilight_debug_controls(self)
+        if self.combo_mode.currentText() != "Modo Sombra":
+            _sync_multilight_debug_controls(self)
 
         automation = getattr(
             self,
@@ -1049,18 +1122,35 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             )
         )
 
-        # A peça precisa permanecer na AOI até TOP e MID chegarem. Nenhuma
-        # decisão, automática ou manual, pode encerrar a peça no meio da
-        # sequência. O Modo Produção só recebe o resultado depois da fusão.
+        # Se a operadora julgou no XP antes de TOP/MID, a AOI pode já ter
+        # avançado. NUNCA continuar associando os frames de outra placa ao
+        # mesmo event_id. Salvar apenas as luzes já capturadas (SIDE e,
+        # opcionalmente, TOP) com esse rótulo humano e liberar o gate.
         if (
             is_multilight_category(
                 getattr(self, "current_aoi_info", None)
-            )
-            and (pending_start or automation_active)
+            ) and (pending_start or automation_active)
         ):
+            label = str(
+                args[0] if args else kwargs.get("user_decision", "")
+            ).strip().upper()
+            source = str(kwargs.get("source", "")).strip().lower()
+            shadow = self.combo_mode.currentText() == "Modo Sombra"
+            if shadow and source == "xp_keyboard" and label in {"OK", "NG"}:
+                cancel = getattr(automation, "cancel_for_cycle_end", None)
+                if callable(cancel):
+                    cancel()
+                _set_receiver_auxiliary_mode(self, False)
+                # A decisão vem do XP: original_save_label nunca ecoa
+                # PRESS_0/1 e registra os snapshots via fila assíncrona.
+                outcome = original_save_label(self, *args, **kwargs)
+                if not bool(getattr(self, "is_locked", False)):
+                    _reset_session(self, show_normal=True)
+                return outcome
             try:
                 self.update_brain_status(
-                    "Aguarde a captura automática SIDE/TOP/MID antes de julgar.",
+                    "Aguarde SIDE/TOP/MID antes de julgar; em Sombra "
+                    "o operador XP pode encerrar a captura sem aguardar.",
                     True,
                 )
             except Exception:

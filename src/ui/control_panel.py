@@ -251,8 +251,12 @@ class ControlPanel(QWidget):
         )
         self.capture_start_source = "network_payload_received"
         
-        self._safe_maximize()
-        
+        shadow = self.combo_mode.currentText() == "Modo Sombra"
+        self.processor_monitor._shadow_fast = shadow
+        self.processor_monitor._shadow_auxiliary_info = None
+        if not shadow:
+            self._safe_maximize()
+
         self.update_brain_status("🧠 Recebendo da Rede...", True)
         
         self.lbl_timer.setText("Analisando...")
@@ -528,7 +532,9 @@ class ControlPanel(QWidget):
         if callable(notify_cycle):
             notify_cycle()
 
-        self._inspection_images_visible = True
+        shadow = self.combo_mode.currentText() == "Modo Sombra"
+        shadow_started = time.perf_counter()
+        self._inspection_images_visible = not shadow
         self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)
 
         raw_val = aoi_info.get("value", "")
@@ -536,7 +542,8 @@ class ControlPanel(QWidget):
         aoi_info["category"] = cat_name
         aoi_info["value"] = norm_val
 
-        self._safe_maximize()
+        if not shadow:
+            self._safe_maximize()
 
         self.current_sample = sample_crop
         self.current_ng = ng_crop
@@ -544,23 +551,34 @@ class ControlPanel(QWidget):
         self.current_analysis = None
         self._update_aoi_info(aoi_info)
 
-        px_sample = self.numpy_to_pixmap(sample_crop)
-        if self.lbl_sample.width() > 0 and self.lbl_sample.height() > 0:
-            self.lbl_sample.setPixmap(px_sample)
+        if not shadow:
+            px_sample = self.numpy_to_pixmap(sample_crop)
+            if self.lbl_sample.width() > 0 and self.lbl_sample.height() > 0:
+                self.lbl_sample.setPixmap(px_sample)
 
-        raw_anomalies, old_epicenters, global_box_info, gab_focus, test_focus = detect_anomalies(sample_crop, ng_crop)
-        
-        real_epicenters, focus_gab, focus_ng = EpicenterExtractor.extract_focus(
-            sample_crop, ng_crop, old_epicenters, global_box_info
-        )
+        # FALTANDO v2 / KNN exato recebem pares integrais e crop central
+        # internamente; detectar geometria AOI/SSIM antes da CNN é custo sem
+        # impacto no resultado da classe. Não alterar categorias físicas.
+        from src.core.neural.faltando_category_scope import uses_faltando_v2
+        shadow_neural = shadow and uses_faltando_v2(cat_name)
+        if shadow_neural:
+            raw_anomalies, old_epicenters, global_box_info = [], [], {}
+            real_epicenters = []
+            focus_gab, focus_ng = np.array([]), np.array([])
+        else:
+            (raw_anomalies, old_epicenters, global_box_info,
+             _gab_focus, _test_focus) = detect_anomalies(sample_crop, ng_crop)
+            real_epicenters, focus_gab, focus_ng = EpicenterExtractor.extract_focus(
+                sample_crop, ng_crop, old_epicenters, global_box_info
+            )
 
-        if focus_gab.size > 0 and hasattr(self, 'lbl_sample_focus') and self.lbl_sample_focus.width() > 0:
+        if not shadow and focus_gab.size > 0 and hasattr(self, 'lbl_sample_focus') and self.lbl_sample_focus.width() > 0:
             px_focus_gab = self.numpy_to_pixmap(focus_gab)
             self.lbl_sample_focus.setPixmap(px_focus_gab)
         else:
             if hasattr(self, 'lbl_sample_focus'): self.lbl_sample_focus.setText("Inválido/Sem Foco")
 
-        if focus_ng.size > 0 and hasattr(self, 'lbl_ng_focus') and self.lbl_ng_focus.width() > 0:
+        if not shadow and focus_ng.size > 0 and hasattr(self, 'lbl_ng_focus') and self.lbl_ng_focus.width() > 0:
             px_focus_ng = self.numpy_to_pixmap(focus_ng)
             self.lbl_ng_focus.setPixmap(px_focus_ng)
         else:
@@ -569,12 +587,25 @@ class ControlPanel(QWidget):
         analysis = self.orchestrator.inspect(sample_crop, ng_crop, raw_anomalies, aoi_info, global_box_info, real_epicenters)
         self.current_analysis = analysis
 
-        img_ng_drawn = ImageRenderer.draw_multilayer_boxes(ng_crop, analysis)
+        if not shadow:
+            img_ng_drawn = ImageRenderer.draw_multilayer_boxes(ng_crop, analysis)
 
         multilight_pending = bool(
             getattr(self, "adhesive_multilight_pending_start", False)
         )
-        if multilight_pending:
+        if shadow:
+            # Só resumo textual OK/NG no caminho crítico: sem seis cards,
+            # pixmaps, Grad-CAM, SSIM Debugger ou QApplication.processEvents.
+            provisional = bool(multilight_pending)
+            label = str(analysis.get("verdict", "REVISÃO OBRIGATÓRIA"))
+            self.lbl_verdict.setText(
+                "SIDE • COLETANDO TOP/MID" if provisional else label
+            )
+            self.lbl_reason.setText(
+                "Sombra rápida • aguardando as demais luzes"
+                if provisional else str(analysis.get("reason", ""))[:160]
+            )
+        elif multilight_pending:
             # Em um ciclo multilight, SIDE é somente a primeira observação. O julgamento
             # final só existe depois que TOP e MID também forem analisadas.
             self.lbl_verdict.setText("MULTILIGHT • AGUARDANDO TOP/MID")
@@ -597,16 +628,18 @@ class ControlPanel(QWidget):
              self._update_confidence_panel(analysis)
              self._update_reference_panel(analysis)
 
-        px_ng = self.numpy_to_pixmap(img_ng_drawn)
-        if self.lbl_ng.width() > 0 and self.lbl_ng.height() > 0:
-            self.lbl_ng.setPixmap(px_ng)
+        if not shadow:
+            px_ng = self.numpy_to_pixmap(img_ng_drawn)
+            if self.lbl_ng.width() > 0 and self.lbl_ng.height() > 0:
+                self.lbl_ng.setPixmap(px_ng)
 
         # "Tempo de análise" termina quando o resultado já foi entregue aos
         # widgets e o Qt processou a pintura pendente. Excluímos input do
         # operador para não introduzir ações humanas dentro da medição.
-        QApplication.processEvents(
-            QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
-        )
+        if not shadow:
+            QApplication.processEvents(
+                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+            )
         analysis_displayed_at = time.perf_counter()
         elapsed_time = max(
             0.0,
@@ -617,6 +650,11 @@ class ControlPanel(QWidget):
 
         detail = analysis.setdefault("detail", {})
         detail["analysis_time_seconds"] = float(elapsed_time)
+        if shadow:
+            detail["shadow_fast_path"] = bool(shadow_neural)
+            detail["shadow_inspection_cpu_seconds"] = round(
+                time.perf_counter() - shadow_started, 4
+            )
         detail["analysis_time_start_source"] = str(
             getattr(self, "capture_start_source", "") or ""
         )

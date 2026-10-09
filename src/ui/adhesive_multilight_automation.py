@@ -190,6 +190,19 @@ class AdhesiveMultiLightAutomation(QObject):
 
         return False
 
+    def shadow_top_captured(self) -> bool:
+        """Após armazenar TOP, solicitar MID antes da análise TOP.
+
+        Só muda iluminação RIGHT. Não envia nenhuma decisão 0/1.
+        """
+        if (not self.active or self.expected_mode != "TOP"
+                or self.panel.combo_mode.currentText() != "Modo Sombra"):
+            return False
+        self._timeout.stop()
+        self.captured_modes.add("TOP")
+        self.retry_count = 0
+        return self._request_mode("MID", reset_retry=True)
+
     def _handle_timeout(self) -> None:
         if not self.active or not self.expected_mode:
             return
