@@ -1,0 +1,37 @@
+name: Startup Regression CNN Validation
+
+on:
+  push:
+    branches:
+      - central
+    paths:
+      - "src/services/startup_regression/cnn_archive_validation.py"
+      - "src/services/startup_regression/cnn_archive_validation_cli.py"
+      - "tests/test_startup_regression_cnns.py"
+      - ".github/workflows/startup-regression-cnns.yml"
+  workflow_dispatch:
+
+jobs:
+  cnn_contract:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: "offscreen"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Dependências do inventário e extração
+        shell: pwsh
+        run: |
+          python -m pip install numpy opencv-python-headless scipy scikit-image scikit-learn mss PyQt6 pytesseract
+      - name: Verificar sintaxe
+        shell: pwsh
+        run: |
+          python -m py_compile src/services/startup_regression/cnn_archive_validation.py src/services/startup_regression/cnn_archive_validation_cli.py tests/test_startup_regression_cnns.py
+      - name: Testar escopos e ausência do segundo modelo
+        shell: pwsh
+        run: |
+          python -m unittest tests.test_startup_regression_cnns -v
