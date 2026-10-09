@@ -70,7 +70,6 @@ def _validate_cnn_output(output: dict):
             or detail.get("cnn_v2_checkpoint_verified") is not True
             or detail.get("cnn_v2_status") != "INFERENCE_OK"):
         raise ValueError("CNN indisponível ou checkpoint não verificado")
-    from hashlib import sha256
     checkpoint = detail.get("cnn_v2_checkpoint_sha256")
     if (not isinstance(checkpoint, str) or len(checkpoint) != 64
             or any(x not in "0123456789abcdefABCDEF" for x in checkpoint)):
@@ -245,10 +244,10 @@ def replay_full_cnn_history(
                         f"Categoria OCR {detected!r} não corresponde "
                         f"ao arquivo {category_hint!r}"
                     )
-                if not any(str(info.get(k, "") or "").strip() for k in (
+                if not all(str(info.get(k, "") or "").strip() for k in (
                     "board", "parts", "value"
                 )):
-                    raise ValueError("OCR vazio para identificação da inspeção")
+                    raise ValueError("OCR incompleto para identificação da inspeção")
                 predictor = model_map.get(row["model"])
                 if predictor is None:
                     raise ValueError("CNN do escopo indisponível")
