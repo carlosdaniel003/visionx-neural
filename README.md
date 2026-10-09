@@ -1,3 +1,33 @@
+## Auditoria KNN em dois níveis (sem migração)
+
+Após recuperar o inventário visual, o ODIN mantém os 815
+registros históricos sem PNG vinculável, porém com assinatura
+da anomalia registrada. A próxima etapa disponibiliza **duas
+avaliações distintas e somente leitura**:
+
+- **KNN de assinaturas:** teste leave-one-record-out com o
+  comparador real e filtragem categoria/iluminação, sem consultar
+  o próprio registro. Testa consistência de memória histórica,
+  **não os 212 screenshots**.
+- **Plano de índice KNN visual:** reextrai gabarito/teste e
+  metadados OCR dos screenshots, cruza com registros v3/v2
+  auditáveis e aponta lacunas de proveniência humana,
+  iluminação e conflitos. Não cria registros `KNOWN` a partir
+  do nome `ok_archive`/`ng_archive`.
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.two_level_memory_diagnostic_cli
+```
+
+Saídas: `reports/startup_regression/memory_levels_*.json`
+e `memory_levels_*.txt`. Enviar esses dois relatórios
+para decidir o próximo passo. **Não muda KNN/CNN de produção,
+não treina, não importa memórias e não ativa bloqueio de startup.**
+
+---
+
 ## Recuperar evidências de memória legada (somente diagnóstico)
 
 Após a reconciliação encontrar 815 registros `visionx.memory.v2`
