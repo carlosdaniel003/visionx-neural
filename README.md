@@ -1,3 +1,29 @@
+## Reconciliação automática do acervo e memória KNN (diagnóstico)
+
+O comando abaixo investiga por código, no próprio computador, por que
+a memória KNN não reconhece parte de `public/ok_archive` e
+`public/ng_archive`. Nenhum envio manual de dataset é necessário.
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.archive_reconciler_cli
+```
+
+O programa verifica todos os JSONs em `public/dataset` e compara
+os pares gabarito/teste, metadados, iluminação, assinaturas e
+confirmação humana com cada PNG. Os relatórios
+`reports/startup_regression/reconciliation_*.json` e
+`reconciliation_*.txt` explicam a cobertura e mostram candidatos
+de reconciliação. **Somente leitura: não migra, não treina,
+não muda rótulos ou vereditos e não bloqueia o ODIN.**
+
+Histórico do diagnóstico: CNN FALTANDO V2 = 201/202 e
+MEMÓRIA KNN = 89/212 (122 lacunas e 1 OCR inválido).
+O objetivo é encontrar as causas sem criar aprovações artificiais.
+Detalhes: [`docs/ODIN_STARTUP_REGRESSION_GATE.md`](docs/ODIN_STARTUP_REGRESSION_GATE.md).
+
+---
+
 ## 09/10/2026 — Correção: segunda verificação é MEMÓRIA KNN
 
 O operador confirmou que **"CNN MEMÓRIA" significa a memória KNN
