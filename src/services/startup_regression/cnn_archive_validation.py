@@ -141,14 +141,18 @@ def validate_archive_cnns(
         extractor = AOIPairExtractor()
 
     all_rows = []
+    # Processa os modelos da MESMA imagem em sequência. Só mantém o par
+    # da imagem corrente em RAM, mesmo quando o acervo crescer muito.
     planned = [
         (name, item, scope_for_model(name, item.get("category_hint")))
-        for name in MODEL_NAMES for item in items
+        for item in items for name in MODEL_NAMES
         if (name == MODEL_MEMORY or
             scope_for_model(name, item.get("category_hint")) != "OUT_OF_SCOPE")
     ]
+    current_path = None
+    current_pair = None
+    current_extract_error = None
     # Um PNG corrompido não pode deixar seu teste desaparecido do denominador.
-    by_path = {}
     for i, (name, item, scope) in enumerate(planned, start=1):
         row = _result_row(name, item, scope)
         model = predictor_map.get(name)
@@ -166,11 +170,23 @@ def validate_archive_cnns(
                 row["error"] = "CNN MEMÓRIA não implementada/conectada na branch central"
             else:
                 key = row["source_path"]
-                if key not in by_path:
-                    frame = _archive_image(root, item)
-                    reference, test, _aoi_info = extractor(frame)
-                    by_path[key] = (reference, test)
-                reference, test = by_path[key]
+                if key != current_path:
+                    current_path = key
+                    current_pair = None
+                    current_extract_error = None
+                    try:
+                        frame = _archive_image(root, item)
+                        reference, test, _aoi_info = extractor(frame)
+                        current_pair = (reference, test)
+                    except Exception as exc:
+                        current_extract_error = exc
+                if current_extract_error is not None:
+                    raise ValueError(
+                        f"Extração AOI não disponível: {current_extract_error}"
+                    ) from current_extract_error
+                if current_pair is None:
+                    raise ValueError("Par de imagens ausente")
+                reference, test = current_pair
                 verdict, score, digest = _check_model_response(
                     name,
                     model.inspect(reference, test, row["lighting_mode"]),
