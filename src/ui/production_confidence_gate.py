@@ -93,6 +93,8 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     )
     consensus = detail.get("cnn_v2_consensus")
     votes = detail.get("cnn_v2_light_votes", {})
+    verified_lights = detail.get("cnn_v2_verified_lights", [])
+    verified_lights = verified_lights if isinstance(verified_lights, list) else []
     expected_vote = "OK" if verdict == "FALHA FALSA" else (
         "NG" if verdict == "DEFEITO REAL" else ""
     )
@@ -111,8 +113,7 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         and isinstance(votes, dict)
         and set(votes) == {"SIDE", "TOP", "MID"}
         and all(votes[light] == expected_vote for light in votes)
-        and set(detail.get("cnn_v2_verified_lights", []))
-            == {"SIDE", "TOP", "MID"}
+        and set(verified_lights) == {"SIDE", "TOP", "MID"}
         and not _review_required(analysis)
     )
     if cnn_auto:
