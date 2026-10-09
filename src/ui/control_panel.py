@@ -276,7 +276,18 @@ class ControlPanel(QWidget):
             self.change_lighting(comando_xp, source="network")
 
     def send_command_to_xp(self, tecla: str):
-        command = f"PRESS_{str(tecla).strip().upper()}"
+        normalized = str(tecla or "").strip().upper()
+        if normalized.startswith("PRESS_"):
+            normalized = normalized[6:]
+        # Defesa definitiva na borda TCP: o Modo Sombra é SOMENTE
+        # observador, inclusive se um atalho ou botão chamar esta função.
+        if (normalized in {"0", "1"}
+                and self.combo_mode.currentText() == "Modo Sombra"):
+            self.update_network_status(
+                "SOMBRA: comando de decisão 0/1 bloqueado pelo ODIN."
+            )
+            return False
+        command = f"PRESS_{normalized}"
         if not self.last_xp_ip:
             self.update_network_status(
                 f"Falha ao enviar {command}: AOI Windows XP ainda não identificada."
