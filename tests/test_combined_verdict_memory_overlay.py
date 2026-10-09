@@ -105,6 +105,7 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
         p = self.panel()
         self.addCleanup(p.deleteLater)
         p.show_ai_verdict_feedback(report("KNOWN_KNN", label="OK"))
+        p.lighting_status_feedback.set_lighting("SIDE")
         p.show_lighting_status_feedback(report("KNOWN_KNN", label="OK"))
         rect = p.ai_verdict_feedback.geometry()
         lighting_rect = p.lighting_status_feedback.geometry()
