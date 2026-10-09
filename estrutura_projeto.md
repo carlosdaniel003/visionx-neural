@@ -1,3 +1,26 @@
+## 09/10/2026 — CNN FALTANDO v2 em FALTANDO / EMBORCADO / INVERTIDO / DESLOCADO
+
+**Integração por categoria visual de ausência:** todas as quatro categorias
+usam a CNN FALTANDO v2 para **novos pares** de gabarito/teste em Teste,
+Sombra e Produção. **MUITO ADESIVO** e sinônimos continuam no especialista
+dedicado. Memória KNN exata, humana e segregada por categoria original tem
+prioridade, sem liberar variações aproximadas por semelhança.
+
+**Modo Produção supervisionado:** CNN pode enviar **0=OK ou 1=NG** só com
+consenso completo SIDE/TOP/MID da CNN, três scores conclusivos, mesmo
+checkpoint SHA verificado e nenhum sinal de revisão. Aguarda 2000 ms antes
+do envio; **Space** suspende/retoma o julgamento enquanto ainda não foi
+transmitido. Divergência, uma única iluminação, mistura com KNN, falha de
+modelo, score duvidoso e revisão exigem o operador. Teste e Sombra não
+introduzem o envio automático. Sem mudança na CNN DESLOCADO cancelada.
+
+**Atenção:** concordância histórica no dataset NÃO garante detecção de
+NG inéditos. A mudança exige validação supervisionada na linha; o botão
+Space não é um mecanismo de parada física depois que um comando foi enviado.
+Ver [procedimento detalhado](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+
+---
+
 ## 09/10/2026 — Hipótese de motor visual compartilhado: FALTANDO + memória KNN (auditoria offline)
 
 **Solicitação:** a AOI XP pode usar nomes distintos (__EMBORCADO__, __INVERTIDO__,

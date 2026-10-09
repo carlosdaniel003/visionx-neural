@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.core.neural.faltando_category_scope import uses_faltando_v2
+
 
 # Mantido por compatibilidade com imports antigos. Não participa mais da política.
 PRODUCTION_AUTO_CONFIDENCE_THRESHOLD = None
@@ -77,9 +79,9 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
 
     detail = (analysis or {}).get("detail", {}) if isinstance(analysis, dict) else {}
     detail = detail if isinstance(detail, dict) else {}
-    # O checkpoint v2 passou a regressão de exemplos conhecidos, não um
-    # teste cego de NG novos. Não enviar 0/OK automaticamente a uma AOI
-    # só porque a rede produziu um score extremo não calibrado.
+    # AUTO-OK ou AUTO-NG pela CNN experimental somente se TRÊS luzes
+    # verificadas concordarem, com mesmo SHA de modelo e sem revisão.
+    # Uma pontuação isolada, até extrema, não autoriza nenhum comando.
     multilight_routes = detail.get("recognition_light_routes", {})
     multilight_routes = (
         multilight_routes if isinstance(multilight_routes, dict) else {}
@@ -87,14 +89,48 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     cnn_experimental = bool(
         (detail.get("cnn_v2_active") and detail.get("cnn_v2_experimental"))
         or any(route == "NEW_CNN" for route in multilight_routes.values())
+        or detail.get("recognition_route") == "NEW_CNN"
     )
-
-    if cnn_experimental and verdict == "FALHA FALSA":
-        proposed_decision = ""
+    consensus = detail.get("cnn_v2_consensus")
+    votes = detail.get("cnn_v2_light_votes", {})
+    verified_lights = detail.get("cnn_v2_verified_lights", [])
+    verified_lights = verified_lights if isinstance(verified_lights, list) else []
+    expected_vote = "OK" if verdict == "FALHA FALSA" else (
+        "NG" if verdict == "DEFEITO REAL" else ""
+    )
+    cnn_auto = bool(
+        cnn_experimental
+        and isinstance(analysis, dict)
+        and analysis.get("multilight_final") is True
+        and analysis.get("eligible_for_final_decision") is True
+        and detail.get("multilight_final") is True
+        and detail.get("eligible_for_final_decision") is True
+        and uses_faltando_v2(detail.get("multilight_category", ""))
+        and detail.get("recognition_route") == "NEW_CNN"
+        and detail.get("cnn_v2_supervised_auto_eligible") is True
+        and consensus == expected_vote
+        and expected_vote in {"OK", "NG"}
+        and isinstance(votes, dict)
+        and set(votes) == {"SIDE", "TOP", "MID"}
+        and all(votes[light] == expected_vote for light in votes)
+        and set(verified_lights) == {"SIDE", "TOP", "MID"}
+        and not _review_required(analysis)
+    )
+    if cnn_auto:
+        proposed_decision = expected_vote
+        auto_allowed = True
+        operator_review_required = False
+        reason = "faltando_cnn_v2_supervised_three_light_consensus"
+    elif cnn_experimental:
         auto_allowed = False
         operator_review_required = True
-        verdict = "REVISÃO OBRIGATÓRIA"
-        reason = "faltando_cnn_v2_experimental_requires_operator"
+        if verdict == "DEFEITO REAL":
+            proposed_decision = "NG"
+            reason = "faltando_cnn_v2_ng_requires_operator"
+        else:
+            proposed_decision = ""
+            verdict = "REVISÃO OBRIGATÓRIA"
+            reason = "faltando_cnn_v2_experimental_requires_operator"
     elif verdict == "FALHA FALSA" and not _review_required(analysis):
         proposed_decision = "OK"
         auto_allowed = True
@@ -249,7 +285,11 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
             )
             if not (
                 policy["auto_allowed"]
-                and str(user_decision).strip().upper() == "OK"
+                and str(user_decision).strip().upper() == policy["proposed_decision"]
+                and not bool(getattr(
+                    getattr(self, "production_autonomy_controller", None),
+                    "paused", False,
+                ))
             ):
                 enter_production_review(
                     self,

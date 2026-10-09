@@ -103,7 +103,7 @@ class ProductionGateIntegrationContractTests(unittest.TestCase):
     def test_manual_review_freezes_capture_and_exposes_zero_one(self):
         source = self.gate_source()
         self.assertIn("def enter_production_review", source)
-        self.assertIn("self.production_review_pending = True", source)
+        self.assertIn("panel.production_review_pending = True", source)
         self.assertIn('"0 - Aprovar como OK"', source)
         self.assertIn('"1 - Confirmar defeito NG"', source)
         self.assertIn('command in {"0", "OK"}', source)

@@ -15,6 +15,7 @@ from threading import RLock
 import cv2
 import numpy as np
 
+from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.core.strict_category_memory import (
     canonical_memory_category, canonical_memory_lighting,
 )
@@ -325,7 +326,7 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             return _review_result(match["reason"], mode)
 
         category = canonical_memory_category(info.get("category", ""))
-        if category == "FALTANDO":
+        if uses_faltando_v2(category):
             route = "NEW_CNN"
             # O FaltandoCNNLive é o wrapper anterior, não consulta KNN.
             requested_info = dict(info)
@@ -347,10 +348,10 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             result["detail"] = detail
         detail.update({
             "specialist_candidate": (
-                "DESLOCADO_CNN_V1_BOOTSTRAP_NOT_ACTIVE"
-                if category == "DESLOCADO" else None
+                None
             ),
             "recognition_route": route,
+            "cnn_v2_aoi_category": category if route == "NEW_CNN" else None,
             "recognition_schema": RECOGNITION_SCHEMA,
             "recognition_match": "NOT_FOUND",
             "recognition_memory_verified": False,

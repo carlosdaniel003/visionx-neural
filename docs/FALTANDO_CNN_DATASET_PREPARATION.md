@@ -1,3 +1,69 @@
+## 09/10/2026 — CNN FALTANDO v2 como especialista de ausência em três modos
+
+**Decisão de implementação:** ODIN usa a CNN FALTANDO v2 para as categorias
+AOI **FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO**. O rótulo original é
+mantido no debug/memória; não transforma a imagem em categoria FALTANDO no
+arquivo. **MUITO ADESIVO, MUCH ADHESIVE e demais sinônimos ficam
+EXCLUSIVAMENTE no especialista adesivo**. Categorias não previstas continuam
+no MoE legado. A CNN DESLOCADO especializada continua cancelada/arquivada.
+
+**KNN e conjunto OK:** Antes da CNN, o ODIN consulta somente a memória
+**humana de par exato**, segregada por categoria original, placa, peça, valor
+e iluminação. Igualdade aproximada com imagens da pasta OK **não libera
+nenhum componente automaticamente**. Caso novo usa a CNN de ausência. A
+CNN não é retreinada automaticamente com outras categorias por esta
+alteração; o treinamento incremental original de FALTANDO não mudou.
+
+**Três modos usam o mesmo roteamento de inspeção:**
+- **Modo Teste:** CNN no resultado visual; rótulo 0/1 por decisão do humano,
+  seguindo as regras já existentes de captura e salvamento.
+- **Modo Sombra:** avalia a CNN e registra o diagnóstico, sem enviar 0/1 ao XP.
+- **Modo Produção:** em evento com SIDE/TOP/MID, a fusão registra as três
+  inferências e o SHA-256 do checkpoint. O controlador considera um 0/1
+  automático **somente** se todas as iluminações forem da CNN, tiverem a
+  **mesma categoria**, o **mesmo checkpoint íntegro**, score finito e
+  conclusivo (**OK <= 0.10** ou **NG >= 0.90**), e os **três votos forem
+  idênticos**, sem revisão individual/final. Todos os demais casos com
+  CNN exigem operador — imagem mono-SIDE isolada, conflito TOP/MID/SIDE,
+  KNN + CNN misturados, carregamento incompleto, pontuação intermediária,
+  inversão ou troca do checkpoint, categoria adesivo/desconhecida.
+
+**Automação supervisionada:** depois da apresentação visual, aguarda
+**2000 ms** antes do comando; **Space** pausa imediatamente o agendamento
+e só continua após novo Space. 0=OK e 1=NG usam os mesmos caminhos
+existentes de salvamento, transmissão e feedback; apenas comandos com
+confirmação de envio contam em métricas AUTO. Falha de transmissão exige
+intervenção humana. Troca de modo, ciclo ou imagem invalida envio pendente.
+**O operador deve estar presente e pode intervir antes do envio**.
+Após o envio ao XP, Space não desfaz a decisão já transmitida.
+
+**Limite da qualificação:** a auditoria transversal histórica registrou
+199/199 resultados concordantes com os arquivos fora de adesivo,
+mas pode haver exemplos vistos no treino. DESLOCADO dispõe apenas de OK
+(sem NG reais), e os NG das demais categorias nesse histórico são SIDE.
+Portanto **esse teste não certifica segurança de detecção de NG inéditos**.
+Mesmo com consenso de três luzes, existem riscos residuais de falha
+sistemática comum às três visões; a implantação exige observação técnica
+e validação supervisionada nas placas da produção.
+
+**Verificação automatizada de software:**
+- __tests/test_faltando_shared_production.py__
+- __tests/test_faltando_cnn_v2_live.py__
+- __tests/test_verified_memory_router.py__
+- __tests/test_production_autonomy_controller.py__
+- __tests/test_production_confidence_gate.py__
+- Workflow __.github/workflows/faltando-shared-production-tests.yml__.
+
+**Diagnóstico e rollback:** se uma peça suspeita receber OK, pausar o
+Modo Produção com Space, voltar ao Modo Teste para avaliação humana e
+preservar as imagens e debug. Para reverter esta integração, restaurar
+o commit anterior na branch central via revisão/rollback Git (não
+excluir dataset nem memórias). Não tratar sucesso dos testes unitários
+como aprovação industrial de uma nova categoria.
+
+
+---
+
 # Preparação do dataset neural — FALTANDO
 
 **Etapa atual (08/10/2026):** CNN FALTANDO v2 integrada à inspeção normal, com aprendizado incremental disparado por decisões humanas novas em Teste/Produção/Sombra, promoção de checkpoint condicionada a replay de regressão. Validação na estação real deste fluxo incremental ainda pendente.

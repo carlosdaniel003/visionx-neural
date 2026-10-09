@@ -18,6 +18,7 @@ from copy import deepcopy
 from typing import Any
 
 from src.core.adhesive_multilight_fusion import fuse_adhesive_multilight
+from src.core.neural.faltando_multilight_consensus import summarize_cnn_multilight
 from src.utils.text_normalizer import normalize_aoi_text
 
 
@@ -563,6 +564,11 @@ def fuse_multilight(
     else:
         recognition_route = ""
 
+    # Verifica TODAS as luzes e a identidade do checkpoint. A fusão
+    # pode ter herdado metadados somente da luz dominante, insuficientes
+    # para permitir decisão automática.
+    cnn_consensus = summarize_cnn_multilight(source, canonical_category)
+    detail.update(cnn_consensus)
     detail.update(
         {
             "recognition_route": recognition_route,

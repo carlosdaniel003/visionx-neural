@@ -62,7 +62,7 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(fake.calls, ["SIDE", "TOP", "MID"])
         self.assertEqual(unit.old_inspections, 0)
 
-    def test_other_categories_and_memory_replay_remain_unchanged(self):
+    def test_nonadhesive_categories_route_to_cnn_and_replay_stays_physical(self):
         class Orchestrator(FakeOrchestrator):
             pass
 
@@ -71,12 +71,14 @@ class RoutingTests(unittest.TestCase):
         unit = Orchestrator()
         r, t = pair()
         for cat in ("DESLOCADO", "EMBORCADO", "INVERTIDO"):
+            self.assertEqual(unit.inspect(r, t, [], {"category": cat}, {}, [])["active_engines"], ["faltando_cnn_v2.py"])
+        for cat in ("MUITO ADESIVO", "Much Adhesive", "UNKNOWN"):
             self.assertTrue(unit.inspect(r, t, [], {"category": cat}, {}, [])["old_engine"])
         self.assertTrue(unit.inspect(
             r, t, [], {"category": "FALTANDO", "_replay_without_memory": True}, {}, []
         )["old_engine"])
         self.assertEqual(unit.old_inspections, 4)
-        self.assertEqual(fake.calls, [])
+        self.assertEqual(fake.calls, ["SIDE", "SIDE", "SIDE"])
 
     def test_double_installation_does_not_double_predict(self):
         class Orchestrator(FakeOrchestrator):

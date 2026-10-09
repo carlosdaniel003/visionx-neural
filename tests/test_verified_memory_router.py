@@ -18,6 +18,7 @@ from src.core.verified_memory_router import (
     VerifiedKNNMemory, install_memory_first_router,
 )
 from src.core.multilight_fusion import fuse_multilight
+from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.services.image_archive_dedup import image_fingerprint
 from src.ui.production_confidence_gate import production_decision_policy
 
@@ -44,9 +45,9 @@ class FakeOrchestrator:
             "is_defect": False,
             "confidence": .97,
             "active_engines": ["faltando_cnn_v2.py"] if
-            str(info.get("category", "")).upper() == "FALTANDO" else ["shift_expert.py"],
+            uses_faltando_v2(info.get("category")) else ["shift_expert.py"],
             "detail": {"cnn_v2_active": True, "cnn_v2_experimental": True}
-            if str(info.get("category", "")).upper() == "FALTANDO"
+            if uses_faltando_v2(info.get("category"))
             else {"decision_trace": {"fusion_rule": "physical_only"}},
         }
 
@@ -162,10 +163,15 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
         self.assertNotIn("_replay_without_memory", system.specialist_calls[0])
         self.assertFalse(production_decision_policy(result)["auto_allowed"])
 
-    def test_new_other_category_skips_knn_and_calls_physical_specialist(self):
+    def test_shared_categories_use_cnn_but_adhesive_uses_physical_specialist(self):
         system = self.create_router()
-        i = dict(self.info, category="DESLOCADO")
-        result = self.inspect(system, info=i)
+        for category in ("DESLOCADO", "EMBORCADO", "INVERTIDO"):
+            result = self.inspect(system, info=dict(self.info, category=category))
+            self.assertEqual(result["detail"]["recognition_route"], "NEW_CNN")
+            self.assertEqual(result["detail"]["cnn_v2_aoi_category"], category)
+            self.assertEqual(result["active_engines"], ["faltando_cnn_v2.py"])
+            self.assertNotIn("_replay_without_memory", system.specialist_calls[-1])
+        result = self.inspect(system, info=dict(self.info, category="MUITO ADESIVO"))
         self.assertEqual(result["detail"]["recognition_route"], "NEW_EXPERTS")
         self.assertEqual(result["active_engines"], ["shift_expert.py"])
         self.assertTrue(system.specialist_calls[-1]["_replay_without_memory"])

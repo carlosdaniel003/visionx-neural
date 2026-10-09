@@ -1,4 +1,4 @@
-"""Roteador operacional CNN v2 EXCLUSIVO para categoria FALTANDO.
+"""Roteador operacional da CNN FALTANDO v2 para ausência visual.
 
 O checkpoint foi auditado no replay de 117 PNGs conhecidos. Este módulo
 NÃO garante generalização, NÃO usa KNN/memória e NÃO habilita AUTO-OK:
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.core.anomaly_memory_integration import is_missing_category
+from src.core.neural.faltando_category_scope import uses_faltando_v2
 
 LIGHTS = ("SIDE", "TOP", "MID")
 PINNED_RELATIVE_CHECKPOINT = (
@@ -271,7 +271,7 @@ class FaltandoCNNLive:
 
 
 def install_faltando_cnn_live(orchestrator_cls, *, predictor=None) -> None:
-    """Wrapper externo: não executar especialistas físicos nem KNN em FALTANDO."""
+    """Wrapper externo: CNN para ausência visual; adesivo mantém especialista próprio."""
     if getattr(orchestrator_cls, "_faltando_cnn_live_installed", False):
         return
 
@@ -284,7 +284,7 @@ def install_faltando_cnn_live(orchestrator_cls, *, predictor=None) -> None:
     ):
         info = aoi_info if isinstance(aoi_info, dict) else {}
         if (
-            not is_missing_category(info.get("category", ""))
+            not uses_faltando_v2(info.get("category", ""))
             or info.get("_replay_without_memory", False)
             or type(self).__name__ == "PhysicalOnlyOrchestrator"
         ):
