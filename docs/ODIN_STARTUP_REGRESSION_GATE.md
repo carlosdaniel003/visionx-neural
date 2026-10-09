@@ -1,5 +1,79 @@
 # ODIN — Gate de regressão visual na inicialização
 
+## 09/10/2026 — Avaliação seletiva KNN com teste por dia separado (somente leitura)
+
+**Ponto de partida real:** auditoria com 952 registros (891 OK e 61 NG).
+O baseline KNN Top 5 classificou 26 NG como OK; a política experimental
+balanceada com revisão deixou 2 NG incorretamente liberados como OK, porém
+gerou 248 revisões e só 23 NG detectados automaticamente. Essa diferença
+veio sobretudo de abstenções, **não** de uma classificação NG de 100%.
+Os dois NG restantes eram de FALTANDO:
+`memory_NG_20260804_082605_918.json` e
+`memory_NG_20261007_123710_374.json`.
+Não subir limiares usando esses mesmos registros para anunciar 100%.
+
+**Código autorizado (somente diagnóstico):**
+
+- `src/services/startup_regression/knn_selective_holdout.py`: separa
+  a avaliação em três conjuntos por **dia completo inferido do nome JSON**:
+  `memory_train`, `calibration`, `heldout_test`. Datas inteiras não
+  atravessam as partições; eventos declarados e assinaturas idênticas
+  encontradas em mais de uma partição são retirados da validação.
+- A distribuição por data é determinística e estratificada por dias
+  com NG para tentar oferecer NG em todos os três grupos. **Não é
+  necessariamente cronológica**; sem ID físico da placa/lote,
+  independência real ainda NÃO está comprovada. Não chamar
+  `heldout_test` de validação em placas inéditas.
+- A assinatura da consulta é comparada somente contra os vetores
+  guardados em `memory_train`, usando
+  `compare_anomaly_signatures` e voto KNN existente de referência.
+  O rótulo humano da consulta serve apenas para métricas APÓS a
+  decisão, não para alterar a inferência. Ausência de vizinhos
+  de uma das classes vira `REVISAO_OBRIGATORIA`.
+- A calibração examina um **grid fixo antes do teste** de tetos
+  de voto NG para liberar OK (0, .10, .20, .25, .30, .35, .40)
+  e semelhança mínima (.80, .85, .90, .95). Uma política só é
+  candidata se não liberar nenhum NG como OK NA CALIBRAÇÃO
+  e mantiver pelo menos 20% dos OK automáticos na calibração.
+  Dentre as elegíveis, seleciona maior liberação OK e
+  congela os parâmetros antes do teste.
+- Se não houver ≥3 dias com NG, se faltarem classes em alguma
+  partição ou se nenhuma política calibrada for útil, o
+  diagnóstico relata BLOCKED e não finge aprovação.
+- Mede **separadamente** resultado no teste reservado:
+  NG liberados como OK, NG classificados NG, NG revisados,
+  OK classificados OK, OK classificados NG, OK revisados.
+  Disponibiliza referência TOP5 no **mesmo conjunto reservado**.
+- Mesmo teste com zero NG liberados indevidamente informa
+  `EXPLORATORY_NO_NG_MISSED_NOT_PRODUCTION_VALIDATED`,
+  `production_approved=false`: amostras correlacionadas
+  ou conjunto NG pequeno não comprovam zero risco em produção.
+  Limite binomial 95% quando zero falhas é meramente
+  ilustrativo e pressupõe independência não demonstrada.
+
+**Execução na estação:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.knn_selective_holdout_cli
+```
+
+**Arquivos gerados:**
+`reports/startup_regression/knn_selective_holdout_*.json` e
+`knn_selective_holdout_*.txt`. Enviar esses dois arquivos para
+decidir próximos testes. `tests/test_knn_selective_holdout.py`
+foi integrado ao workflow Windows de regressão.
+
+**Estado inalterado:** produção KNN/CNN, dataset e
+`main.py` não são modificados; gate de startup desativado.
+Faltam validação em peças/lotes físicos separados, revisão
+CNN FALTANDO V2 201/202, OCR e prova das três iluminações
+antes de considerar o encerramento operacional.
+
+---
+
+
 ## 09/10/2026 — Auditoria experimental da discriminação NG da KNN
 
 **Base observada em `memory_levels_20261009_173758_183510`**:
