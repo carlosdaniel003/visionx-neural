@@ -224,6 +224,18 @@ def _predictions(
     return results
 
 
+def _baseline_decision(row: dict) -> dict:
+    if row["has_exact_query_copy"] or row["has_conflicting_neighbor_signatures"]:
+        return {"decision": "REVISAO_OBRIGATORIA", "reason": "CONFLITO_OU_COPIA_EXATA"}
+    score = row["baseline_vote_ng"]
+    if score is None:
+        return {"decision": "REVISAO_OBRIGATORIA", "reason": "SEM_VIZINHOS"}
+    return {
+        "decision": "NG" if score > .5 else "OK",
+        "reason": "BASELINE_KNN_TOP5_SEM_ABSTENCAO_POR_MARGEM",
+    }
+
+
 def _decision(row: dict, policy: dict | None) -> dict:
     if policy is None:
         return {"decision": "REVISAO_OBRIGATORIA", "reason": "POLITICA_NAO_CALIBRADA"}
@@ -241,12 +253,12 @@ def _decision(row: dict, policy: dict | None) -> dict:
     return {"decision": "REVISAO_OBRIGATORIA", "reason": "MARGEM_OK_INSUFICIENTE"}
 
 
-def _measure(rows: list[dict], policy: dict | None) -> dict:
+def _measure(rows: list[dict], policy: dict | None, *, baseline=False) -> dict:
     counts = Counter()
     by_category = defaultdict(Counter)
     decisions = []
     for row in rows:
-        ans = _decision(row, policy)
+        ans = _baseline_decision(row) if baseline else _decision(row, policy)
         label = row["expected_human_label"]
         decision = ans["decision"]
         counts[f"actual_{label}"] += 1
@@ -393,6 +405,10 @@ def selective_knn_holdout(
         "calibrated_policy": policy,
         "calibration": cal_metrics,
         "heldout_test": test_metrics,
+        "heldout_baseline_top5": (
+            _measure(test_rows, None, baseline=True) if enough else None
+        ),
+        "illustrative_zero_error_bound_requires_independence": True,
         "heldout_zero_ng_miss_upper_bound_95": zero_error_upper_bound_95,
         "startup_gate_enabled": False,
         "dataset_modified": False,
@@ -402,7 +418,9 @@ def selective_knn_holdout(
         "test_of_new_independent_physical_boards": False,
         "note": (
             "Sessões agrupadas pelo dia inferido do nome JSON; sem identificação "
-            "física de placa/lote, independência visual não garantida. Teste "
+            "física de placa/lote, independência visual não garantida; "
+            "limite de risco 95% é apenas ilustrativo sob independência não "
+            "demonstrada. Teste "
             "nunca seleciona parâmetros. Revisão não é acerto NG automático; "
             "nenhuma taxa de erro zero amostral libera produção."
         ),
