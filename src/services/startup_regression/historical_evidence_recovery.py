@@ -270,13 +270,15 @@ def inspect_record(
         "path": path.relative_to(root).as_posix(),
         "status": "NAO_AVALIADO", "schema": None,
         "human_confirmed": False, "signature_present": False,
-        "record_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "record_sha256": None,
         "original_audit_pair_present": False,
         "source": None, "test": None, "reference": None,
         "reconstruction": None, "migration_ready": False,
     }
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        json_bytes = path.read_bytes()
+        row["record_sha256"] = hashlib.sha256(json_bytes).hexdigest()
+        data = json.loads(json_bytes.decode("utf-8"))
         if not isinstance(data, dict):
             raise ValueError("JSON deve conter objeto")
         row["schema"] = str(data.get("schema") or "SEM_SCHEMA")
@@ -339,6 +341,23 @@ def inspect_record(
                     row["status"] = row["reconstruction"]["status"]
         elif source_loc["hash_verified"] and extractor is None:
             row["status"] = "FONTE_VERIFICADA_AGUARDA_EXTRATOR"
+        elif (
+            source_loc["_local_matches"]
+            and not source_loc["declared_hash_present"]
+            and extractor is not None
+        ):
+            # Fonte explicitamente nomeada pelo JSON e existente no
+            # MESMO diretório, mas sem prova criptográfica da origem.
+            # Extrair é útil para diagnóstico; nunca promover para KNOWN.
+            local_sources = source_loc["_local_matches"]
+            if len({x["fingerprint"] for x in local_sources}) == 1:
+                row["reconstruction"] = _check_extraction(
+                    root, data, local_sources[0]["path"], extractor,
+                    reference_loc, test_loc,
+                )
+                row["status"] = "ORIGEM_JSON_LOCAL_SEM_HASH_PARA_REVISAO"
+            else:
+                row["status"] = "ORIGEM_JSON_LOCAL_AMBIGUA"
         elif reference_loc["hash_verified"] and test_loc["hash_verified"]:
             row["status"] = "DOIS_HASHES_DE_PARES_LOCALIZADOS_PARA_REVISAO"
         elif test_loc["hash_verified"]:
