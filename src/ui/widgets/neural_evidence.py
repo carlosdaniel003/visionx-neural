@@ -30,18 +30,26 @@ class _NeuralProbeTask(QRunnable):
         self.epoch = epoch
         self.crops = crops
         self.signals = _Signals()
-        self.setAutoDelete(True)
+        # A GUI conserva a tarefa até o sinal ser entregue. Não permitir
+        # autodeleção nativa durante signal delivery entre threads Qt.
+        self.setAutoDelete(False)
 
     def run(self):
         try:
-            from src.core.neural.faltando_explainability import explain_epicenters
-            maps = explain_epicenters(self.crops)
+            # Torch/autograd NUNCA entra no processo Qt. Se o worker
+            # nativo falhar, subprocess.run devolve erro, não fecha ODIN.
+            from src.core.neural.faltando_explainability_runner import (
+                explain_in_isolated_process,
+            )
+            maps = explain_in_isolated_process(self.crops)
             self.signals.done.emit(self.epoch, maps, "")
         except Exception as exc:
             self.signals.done.emit(
                 self.epoch, None,
                 "CNN indisponível: " + type(exc).__name__ + " • " + str(exc)[:170]
             )
+        finally:
+            self.crops = {}
 
 
 CARD_WIDTH = 252
