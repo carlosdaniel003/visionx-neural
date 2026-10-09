@@ -845,3 +845,50 @@ Para este evento, a resposta correta na tela é **JÁ VI**.
 A mudança só afeta os rótulos da interface e o desenho do painel.
 Não altera KNN, CNN, treinamento, decisões em Teste/Sombra/Produção,
 checkpoint, nem o envio de 0/1 à AOI XP.
+
+
+## 09/10/2026 — Painel Neural Explicável por Iluminação (SIDE/TOP/MID)
+
+**Natureza:** visualização diagnóstica e auditável dos pixels, sem alterar
+classificação, treinamento, KNN, checkpoint, limiares ou comandos 0/1.
+
+**Fonte dos dados:** utiliza os recortes de teste **e gabarito** dos dois
+epicentros calculados por \`build_lighting_context\` e já utilizados por
+\`build_adhesive_view_payload\`. Não reexecuta a extração da AOI,
+não desenha bounding boxes manualmente e não altera a imagem de origem.
+
+**Por iluminação** (SIDE / TOP / MID) o painel apresenta:
+- **Epicentro maior (contexto):** (1) cinza da imagem teste;
+  (2) mapa de **diferenças visuais absolutas** entre teste e gabarito
+  sobreposto à imagem real, sem falsos destaques quando a diferença é zero;
+  (3) aproximação local em blocos obtida por média de pixels.
+- **Epicentro menor (foco AOI):** as mesmas três representações,
+  recortadas do quadrado menor extraído originalmente pela AOI.
+- Métricas apenas **descritivas**: dimensões do recorte em pixels,
+  diferença média absoluta na faixa 0..255 e desvio padrão de contraste.
+  Pixels indisponíveis mostram mensagem explícita e não score zero.
+
+**Precisão terminológica obrigatória:**
+- A CNN FALTANDO v2 *não recebe imagens em escala de cinza*:
+  usa quatro entradas RGB com letterbox: referência e teste completos,
+  e seus crops centrais (\`focus_fraction\` especificado no checkpoint).
+- As caixas AOI **maior e menor** são recortes de diagnóstico.
+  Não são necessariamente iguais ao crop central da entrada real da CNN.
+- **Mapa de diferenças não é Grad-CAM, saliência treinada,
+  atenção da CNN, evidência de causalidade nem reconstrução por decoder.**
+  Reconstrução por blocos aqui é somente pixelização/agrupamento visual.
+  O score NG da CNN permanece no card original do especialista.
+
+**Layout:** uma fila horizontal de painéis de especialistas
+compatível com a barra horizontal já existente; por dentro, cada
+epicentro reorganiza as três miniaturas em 3, 2 ou 1 colunas conforme
+a largura, com rolagem vertical para notebooks e imagens inteiras
+escaladas sem zoom infinito. Nenhum ROI é armazenado no arquivo de
+memória; os dados da UI são descartados quando o ciclo é limpo.
+
+**KNN:** quando uma iluminação é KNOWN_KNN, o painel continua exibindo
+os pixels diagnósticos, mas informa **CNN não executada** nessa luz.
+Os resultados OK/NG e a memória KNN não são afetados.
+
+**Regressões:** \`tests/test_neural_evidence_board.py\`
+junto com testes existentes de inspeção e especialistas SIDE/TOP/MID.

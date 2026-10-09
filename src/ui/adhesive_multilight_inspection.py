@@ -120,6 +120,8 @@ def build_adhesive_view_payload(
         "main": ng_crop.copy() if _valid_image(ng_crop) else np.array([]),
         "large": np.array([]),
         "small": np.array([]),
+        "large_reference": np.array([]),
+        "small_reference": np.array([]),
         "large_box": None,
         "small_box": None,
     }
@@ -140,12 +142,16 @@ def build_adhesive_view_payload(
         focus_ng = frame_context.get("focus_ng", np.array([]))
 
         large = _crop_box(ng_crop, global_box_info)
-        if _valid_image(large):
+        large_reference = _crop_box(sample_crop, global_box_info)
+        if _valid_image(large) and _valid_image(large_reference):
             payload["large"] = large
+            payload["large_reference"] = large_reference
             payload["large_box"] = dict(global_box_info or {})
 
-        if _valid_image(focus_ng):
+        focus_gab = frame_context.get("focus_gab", np.array([]))
+        if _valid_image(focus_ng) and _valid_image(focus_gab):
             payload["small"] = focus_ng.copy()
+            payload["small_reference"] = focus_gab.copy()
             if real_epicenters:
                 payload["small_box"] = tuple(
                     int(value) for value in real_epicenters[0]
@@ -568,6 +574,12 @@ def _store_view(
     view = getattr(panel, "adhesive_multilight_view", None)
     if view is not None and hasattr(view, "set_lighting_payload"):
         view.set_lighting_payload(normalized, payload)
+
+    # O painel explicável utiliza as MESMAS ROIs já extraídas para a
+    # visualização AOI; não executa inspeção, inferência ou crop adicional.
+    neural_view = getattr(panel, "adhesive_multilight_analysis_view", None)
+    if neural_view is not None and hasattr(neural_view, "set_visual_payload"):
+        neural_view.set_visual_payload(normalized, payload)
     return True
 
 
@@ -966,7 +978,13 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             None,
         )
         if analysis_view is not None:
+            # clear_all() reinicia o lane: restaura o payload SIDE já salvo
+            # antes de renderizar os novos especialistas do ciclo.
             analysis_view.clear_all()
+            analysis_view.set_visual_payload(
+                "SIDE",
+                self.adhesive_multilight_views.get("SIDE"),
+            )
             analysis_view.set_analysis(
                 "SIDE",
                 getattr(self, "current_analysis", None),
