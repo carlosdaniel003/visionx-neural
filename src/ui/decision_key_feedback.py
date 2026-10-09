@@ -232,7 +232,6 @@ class DecisionKeyFeedbackOverlay(QFrame):
             for callback_name in (
                 "start_ai_verdict_feedback_fade_out",
                 "start_lighting_status_feedback_fade_out",
-                "start_inspection_memory_feedback_fade_out",
             ):
                 start_result_fade = getattr(
                     self.panel,
@@ -317,7 +316,6 @@ class DecisionKeyFeedbackOverlay(QFrame):
             for callback_name in (
                 "prepare_ai_verdict_feedback_dismissal",
                 "prepare_lighting_status_feedback_dismissal",
-                "prepare_inspection_memory_feedback_dismissal",
             ):
                 prepare_overlay = getattr(
                     self.panel,

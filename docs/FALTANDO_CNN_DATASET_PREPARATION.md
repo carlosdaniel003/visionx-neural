@@ -780,3 +780,32 @@ dos dados, **não avaliam sensibilidade da CNN a novos NG físicos**.
 - KNN exata apresenta rótulo humano sem inventar score de similaridade.
 - Não foram alterados treino, classificadores, prioridades de memória,
   julgamento 0/1 ou política de produção.
+
+
+## 09/10/2026 — Memória KNN na mesma mensagem flutuante do veredito
+
+**Correção do layout:** a antiga mensagem flutuante independente
+"MEMÓRIA MISTA / JÁ VISTO / CASO NOVO" sobrepunha a mensagem
+"ILUMINAÇÃO ATUAL". O ODIN não instala mais o overlay KNN separado.
+O cartão existente de veredito ("FALHA FALSA",
+"DEFEITO REAL" ou "REVISÃO OBRIGATÓRIA") mostra abaixo,
+**dentro da mesma borda amarela**:
+
+- **JÁ VISTO • KNN EXATO:** par gabarito/teste confirmado por humano,
+  idêntico a registro de memória, não similaridade aproximada.
+- **CASO NOVO • SEM MATCH EXATO:** não há par exato humano KNN para
+  aquele evento; não se afirma que o defeito físico é novo.
+- **MEMÓRIA MISTA • 3 LUZES:** SIDE/TOP/MID tiveram rotas diferentes.
+- **MEMÓRIA CONFLITANTE • REVISÃO:** recuperação contraditória.
+- Sem rota registrada: segunda linha oculta, sem inventar consulta KNN.
+
+O cartão unificado preserva **dimensões, posição, aparência, tempo
+de animação, sincronização de entrada e fade-out do comando 0/1**.
+A informação KNN compartilha o mesmo efeito de opacidade do veredito,
+não tem animação ou tempo de vida próprios. O painel de
+"ILUMINAÇÃO ATUAL" permanece abaixo, sem sobreposição.
+
+Os métodos antigos do módulo de memória independente foram
+preservados para testes/compatibilidade, mas não são instalados por
+__main.py__. A correção é **somente de interface**; sem alterações
+nos modelos, memória, treinamento, julgamento ou produção.
