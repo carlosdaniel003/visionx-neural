@@ -289,6 +289,16 @@ def replay_full_cnn_history(
     for light in sorted({r["lighting_mode"] for r in rows}):
         by_light[light] = _summarize([r for r in rows if r["lighting_mode"] == light])
     total = _summarize(rows)
+    events = _event_report(rows)
+    events_valid = all(
+        event["status"] == "PASSOU_3_LUZES" for event in events["events"]
+    )
+    total["explicit_event_integrity_passed"] = events_valid
+    # A meta operacional histórica exige também consistência dos
+    # eventos multilight com manifesto verificado.
+    total["historical_98pct_target_met"] = (
+        total["historical_98pct_target_met"] and events_valid
+    )
     return {
         "schema": SCHEMA,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -305,7 +315,7 @@ def replay_full_cnn_history(
         "overall": total,
         "by_category": by_category,
         "by_lighting": by_light,
-        "multilight_explicit_events": _event_report(rows),
+        "multilight_explicit_events": events,
         "cases": rows,
         "knn_used": False,
         "dataset_modified": False,
