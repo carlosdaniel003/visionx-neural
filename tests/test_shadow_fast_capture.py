@@ -167,6 +167,10 @@ class ShadowFastInspectionTests(unittest.TestCase):
 
 
 class ShadowAutomationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
     def test_top_capture_requests_mid_while_top_analysis_is_still_pending(self):
         class FakePanel(QWidget):
             def __init__(self):
