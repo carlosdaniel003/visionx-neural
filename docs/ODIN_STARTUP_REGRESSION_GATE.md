@@ -1,5 +1,54 @@
 # ODIN — Gate de regressão visual na inicialização
 
+## 09/10/2026 — Adaptador legado somente leitura (fase de simulação)
+
+**Referência da estação:** em 212 PNGs e 952 JSONs da memória,
+o diagnóstico anterior registrou 860 `SCHEMA_NAO_SUPORTADO`,
+92 `VERIFICADO_KNN`, 99 PNGs com contexto legado porém
+registro inelegível, 20 sem correspondência de contexto e 1 OCR inválido.
+O objetivo não é mudar o rótulo de um registro, mas verificar se
+um par antigo pode ser reconhecido com evidência íntegra.
+
+**Novo módulo:** `src/services/startup_regression/legacy_memory_compat.py`.
+Ele lê todos os JSONs de memória não-v3, identifica seu schema
+(inclusive `SEM_SCHEMA`), e testa **sem persistência**:
+
+1. Confirmação explícita do operador e mesmo rótulo no JSON e
+   na subpasta OK/NG, sem aprovar fonte automática;
+2. Assinatura de anomalia válida (embedding antigo isolado não
+   atende ao critério de atalho por par exato da KNN);
+3. PNGs legíveis de referência/teste no diretório do JSON, sem
+   travessia de caminho, symlink ou uso de pares inferidos;
+4. Identidade visual exata pelo `image_fingerprint`, coerente
+   com hash declarado quando existir;
+5. Board, Parts, Value, categoria e iluminação normalizados pela
+   `VerifiedKNNMemory._key`, **sem** copiar metadados do nome do PNG.
+
+Se e somente se todas as verificações acima passarem, um registro
+pode virar `LEGADO_PAR_AUDITAVEL_SIMULADO`: ele é indexado
+**temporariamente no reconciliador**, nunca injetado no KNN
+operacional. Em cada screenshot o relatório registra:
+`LEGADO_PAR_SIMULADO_CONCORDA`,
+`LEGADO_PAR_SIMULADO_DIVERGE`,
+`LEGADO_CONFLITO_EXATO` ou `SEM_PAR_LEGADO_AUDITAVEL`.
+Conflitos exatos são sinalizados de modo conservador.
+
+Relatórios incluem a taxonomia completa dos esquemas e das razões
+de inelegibilidade de cada registro, exemplos de caminhos para
+diagnóstico e quantidade de compatibilidades simuladas. Nenhum caso
+entra em `PAR_VERIFICADO` apenas pela simulação. A KNN de produção,
+os rótulos, a CNN FALTANDO V2 e `main.py` não mudaram.
+
+**Próxima ação:** executar novamente
+`python -m src.services.startup_regression.archive_reconciler_cli`
+na estação e enviar `reconciliation_*.json` + `reconciliation_*.txt`.
+Após analisar os schemas/referências reais, propor uma migração
+auditável somente se for tecnicamente possível; nenhuma migração
+ou startup gate está autorizado nesta fase.
+
+---
+
+
 ## 09/10/2026 — Reconciliação automatizada sem alterações de memória
 
 O operador autorizou iniciar pelo diagnóstico **somente leitura**:
