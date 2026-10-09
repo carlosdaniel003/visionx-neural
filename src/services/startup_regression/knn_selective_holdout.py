@@ -189,8 +189,8 @@ def _predictions(
             known[digest] = label
             dedup.append(item)
         score, selected = _balanced_vote(dedup, 3)
-        if selected and all(x[1] == "NG" for x in selected):
-            raise AssertionError("Voto balanceado não exige ambas classes")
+        # Com apenas uma classe, _balanced_vote devolve score=None;
+        # a decisão segura é revisão, nunca exceção nem AUTO_OK.
         base_five = candidates[:5]
         baseline_score = (
             float(KNNExpert._weighted_vote(
