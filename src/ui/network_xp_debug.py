@@ -220,6 +220,62 @@ def format_network_debug_report(record: dict | None) -> str:
             ]
         )
 
+    # Para o roteamento CNN/KNN exato, os antigos campos físicos ficam
+    # honestamente ausentes; não poluir o diagnóstico com dezenas de '-'.
+    if isinstance(decision, dict) and decision:
+        cnn = decision.get("cnn_v2", {})
+        cnn = cnn if isinstance(cnn, dict) else {}
+        route = decision.get("recognition", {})
+        route = route if isinstance(route, dict) else {}
+        if cnn.get("active"):
+            unused_prefixes = (
+                "Missing ", "Dual-scale ", "Presença ", "Corpo presente:",
+                "Veto por corpo", "Fonte da presença:", "Caixa da presença:",
+                "Envelope global", "FALTANDO footprint", "INVERTIDO ",
+                "Guarda ", "Hard missing ", "Ausência física forte",
+            )
+            lines = [
+                item for item in lines
+                if not item.startswith(unused_prefixes)
+            ]
+            score = cnn.get("ng_score_uncalibrated")
+            score_text = f"{score:.6%}" if isinstance(score, (int, float)) else "N/D"
+            per_light = cnn.get("light_diagnostics", {})
+            per_light = per_light if isinstance(per_light, dict) else {}
+            lines.extend([
+                "", "REDE NEURAL CNN FALTANDO v2", "-" * 72,
+                f"Categoria AOI: {cnn.get('aoi_category') or decision.get('category', '-')}",
+                f"Roteamento: {cnn.get('route') or route.get('route', '-')}",
+                f"Status inferência: {cnn.get('status') or 'ver luzes individuais'}",
+                f"Checkpoint verificado: {cnn.get('checkpoint_verified', '-')}",
+                f"SHA-256 checkpoint: {cnn.get('checkpoint_sha256') or '-'}",
+                f"Melhor época do treinamento: {cnn.get('checkpoint_best_epoch', '-')}",
+                f"Score NG local (não calibrado): {score_text}",
+                f"Consenso CNN: {cnn.get('consensus') or 'não calculado'}",
+                f"Motivo consenso: {cnn.get('consensus_reason') or 'não informado'}",
+                f"Elegível auto 0/1 supervisionado: {cnn.get('auto_eligible', False)}",
+                "Scores não são probabilidades calibradas; não indicam acurácia industrial.",
+            ])
+            for light in MULTILIGHT_DEBUG_ORDER:
+                entry = per_light.get(light, {})
+                entry = entry if isinstance(entry, dict) else {}
+                value = entry.get("ng_score_uncalibrated")
+                display = f"{value:.6%}" if isinstance(value, (float, int)) else "N/D"
+                lines.append(
+                    f"{light}: {entry.get('route', '-') or '-'} • "
+                    f"{entry.get('verdict', '-') or '-'} • score NG {display} "
+                    f"• checkpoint {'OK' if entry.get('checkpoint_verified') else 'não verificado'}"
+                )
+            lines.extend([
+                "", "MEMÓRIA KNN (ROTA EFETIVA)", "-" * 72,
+                f"Rota: {route.get('route', '-')}",
+                f"Par exato verificado: {route.get('verified', False)}",
+                f"Match: {route.get('match', '-')}",
+                f"Rótulo humano recuperado: {route.get('known_label') or 'não aplicável'}",
+                f"Motivo da busca: {route.get('reason') or '-'}",
+                "Match não encontrado não significa similaridade 0%.",
+            ])
+
     if hints:
         lines.extend(["", "INDÍCIOS DIAGNÓSTICOS", "-" * 72])
         for hint in hints:
@@ -384,6 +440,10 @@ def format_multilight_debug_report(panel) -> str:
                 f"Iluminações fortes: {final_detail.get('multilight_strong_positive_modes', final_detail.get('adhesive_multilight_strong_auxiliary_modes', []))}",
                 f"Iluminações em revisão: {final_detail.get('multilight_review_modes', [])}",
                 f"Papel da memória KNN: {final_detail.get('multilight_memory_role', final_detail.get('adhesive_multilight_memory_role', '-'))}",
+                f"Rota final: {final_detail.get('recognition_route', '-')}",
+                f"Consenso CNN: {final_detail.get('cnn_v2_consensus', 'não calculado')}",
+                f"Consenso CNN motivo: {final_detail.get('cnn_v2_consensus_reason', '-')}",
+                f"Consenso CNN elegível automático: {final_detail.get('cnn_v2_supervised_auto_eligible', False)}",
                 f"Motivo final: {final_analysis.get('reason', '-')}",
             ]
         )
@@ -422,6 +482,12 @@ def format_multilight_debug_report(panel) -> str:
                 f"Testemunha MID clara - score: {detail.get('mid_bright_witness_score', '-')}",
                 f"Regra de fusão local: {detail.get('fusion_rule', '-')}",
                 f"Motor dominante local: {detail.get('dominant_engine', '-')}",
+                f"Rota memória local: {detail.get('recognition_route', '-')}",
+                f"CNN ativa: {detail.get('cnn_v2_active', False)}",
+                f"CNN inferência: {detail.get('cnn_v2_status', 'não executada')}",
+                f"CNN checkpoint verificado: {detail.get('cnn_v2_checkpoint_verified', '-')}",
+                f"CNN checkpoint SHA-256: {detail.get('cnn_v2_checkpoint_sha256', '-')}",
+                f"CNN score NG (não calibrado): {detail.get('cnn_v2_ng_score_uncalibrated', 'N/D')}",
                 f"Motivo local: {analysis.get('reason', '-')}",
                 "Elegível para resultado final multilight: False",
                 "Detalhes técnicos compactos (JSON):",

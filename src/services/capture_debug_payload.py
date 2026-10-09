@@ -255,6 +255,35 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         "hard_missing_contradicted_by_invariant_ok": (
             hard_missing_contradicted_by_invariant_ok
         ),
+        "cnn_v2": {
+            "active": bool(
+                detail.get("cnn_v2_active")
+                or any(
+                    isinstance(v, dict) and v.get("cnn_active")
+                    for v in (detail.get("cnn_v2_light_diagnostics") or {}).values()
+                )
+            ),
+            "route": str(detail.get("recognition_route", "") or ""),
+            "status": str(detail.get("cnn_v2_status", "") or ""),
+            "aoi_category": str(detail.get("cnn_v2_aoi_category", "") or ""),
+            "checkpoint_verified": detail.get("cnn_v2_checkpoint_verified"),
+            "checkpoint_sha256": str(detail.get("cnn_v2_checkpoint_sha256", "") or ""),
+            "checkpoint_best_epoch": json_safe(detail.get("cnn_v2_checkpoint_best_epoch")),
+            "ng_score_uncalibrated": json_safe(detail.get("cnn_v2_ng_score_uncalibrated")),
+            "light_diagnostics": json_safe(detail.get("cnn_v2_light_diagnostics", {})),
+            "light_votes": json_safe(detail.get("cnn_v2_light_votes", {})),
+            "consensus": str(detail.get("cnn_v2_consensus", "") or ""),
+            "consensus_reason": str(detail.get("cnn_v2_consensus_reason", "") or ""),
+            "auto_eligible": detail.get("cnn_v2_supervised_auto_eligible") is True,
+        },
+        "recognition": {
+            "route": str(detail.get("recognition_route", "") or ""),
+            "routes_by_light": json_safe(detail.get("recognition_light_routes", {})),
+            "match": str(detail.get("recognition_match", "") or ""),
+            "verified": detail.get("recognition_memory_verified") is True,
+            "known_label": str(detail.get("recognition_known_label", "") or ""),
+            "reason": str(detail.get("recognition_reason", "") or ""),
+        },
         "missing": missing,
         "inverted": inverted,
         "memory": {

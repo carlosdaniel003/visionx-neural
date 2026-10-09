@@ -1,3 +1,61 @@
+## 09/10/2026 — Telemetria visual CNN FALTANDO v2 + KNN e debug XP
+
+**Objetivo:** eliminar painéis vazios quando o ODIN decide com
+__faltando_cnn_v2.py__ e/ou recuperação exata __KNOWN_KNN__.
+**Escopo estritamente visual e de diagnóstico**: não muda motor, memória,
+treinamento, consenso SIDE/TOP/MID, limiares produtivos ou comandos 0/1.
+
+**Análise dos especialistas:**
+- Widget CNN FALTANDO v2 na visão normal e nos três lanes SIDE, TOP e MID.
+  Mostra categoria AOI original, rota, score NG não calibrado, complemento
+  OK (não probabilidade de acerto), status de inferência, iluminação,
+  verificação e digest abreviado do checkpoint.
+- Widget KNN exato quando essa foi a rota efetiva, com rótulo humano;
+  não declara que executou uma CNN que não participou.
+- Nos eventos multilight, o motor atual de cada luz aparece sem os
+  cards físicos antigos vazios. As telas de adesivo permanecem intactas.
+
+**Decisão e confiança:**
+- CNN: visualiza score NG **não calibrado**; não apresenta os percentuais
+  como acurácia/certidão de que a peça está OK.
+- Multilight: lista os votos SIDE/TOP/MID, o estado do consenso e a
+  elegibilidade supervisionada, que continuam calculados pelo motor real.
+- KNN: rótulo humano recuperado de PNGs exatos, sem percentuais
+  fictícios de similaridade não calculada.
+
+**Influência dos motores:**
+- Mostra uma linha CNN por luz realmente inferida, com score NG original.
+  Em fusão multilight, são **votos independentes**, não uma soma ponderada
+  de porcentagens inventadas.
+- Caso KNOWN_KNN registra que a decisão se originou do registro humano
+  exato; se uma luz não usou CNN, não recebe score CNN.
+- Motores físicos legados mantêm sua visualização já existente.
+
+**Memória de anomalias KNN:**
+- NEW_CNN = KNN pesquisada antes da CNN, **nenhum par exato humano**;
+  não significa que similaridade da KNN seja 0%.
+- KNOWN_KNN = histórico humano exato, identifica OK/NG e origem.
+- MULTILIGHT_MIXED = identifica quais luzes usaram KNN e quais usaram CNN.
+  Não desenhar barras 0% em ausência de medição.
+
+**Debug copiável do XP:**
+- Resumo visível da CNN, checkpoint SHA-256, status, score NG local,
+  pontuações e rotas SIDE/TOP/MID, consenso, motivo e status de
+  supervisão, além de bloco KNN (match exato e rótulo humano).
+- Preserva a estrutura JSON e as análises SIDE/TOP/MID detalhadas;
+  os antigos campos de ausência física/INVERTIDO sem cálculos deixam
+  de poluir o bloco inicial quando só a CNN foi usada.
+- A fusão mantém **os scores reais de cada luz** em
+  __cnn_v2_light_diagnostics__; não reaproveita os valores apenas SIDE.
+
+**Teste de regressão:** __tests/test_neural_telemetry_panels.py__, com
+fixture INVERTIDO SIDE/TOP/MID de scores distintos baseado em captura
+real de 09/10/2026. Os testes comprovam renderização e mapeamento
+dos dados, **não avaliam sensibilidade da CNN a novos NG físicos**.
+
+
+---
+
 ## 09/10/2026 — CNN FALTANDO v2 em FALTANDO / EMBORCADO / INVERTIDO / DESLOCADO
 
 **Integração por categoria visual de ausência:** todas as quatro categorias

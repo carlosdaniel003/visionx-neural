@@ -7,6 +7,7 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 from src.ui.memory_status_model import memory_status_from_detail
+from src.ui.neural_telemetry_model import memory_panel_text
 
 
 class KNNSpectrumWidget(QWidget):
@@ -50,6 +51,8 @@ class KNNSpectrumWidget(QWidget):
 
     def update_data(self, detail: dict):
         self.model = memory_status_from_detail(detail)
+        self.recognition_route = str((detail or {}).get("recognition_route", "") or "")
+        self.route_header, self.route_explanation = memory_panel_text({"detail": detail})
         self.is_active = bool(self.model["active"])
         self.has_memory = bool(self.model["has_memory"])
         self.memory_available = bool(self.model["memory_available"])
@@ -332,6 +335,22 @@ class KNNSpectrumWidget(QWidget):
                 Qt.AlignmentFlag.AlignCenter,
                 "Memória visual aguardando inspeção",
             )
+            painter.end()
+            return
+
+        if getattr(self, "recognition_route", "") in {
+            "NEW_CNN", "KNOWN_KNN", "MULTILIGHT_MIXED", "NEW_EXPERTS"
+        }:
+            painter.setPen(QColor("#f5c518"))
+            painter.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
+            painter.drawText(self.rect().adjusted(12, 12, -12, -120),
+                             Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
+                             self.route_header)
+            painter.setPen(QColor("#c9d1d9"))
+            painter.setFont(QFont("Consolas", 9))
+            painter.drawText(self.rect().adjusted(12, 92, -12, -12),
+                             Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
+                             self.route_explanation)
             painter.end()
             return
 
