@@ -72,9 +72,24 @@ def write_holdout_reports(report: dict, target: Path):
         for category, values in stats["by_category"].items():
             lines.append(f"    {category}: {values}")
     lines.extend([
+        "", "BASELINE KNN TOP5 NO MESMO TESTE RESERVADO:",
+    ])
+    baseline = report.get("heldout_baseline_top5")
+    if baseline:
+        for metric in (
+            "NG_released_as_OK", "NG_auto_NG", "NG_review",
+            "OK_auto_OK", "OK_false_NG", "OK_review", "total_reviews",
+        ):
+            lines.append(f"  {metric}: {baseline[metric]}")
+    else:
+        lines.append("  NÃO AVALIADO")
+    lines.extend([
         "",
         "Limite superior unilateral 95% do risco NG->OK, se 0 falhas: "
         f"{report['heldout_zero_ng_miss_upper_bound_95']}",
+        "",
+        "AVISO: cálculo de limite 95% é ilustrativo e NÃO válido "
+        "como garantia sem independência física de placas/lotes.",
         "",
         "CASOS DE TESTE QUE NÃO RECEBERAM LIBERAÇÃO AUTOMÁTICA CORRETA:",
     ])
