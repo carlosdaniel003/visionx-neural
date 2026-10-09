@@ -102,6 +102,15 @@ def _summarize(rows: list[dict]) -> dict:
     supported_ok = [r for r in supported if r["expected_label"] == "OK"]
     correct_ng = sum(r["status"] == "PASSOU" for r in supported_ng)
     correct_ok = sum(r["status"] == "PASSOU" for r in supported_ok)
+    # Classes sem CNN, inválidas ou em revisão continuam no denominador.
+    ok_rate = correct_ok / labels["OK"] if labels["OK"] else None
+    ng_rate = correct_ng / labels["NG"] if labels["NG"] else None
+    # Não permitir que vários NG incorretos fiquem escondidos pela
+    # predominância de imagens OK no indicador geral de 98%.
+    labeled_groups_at_target = (
+        (ok_rate is None or ok_rate >= MIN_RETENTION)
+        and (ng_rate is None or ng_rate >= MIN_RETENTION)
+    )
     raw_correct = sum(r["raw_binary_correct"] for r in rows)
     available = len(supported)
     total = len(rows)
@@ -124,6 +133,9 @@ def _summarize(rows: list[dict]) -> dict:
         "historical_supported_match_rate": (
             round(passed / available, 6) if available else None
         ),
+        "historical_OK_match_rate": round(ok_rate, 6) if ok_rate is not None else None,
+        "historical_NG_match_rate": round(ng_rate, 6) if ng_rate is not None else None,
+        "labeled_groups_at_98pct": labeled_groups_at_target,
         "raw_binary_correct": raw_correct,
         "raw_binary_match_rate_full_archive": (
             round(raw_correct / total, 6) if total else None
@@ -150,6 +162,7 @@ def _summarize(rows: list[dict]) -> dict:
         "historical_98pct_target_met": (
             total > 0 and available == total
             and passed / total >= MIN_RETENTION
+            and labeled_groups_at_target
         ),
     }
 
