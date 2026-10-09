@@ -1,5 +1,84 @@
 # ODIN — Gate de regressão visual na inicialização
 
+## 09/10/2026 — Meta principal de regressão CNN em todo o histórico visual (98%)
+
+**Critério do operador:** todas as imagens históricas com rótulo OK/NG
+devem passar novamente pelas **CNNs**, usando o próprio PNG:
+- OK original continua OK; NG original continua NG;
+- tolerância inicial de 1–2% de discordância, isto é, >=98% de
+  concordância histórica **sobre o acervo inteiro**, não somente
+  exemplos fáceis;
+- revisar erros individuais, com resultados separados por
+  categoria, iluminação e principalmente NG; revisão obrigatória
+  NÃO é classificada como um acerto;
+- a KNN NÃO substitui o resultado CNN, nem converte erro em sucesso.
+
+**Limitação física do acervo, comprovada pelos diagnósticos anteriores:**
+`public/ok_archive` / `ng_archive` tinham 212 PNGs na última
+varredura; os 952 JSONs de memória incluem 815 registros legados v2
+sem par de imagens. **Uma CNN não pode reexecutar 815 inspeções
+visuais a partir de assinaturas vetoriais não invertíveis.** Para
+análise CNN desses casos, recuperar novas capturas verdadeiras.
+Não inventar pixels nem declarar 952/952 com KNN.
+
+**O que já existe:** `FaltandoCNNLive` usa checkpoint FALTANDO V2
+para FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO (escopo efetivo
+da CNN compartilhada). Resultado anterior de 201/202 para esse
+escopo (~99,50%) supera a tolerância de 98%, mas precisa ser
+reconfirmado na estação e inclui uma revisão SIDE.
+A categoria MUITO ADESIVO ainda usa motor físico especializado
+e **não possui CNN treinada pronta**. Na última contagem havia
+10 PNGs de adesivo: sem CNN, 98% do total de 212 não pode
+ser comprovado. Não treinar uma CNN adesivo com poucos exemplos
+sem holdout NG/OK apropriado; primeiro qualificar dados.
+
+**Implementação somente leitura:**
+- `src/services/startup_regression/cnn_full_history_replay.py`
+  reanalisa **todos** os PNGs do inventário validado, obtém
+  gabarito/teste pelo extrator AOI real, verifica categoria pelo
+  OCR e avalia CNN FALTANDO V2 **sem chamada KNN**. Checkpoints
+  precisam passar verificação SHA-256 e metadados.
+- Para cada PNG registra esperado, categoria, iluminação,
+  hash, CNN, score NG bruto não calibrado, predição binária
+  informativa, veredito operacional, revisão/erro, checkpoint.
+  `PASSOU` exige decisão operacional OK/NG correspondente;
+  revisão, OCR inválido, arquivo corrompido, categoria sem CNN
+  ou checkpoint ausente NÃO passam.
+- Métricas por categoria, iluminação e rótulo: OK→OK, OK→NG,
+  OK→revisão, NG→NG, NG→OK, NG→revisão. Também separa
+  acerto binário do score bruto de aprovação operacional.
+- Eventos TOP/MID/SIDE só são agregados com manifesto
+  de três imagens explicitamente vinculado. Não inventar
+  evento a partir de nomes semelhantes ou minutos próximos.
+- Retenção total é acertos / **total de PNGs**, inclusive
+  categorias sem CNN. `historical_98pct_target_met` exige
+  >=98% do arquivo todo e **cobertura completa por CNN**.
+  Mesmo se atingido, o relatório declara
+  `production_approved=false`: reexecutar imagens usadas
+  no treino não mede desempenho em defeitos inéditos.
+- `cnn_full_history_replay_cli.py`: gera
+  `reports/startup_regression/cnn_full_history_*.json`
+  e TXT, sem gravar dataset, pesos, decisões XP ou ativar gate.
+- `tests/test_cnn_full_history_replay.py` e o workflow
+  `startup-regression-cnns.yml` validam os contratos.
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.cnn_full_history_replay_cli
+```
+
+**Próximos passos:** analisar o novo relatório real da estação.
+Se categoria CNN coberta cair abaixo de 98%, identificar casos,
+checar dados/rótulos e treinar candidato CNN com conjunto
+independente sem substituir checkpoint atual. Em adesivo,
+primeiro qualificar quantidade e variedade de OK e NG para
+justificar CNN especializada. Sem KNN e sem lançamento
+operacional só pelo indicador histórico.
+
+---
+
+
 ## 09/10/2026 — Avaliação seletiva KNN com teste por dia separado (somente leitura)
 
 **Ponto de partida real:** auditoria com 952 registros (891 OK e 61 NG).
