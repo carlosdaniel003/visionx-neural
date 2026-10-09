@@ -31,7 +31,11 @@ Para cada JSON:
   componente, categoria e valor com o JSON;
 - a simulação `PAR_RECONSTRUIDO_PARA_REVISAO` exige também
   hashes declarados do gabarito **e** do teste, idênticos aos
-  recortes reextraídos. Isso não vira automaticamente KNOWN;
+  recortes reextraídos. Se houver referência explícita ao PNG
+  fonte no mesmo diretório do JSON, porém sem hash da origem,
+  pode executar OCR diagnóstico, mas o caso permanece marcado
+  `ORIGEM_JSON_LOCAL_SEM_HASH_PARA_REVISAO` e NÃO vira KNOWN;
+  a reconstrução com hashes não equivale a proveniência auditada;
 - versões antigas que jamais registraram os hashes ou PNGs podem
   permanecer sem evidência suficiente. Esse é um resultado
   válido de diagnóstico, não uma regressão da CNN.
