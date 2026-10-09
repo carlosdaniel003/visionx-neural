@@ -1,3 +1,66 @@
+## 09/10/2026 — Recuperador de evidências históricas (somente leitura)
+
+**Motivação:** `reconciliation_20261009_170703_051863` identificou
+952 memórias: 92 v3 verificadas, 860 v2; entre as v2, 45 pares
+auditáveis em simulação e **815 sem PNGs de par** registrados.
+Somente 3 dos 45 pares tinham correspondência exata com o acervo
+(2 OK e 1 NG). Não confundir os demais 815 com erros de CNN.
+
+**Implementação nova** em `src/services/startup_regression/`:
+
+- `historical_evidence_recovery.py`: indexação de PNGs por hash
+  visual real (pixels BGR + formato), em
+  `public/dataset`, `public/ok_archive`, `public/ng_archive`
+  sem seguir links simbólicos ou acessar pastas arbitrárias.
+- Varre todos os registros JSON OK/NG, preserva provenance de
+  `decision.operator_label` e `decision.source`, assinatura de
+  anomalia e schema. **Nunca** deduz o rótulo a partir de PNG,
+  nome, data ou categoria da pasta.
+- Busca `source_image_file`, `test_image_file`,
+  `reference_image_file`, `image_file` e
+  `source_image_fingerprint` / `test_image_fingerprint` /
+  `reference_image_fingerprint`, mantendo **nome como pista** e
+  **hash declarado como prova de pixels**. Um basename parecido,
+  timestamp próximo ou categoria igual não cria correspondência.
+- Se uma origem tiver hash comprovado, reexecuta
+  `AOIPairExtractor` real e compara OCR observado contra metadados
+  históricos de board, parts, value, categoria; confronta hashes de
+  ambos os recortes; classifica resultado como
+  `PAR_RECONSTRUIDO_PARA_REVISAO` **apenas se houver ambas as
+  impressões digitais declaradas e correspondentes**.
+- Outros diagnósticos: `TESTE_POR_HASH_SEM_GABARITO`,
+  `DOIS_HASHES_DE_PARES_LOCALIZADOS_PARA_REVISAO`,
+  `ARQUIVOS_POR_NOME_SEM_VINCULO_DE_HASH`,
+  `HASH_DECLARADO_SEM_PNG_COMPATIVEL`, `RECONSTRUCAO_OCR_DIVERGENTE`
+  e `SEM_EVIDENCIA_VISUAL_LOCALIZAVEL`.
+  `PAR_LEGADO_JA_AUDITAVEL` é histórico, não migração.
+- `historical_evidence_recovery_cli.py`: produz
+  `reports/startup_regression/evidence_recovery_*.json` e TXT.
+  `tests/test_historical_evidence_recovery.py` cobre a busca,
+  prova de hashes, erro OCR, procedência humana, symlinks, arquivos
+  adulterados, caminhos inseguros, saída apenas sob reports.
+  Workflow de reconciliação Windows executa esses testes.
+
+**Contrato:** sem gravação do dataset, sem criação de memória,
+sem retreino CNN, sem instalar KNN no runtime, sem mudança de
+`main.py` ou gate. Mesmo `PAR_RECONSTRUIDO_PARA_REVISAO`
+**não é reconhecimento `KNOWN`** e não permite promover um NG
+por metadados apenas. O recuperador não tem permissão para elevar
+a taxa KNN histórica antes de qualificação, backup e migração
+auditável autorizada.
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.historical_evidence_recovery_cli
+```
+
+Enviar os relatórios JSON/TXT novos. Eles permitem avaliar se há
+imagens de origem verificáveis para recuperar os 815 registros e
+quais continuam sem documentação suficiente.
+
+---
+
 ## 09/10/2026 — Compatibilidade legado, simulação somente leitura (continuação)
 
 **Contexto real, gerado na estação:** reconciliação do acervo
