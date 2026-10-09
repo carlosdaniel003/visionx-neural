@@ -147,11 +147,11 @@ def main():
     # Deve ser a última extensão do orquestrador: audita o resultado final de
     # todos os motores e garante a categoria correta no Laboratório de Textura.
     install_roi_input_contract(MoEOrchestrator, SSIMExpert, SilkExpert)
-    # FALTANDO passa pela CNN v2; as demais categorias preservam MoE/KNN.
-    # Modelo experimental: Modo Produção exige confirmação humana antes do OK.
+    # A CNN de ausencia v2 cobre FALTANDO/EMBORCADO/INVERTIDO/DESLOCADO.
+    # Adesivo e categorias desconhecidas permanecem em seus especialistas.
     install_faltando_cnn_live(MoEOrchestrator)
     # Consulta primeiro apenas memória humana KNN de par EXATO. Para casos
-    # novos ignora KNN e encaminha ao motor de categoria ou CNN FALTANDO.
+    # novos ignoram voto KNN aproximado e seguem CNN ou especialista.
     install_memory_first_router(MoEOrchestrator)
 
     # Ordem dos wrappers operacionais:

@@ -26,7 +26,7 @@ SCROLL_DURATION_MS = 6_300
 HORIZONTAL_SCROLL_DURATION_MS = 2_800
 NO_SCROLL_REVIEW_MS = 1_200
 POST_SCROLL_PAUSE_MS = 900
-AUTO_DECISION_DELAY_MS = 300
+AUTO_DECISION_DELAY_MS = 2_000
 
 
 class ProductionAutonomyController(QObject):
@@ -532,22 +532,24 @@ class ProductionAutonomyController(QObject):
         policy = production_decision_policy(analysis)
 
         if (
-            policy.get("auto_allowed", False)
-            and policy.get("proposed_decision") == "OK"
+            not self.paused
+            and policy.get("auto_allowed", False)
+            and policy.get("proposed_decision") in {"OK", "NG"}
         ):
-            self.state = "auto_ok_pending"
+            decision = policy["proposed_decision"]
+            command = "0" if decision == "OK" else "1"
+            self.state = "auto_decision_pending"
             try:
                 self.panel.update_brain_status(
-                    "Modo Produção: FALHA FALSA confirmada. "
-                    "Preparando 0 = OK automático...",
+                    f"Modo Produção: decisão supervisionada {decision}. "
+                    f"Preparando {command} automático; espaço para pausar...",
                     True,
                 )
             except Exception:
                 pass
-
             self._schedule_stage(
                 AUTO_DECISION_DELAY_MS,
-                lambda g=generation: self._emit_auto_ok(g),
+                lambda g=generation, d=decision: self._emit_auto_decision(g, d),
             )
             return
 
@@ -571,80 +573,77 @@ class ProductionAutonomyController(QObject):
             show_intervention(reason)
 
     def _emit_auto_ok(self, generation: int) -> None:
-        if not self._analysis_still_current(generation):
+        """Compatibilidade com chamada antiga do controlador."""
+        self._emit_auto_decision(generation, "OK")
+
+    def _emit_auto_ng(self, generation: int) -> None:
+        """Novo caminho: NG da CNN somente com consenso SIDE/TOP/MID."""
+        self._emit_auto_decision(generation, "NG")
+
+    def _emit_auto_decision(self, generation: int, decision: str) -> None:
+        # Uma pausa por espaço, troca de modo, troca de imagem ou intervenção
+        # entre análise e envio invalida o comando sem transmiti-lo.
+        if (
+            self.paused
+            or not self._analysis_still_current(generation)
+            or bool(getattr(self.panel, "production_review_pending", False))
+            or decision not in {"OK", "NG"}
+        ):
             return
 
         policy = production_decision_policy(self.pending_analysis)
         if not (
             policy.get("auto_allowed", False)
-            and policy.get("proposed_decision") == "OK"
+            and policy.get("proposed_decision") == decision
         ):
             self._finish_presentation(generation)
             return
 
-        self.state = "emitting_auto_ok"
+        self.state = "emitting_auto_decision"
         self.panel.last_decision_command_success = None
         try:
-            result = self.panel.save_label(
-                "OK",
-                source="production_auto",
+            outcome = self.panel.save_label(
+                decision, source="production_auto",
             )
         except Exception as exc:
-            result = False
+            outcome = False
             try:
                 self.panel.update_brain_status(
                     f"Falha ao enviar decisão automática: {exc}. "
-                    "Aguardando operador.",
-                    True,
+                    "Aguardando operador.", True,
                 )
             except Exception:
                 pass
 
-        command_success = getattr(
-            self.panel,
-            "last_decision_command_success",
-            None,
-        )
-        if result is False or command_success is not True:
+        succeeded = getattr(
+            self.panel, "last_decision_command_success", None
+        ) is True
+        if outcome is False or not succeeded:
             self.state = "operator_review"
             enter_production_review(
-                self.panel,
-                self.pending_analysis,
+                self.panel, self.pending_analysis,
                 verdict_override="REVISÃO OBRIGATÓRIA",
             )
-            show_intervention = getattr(
-                self.panel,
-                "show_production_intervention_feedback",
-                None,
+            show = getattr(
+                self.panel, "show_production_intervention_feedback", None
             )
-            if callable(show_intervention):
-                show_intervention("REVISÃO OBRIGATÓRIA")
+            if callable(show):
+                show("REVISÃO OBRIGATÓRIA")
             return
 
         record_auto = getattr(
-            self.panel,
-            "record_production_automatic_feedback",
-            None,
+            self.panel, "record_production_automatic_feedback", None
         )
         if callable(record_auto):
-            record_auto("OK")
-
-        show_key = getattr(
-            self.panel,
-            "show_decision_key_feedback",
-            None,
-        )
+            record_auto(decision)
+        show_key = getattr(self.panel, "show_decision_key_feedback", None)
         if callable(show_key):
-            show_key("OK", source="production_auto")
-
+            show_key(decision, source="production_auto")
         hide_session = getattr(
-            self.panel,
-            "hide_production_session_feedback",
-            None,
+            self.panel, "hide_production_session_feedback", None
         )
         if callable(hide_session):
             hide_session()
-
         self.pending_analysis = None
         self.state = "idle"
 

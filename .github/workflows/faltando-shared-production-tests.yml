@@ -1,0 +1,42 @@
+name: FALTANDO V2 Shared Routing and Supervised Decisions
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/core/neural/faltando_category_scope.py"
+      - "src/core/neural/faltando_multilight_consensus.py"
+      - "src/core/neural/faltando_live.py"
+      - "src/core/multilight_fusion.py"
+      - "src/core/verified_memory_router.py"
+      - "src/ui/production_confidence_gate.py"
+      - "src/ui/production_autonomy_controller.py"
+      - "tests/test_faltando_shared_production.py"
+      - "tests/test_verified_memory_router.py"
+      - "tests/test_faltando_cnn_v2_live.py"
+      - ".github/workflows/faltando-shared-production-tests.yml"
+  pull_request:
+    branches: [central]
+  workflow_dispatch:
+
+jobs:
+  multi-category-supervised:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: "offscreen"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU and UI dependencies
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
+      - name: Syntax verification
+        run: |
+          python -m py_compile src/core/neural/faltando_category_scope.py src/core/neural/faltando_multilight_consensus.py src/core/neural/faltando_live.py src/core/multilight_fusion.py src/core/verified_memory_router.py src/ui/production_confidence_gate.py src/ui/production_autonomy_controller.py tests/test_faltando_shared_production.py main.py
+      - name: Routing, memory, supervision, pause and production policies
+        run: |
+          python -m unittest tests.test_faltando_shared_production tests.test_verified_memory_router tests.test_production_confidence_gate tests.test_production_autonomy_controller tests.test_faltando_cnn_v2_live -v
