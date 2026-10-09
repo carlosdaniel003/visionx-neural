@@ -10,9 +10,13 @@ on:
       - "src/services/startup_regression/legacy_memory_compat.py"
       - "src/services/startup_regression/historical_evidence_recovery.py"
       - "src/services/startup_regression/historical_evidence_recovery_cli.py"
+      - "src/services/startup_regression/legacy_knn_signature_audit.py"
+      - "src/services/startup_regression/archive_exact_memory_plan.py"
+      - "src/services/startup_regression/two_level_memory_diagnostic_cli.py"
       - "tests/test_archive_reconciler.py"
       - "tests/test_legacy_memory_compat.py"
       - "tests/test_historical_evidence_recovery.py"
+      - "tests/test_two_level_memory_diagnostic.py"
       - ".github/workflows/startup-regression-reconciliation.yml"
   workflow_dispatch:
 
@@ -35,8 +39,8 @@ jobs:
       - name: Check syntax
         shell: pwsh
         run: |
-          python -m py_compile src/services/startup_regression/archive_reconciler.py src/services/startup_regression/archive_reconciler_cli.py src/services/startup_regression/legacy_memory_compat.py src/services/startup_regression/historical_evidence_recovery.py src/services/startup_regression/historical_evidence_recovery_cli.py tests/test_archive_reconciler.py tests/test_legacy_memory_compat.py tests/test_historical_evidence_recovery.py
+          python -m py_compile src/services/startup_regression/archive_reconciler.py src/services/startup_regression/archive_reconciler_cli.py src/services/startup_regression/legacy_memory_compat.py src/services/startup_regression/historical_evidence_recovery.py src/services/startup_regression/historical_evidence_recovery_cli.py tests/test_archive_reconciler.py tests/test_legacy_memory_compat.py tests/test_historical_evidence_recovery.py src/services/startup_regression/legacy_knn_signature_audit.py src/services/startup_regression/archive_exact_memory_plan.py src/services/startup_regression/two_level_memory_diagnostic_cli.py tests/test_two_level_memory_diagnostic.py
       - name: Verify reconciliation contracts and PNG inventory
         shell: pwsh
         run: |
-          python -m unittest tests.test_archive_reconciler tests.test_legacy_memory_compat tests.test_historical_evidence_recovery tests.test_startup_regression_inventory -v
+          python -m unittest tests.test_archive_reconciler tests.test_legacy_memory_compat tests.test_historical_evidence_recovery tests.test_startup_regression_inventory tests.test_two_level_memory_diagnostic -v
