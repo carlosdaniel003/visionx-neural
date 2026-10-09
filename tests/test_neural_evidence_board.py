@@ -160,6 +160,9 @@ class NeuralEvidenceQtTests(unittest.TestCase):
                             or "encoder" in tile.toolTip() or "features" in tile.toolTip()
                             for tile in p.tiles))
         self.assertNotIn("CINZA / DIFERENÇAS / BLOCOS",p.footer.text())
+        self.assertIn("TESTE ORIGINAL + SOBREPOSIÇÃO CNN",p.footer.text())
+        self.assertIn("GAB",p.tiles[0].metric.text())
+        self.assertIn("Imagem original do TESTE",p.tiles[0].toolTip())
 
     def test_stale_worker_cannot_render_previous_inspection(self):
         p=NeuralEvidencePanel()
@@ -202,7 +205,7 @@ class NeuralEvidenceQtTests(unittest.TestCase):
         self.assertEqual(lane.neural_evidence.scroll.verticalScrollBarPolicy(),
                          Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.assertEqual(lane.neural_evidence.tiles[0].heading.text(),
-                         "EPICENTRO MAIOR • DIF. LATENTE")
+                         "EPICENTRO MAIOR • TESTE + DIF. LATENTE")
         self.assertIn("border:1px solid #d3a900",
                       lane.neural_evidence.tiles[0].styleSheet())
         view.clear_all()

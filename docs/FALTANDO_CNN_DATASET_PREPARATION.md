@@ -1041,3 +1041,50 @@ produção automática.
 
 **Regressões:** \`tests/test_faltando_explainability_crash_isolation.py\`
 + suíte existente da CNN v2/Qt.
+
+
+## 09/10/2026 — SSIM Debugger: TESTE real + sobreposição de ativações CNN
+
+**Revisão do operador:** os mapas latentes/Grad-CAM/RMS isolados pareciam
+gradientes coloridos semelhantes entre si, sem mostrar em que região do
+componente a rede respondia. O painel deve permitir comparar o componente
+VISÍVEL com a projeção CNN, à maneira de um SSIM Debugger, sem substituir
+a explicabilidade por uma simples diferença OpenCV.
+
+**Nova composição visual** \`src/core/neural/faltando_activation_overlay.py\`:
+
+- **Fundo de cada cartão = recorte real da imagem TESTE**, correspondente
+  ao epicentro MAIOR ou MENOR retornado pelo AOI.
+- **Sobreposição = somente mapa 2D efetivamente extraído da CNN**:
+  diferença latente contrafactual, Grad-CAM local ou projeção RMS
+  das ativações da camada encoder.4.
+- A intensidade da cor/opacidade depende do sinal CNN normalizado,
+  com áreas pouco ativas preservadas como TESTE ORIGINAL (não se
+  pinta todo o componente com uma camada azul artificial).
+- **GAB = miniatura do GABARITO** dentro do canto superior esquerdo,
+  com borda amarela e legenda breve. O gabarito é apenas referência
+  visual: não produz peso, score, bbox inferida ou julgamento novo.
+- Diferença latente usa Jet (azul → vermelho); Grad-CAM usa Hot
+  (escuro → amarelo/branco); ativação interna usa Bone (neutros).
+  O formato dos mapas é escala relativa **local** a cada epicentro;
+  jamais tratar a coloração como confiança probabilística da CNN.
+- As miniaturas de todos os modos usam a mesma imagem de TESTE original,
+  facilitando identificar no componente as regiões com ativação.
+  Mantêm-se os seis cards lado a lado, tema preto/amarelo e apenas
+  scroll horizontal interno responsivo.
+- Os 3 resultados continuam derivados da **CNN v2 real**, com
+  checkpoint validado por SHA e execução no subprocesso isolado.
+  O modelo continua SEM decoder; “ativação CNN” é projeção RMS,
+  **não** reconstrução pixel a pixel aprendida.
+- Se a CNN estiver indisponível, **não** gerar overlays falsos com
+  filtros clássicos de pixels. O painel mostra erro como antes.
+
+**Testes:** \`tests/test_faltando_activation_overlay.py\` verifica que
+sem sinal neural o TESTE original é preservado, uma área com resposta
+alta muda somente onde deveria, o gabarito está na miniatura
+identificada e nenhum mapa inválido vira filtro substituto.
+\`tests/test_faltando_explainability.py\` valida a nova composição após
+forward/autograd real, e \`tests/test_neural_evidence_board.py\`
+valida os rótulos e a entrega ao widget PyQt.
+Nenhuma modificação em inferência operacional, memória KNN, classificação
+NG/OK, teclas 0/1 ou modo Produção.
