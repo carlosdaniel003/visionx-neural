@@ -155,24 +155,34 @@ def _summarize(rows: list[dict]) -> dict:
 
 
 def _event_report(rows: list[dict]):
-    # Apenas manifestos explícitos e íntegros podem unir TOP/MID/SIDE
-    # em um evento. Nunca deduzir pelo minuto ou nome do screenshot.
+    # O inventário permite reutilizar um PNG em vários manifestos e,
+    # nesse caso, zera row.event_id. Iterar TODOS os manifest_links evita
+    # omitir trincas reais e aprovar 98% sobre eventos não auditados.
     groups = defaultdict(list)
     for row in rows:
-        if row["event_id"] and row["manifest_links"]:
-            groups[row["event_id"]].append(row)
+        for link in row.get("manifest_links") or []:
+            if not isinstance(link, dict):
+                continue
+            event_id = link.get("event_id")
+            manifest_path = link.get("manifest_path")
+            linked_light = link.get("lighting_mode")
+            if event_id and manifest_path:
+                groups[(manifest_path, event_id)].append((row, linked_light))
     events = []
-    for event_id, group in sorted(groups.items()):
-        lights = {r["lighting_mode"] for r in group}
+    for (manifest_path, event_id), members in sorted(groups.items()):
+        group = [row for row, _ in members]
+        lights = {light for _, light in members}
         labels = {r["expected_label"] for r in group}
         outcomes = {r["status"] for r in group}
         if len(group) != 3 or lights != {"SIDE", "TOP", "MID"} or len(labels) != 1:
             status = "MANIFESTO_INCOMPLETO_OU_CONFLITANTE"
+        elif any(row["lighting_mode"] != light for row, light in members):
+            # Um PNG inferido como SIDE não comprova predição TOP/MID
+            # apenas por ter sido reutilizado em outro papel no manifesto.
+            status = "ILUMINACAO_CNN_NAO_VERIFICADA"
         elif outcomes == {"PASSOU"} and len({
             r["checkpoint_sha256"] for r in group
         }) != 1:
-            # Releitura de checkpoint no meio da captura impede afirmar
-            # que SIDE/TOP/MID foram avaliadas pelo mesmo modelo.
             status = "CHECKPOINTS_DIFERENTES_NO_EVENTO"
         elif outcomes == {"PASSOU"}:
             status = "PASSOU_3_LUZES"
@@ -182,6 +192,7 @@ def _event_report(rows: list[dict]):
             status = "REVISAO_3_LUZES"
         events.append({
             "event_id": event_id,
+            "manifest_path": manifest_path,
             "source_paths": sorted(r["source_path"] for r in group),
             "expected_label": next(iter(labels)) if len(labels) == 1 else None,
             "lighting_modes": sorted(lights),
@@ -288,11 +299,23 @@ def replay_full_cnn_history(
     by_light = {}
     for light in sorted({r["lighting_mode"] for r in rows}):
         by_light[light] = _summarize([r for r in rows if r["lighting_mode"] == light])
+    by_model = {
+        model: _summarize([r for r in rows if (r["model"] or "SEM_MODELO") == model])
+        for model in sorted({r["model"] or "SEM_MODELO" for r in rows})
+    }
     total = _summarize(rows)
     events = _event_report(rows)
-    events_valid = all(
+    manifests = inv.get("manifests", [])
+    manifest_integrity = (
+        isinstance(manifests, list)
+        and all(m.get("status") == "LINKED" for m in manifests)
+        and not any(issue.get("code") == "DUPLICATE_EVENT_ID"
+                    for issue in inv.get("issues", []))
+    )
+    events_valid = manifest_integrity and all(
         event["status"] == "PASSOU_3_LUZES" for event in events["events"]
     )
+    total["manifest_integrity_passed"] = manifest_integrity
     total["explicit_event_integrity_passed"] = events_valid
     # A meta operacional histórica exige também consistência dos
     # eventos multilight com manifesto verificado.
@@ -315,6 +338,7 @@ def replay_full_cnn_history(
         "overall": total,
         "by_category": by_category,
         "by_lighting": by_light,
+        "by_model": by_model,
         "multilight_explicit_events": events,
         "cases": rows,
         "knn_used": False,
