@@ -145,6 +145,27 @@ class TelemetryModelTests(unittest.TestCase):
         self.assertNotIn("Missing similaridade direta:", output)
         self.assertNotIn("INVERTIDO transformação ganho:", output)
 
+    def test_debug_known_knn_without_cnn_explicitly_shows_human_label(self):
+        a = {
+            "verdict": "DEFEITO REAL", "is_defect": True,
+            "detail": {
+                "recognition_route": "KNOWN_KNN",
+                "recognition_match": "EXACT_PAIR",
+                "recognition_memory_verified": True,
+                "recognition_known_label": "NG",
+                "recognition_reason": "Par humano idêntico",
+            },
+        }
+        record = {
+            "source": "windows_xp",
+            "decision": decision_record(a, {"category": "INVERTIDO"}),
+        }
+        debug = format_network_debug_report(record)
+        self.assertIn("MEMÓRIA KNN (ROTA EFETIVA)", debug)
+        self.assertIn("Rota: KNOWN_KNN", debug)
+        self.assertIn("Rótulo humano recuperado: NG", debug)
+        self.assertNotIn("REDE NEURAL CNN FALTANDO v2", debug)
+
     def test_physical_engine_legacy_not_recast_as_neural(self):
         analysis = {"verdict": "FALHA FALSA", "detail": {
             "recognition_route": "NEW_EXPERTS", "decision_trace": {}
