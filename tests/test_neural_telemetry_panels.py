@@ -94,7 +94,7 @@ class TelemetryModelTests(unittest.TestCase):
     def test_knn_new_case_does_not_fabricate_similarity_zero(self):
         header, description = memory_panel_text(combined())
         self.assertIn("KNN SEM MATCH EXATO", header)
-        self.assertIn("não existe similaridade KNN medida", description.lower())
+        self.assertIn("não existe similaridade knn medida", description.lower())
 
     def test_known_knn_label_is_not_a_cnn_score(self):
         known = {
@@ -114,6 +114,7 @@ class TelemetryModelTests(unittest.TestCase):
     def test_missing_score_is_not_treated_as_zero(self):
         frame = make_light("SIDE")
         del frame["detail"]["cnn_v2_ng_score_uncalibrated"]
+        del frame["detail"]["decision_trace"]["cnn_ng_score_uncalibrated"]
         state = neural_summary(frame)
         self.assertIsNone(state["cnn_ng_score"])
         self.assertIn("N/D", "\n".join(cnn_panel_text(frame)["lines"]))

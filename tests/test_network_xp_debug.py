@@ -1533,7 +1533,7 @@ class NetworkXPDebugUILayoutTests(unittest.TestCase):
             encoding="utf-8",
         ).read()
 
-        self.assertIn("class _ResponsiveCapturePreview(QLabel):", source)
+        self.assertIn("class _ResponsiveCapturePreview(_ResponsivePixmapLabel):", source)
         self.assertIn(
             '"CAPTURA RECEBIDA • EVIDÊNCIA COMPLETA"',
             source,
@@ -1585,13 +1585,15 @@ class NetworkXPDebugUILayoutTests(unittest.TestCase):
         ).read()
 
         self.assertIn(
-            "self.network_debug_actions_layout.addWidget(\n"
-            "            window.btn_copy_network_debug,",
+            "self.network_debug_action_buttons = [",
             source,
         )
         self.assertIn(
-            "self.network_debug_actions_layout.addWidget(\n"
-            "            window.btn_copy_network_image,",
+            "window.btn_copy_network_debug,\n            window.btn_copy_network_image,",
+            source,
+        )
+        self.assertIn(
+            "self._reflow_grid(\n            self.network_debug_actions_layout,",
             source,
         )
         self.assertIn(

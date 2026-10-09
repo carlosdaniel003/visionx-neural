@@ -134,7 +134,7 @@ def cnn_panel_text(analysis: dict | None) -> dict:
             + ("ELEGÍVEL" if m["cnn_auto_eligible"] else "NÃO ELEGÍVEL")
         )
     lines.append(f"Checkpoint: {ck}" + (f" • SHA {sha[:12]}…" if sha else ""))
-    lines.append("Scores da CNN não são probabilidades calibradas.")
+    lines.append("Score NG não calibrado: não representa probabilidade de defeito.")
     return {"header": "CNN FALTANDO v2 • REDE NEURAL", "lines": tuple(lines)}
 
 

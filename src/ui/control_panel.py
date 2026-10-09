@@ -382,7 +382,7 @@ class ControlPanel(QWidget):
         self.lbl_db_info.setText("Sem dados no momento.")
 
     def _reset_reference_panel(self):
-        for frame in ['frame_ssim_debug', 'frame_silk', 'frame_dna', 'frame_shift', 'frame_radar']:
+        for frame in ['frame_ssim_debug', 'frame_silk', 'frame_dna', 'frame_shift', 'frame_radar', 'frame_neural', 'frame_memory_expert']:
             if hasattr(self, frame):
                 getattr(self, frame).setVisible(False)
         if hasattr(self, 'frame_knn'): self.frame_knn.update_data({})
