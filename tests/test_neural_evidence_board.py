@@ -94,18 +94,41 @@ class NeuralEvidenceQtTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app=QApplication.instance() or QApplication([])
 
-    def test_adaptive_grid_breakpoints(self):
+    def test_six_cards_never_stack_vertically_for_notebook_and_monitor(self):
         p=NeuralEvidencePanel()
         self.addCleanup(p.deleteLater)
-        self.assertEqual(p.columns_for_width(500),1)
-        self.assertEqual(p.columns_for_width(680),2)
-        self.assertEqual(p.columns_for_width(950),3)
-        for width,columns in [(400,1),(690,2),(980,3)]:
-            p.resize(width,1000)
+        for width in (375,680,1366,1920):
+            p.resize(width,p.height())
+            p.show()
+            QApplication.processEvents()
             p._reflow(width)
-            self.assertEqual(p.sections["major"]._columns,columns)
-            self.assertEqual(p.sections["minor"]._columns,columns)
-            self.assertGreaterEqual(p.minimumHeight(),450)
+            self.assertEqual(len(p.tiles),6)
+            self.assertEqual(p.sections["major"]._columns,3)
+            self.assertEqual(p.sections["minor"]._columns,3)
+            self.assertEqual(p.height(),p.minimumHeight())
+            self.assertEqual(
+                p.scroll.verticalScrollBarPolicy(),
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+            )
+            self.assertEqual(len(set(t.geometry().y() for t in p.tiles)),1)
+
+    def test_internal_horizontal_scroll_and_arrow_navigation(self):
+        p=NeuralEvidencePanel()
+        self.addCleanup(p.deleteLater)
+        p.resize(580,p.height())
+        p.show()
+        QApplication.processEvents()
+        bar=p.scroll.horizontalScrollBar()
+        self.assertGreater(bar.maximum(),0)
+        self.assertFalse(p.left_button.isEnabled())
+        self.assertTrue(p.right_button.isEnabled())
+        p.right_button.click()
+        QApplication.processEvents()
+        self.assertGreater(bar.value(),0)
+        self.assertTrue(p.left_button.isEnabled())
+        p.left_button.click()
+        QApplication.processEvents()
+        self.assertEqual(bar.value(),0)
 
     def test_all_six_views_populate_and_reflow_without_clipping_source(self):
         p=NeuralEvidencePanel()
@@ -116,10 +139,10 @@ class NeuralEvidenceQtTests(unittest.TestCase):
         p.update_data(knn_analysis()["detail"],knn_analysis())
         self.assertIn("KNN",p.heading.text())
         for section in p.sections.values():
-            self.assertIn("diferença",section.metrics.text())
+            self.assertIn("Δ",section.metrics.text())
             self.assertEqual(len(section.tiles),3)
             self.assertTrue(all(not tile.image._source.isNull() for tile in section.tiles))
-            self.assertIn("NÃO é atenção",section.tiles[1].metric.text())
+            self.assertIn("NÃO é atenção",section.tiles[1].toolTip())
 
     def test_multilight_reuses_payload_even_when_knn_skips_cnn(self):
         view=AdhesiveMultiLightAnalysisView()
@@ -133,9 +156,18 @@ class NeuralEvidenceQtTests(unittest.TestCase):
         self.assertFalse(lane.neural_evidence.sections["major"].tiles[0].image._source.isNull())
         self.assertEqual(
             lane.scroll.verticalScrollBarPolicy(),
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded,
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
         )
         self.assertEqual(len(view.horizontal_scroll_bars()),1)
+        self.assertTrue(lane.scroll.isHidden())
+        self.assertFalse(lane.status_label.isVisible())
+        self.assertTrue(lane.frames["knn_expert.py"].isHidden())
+        self.assertEqual(lane.neural_evidence.scroll.verticalScrollBarPolicy(),
+                         Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.assertEqual(lane.neural_evidence.tiles[0].heading.text(),
+                         "EPICENTRO MAIOR • CINZA")
+        self.assertIn("border:1px solid #d3a900",
+                      lane.neural_evidence.tiles[0].styleSheet())
         view.clear_all()
         self.assertTrue(lane.neural_evidence.isHidden())
         self.assertIsNone(lane.visual_payload)

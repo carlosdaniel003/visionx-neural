@@ -89,10 +89,10 @@ class _LightingExpertLane(QFrame):
         self.scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        # O painel de seis visões pode crescer verticalmente em notebooks.
-        # Mantém o único controle horizontal mestre para SIDE/TOP/MID.
+        # Apenas os especialistas determinísticos legados usam este scroll.
+        # Nunca permitir rolagem vertical dentro da análise.
         self.scroll.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
 
         self.scroll_content = QWidget()
@@ -137,18 +137,20 @@ class _LightingExpertLane(QFrame):
         self.visual_payload = None
         self.neural_evidence = NeuralEvidencePanel()
         self.neural_evidence.setObjectName("neuralEvidencePanel")
-        self.neural_evidence.setMinimumWidth(EXPERT_MIN_WIDTH)
+        self.neural_evidence.setMinimumWidth(0)
         self.neural_evidence.setAccessibleName(
             f"{self.mode} • PAINEL NEURAL EXPLICÁVEL POR ILUMINAÇÃO"
         )
         self.neural_evidence.setVisible(False)
-        self.scroll_layout.addWidget(self.neural_evidence)
         self.scroll_layout.addStretch()
 
         self.scroll.setWidget(self.scroll_content)
         self.scroll.setMinimumHeight(EXPERT_MIN_HEIGHT + 28)
         self.scroll.setVisible(False)
         root.addWidget(self.scroll, stretch=1)
+        # A faixa de seis imagens é apresentada diretamente no lane,
+        # sem cards de texto KNN/CNN ao lado nem scroll vertical.
+        root.addWidget(self.neural_evidence)
 
     def _hide_all_frames(self) -> None:
         for widget in self.frames.values():
@@ -179,6 +181,22 @@ class _LightingExpertLane(QFrame):
         active_engines = list(analysis.get("active_engines", []) or [])
         self._hide_all_frames()
 
+        # KNN e CNN não precisam de um bloco enorme de texto: os textos
+        # detalhados continuam na Memória de Anomalias, Decisão e Debug.
+        # Nesta área, mostre exclusivamente as seis imagens amarelo/preto.
+        if self.visual_payload is not None and (
+            "knn_expert.py" in active_engines
+            or "faltando_cnn_v2.py" in active_engines
+            or detail.get("cnn_v2_active")
+            or detail.get("recognition_route") in {"KNOWN_KNN", "NEW_CNN", "MULTILIGHT_MIXED"}
+        ):
+            self.neural_evidence.update_data(detail, analysis)
+            self.scroll.setVisible(False)
+            self.neural_evidence.setVisible(True)
+            self.status_label.setVisible(False)
+            self.neural_evidence._refresh_arrows()
+            return True
+
         visible_count = 0
         for engine_name, widget in self.frames.items():
             if engine_name not in active_engines:
@@ -195,18 +213,12 @@ class _LightingExpertLane(QFrame):
             self.radar.setVisible(True)
             visible_count += 1
 
-        # Mesmo quando o KNN exato assume a decisão (e a CNN não executa),
-        # os pixels de cada epicentro continuam disponíveis para inspeção.
-        if self.visual_payload is not None:
-            self.neural_evidence.update_data(detail, analysis)
-            self.neural_evidence.setVisible(True)
-            visible_count += 1
-
+        # Modo legado sem payload neural: mantenha os debuggers anteriores.
         # Mantém a mesma semântica do painel original: só aparecem os motores
         # declarados como ativos; o radar é fallback quando não há especialistas.
         widths = [
             item.minimumWidth()
-            for item in (*self.frames.values(), self.radar, self.neural_evidence)
+            for item in (*self.frames.values(), self.radar)
             if not item.isHidden()
         ]
         heights = [
@@ -251,15 +263,6 @@ class AdhesiveMultiLightAnalysisView(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(7)
-
-        hint = QLabel(
-            "PAINEL NEURAL EXPLICÁVEL POR ILUMINAÇÃO • SIDE/TOP/MID • "
-            "dois epicentros, três visões diagnósticas por epicentro. "
-            "Mapa de diferenças NÃO é mapa de atenção CNN."
-        )
-        hint.setObjectName("sectionHint")
-        hint.setWordWrap(True)
-        root.addWidget(hint)
 
         self.grid = QGridLayout()
         self.grid.setContentsMargins(0, 0, 0, 0)
@@ -332,6 +335,7 @@ class AdhesiveMultiLightAnalysisView(QWidget):
             max(1, min(page_steps, default=1))
         )
         self.horizontal_scroll.setEnabled(maximum > 0)
+        self.horizontal_scroll.setVisible(maximum > 0)
         if maximum <= 0:
             self.horizontal_scroll.setValue(0)
         elif self.horizontal_scroll.value() > maximum:
