@@ -1,5 +1,56 @@
 # ODIN — Gate de regressão visual na inicialização
 
+## 09/10/2026 — Reconciliação automatizada sem alterações de memória
+
+O operador autorizou iniciar pelo diagnóstico **somente leitura**:
+a importação/migração histórica e o bloqueio no `main.py`
+**NÃO** foram autorizados nesta fase. O plano antigo com MoE
+e o rascunho de "CNN MEMÓRIA" seguem como histórico; a regra
+atual é **CNN FALTANDO V2 + MEMÓRIA KNN existente**.
+
+**Base real reportada:** 212 PNGs, CNN FALTANDO V2 201/202
+(1 revisão em `2026-10-09_0857_DESLOCADO_SIDE.png`);
+MEMÓRIA KNN 89/212, 122 sem cobertura, 1 caso com OCR
+incompleto. Nenhum dos 17 NG possui match KNN verificável.
+A validação de CNN é independente da recuperação KNN.
+
+Implementação nova:
+`src/services/startup_regression/archive_reconciler.py` e
+`archive_reconciler_cli.py`, workflow/teste Windows dedicado.
+O reconciliador varre os registros `public/dataset/nao_anomalia` e
+`public/dataset/anomalia` **mesmo se não forem elegíveis para o
+carregador KNN**, sem copiar imagens. Para registros verificáveis,
+chama a validação existente `VerifiedKNNMemory._entry`; para o
+screenshot, usa `VerifiedKNNMemory._key` calculada de OCR
+real e hashes exatos dos recortes AOI, sem utilizar o nome
+do arquivo como substituto do OCR.
+
+Registra a causa de rejeição de cada JSON (schema, rótulo,
+proveniência humana, assinatura, imagens PNG faltantes,
+dados incompletos ou hash inconsistente) e identifica por
+screenshot os possíveis candidatos de correlação por:
+par exato; teste exato mas gabarito diferente; screenshot
+de origem igual; metadados equivalentes mas registro inelegível;
+contexto compatível com imagem diferente; categoria/luz sem
+registros. **Esses diagnósticos não promovem registros à
+memória e não contam como aprovação**.
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.archive_reconciler_cli
+```
+
+Gerar `reports/startup_regression/reconciliation_*.json` e
+`reconciliation_*.txt`, enviar para análise e só então
+escolher migração auditável ou correção de OCR. Proibido
+inscrever um rótulo deduzido da pasta como confirmação humana,
+alterar limiares da CNN para forçar 100% ou validar por vizinhos
+aproximados no lugar do par exato. **Startup bloqueante
+permanece desativado.**
+
+---
+
+
 ## Correção de requisito — 09/10/2026 — CNN FALTANDO V2 + MEMÓRIA KNN
 
 **Esclarecimento do operador:** `CNN MEMÓRIA` significava
