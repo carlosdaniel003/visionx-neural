@@ -568,3 +568,71 @@ pesos do modelo FALTANDO em outra categoria.
 
 ---
 
+
+
+---
+
+## 09/10/2026 — Hipótese de motor visual compartilhado: FALTANDO + memória KNN (auditoria offline)
+
+**Solicitação:** a AOI XP pode usar nomes distintos (__EMBORCADO__, __INVERTIDO__,
+__DESLOCADO__ etc.) para imagens cujo defeito visual aparente é um
+**componente ausente**. O rótulo original não é verdade-terreno da
+natureza física do defeito. A pasta __public/ok_archive__ contém
+gabarito à esquerda e teste à direita; pequenas diferenças de marcação,
+brilho e captura devem ser toleradas por um detector de normalidade visual,
+sem transformar automaticamente uma variação natural em NG.
+
+**Cuidado com a premissa:** nem todo componente EMBORCADO/INVERTIDO/DESLOCADO
+tem o mesmo mecanismo visual de FALTANDO; a categoria MUITO ADESIVO tem
+especialista próprio. Não substituir essas categorias nem liberar uma
+peça apenas por essa generalização antes de avaliá-la em NG reais.
+O rótulo da pasta OK/NG, isoladamente, também não comprova origem humana
+ou independência em relação ao treinamento.
+
+**Implementação desta etapa (somente avaliação, sem mudança de julgamento):**
+- __src/services/faltando_cross_category_audit.py__ e
+  __src/scripts/audit_faltando_cross_category.py__.
+- Inventaria **todos os PNGs** de __public/ok_archive__ e
+  __public/ng_archive__ por meio de __inventory_archives__. Separa
+  __category_hint__ (nome original da AOI), categoria OCR observada e
+  classe do arquivo (OK/NG). Não rebatiza nem move nenhum arquivo.
+- Para PNG válido sem conflito OK↔NG de mesmo conteúdo, extrai
+  automaticamente gabarito/teste via __AOIPairExtractor__ e executa
+  __FaltandoCNNLive.inspect__ em SIDE/TOP/MID, incluindo outras categorias.
+  Não chama memória KNN nem realiza treino. Os resultados mostram a
+  classificação experimental, pontuação NG não calibrada, revisões,
+  falhas de extração e divergências entre pasta e modelo.
+- Agrupa resultados por categoria e luz; conta explicitamente
+  __archived_ng_called_ok__ e __archived_ok_called_ng__, sem esconder
+  modelos indisponíveis, revisões, duplicatas conflitantes ou PNGs
+  corrompidos. **Não** interpreta resultados por frame como resultados
+  independentes por evento SIDE/TOP/MID.
+- Preserva o bloqueio atual de Produção para __FALTANDO CNN experimental__:
+  nenhum novo auto-OK nem auto-NG, nenhum pacote/comando 0/1 para a AOI XP.
+  O __VerifiedKNNMemory__ permanece isolado por
+  placa/componente/categoria/iluminação e só reconhece par exato
+  com rótulo humano. Sem autorização para usar similaridade aproximada
+  de KNN para liberar automaticamente pequenas variações.
+
+**Comando no PC Windows, no ambiente Python atual:**
+
+~~~powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.scripts.audit_faltando_cross_category
+~~~
+
+**Relatórios para avaliação:** __reports/faltando_neural/cross_category_audit/audit_*/cross_category_audit.json__
+e __cross_category_audit.txt__. Avaliar quantos NG confirmados de cada
+categoria foram chamados OK, quais categorias/iluminações não foram
+cobertas, mudanças de inscrição e casos multilight. Mesmo 100% do
+arquivo histórico **não prova generalização** nem valida auto-OK por CNN.
+
+**Próxima decisão só depois dos resultados e revisão independente:**
+caso a análise mostre que as categorias AOI são proxies confiáveis de
+ausência física, considerar um roteador **visual unificado** com
+rastreabilidade da categoria original e casos suspeitos em revisão;
+exigir NG reais independentes da CNN para cada família/iluminação
+antes de autorizar liberação 0/1 sem operador. **Modo Produção
+100% automático por CNN não foi ativado nesta etapa.**
+

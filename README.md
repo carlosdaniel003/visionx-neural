@@ -1,3 +1,15 @@
+## 09/10/2026 — Auditoria visual transversal com CNN FALTANDO v2
+
+A categoria da AOI é tratada como hipótese de classificação, não como
+verdade física. Foi disponibilizado um **replay offline em todas as categorias**
+com CNN FALTANDO v2, sem desenho, sem KNN e sem enviar 0/1 para o XP.
+As proteções operacionais permanecem inalteradas até verificar os NG reais
+fora da categoria FALTANDO. Execute
+`python -m src.scripts.audit_faltando_cross_category` e consulte
+[documentação FALTANDO](docs/FALTANDO_CNN_DATASET_PREPARATION.md).
+
+---
+
 ## STATUS FINAL — CNN DESLOCADO: DESENVOLVIMENTO ABORTADO (08/10/2026)
 
 **Decisão do operador:** suspender definitivamente esta linha de desenvolvimento

@@ -1,0 +1,29 @@
+name: FALTANDO CNN Cross-Category Shadow Audit
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/services/faltando_cross_category_audit.py"
+      - "src/scripts/audit_faltando_cross_category.py"
+      - "tests/test_faltando_cross_category_audit.py"
+      - ".github/workflows/faltando-cross-category-audit-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  offline-cross-category-audit:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU dependencies
+        run: |
+          python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5"
+      - name: Compile and test audit
+        run: |
+          python -m py_compile src/services/faltando_cross_category_audit.py src/scripts/audit_faltando_cross_category.py tests/test_faltando_cross_category_audit.py
+          python -m unittest tests.test_faltando_cross_category_audit -v
