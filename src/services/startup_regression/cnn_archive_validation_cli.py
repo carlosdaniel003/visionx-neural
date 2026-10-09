@@ -1,4 +1,4 @@
-"""Diagnóstico das CNNs; ainda não é o bloqueio de startup do ODIN.
+"""Diagnóstico CNN FALTANDO V2 e MEMÓRIA KNN; não bloqueia o ODIN.
 
 Uso:
     python -m src.services.startup_regression.cnn_archive_validation_cli
@@ -14,8 +14,8 @@ from .cnn_archive_validation import validate_archive_cnns, write_cnn_report
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Validação CNN FALTANDO v2 e CNN MEMÓRIA sobre acervo OK/NG. "
-            "A CNN MEMÓRIA precisa ser conectada antes do gate em main.py."
+            "Validação CNN FALTANDO V2 e MEMÓRIA KNN sobre OK/NG. "
+            "Memória KNN exige par exato humano verificado, em todas categorias."
         )
     )
     parser.add_argument(
@@ -30,7 +30,7 @@ def main(argv=None) -> int:
         else root / "reports" / "startup_regression"
     )
 
-    print("Validando CNNs em todos os PNGs do acervo (sem KNN)...", flush=True)
+    print("Validando CNN FALTANDO V2 e MEMÓRIA KNN no acervo...", flush=True)
 
     def progress(done: int, total: int, current: str) -> None:
         if done == 1 or done % 25 == 0 or done == total:
@@ -43,12 +43,13 @@ def main(argv=None) -> int:
             f"{name}: {count['passed']}/{count['eligible']} aprovados; "
             f"{count['regressions']} regressões; "
             f"{count['invalid']} inválidos; "
-            f"{count['model_unavailable']} sem modelo",
+            f"{count['model_unavailable']} indisponíveis; "
+            f"{count['without_memory_coverage']} sem cobertura",
             flush=True,
         )
     print(f"JSON: {json_path}\nTXT: {txt_path}", flush=True)
     print("Gate do ODIN ainda não foi ativado.", flush=True)
-    return 0 if report["both_cnns_passed"] else 1
+    return 0 if report["cnn_and_knn_passed"] else 1
 
 
 if __name__ == "__main__":
