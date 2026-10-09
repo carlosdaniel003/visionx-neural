@@ -58,10 +58,6 @@ from src.ui.decision_verdict_feedback import (
     install_ai_verdict_feedback_hooks,
 )
 from src.ui.decision_panel import install_decision_panel
-from src.ui.inspection_memory_feedback import (
-    install_inspection_memory_feedback,
-    install_inspection_memory_feedback_hooks,
-)
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
 from src.ui.inverted_face_panel import install_inverted_face_panel
 from src.ui.local_capture_safety import install_local_capture_safety
@@ -187,7 +183,6 @@ def main():
     # O fundo permanece neutro em todos os estados. O veredito final é
     # comunicado somente pelo overlay persistente no canto superior direito.
     install_ai_verdict_feedback_hooks(ControlPanel)
-    install_inspection_memory_feedback_hooks(ControlPanel)
 
     # Camada exclusivamente visual: resume dual-scale, protótipos e contraste
     # OK x NG sem modificar analysis, score, confiança ou persistência.
@@ -197,7 +192,6 @@ def main():
     install_adhesive_multilight_automation(panel)
     install_decision_key_feedback(panel)
     install_ai_verdict_feedback(panel)
-    install_inspection_memory_feedback(panel)
     install_lighting_status_feedback(panel)
     install_missing_component_panel(panel)
     install_inverted_face_panel(panel)

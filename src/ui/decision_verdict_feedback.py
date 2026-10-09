@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.ui.decision_key_feedback import FEEDBACK_FADE_OUT_MS
+from src.ui.inspection_memory_feedback import memory_feedback_state
 from src.ui.theme import ACCENT, DANGER, SUCCESS, SURFACE
 
 
@@ -52,6 +53,13 @@ QLabel#aiVerdictText[tone="ok"] {{
 }}
 QLabel#aiVerdictText[tone="ng"] {{
     color: {DANGER};
+}}
+QLabel#aiMemoryStatusText {{
+    background: transparent;
+    border: none;
+    color: {ACCENT};
+    font-size: 11px;
+    font-weight: 800;
 }}
 """
 
@@ -116,13 +124,25 @@ class AIVerdictFeedbackOverlay(QFrame):
         self.setStyleSheet(VERDICT_FEEDBACK_STYLESHEET)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 12, 18, 12)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(3)
 
         self.verdict_label = QLabel("")
         self.verdict_label.setObjectName("aiVerdictText")
         self.verdict_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout.addWidget(self.verdict_label, 1)
+
+        # Mesmo cartão, mesmo relógio de animação e sem novo overlay.
+        # A memória informa se o PAR EXATO já foi confirmado por humano;
+        # jamais presume que o tipo físico de defeito é inédito.
+        self.memory_state_label = QLabel("")
+        self.memory_state_label.setObjectName("aiMemoryStatusText")
+        self.memory_state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.memory_state_label.setWordWrap(True)
+        self.memory_state_label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        layout.addWidget(self.memory_state_label, 0)
+        self.memory_state_label.hide()
 
         self._opacity_effect = QGraphicsOpacityEffect(self)
         self._opacity_effect.setOpacity(0.0)
@@ -181,6 +201,9 @@ class AIVerdictFeedbackOverlay(QFrame):
         self.hide()
         self._opacity_effect.setOpacity(0.0)
         self.verdict_label.setText("")
+        self.memory_state_label.setText("")
+        self.memory_state_label.hide()
+        self.setToolTip("")
         self._decision_dismiss_pending = False
 
     def prepare_decision_dismissal(self) -> bool:
@@ -225,6 +248,25 @@ class AIVerdictFeedbackOverlay(QFrame):
         self.verdict_label.setText(message)
         self.verdict_label.setProperty("tone", tone)
         self._refresh_style(self.verdict_label)
+
+        # Apenas dados efetivos do roteador KNN. Em rotas desconhecidas,
+        # não declarar "primeira vez" nem inventar pesquisa na memória.
+        memory_title, memory_explanation, memory_tone = memory_feedback_state(analysis)
+        subtitle = {
+            "known": "JÁ VISTO • KNN EXATO",
+            "new": "CASO NOVO • SEM MATCH EXATO",
+            "mixed": "MEMÓRIA MISTA • 3 LUZES",
+            "review": "MEMÓRIA CONFLITANTE • REVISÃO",
+        }.get(memory_tone, "")
+        self.memory_state_label.setText(subtitle)
+        self.memory_state_label.setVisible(bool(subtitle))
+        if subtitle:
+            self.setToolTip(
+                memory_title + "\n" + memory_explanation
+                + "\nNovo = sem par gabarito/teste exato na memória KNN."
+            )
+        else:
+            self.setToolTip("")
 
         self._stop_motion()
 
