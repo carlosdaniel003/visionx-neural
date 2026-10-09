@@ -194,8 +194,8 @@ class ShadowAutomationTests(unittest.TestCase):
                 self.last_xp_ip="169.254.95.200"
                 self.sent=[]
                 self.saved=[]
-                self.shadow_pending_operator_label="NG"
-                self.shadow_pending_operator_event_id="piece-123"
+                self.shadow_pending_operator_label=""
+                self.shadow_pending_operator_event_id=""
                 self.adhesive_multilight_primary_event_id="piece-123"
             def send_command_to_xp(self,c):
                 self.sent.append(c)
