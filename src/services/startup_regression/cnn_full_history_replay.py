@@ -168,6 +168,12 @@ def _event_report(rows: list[dict]):
         outcomes = {r["status"] for r in group}
         if len(group) != 3 or lights != {"SIDE", "TOP", "MID"} or len(labels) != 1:
             status = "MANIFESTO_INCOMPLETO_OU_CONFLITANTE"
+        elif outcomes == {"PASSOU"} and len({
+            r["checkpoint_sha256"] for r in group
+        }) != 1:
+            # Releitura de checkpoint no meio da captura impede afirmar
+            # que SIDE/TOP/MID foram avaliadas pelo mesmo modelo.
+            status = "CHECKPOINTS_DIFERENTES_NO_EVENTO"
         elif outcomes == {"PASSOU"}:
             status = "PASSOU_3_LUZES"
         elif any(r["status"] in ("REGRESSAO", "INVALIDO", UNSUPPORTED) for r in group):
