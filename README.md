@@ -1,3 +1,38 @@
+## 09/10/2026 — Nova validação de inicialização por CNN (em integração)
+
+O plano antigo de gate por múltiplos especialistas físicos foi substituído:
+a validação obrigatória será feita exclusivamente por duas CNNs independentes.
+
+- **CNN FALTANDO V2:** cobre FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO;
+  exclui MUITO ADESIVO.
+- **CNN MEMÓRIA:** deve cobrir todas as categorias, inclusive MUITO ADESIVO.
+- Ambas devem classificar corretamente **cada PNG elegível** em
+  `ok_archive` e `ng_archive` usando seu checkpoint próprio. Revisão,
+  classificação errada, ausência de modelo ou falha de cobertura reprova.
+- A validação não treina, não consulta KNN/embeddings ou vizinhos e não
+  roda o MoE antigo. Imagens antigas sem sufixo são SIDE; novas imagens
+  SIDE/TOP/MID são avaliadas na luz correspondente.
+
+**Disponível agora (diagnóstico não bloqueante):**
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.cnn_archive_validation_cli
+```
+
+O script escreve `reports/startup_regression/cnn_validation_*.json`
+e `cnn_validation_*.txt`. A primeira CNN já está conectada;
+a segunda **ainda não**: a branch central contém **KNN de memória
+exata**, mas não apresenta uma classe/checkpoint identificável como
+CNN MEMÓRIA. Ela será registrada como `MODEL_UNAVAILABLE`, sem criar
+acerto artificial. O bloqueio em `main.py` somente será instalado
+depois que o modelo real da CNN MEMÓRIA for localizado e validado,
+para não interromper a operação por uma integração incompleta.
+
+Documento mestre: [`docs/ODIN_STARTUP_REGRESSION_GATE.md`](docs/ODIN_STARTUP_REGRESSION_GATE.md).
+
+---
+
 ## 09/10/2026 — Telemetria visual CNN FALTANDO v2 + KNN e debug XP
 
 **Objetivo:** eliminar painéis vazios quando o ODIN decide com
