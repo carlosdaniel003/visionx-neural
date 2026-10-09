@@ -995,3 +995,49 @@ autograd, mapas sobre pares iguais/diferentes, não alteração de pesos,
 verificação de checkpoint e faltas de ROI;
 \`tests/test_neural_evidence_board.py\` cobre worker isolado,
 sem pixel fallback, evento antigo descartado, modo KNN e layout.
+
+
+## 09/10/2026 — Hotfix: fechamento súbito do ODIN após executar CNN Grad-CAM
+
+**Sintoma informado na fábrica:** ao terminar uma inspeção, o aplicativo
+fechou sem diagnóstico. A regressão mais recente colocava uma instância
+PyTorch em cada QRunnable da thread pool GLOBAL da interface Qt. Isso
+pode resultar em falha **nativa**, exaustão de memória ou múltiplas
+execuções convolucionais simultâneas. Sem o log da máquina não é
+possível afirmar a causa exata.
+
+**Mitigação de isolamento e segurança:**
+- Sondas explicativas passam a ser executadas como processo Python
+  **filho descartável** com \`python -m
+  src.core.neural.faltando_explainability_runner --child\`; nenhuma
+  chamada a Torch/Grad-CAM ocorre no processo Qt de visualização.
+- Limite **uma** execução por vez para todas as iluminações (sem
+  três modelos Torch paralelos). Filhos forçam
+  \`OMP_NUM_THREADS=1\`, \`MKL_NUM_THREADS=1\`.
+- Timeout de 45 s para filhos; erros, checkpoint inválido,
+  encerramento por acesso inválido à memória/segfault, falta de
+  RAM e outros códigos não-zero aparecem como **CNN INDISPONÍVEL**
+  em vez de encerrar o ODIN.
+- Entradas de ROIs são \`npz\` temporário com tipo e dimensões
+  validadas, saída também \`npz\` sem pickle e somente mapas
+  explicitamente marcados \`neural=true\`, reduzidos a até 640 px
+  de lado, nunca filtros pixelados como fallback.
+- Tarefas Qt não usam mais \`QRunnable.setAutoDelete(True)\` enquanto
+  o slot aguarda retorno; objetos são retidos até processamento
+  do sinal para evitar descarte prematuro.
+- Id de ciclo ainda impede mostrar mapas antigos após mudança de
+  inspeção, e nenhuma exceção modifica dados de decisão, KNN,
+  treinamento ou comandos 0/1.
+- **Desativação de emergência** sem código/merge: iniciar o ODIN
+  com \`$env:VISIONX_DISABLE_NEURAL_MAPS="1"\` na sessão PowerShell.
+  As inspeções continuam; os seis cards mostram "CNN INDISPONÍVEL".
+  Remover a variável da sessão e reiniciar para reativar mapas.
+
+**Limitação:** testes automáticos podem simular acesso inválido e
+timeout, mas não reproduzem necessariamente drivers, DLLs ou
+OpenMP da estação Windows XP/Windows da fábrica. Repetir uma inspeção
+em modo Teste e coletar traceback/event log antes de reativar
+produção automática.
+
+**Regressões:** \`tests/test_faltando_explainability_crash_isolation.py\`
++ suíte existente da CNN v2/Qt.
