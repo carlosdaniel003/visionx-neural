@@ -1,5 +1,46 @@
 # ODIN — Gate de regressão visual na inicialização
 
+## Correção de requisito — 09/10/2026 — CNN FALTANDO V2 + MEMÓRIA KNN
+
+**Esclarecimento do operador:** `CNN MEMÓRIA` significava
+**MEMÓRIA KNN existente**, não um segundo classificador CNN.
+Esta seção prevalece sobre o contrato anterior de duas CNNs.
+
+1. A CNN FALTANDO V2 reanalisa sem consulta KNN todas as imagens
+   das categorias FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO,
+   excluindo MUITO ADESIVO.
+2. A **memória KNN atual**, para todas as categorias sem exceção,
+   usa `VerifiedKNNMemory.lookup` (mesma regra da Produção):
+   apenas registro humano exato com gabarito/teste, Board,
+   Parts, Value, categoria e iluminação compatíveis.
+3. A memória KNN recupera **o rótulo do dataset**, nunca o rótulo
+   de `ok_archive`/`ng_archive`. O rótulo do arquivo visual é
+   usado somente depois, para comparar a resposta e contabilizar
+   `PASSOU` ou `REGRESSAO`.
+4. Se o par visual não estiver comprovadamente na memória,
+   marcar `SEM_COBERTURA`, não inventar OK/NG. Exemplos
+   antigos podem não ter seus dois PNGs na memória KNN.
+   Registros autoaprendidos, semelhantes mas não idênticos
+   e contraditórios não autorizam aprovação.
+5. Falha de OCR, imagem inválida, registro incoerente,
+   ausência do checkpoint da CNN ou erro em qualquer motor
+   impedem a aprovação. Não dispensar exemplos por categoria
+   e não compor três luzes sem `event_id` verdadeiro.
+6. A validação KNN é um teste de **integridade da memória e
+   recuperação de histórico conhecido**. Não mede detecção
+   independente de falhas novas. A CNN avaliada nos exemplos
+   de treinamento também não é teste cego.
+7. O código de diagnóstico foi conectado na CLI existente
+   `cnn_archive_validation_cli.py`; **não ativar** gate em
+   `main.py` antes dos relatórios da estação e do aceite
+   expresso do operador.
+
+O contrato antigo que exigia uma segunda CNN e seus pesos não
+se aplica após esse esclarecimento.
+
+---
+
+
 ## Revisão de escopo — 09/10/2026 — substituir replay MoE por duas CNNs
 
 **Esta seção substitui as premissas anteriores de validação por
