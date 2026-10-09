@@ -70,7 +70,7 @@ def write_full_history_cnn_report(report: dict, output_dir: Path):
     lines.extend([
         "",
         "POR CATEGORIA:",
-    ]
+    ])
     for category, counts in report["by_category"].items():
         lines.append(
             f"  {category}: PASSOU={counts['passed']}/{counts['total']} "
