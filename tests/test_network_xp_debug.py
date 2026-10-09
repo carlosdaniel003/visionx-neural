@@ -94,14 +94,16 @@ class AnalysisTimingContractTests(unittest.TestCase):
             "QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents",
             panel_source,
         )
+        self.assertIn(
+            "if not shadow:\n"
+            "            QApplication.processEvents(\n"
+            "                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents",
+            panel_source,
+        )
         self.assertLess(
-            panel_source.index(
-                "QApplication.processEvents(\n"
-                "            QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents"
-            ),
-            panel_source.index(
-                "analysis_displayed_at = time.perf_counter()"
-            ),
+            panel_source.index("QApplication.processEvents(\n"
+                               "                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents"),
+            panel_source.index("analysis_displayed_at = time.perf_counter()"),
         )
         self.assertIn(
             '"imagem recebida/capturada -> resultado pintado na interface"',
@@ -1514,10 +1516,12 @@ class NetworkXPDebugUILayoutTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "self._inspection_images_visible = True\n"
+            "self._inspection_images_visible = not shadow\n"
             '        self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)',
             source,
         )
+        self.assertIn("shadow = self.combo_mode.currentText() == \"Modo Sombra\"", source)
+        self.assertIn("if not shadow:\n            px_sample = self.numpy_to_pixmap(sample_crop)", source)
         self.assertIn(
             'if not bool(getattr(panel, "_inspection_images_visible", True)):',
             debug_source,

@@ -56,6 +56,41 @@ def _multilight_learning_snapshot(panel) -> list[dict]:
     return resolved
 
 
+def _partial_shadow_samples(panel) -> list[dict]:
+    """Prefixo SIDE/TOP/MID efetivamente obtido ANTES do 0/1 humano.
+
+    Não aguardar novas capturas após o julgamento: a máquina XP pode
+    já ter avançado a peça. Nunca salvar frames tardios como a mesma peça.
+    """
+    samples = getattr(panel, "adhesive_multilight_learning_samples", {})
+    if not isinstance(samples, dict):
+        return []
+    kept = []
+    for mode in LIGHTING_ORDER:
+        item = samples.get(mode)
+        if not isinstance(item, dict):
+            break
+        ref, test, analysis = (
+            item.get("sample_image"),
+            item.get("test_image"),
+            item.get("analysis"),
+        )
+        if not (
+            isinstance(ref, np.ndarray) and ref.size
+            and isinstance(test, np.ndarray) and test.size
+            and isinstance(analysis, dict)
+        ):
+            break
+        kept.append({
+            "lighting_mode": mode,
+            "sample_image": ref.copy(),
+            "test_image": test.copy(),
+            "source_frame": _image_snapshot(item.get("source_frame")),
+            "analysis": analysis,
+        })
+    return kept
+
+
 def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dict:
     event_id = str(
         getattr(panel, "adhesive_multilight_primary_event_id", "")
@@ -74,17 +109,28 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
         "source": source, "label": normalized,
     })
 
+    # Sombra é aquisição supervisionada: TODO evento confirmado no XP
+    # deve entrar no dataset mesmo quando a IA concorda. A deduplicação
+    # da persistência impede registrar imagens repetidas.
+    shadow = (
+        getattr(getattr(panel, "combo_mode", None), "currentText", lambda: "")()
+        == "Modo Sombra"
+    )
     return {
         "ng_image": _image_snapshot(getattr(panel, "current_ng", None)),
         "label": normalized,
         "sample_image": _image_snapshot(getattr(panel, "current_sample", None)),
         "aoi_info": info,
         "analysis": analysis,
-        "save_images": bool(eligible or ai_decision != normalized),
+        "save_images": bool(shadow or eligible or ai_decision != normalized),
         "source": source,
         "ai_decision": ai_decision,
         "event_id": event_id,
         "multilight_samples": multilight_samples,
+        "shadow_partial_samples": (
+            _partial_shadow_samples(panel)
+            if shadow and not multilight_samples else []
+        ),
     }
 
 
