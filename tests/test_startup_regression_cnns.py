@@ -20,7 +20,7 @@ class FakePredictor:
         self.calls = []
         self.bad = bad or set()
 
-    def inspect(self, reference, test, mode: str):
+    def inspect(self, reference, test, mode: str, aoi_info=None):
         marker = int(test[0, 0, 0])
         self.calls.append((marker, mode))
         # Simula classe real (50-99 OK; >=100 NG); adulteração intencional
@@ -43,10 +43,11 @@ class FakePredictor:
         return {
             "verdict": verdict,
             "detail": {
-                "model_kind": "cnn_memoria",
-                "checkpoint_verified": True,
-                "ng_score_uncalibrated": .97 if ng else .02,
-                "checkpoint_sha256": "b" * 64,
+                "model_kind": "knn_verified_exact",
+                "verified_exact_match": True,
+                "memory_status": "KNOWN",
+                "memory_label": "NG" if ng else "OK",
+                "memory_source_json": "memory/verified.json",
             },
         }
 
@@ -76,10 +77,16 @@ class CnnArchiveContractTests(unittest.TestCase):
         return target
 
     def fake_extractor(self, image):
+        marker = int(image[0, 0, 0])
+        values = {
+            52: "FALTANDO", 151: "FALTANDO",
+            54: "INVERTIDO", 153: "EMBORCADO",
+            56: "DESLOCADO", 58: "MUITO ADESIVO",
+            55: "FALTANDO",
+        }
         return image.copy(), image.copy(), {
-            "board": "B1",
-            "parts": "R5",
-            "category": "FALTANDO",
+            "board": "B1", "parts": "R5",
+            "value": values.get(marker, "UNKNOWN"),
         }
 
     def corpus(self):
@@ -116,8 +123,8 @@ class CnnArchiveContractTests(unittest.TestCase):
         self.assertEqual(report["full_archive_png_count"], 6)
         self.assertEqual(report["models"][MODEL_FALTANDO]["eligible"], 5)
         self.assertEqual(report["models"][MODEL_MEMORY]["eligible"], 6)
-        self.assertTrue(report["both_cnns_passed"])
-        self.assertFalse(report["knn_used"])
+        self.assertTrue(report["cnn_and_knn_passed"])
+        self.assertTrue(report["knn_used"])
         self.assertFalse(report["specialist_moe_used"])
         self.assertFalse(report["training_enabled"])
         self.assertFalse(report["production_blocking_enabled"])
@@ -130,18 +137,21 @@ class CnnArchiveContractTests(unittest.TestCase):
         self.assertEqual(len(list(self.ok.iterdir())), 4)
         self.assertEqual(len(list(self.ng.iterdir())), 2)
 
-    def test_missing_cnn_memoria_is_never_replaced_by_knn_or_v2(self):
+    def test_missing_memory_predictor_never_counts_as_pass(self):
         self.corpus()
         report = validate_archive_cnns(
             self.root,
             extractor=self.fake_extractor,
-            predictors={MODEL_FALTANDO: FakePredictor(MODEL_FALTANDO)},
+            predictors={
+                MODEL_FALTANDO: FakePredictor(MODEL_FALTANDO),
+                MODEL_MEMORY: None,
+            },
         )
         self.assertEqual(report["models"][MODEL_FALTANDO]["passed"], 5)
         self.assertEqual(report["models"][MODEL_MEMORY]["model_unavailable"], 6)
-        self.assertFalse(report["both_cnns_passed"])
+        self.assertFalse(report["cnn_and_knn_passed"])
         self.assertFalse(report["can_release_operational_startup"])
-        self.assertFalse(report["memory_model_present"])
+        self.assertFalse(report["knn_model_present"])
 
     def test_one_false_ok_ng_fails_entire_model_without_hiding_other_results(self):
         self.corpus()
@@ -162,6 +172,32 @@ class CnnArchiveContractTests(unittest.TestCase):
             and row["verdict"] == "FALHA FALSA"
             for row in report["cases"]
         ))
+
+    def test_memory_new_is_reported_without_coverage_not_as_false_ng(self):
+        self.png("OK", "FALTANDO", marker=55)
+
+        class UnknownMemory(FakePredictor):
+            def inspect(self, reference, test, mode, info):
+                return {
+                    "verdict": "REVISÃO OBRIGATÓRIA",
+                    "detail": {
+                        "model_kind": "knn_verified_exact",
+                        "verified_exact_match": False,
+                        "memory_status": "NEW",
+                        "reason": "Não há par exato humano",
+                    },
+                }
+
+        report = validate_archive_cnns(
+            self.root, extractor=self.fake_extractor,
+            predictors={
+                MODEL_FALTANDO: FakePredictor(MODEL_FALTANDO),
+                MODEL_MEMORY: UnknownMemory(MODEL_MEMORY),
+            },
+        )
+        self.assertEqual(report["models"][MODEL_MEMORY]["without_memory_coverage"], 1)
+        self.assertEqual(report["models"][MODEL_MEMORY]["regressions"], 0)
+        self.assertFalse(report["cnn_and_knn_passed"])
 
     def test_review_never_counts_as_correct(self):
         self.png("OK", "FALTANDO", marker=55)
@@ -192,7 +228,7 @@ class CnnArchiveContractTests(unittest.TestCase):
                     "verdict": "FALHA FALSA",
                     "detail": {
                         "recognition_route": "KNOWN_KNN",
-                        "model_kind": "knn",
+                        "model_kind": "cnn_memoria",
                         "checkpoint_verified": True,
                         "checkpoint_sha256": "0" * 64,
                     },
@@ -246,7 +282,7 @@ class CnnArchiveContractTests(unittest.TestCase):
         )
         data = json.loads(json_path.read_text(encoding="utf-8"))
         self.assertEqual(data["schema"], report["schema"])
-        self.assertIn("CNN_MEMORIA", txt_path.read_text(encoding="utf-8"))
+        self.assertIn("MEMORIA_KNN", txt_path.read_text(encoding="utf-8"))
         self.assertEqual(len(list(self.ok.glob("*.png"))), 1)
         with self.assertRaises(ValueError):
             write_cnn_report(report, self.ok)
