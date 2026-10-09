@@ -31,6 +31,7 @@ from src.ui.network_xp_debug import (
 from src.ui.responsive_layout import profile_for_width
 from src.ui.theme import APP_STYLESHEET
 from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
+from src.ui.widgets.neural_specialist import NeuralSpecialistWidget, VerifiedMemorySpecialistWidget
 from src.ui.widgets.radar_chart import RadarChartWidget
 from src.ui.widgets.semantic_dna import SemanticDNAWidget
 from src.ui.widgets.shift_debugger import ShiftDebuggerWidget
@@ -511,6 +512,8 @@ class ControlPanelUI:
         window.frame_dna = SemanticDNAWidget()
         window.frame_shift = ShiftDebuggerWidget()
         window.frame_radar = RadarChartWidget()
+        window.frame_neural = NeuralSpecialistWidget()
+        window.frame_memory_expert = VerifiedMemorySpecialistWidget()
 
         debug_items = [
             ("SSIM • TEXTURA E CALOR", window.frame_ssim_debug),
@@ -518,6 +521,8 @@ class ControlPanelUI:
             ("DNA • ASSINATURA SEMÂNTICA", window.frame_dna),
             ("SHIFT • DESLOCAMENTO", window.frame_shift),
             ("FUSÃO • SCORE FINAL", window.frame_radar),
+            ("CNN FALTANDO v2 • REDE NEURAL", window.frame_neural),
+            ("KNN • PAR HUMANO VERIFICADO", window.frame_memory_expert),
         ]
         for label, widget in debug_items:
             window.scroll_layout.addWidget(self._wrap_debug_widget(label, widget))

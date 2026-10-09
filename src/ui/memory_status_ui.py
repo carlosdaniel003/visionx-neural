@@ -52,7 +52,8 @@ def install_memory_status_ui(control_panel_cls) -> None:
                 tooltip_lines += [
                     "", "Memória KNN ignorada nesta decisão.",
                     "Motor: CNN FALTANDO v2, com referência e teste.",
-                    "Em Produção, o OK da CNN experimental exige operador.",
+                    "Em Produção, somente consenso íntegro SIDE/TOP/MID",
+                    "permite comando 0/1 supervisionado; demais casos exigem operador.",
                     "",
                     "APRENDIZADO INCREMENTAL:",
                     "Após OK/NG confirmado por operador (Teste/Produção/Sombra),",
@@ -109,7 +110,10 @@ def install_memory_status_ui(control_panel_cls) -> None:
             tooltip = "\n".join(tooltip_lines)
             # O label é visível sem passar o mouse; tooltip guarda os detalhes.
             if hasattr(self, "lbl_db_info"):
-                self.lbl_db_info.setText(route_labels.get(route, route))
+                label = route_labels.get(route, route)
+                if route == "NEW_CNN":
+                    label += " • KNN SEM MATCH EXATO"
+                self.lbl_db_info.setText(label)
                 self.lbl_db_info.setToolTip(tooltip)
             if hasattr(self, "lbl_reason"):
                 self.lbl_reason.setToolTip(tooltip)

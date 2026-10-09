@@ -7,6 +7,7 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
 from src.ui.decision_model import influence_rows
+from src.ui.neural_influence_model import neural_influence_rows
 
 
 class DecisionInfluenceWidget(QWidget):
@@ -21,7 +22,7 @@ class DecisionInfluenceWidget(QWidget):
         detail = (analysis or {}).get("detail", {})
         trace = detail.get("decision_trace", {})
         self.trace = trace if isinstance(trace, dict) else {}
-        self.rows = influence_rows(self.trace)
+        self.rows = neural_influence_rows(analysis) or influence_rows(self.trace)
         self.update()
 
     @staticmethod
@@ -76,6 +77,9 @@ class DecisionInfluenceWidget(QWidget):
                 f"match {match:.0%} • voto {vote_label} • "
                 f"peso {weight:.0%} • efeito {effect_text}"
             )
+
+        if row.get("telemetry_row"):
+            return str(row.get("display_text", status))
 
         if weight > 0.0:
             return (
@@ -230,7 +234,12 @@ class DecisionInfluenceWidget(QWidget):
 
         footer_y = height - footer_height + 2
         painter.setPen(QColor("#d0d0d0"))
-        if str(self.trace.get("dominant_engine", "")) == "multilight":
+        if self.rows and self.rows[0].get("telemetry_row"):
+            if len(self.rows) > 1:
+                formula = "CNN/KNN por iluminação • votos independentes • sem soma linear"
+            else:
+                formula = "Motor único • " + self.rows[0]["label"]
+        elif str(self.trace.get("dominant_engine", "")) == "multilight":
             origin = str(self.trace.get("multilight_dominant_mode", "-"))
             formula = (
                 f"Fusão SIDE/TOP/MID • origem: {origin} • "
@@ -250,6 +259,9 @@ class DecisionInfluenceWidget(QWidget):
 
         painter.setPen(QColor("#f5c518"))
         footer_2 = (
+            f"Score CNN não calibrado • regra {self.trace.get('fusion_rule', '-')} • " 
+            "verde/rosa = força do voto, não probabilidade de acerto"
+            if self.rows and self.rows[0].get("telemetry_row") else
             f"Corte {cutoff:.0%} • regra {self.trace.get('fusion_rule', 'physical_only')} • "
             "barra maior = evidência (KNN = match); barra amarela fina = peso"
         )

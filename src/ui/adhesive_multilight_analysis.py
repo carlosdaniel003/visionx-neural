@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.ui.widgets.radar_chart import RadarChartWidget
+from src.ui.widgets.neural_specialist import NeuralSpecialistWidget, VerifiedMemorySpecialistWidget
 from src.ui.widgets.semantic_dna import SemanticDNAWidget
 from src.ui.widgets.shift_debugger import ShiftDebuggerWidget
 from src.ui.widgets.silk_debugger import SilkDebuggerWidget
@@ -42,6 +43,8 @@ EXPERT_DEFINITIONS = (
     ("silk_expert.py", "XOR • TINTA E EPICENTRO", SilkDebuggerWidget),
     ("semantic_expert.py", "DNA • ASSINATURA SEMÂNTICA", SemanticDNAWidget),
     ("shift_expert.py", "SHIFT • DESLOCAMENTO", ShiftDebuggerWidget),
+    ("faltando_cnn_v2.py", "CNN FALTANDO v2 • REDE NEURAL", NeuralSpecialistWidget),
+    ("knn_expert.py", "KNN • MEMÓRIA HUMANA", VerifiedMemorySpecialistWidget),
 )
 
 
@@ -161,7 +164,10 @@ class _LightingExpertLane(QFrame):
         for engine_name, widget in self.frames.items():
             if engine_name not in active_engines:
                 continue
-            widget.update_data(detail)
+            if engine_name in {"faltando_cnn_v2.py", "knn_expert.py"}:
+                widget.update_data(detail, analysis)
+            else:
+                widget.update_data(detail)
             widget.setVisible(True)
             visible_count += 1
 

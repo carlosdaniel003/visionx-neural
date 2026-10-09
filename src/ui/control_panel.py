@@ -382,7 +382,7 @@ class ControlPanel(QWidget):
         self.lbl_db_info.setText("Sem dados no momento.")
 
     def _reset_reference_panel(self):
-        for frame in ['frame_ssim_debug', 'frame_silk', 'frame_dna', 'frame_shift', 'frame_radar']:
+        for frame in ['frame_ssim_debug', 'frame_silk', 'frame_dna', 'frame_shift', 'frame_radar', 'frame_neural', 'frame_memory_expert']:
             if hasattr(self, frame):
                 getattr(self, frame).setVisible(False)
         if hasattr(self, 'frame_knn'): self.frame_knn.update_data({})
@@ -396,6 +396,9 @@ class ControlPanel(QWidget):
     def _update_reference_panel(self, analysis: dict):
         detail = analysis.get("detail", {})
         active_engines = analysis.get("active_engines", [])
+        for name in ("frame_neural", "frame_memory_expert"):
+            if hasattr(self, name):
+                getattr(self, name).setVisible(False)
         
         if "ssim_expert.py" in active_engines and hasattr(self, 'frame_ssim_debug'):
             self.frame_ssim_debug.update_data(detail)
@@ -413,7 +416,21 @@ class ControlPanel(QWidget):
             self.frame_shift.update_data(detail)
             self.frame_shift.setVisible(True)
             
-        if not active_engines and hasattr(self, 'frame_radar'):
+        neural_lights = any(
+            isinstance(item, dict) and item.get("cnn_active", False)
+            for item in (detail.get("cnn_v2_light_diagnostics") or {}).values()
+        )
+        if ("faltando_cnn_v2.py" in active_engines or detail.get("cnn_v2_active")
+                or neural_lights) and hasattr(self, "frame_neural"):
+            self.frame_neural.update_data(detail, analysis)
+            self.frame_neural.setVisible(True)
+
+        if (detail.get("recognition_route") in {"KNOWN_KNN", "MULTILIGHT_MIXED"}
+                or "knn_expert.py" in active_engines) and hasattr(self, "frame_memory_expert"):
+            self.frame_memory_expert.update_data(detail, analysis)
+            self.frame_memory_expert.setVisible(True)
+
+        if not active_engines and not neural_lights and hasattr(self, 'frame_radar'):
             self.frame_radar.update_data(detail)
             self.frame_radar.setVisible(True)
             
@@ -438,7 +455,17 @@ class ControlPanel(QWidget):
                 else (conf_opp, conf_main)
             )
 
-        self.lbl_verdict.setText(f"{verdict.upper()} • (Defeito: {def_pct}% | Falso: {ok_pct}%)")
+        detail = analysis.get("detail", {})
+        if detail.get("cnn_v2_active"):
+            raw = detail.get("cnn_v2_ng_score_uncalibrated")
+            score = f"{raw * 100:.4f}%" if isinstance(raw, (int, float)) else "N/D"
+            verdict_text = f"{verdict.upper()} • SCORE CNN NG {score} (não calibrado)"
+        elif detail.get("recognition_route") == "KNOWN_KNN":
+            label = detail.get("recognition_known_label", "?")
+            verdict_text = f"{verdict.upper()} • KNN EXATO • RÓTULO HUMANO {label}"
+        else:
+            verdict_text = f"{verdict.upper()} • (Defeito: {def_pct}% | Falso: {ok_pct}%)"
+        self.lbl_verdict.setText(verdict_text)
         self.lbl_verdict.setStyleSheet(f"color: {color_str}; font-size: 16px; font-weight: bold; border: none;")
 
         if analysis.get("reason", ""): 

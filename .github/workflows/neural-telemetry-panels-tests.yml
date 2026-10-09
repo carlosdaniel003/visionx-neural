@@ -1,0 +1,48 @@
+name: Neural Telemetry Panels CNN + KNN
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/ui/neural_telemetry_model.py"
+      - "src/ui/neural_influence_model.py"
+      - "src/ui/widgets/neural_specialist.py"
+      - "src/ui/widgets/knn_spectrum.py"
+      - "src/ui/widgets/decision_influence.py"
+      - "src/ui/decision_panel.py"
+      - "src/ui/control_panel_ui.py"
+      - "src/ui/control_panel.py"
+      - "src/ui/adhesive_multilight_analysis.py"
+      - "src/ui/network_xp_debug.py"
+      - "src/core/multilight_fusion.py"
+      - "src/services/capture_debug_payload.py"
+      - "tests/test_neural_telemetry_panels.py"
+      - ".github/workflows/neural-telemetry-panels-tests.yml"
+  pull_request:
+    branches: [central]
+  workflow_dispatch:
+
+jobs:
+  panels-debug:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: "offscreen"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Qt native dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0
+      - name: Python dependencies
+        run: |
+          python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
+      - name: Compile changed modules
+        run: |
+          python -m py_compile src/ui/neural_telemetry_model.py src/ui/neural_influence_model.py src/ui/widgets/neural_specialist.py src/ui/widgets/knn_spectrum.py src/ui/widgets/decision_influence.py src/ui/decision_panel.py src/ui/control_panel_ui.py src/ui/control_panel.py src/ui/adhesive_multilight_analysis.py src/ui/network_xp_debug.py src/core/multilight_fusion.py src/services/capture_debug_payload.py tests/test_neural_telemetry_panels.py
+      - name: Neural panels, memory, UI and XP debug regressions
+        run: |
+          python -m unittest tests.test_neural_telemetry_panels tests.test_decision_model tests.test_decision_influence_contract tests.test_network_xp_debug tests.test_multilight_generalization tests.test_lower_panels_responsive tests.test_memory_ui -v

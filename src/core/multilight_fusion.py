@@ -564,6 +564,34 @@ def fuse_multilight(
     else:
         recognition_route = ""
 
+    # Telemetria de cada luz: mantém scores ORIGINAIS, inclusive quando
+    # nenhuma luz participou do consenso. Não calcula scores artificiais.
+    cnn_light_diagnostics = {}
+    for light in LIGHTING_ORDER:
+        frame = source.get(light, {})
+        local = _detail(frame)
+        active = bool(
+            local.get("cnn_v2_active")
+            or "faltando_cnn_v2.py" in (frame.get("active_engines") or [])
+        )
+        cnn_light_diagnostics[light] = {
+            "route": str(local.get("recognition_route", "") or ""),
+            "engine": "faltando_cnn_v2" if active else str(local.get("dominant_engine", "") or ""),
+            "cnn_active": active,
+            "cnn_status": str(local.get("cnn_v2_status", "") or ""),
+            "checkpoint_verified": local.get("cnn_v2_checkpoint_verified") is True if active else None,
+            "checkpoint_sha256": str(local.get("cnn_v2_checkpoint_sha256", "") or "") if active else "",
+            "ng_score_uncalibrated": (
+                float(local["cnn_v2_ng_score_uncalibrated"])
+                if active and isinstance(local.get("cnn_v2_ng_score_uncalibrated"), (float, int))
+                else None
+            ),
+            "verdict": str(frame.get("verdict", "") or ""),
+            "category": str(local.get("cnn_v2_aoi_category", "") or ""),
+            "human_memory_label": str(local.get("recognition_known_label", "") or ""),
+        }
+    detail["cnn_v2_light_diagnostics"] = cnn_light_diagnostics
+
     # Verifica TODAS as luzes e a identidade do checkpoint. A fusão
     # pode ter herdado metadados somente da luz dominante, insuficientes
     # para permitir decisão automática.
@@ -607,6 +635,7 @@ def fuse_multilight(
         or trace.get("hard_missing_evidence", False)
         or detail.get("missing_hard_absence", False)
     )
+    trace["cnn_v2_light_diagnostics"] = deepcopy(cnn_light_diagnostics)
     trace.update(
         {
             "schema": "visionx.multilight_decision.v1",

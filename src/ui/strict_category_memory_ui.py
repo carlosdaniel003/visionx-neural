@@ -56,6 +56,9 @@ def install_strict_category_memory_ui(widget_cls) -> None:
             and not getattr(self, "memory_conflict", False)
             and getattr(self, "memory_candidate_count", 0) == 0
             and category
+            and str(getattr(self, "recognition_route", "") or "") not in {
+                "NEW_CNN", "KNOWN_KNN", "MULTILIGHT_MIXED", "NEW_EXPERTS"
+            }
         ):
             painter = QPainter(self)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)

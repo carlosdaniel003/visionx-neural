@@ -14,6 +14,7 @@ from src.ui.decision_model import (
     memory_summary,
 )
 from src.ui.widgets.decision_influence import DecisionInfluenceWidget
+from src.ui.neural_telemetry_model import neural_summary, memory_panel_text, percent
 
 
 def _render_panel(panel, analysis: dict | None) -> None:
@@ -27,8 +28,36 @@ def _render_panel(panel, analysis: dict | None) -> None:
         panel.lbl_memory_role.setText("SEM MEMÓRIA")
         return
 
-    panel.lbl_decision_summary.setText(decision_summary(trace))
-    panel.lbl_decision_rule.setText(fusion_summary(trace))
+    neural = neural_summary(analysis)
+    if neural["cnn_active"]:
+        final_score = neural["cnn_ng_score"]
+        main_score = (
+            f"NG {percent(final_score, precision=4)}"
+            if final_score is not None else "scores por iluminação abaixo"
+        )
+        if neural["cnn_per_light"]:
+            votes = neural["cnn_votes"]
+            main_score = " • ".join(
+                f"{light}: {votes.get(light, 'REVIEW')}"
+                for light in ("SIDE", "TOP", "MID")
+            )
+        panel.lbl_decision_summary.setText(
+            f"CNN FALTANDO v2 • {neural['verdict']} • {main_score}"
+        )
+        panel.lbl_decision_rule.setText(
+            "Consenso CNN SIDE/TOP/MID • " +
+            (neural["cnn_consensus_reason"] or "sem regra de consenso")
+            if neural["cnn_per_light"] else
+            "CNN única • score NG não calibrado • memória KNN sem match exato"
+        )
+    elif neural["memory_route"] == "KNOWN_KNN":
+        panel.lbl_decision_summary.setText(
+            f"MEMÓRIA KNN • par humano exato • {neural['memory_label'] or '-'}"
+        )
+        panel.lbl_decision_rule.setText("KNN 100% • CNN não executada")
+    else:
+        panel.lbl_decision_summary.setText(decision_summary(trace))
+        panel.lbl_decision_rule.setText(fusion_summary(trace))
 
     primary, role = memory_summary(trace)
     detail = (analysis or {}).get("detail", {})
@@ -41,6 +70,8 @@ def _render_panel(panel, analysis: dict | None) -> None:
         primary += " • imagem completa legada"
     if best_label in {"OK", "NG"}:
         primary += f" • melhor vizinho de anomalia {best_label}"
+    if neural["memory_route"]:
+        role, primary = memory_panel_text(analysis)
     panel.lbl_db_info.setText(primary)
     panel.lbl_memory_role.setText(role)
 
