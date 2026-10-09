@@ -1,5 +1,81 @@
 # ODIN — Gate de regressão visual na inicialização
 
+## Revisão de escopo — 09/10/2026 — substituir replay MoE por duas CNNs
+
+**Esta seção substitui as premissas anteriores de validação por
+especialistas físicos/KNN neste documento.** As seções abaixo
+documentam o histórico do plano anterior e não são autorização
+para ligá-lo como gate operacional.
+
+**Contrato novo:**
+
+1. **CNN FALTANDO V2**, apenas `FALTANDO`, `EMBORCADO`,
+   `INVERTIDO`, `DESLOCADO` (sem adesivo). Executar inferência
+   pura no gabarito/teste completos de todos os arquivos elegíveis OK
+   e NG, em SIDE/TOP/MID conforme imagem.
+2. **CNN MEMÓRIA**, modelo separado, em **todas as categorias** sem
+   exceção, inclusive `MUITO ADESIVO`. Não confundir com memória KNN
+   de imagem conhecida nem usar o rótulo do arquivo como resposta.
+3. Em cada modelo, pasta OK exige `FALHA FALSA`; pasta NG exige
+   `DEFEITO REAL`. Resultado de revisão, score não finito,
+   checkpoint não verificado, OCR/recorte inválido ou ausência de
+   qualquer imagem elegível reprova o modelo. Nenhum rótulo humano
+   é alterado para passar. A aprovação é **100% em cada CNN**, sem
+   média ou compensação entre modelos.
+4. Um arquivo histórico sem luz explícita é SIDE. Novos PNGs
+   SIDE/TOP/MID devem ser avaliados sob sua luz própria; sem manifesto
+   verdadeiro não declarar que três imagens pertencem à mesma peça.
+   Validar por arquivo preserva todo o acervo e não cria eventos
+   sintéticos. Extensão futura a fusão por evento exige `event_id`
+   auditável e não mascara erro individual desta política.
+5. **Fail closed**: modelo ausente, pesos incompatíveis, arquivo
+   inválido, inferência interrompida ou ausência de cobertura nunca
+   pode ser contabilizado como OK. Relatórios JSON/TXT precisam
+   registrar cada erro e os subtotais separados.
+6. **Em toda abertura:** inventariar integralmente e inferir novamente
+   sobre os arquivos; sem cache de rótulo previsto, sem retreinar no
+   startup, sem KNN e sem rede. A janela operacional/servidor AOI só
+   poderão ser criados após ambos os testes passarem.
+
+**Implementação disponível para integração segura:**
+
+```text
+src/services/startup_regression/cnn_archive_validation.py
+src/services/startup_regression/cnn_archive_validation_cli.py
+tests/test_startup_regression_cnns.py
+.github/workflows/startup-regression-cnns.yml
+```
+
+A `FaltandoCNNLive` usa checkpoint verificável e sua inferência CNN
+pura. O segundo modelo **ainda não tem classe/checkpoint identificado
+na branch central**; portanto `CNN_MEMORIA` fica com status
+`MODEL_UNAVAILABLE`. `verified_memory_router.py` é KNN por par
+exato; `neural_judge.py` possui encoder CNN + KNN, mas nenhum
+dos dois satisfaz uma segunda CNN classificada de forma autônoma.
+**Não substituir por esses motores e não instalar gate no `main.py`
+antes da conexão real do segundo modelo.**
+
+**Diagnóstico sem bloqueio:**
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.cnn_archive_validation_cli
+```
+
+Os arquivos `reports/startup_regression/cnn_validation_*.json` e
+`cnn_validation_*.txt` expõem as métricas e casos individuais;
+é esperado que a avaliação conjunta reprove por ausência do segundo
+modelo. Falha de teste **não ativa a produção**, mas também não impede
+a inicialização atual do ODIN enquanto a integração não estiver pronta.
+
+**Próxima dependência:** operador informar onde está a CNN MEMÓRIA
+(módulo, checkpoint e método de inferência), para implementar o
+adaptador e só então a tela/trava de startup, com testes de falha e
+sucesso em ambiente local.
+
+---
+
+
 **Status:** Etapa 1 concluída pelo inventário real; **Etapa 2 implementada para diagnóstico SIDE sem memória**, aguardando resultado no computador da fábrica. Etapas 3–5 e gate bloqueante não implementados.  
 **Registro:** 08/10/2026.  
 **Escopo:** aplicação do computador novo, branch `central`; arquivos visuais `public/ok_archive/` e `public/ng_archive/`.  
