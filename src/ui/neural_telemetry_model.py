@@ -117,7 +117,7 @@ def cnn_panel_text(analysis: dict | None) -> dict:
         f"Rota: {m['cnn_route'] or 'MULTILIGHT'}",
         f"Estado: {m['cnn_status'] or 'consulte as três luzes'}",
     ]
-    if m["cnn_ng_score"] is not None and not m["cnn_per_light"]:
+    if not m["cnn_per_light"]:
         lines.extend((
             f"Score NG (não calibrado): {percent(m['cnn_ng_score'], precision=4)}",
             f"Score OK complementar: {percent(m['cnn_ok_score'], precision=4)}",
