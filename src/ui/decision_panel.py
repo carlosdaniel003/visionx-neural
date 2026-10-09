@@ -14,7 +14,7 @@ from src.ui.decision_model import (
     memory_summary,
 )
 from src.ui.widgets.decision_influence import DecisionInfluenceWidget
-from src.ui.neural_telemetry_model import neural_summary, memory_panel_text, percent
+from src.ui.neural_telemetry_model import neural_summary, memory_panel_text, memory_seen_state, percent
 
 
 def _render_panel(panel, analysis: dict | None) -> None:
@@ -112,7 +112,7 @@ def _render_panel(panel, analysis: dict | None) -> None:
 
     rule = str(trace.get("fusion_rule", "physical_only"))
     role_color = (
-        "#4ade80" if neural["memory_route"] == "KNOWN_KNN"
+        "#4ade80" if memory_seen_state(analysis)["status"] == "JA_VI"
         else "#ff6262" if neural["memory_route"] == "MEMORY_CONFLICT"
         or rule in {"memory_veto", "memory_override"}
         else "#f5c518"

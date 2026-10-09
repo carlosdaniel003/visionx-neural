@@ -48,7 +48,7 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
         self.assertTrue(p.show_ai_verdict_feedback(report("NEW_CNN")))
         card = p.ai_verdict_feedback
         self.assertEqual(card.verdict_label.text(), "FALHA FALSA")
-        self.assertEqual(card.memory_state_label.text(), "CASO NOVO • SEM MATCH EXATO")
+        self.assertEqual(card.memory_state_label.text(), "NUNCA VI")
         self.assertFalse(card.memory_state_label.isHidden())
         self.assertEqual(card.height(), VERDICT_FEEDBACK_HEIGHT)
         self.assertFalse(hasattr(p, "inspection_memory_feedback"))
@@ -62,8 +62,8 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
         )))
         card = p.ai_verdict_feedback
         self.assertEqual(card.verdict_label.text(), "DEFEITO REAL")
-        self.assertEqual(card.memory_state_label.text(), "JÁ VISTO • KNN EXATO")
-        self.assertIn("rótulo NG", card.toolTip())
+        self.assertEqual(card.memory_state_label.text(), "JÁ VI")
+        self.assertIn("Rótulo NG", card.toolTip())
 
     def test_mixed_memory_and_absent_route_are_not_misrepresented(self):
         p = self.panel()
@@ -73,11 +73,11 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
             light_routes={"SIDE": "KNOWN_KNN", "TOP": "NEW_CNN", "MID": "KNOWN_KNN"},
         ))
         card = p.ai_verdict_feedback
-        self.assertEqual(card.memory_state_label.text(), "MEMÓRIA MISTA • 3 LUZES")
+        self.assertEqual(card.memory_state_label.text(), "JÁ VI")
         p.show_ai_verdict_feedback(report(""))
         self.assertEqual(card.memory_state_label.text(), "")
         self.assertTrue(card.memory_state_label.isHidden())
-        self.assertNotIn("CASO NOVO", card.toolTip())
+        self.assertNotIn("NUNCA VI", card.toolTip())
 
     def test_known_and_new_subtitles_follow_exact_same_opacity_timeline(self):
         p = self.panel()
@@ -88,7 +88,7 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
         self.assertTrue(p.prepare_ai_verdict_feedback_dismissal())
         # Reset during keypress must not wipe the subtitle before fade.
         self.assertFalse(p.clear_ai_verdict_feedback())
-        self.assertEqual(card.memory_state_label.text(), "CASO NOVO • SEM MATCH EXATO")
+        self.assertEqual(card.memory_state_label.text(), "NUNCA VI")
         self.assertTrue(p.show_decision_key_feedback("OK", source="production_auto"))
         self.assertTrue(p.decision_key_feedback._sync_verdict_on_exit)
         p.decision_key_feedback._start_fade_out()
@@ -121,7 +121,7 @@ class CombinedVerdictMemoryTests(unittest.TestCase):
         p.show_ai_verdict_feedback(a)
         self.assertEqual(p.ai_verdict_feedback.verdict_label.text(), "REVISÃO OBRIGATÓRIA")
         self.assertEqual(p.ai_verdict_feedback.memory_state_label.text(),
-                         "CASO NOVO • SEM MATCH EXATO")
+                         "NUNCA VI")
 
     def test_entrypoint_has_no_separate_memory_overlay_installers(self):
         main = Path("main.py").read_text(encoding="utf-8")

@@ -37,20 +37,20 @@ class MemoryFeedbackTests(unittest.TestCase):
     def test_exact_human_seen_has_label_but_not_approximate_similarity(self):
         a=case("KNOWN_KNN",label="OK")
         title, message, tone=memory_feedback_state(a)
-        self.assertIn("JÁ VISTO",title)
+        self.assertEqual(title,"JÁ VI")
         self.assertIn("OK",message)
         self.assertEqual(tone,"known")
 
     def test_new_cnn_is_new_pair_not_new_type_of_defect(self):
         a=cnn_case()
         title,message,tone=memory_feedback_state(a)
-        self.assertIn("CASO NOVO",title)
-        self.assertIn("par",message)
+        self.assertEqual(title,"NUNCA VI")
+        self.assertIn("par",message.lower())
         self.assertEqual(tone,"new")
         self.assertNotIn("primeiro defeito",message.lower())
 
     def test_new_physical_specialist_is_new_pair(self):
-        self.assertIn("CASO NOVO",memory_feedback_state(case("NEW_EXPERTS"))[0])
+        self.assertEqual(memory_feedback_state(case("NEW_EXPERTS"))[0],"NUNCA VI")
 
     def test_unknown_route_does_not_claim_first_occurrence(self):
         self.assertEqual(memory_feedback_state(case("")),("","",""))
@@ -63,15 +63,14 @@ class MemoryFeedbackTests(unittest.TestCase):
             }
         })
         title,message,tone=memory_feedback_state(a)
-        self.assertIn("MISTA",title)
+        self.assertEqual(title,"JÁ VI")
         self.assertIn("SIDE",message)
         self.assertIn("TOP",message)
-        self.assertEqual(tone,"mixed")
+        self.assertEqual(tone,"known")
 
     def test_conflicting_memory_requires_review(self):
         title,message,tone=memory_feedback_state(case("MEMORY_CONFLICT"))
-        self.assertIn("CONFLITANTE",title)
-        self.assertEqual(tone,"review")
+        self.assertEqual((title,message,tone),("","",""))
 
 
 class MemoryPanelRenderingTests(unittest.TestCase):
@@ -96,7 +95,7 @@ class MemoryPanelRenderingTests(unittest.TestCase):
         self.addCleanup(panel.frame_knn.deleteLater)
         self.addCleanup(panel.frame_decision_influence.deleteLater)
         _render_panel(panel,cnn_case())
-        self.assertIn("KNN SEM MATCH EXATO",panel.lbl_memory_role.text())
+        self.assertIn("NUNCA VI",panel.lbl_memory_role.text())
         self.assertIn("par humano exato não encontrado",panel.lbl_db_info.text())
         self.assertIn("NEW_CNN",panel.frame_knn.recognition_route)
         self.assertTrue(panel.frame_knn.isVisible() or not panel.frame_knn.isHidden())
@@ -119,7 +118,7 @@ class MemoryPanelRenderingTests(unittest.TestCase):
         panel.resize(1100,720)
         overlay=InspectionMemoryFeedbackOverlay(panel)
         self.assertTrue(overlay.show_analysis(cnn_case()))
-        self.assertIn("CASO NOVO",overlay.title_label.text())
+        self.assertEqual(overlay.title_label.text(),"NUNCA VI")
         self.assertTrue(overlay.prepare_decision_dismissal())
         self.assertFalse(overlay.clear())
         self.assertTrue(overlay.start_synchronized_fade_out())

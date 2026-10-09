@@ -1,0 +1,43 @@
+name: ODIN Binary Memory Status and Color Dashboard
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/ui/neural_telemetry_model.py"
+      - "src/ui/inspection_memory_feedback.py"
+      - "src/ui/decision_verdict_feedback.py"
+      - "src/ui/widgets/knn_spectrum.py"
+      - "src/ui/decision_panel.py"
+      - "tests/test_binary_knn_memory_dashboard.py"
+      - "tests/test_memory_visual_feedback_v2.py"
+      - "tests/test_combined_verdict_memory_overlay.py"
+      - ".github/workflows/binary-knn-memory-dashboard-tests.yml"
+  pull_request:
+    branches: [central]
+  workflow_dispatch:
+
+jobs:
+  binary-memory-ui:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: "offscreen"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Qt EGL native libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0
+      - name: Python dependencies
+        run: |
+          python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
+      - name: Compile
+        run: |
+          python -m py_compile src/ui/neural_telemetry_model.py src/ui/inspection_memory_feedback.py src/ui/decision_verdict_feedback.py src/ui/widgets/knn_spectrum.py src/ui/decision_panel.py tests/test_binary_knn_memory_dashboard.py
+      - name: Binary KNN, panels, production and debug UI regressions
+        run: |
+          python -m unittest tests.test_binary_knn_memory_dashboard tests.test_memory_visual_feedback_v2 tests.test_combined_verdict_memory_overlay tests.test_neural_telemetry_panels tests.test_decision_verdict_feedback tests.test_decision_influence_contract tests.test_decision_key_feedback tests.test_decision_model -v

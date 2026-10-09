@@ -138,30 +138,95 @@ def cnn_panel_text(analysis: dict | None) -> dict:
     return {"header": "CNN FALTANDO v2 • REDE NEURAL", "lines": tuple(lines)}
 
 
-def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
+
+def memory_seen_state(analysis: dict | None) -> dict:
+    """Estado visual binário de registro humano, nunca 'meio termo'.
+
+    JA_VI = pelo menos uma iluminação recuperada via KNOWN_KNN, com
+    par exato verificado; NUNCA_VI = consulta válida sem match exato.
+    Sem resultado de consulta, devolve None: não inventa 'nunca'.
+    Os rótulos tratam histórico de PARES, não tipos físicos de defeito.
+    """
     m = neural_summary(analysis)
-    if m["memory_route"] == "KNOWN_KNN":
+    route = m["memory_route"]
+    light_routes = {
+        light: str(m["memory_routes"].get(light, "") or "")
+        for light in LIGHTS
+    }
+    # O roteador expõe status verificado em cada luz. Na fusão o campo
+    # recognition_match global normalmente é NOT_FOUND se uma luz for nova:
+    # não descartar os KNOWN_KNN individuais.
+    recognized = [
+        light for light in LIGHTS if light_routes[light] == "KNOWN_KNN"
+    ]
+    unrecognized = [
+        light for light in LIGHTS
+        if light_routes[light] in {"NEW_CNN", "NEW_EXPERTS"}
+    ]
+    unreported = [
+        light for light in LIGHTS
+        if light_routes[light] not in {"KNOWN_KNN", "NEW_CNN", "NEW_EXPERTS"}
+    ]
+    if route == "KNOWN_KNN" and not recognized:
+        recognized = ["INSPEÇÃO"]
+    if route in {"NEW_CNN", "NEW_EXPERTS"} and not any(light_routes.values()):
+        unrecognized = ["INSPEÇÃO"]
+    known = bool(recognized)
+    queried = known or bool(unrecognized)
+    status = "JA_VI" if known else "NUNCA_VI" if queried else None
+    return {
+        "status": status,
+        "label": "JÁ VI" if known else "NUNCA VI" if queried else "",
+        "recognized_lights": recognized,
+        "new_lights": unrecognized,
+        "unreported_lights": unreported if any(light_routes.values()) else [],
+        "routes_by_light": light_routes,
+        "human_label": m["memory_label"],
+        "has_multilight": any(light_routes.values()),
+        "consultation_valid": queried,
+        "memory_conflict": route == "MEMORY_CONFLICT",
+    }
+
+
+def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
+    memory = memory_seen_state(analysis)
+    result = memory["status"]
+    lights = memory["recognized_lights"]
+    new = memory["new_lights"]
+    if result == "JA_VI":
+        if memory["has_multilight"]:
+            number = len(lights)
+            seen = ", ".join(lights)
+            new_text = ", ".join(new)
+            extra = f" • {new_text}: CNN/sem match exato" if new_text else ""
+            return (
+                f"JÁ VI • KNN EXATO • {number}/3 LUZES",
+                f"{seen}: pares já registrados e confirmados por humano{extra}. "
+                "A identificação é por par exato, não por categoria física de defeito.",
+            )
         return (
-            "CASO CONHECIDO • KNN EXATO",
-            f"Par humano reconhecido • Rótulo {m['memory_label'] or '?'}"
-            + (f" • Registro {m['memory_source']}" if m["memory_source"] else ""),
+            "JÁ VI • KNN EXATO",
+            f"Par humano registrado • Rótulo {memory['human_label'] or '?'}. "
+            "Correspondência exata gabarito/teste.",
         )
-    if m["memory_route"] == "MEMORY_CONFLICT":
-        return ("MEMÓRIA CONTRADITÓRIA • REVISÃO",
-                "Par exato com registros humanos conflitantes. Conferência obrigatória.")
-    if m["memory_route"] == "MULTILIGHT_MIXED":
-        routes = m["memory_routes"]
-        return ("KNN + CNN • ROTAS MISTAS",
-                " • ".join(f"{light}: {routes.get(light, 'N/D')}" for light in LIGHTS))
-    if m["memory_new_cnn"]:
-        return ("CASO NOVO • KNN SEM MATCH EXATO",
-                "KNN consultado antes da CNN; par humano exato não encontrado. "
-                "Não existe similaridade KNN medida nesta rota.")
-    if m["memory_route"] == "NEW_EXPERTS":
-        return ("CASO NOVO • MOTORES DA CATEGORIA",
-                "Nenhum par KNN humano exato; especialistas físicos consultados.")
-    if m["cnn_active"]:
-        return ("CNN ATIVA • ROTA KNN NÃO INFORMADA",
-                "A CNN executou, mas o resultado não informa se o par já estava na memória.")
-    return ("MEMÓRIA • CONSULTA NÃO DISPONÍVEL",
-            m["memory_reason"] or "Não foi registrada pesquisa KNN nesta inspeção.")
+    if result == "NUNCA_VI":
+        if memory["has_multilight"]:
+            return (
+                "NUNCA VI • KNN SEM MATCH EXATO",
+                "Nenhuma das iluminações consultadas tem par humano exato. Não existe similaridade KNN medida nesta recuperação. "
+                "Imagens analisadas pela CNN não equivalem a memória conhecida.",
+            )
+        return (
+            "NUNCA VI • KNN SEM MATCH EXATO",
+            "KNN consultado: par humano exato não encontrado. Não existe similaridade KNN medida nesta recuperação. O ODIN pode reconhecer a "
+            "categoria visual, mas não recuperou esta imagem da memória.",
+        )
+    if memory["memory_conflict"]:
+        return (
+            "CONSULTA INCONCLUSIVA • MEMÓRIA KNN",
+            "Registros humanos conflitantes; conferir os rótulos antes de concluir.",
+        )
+    return (
+        "CONSULTA KNN NÃO DISPONÍVEL",
+        "Nenhuma pesquisa de correspondência exata foi confirmada nesta inspeção.",
+    )
