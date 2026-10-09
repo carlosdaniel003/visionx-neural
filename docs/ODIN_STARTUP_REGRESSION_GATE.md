@@ -1,5 +1,66 @@
 # ODIN — Gate de regressão visual na inicialização
 
+## 09/10/2026 — Dois níveis de memória: avaliação independente e sem migração
+
+Último diagnóstico de evidência (`evidence_recovery_20261009_172032_693807`):
+578 PNGs indexados, 952 JSONs: 92 v3, 45 v2 auditáveis,
+815 v2 sem imagens de gabarito/teste ou referências visuais
+nos campos existentes. Nenhuma reconstrução nova. A assinatura
+de 224 atributos não permite recuperar os pixels originais.
+
+**Nível A — memória de assinaturas legadas.**
+`legacy_knn_signature_audit.py` usa o comparador
+`compare_anomaly_signatures` e o peso inverso de distância
+`KNNExpert._weighted_vote` da produção. O histórico é
+avaliado em teste leave-one-record-out: não consultar o
+próprio JSON, somente pares da mesma categoria e luz, excluir
+`event_id` igual quando disponível. Relatar vizinhos,
+predições, voto NG, similaridade, discordâncias, empates e
+assinaturas iguais com classes conflitantes. Não usar
+rótulo arquivado como predição. **Essa precisão não mede
+cobertura da memória visual dos 212 screenshots nem
+generalização fora da base histórica.**
+
+**Nível B — propostas para índice visual exato.**
+`archive_exact_memory_plan.py` valida PNGs por inventário
+CRC/SHA e extrai gabarito/teste com o OCR real. Calcula a
+chave do mesmo `VerifiedKNNMemory._key` usado na produção;
+cruza com v3 verificadas e v2 auditáveis simuladas e marca
+`JA_VERIFICADO_EXATO_V3`, `PAR_LEGADO_EXATO_PENDENTE`,
+`PENDENTE_ORIGEM_HUMANA`, `PENDENTE_ORIGEM_HUMANA_E_LUZ`,
+`OCR_INVALIDO`, `CATEGORIA_OCR_DIVERGENTE`,
+`CONFLITO_COM_MEMORIA_EXISTENTE` e outras falhas.
+O rótulo extraído da pasta visual não constitui confirmação
+humana. Apenas a procedência legítima e o contexto físico
+podem qualificar um registro v3 no futuro. `ready_for_import=0`
+até haver qualificação real.
+
+**Ferramenta:** `two_level_memory_diagnostic_cli.py`.
+Produz em `reports/startup_regression`
+`memory_levels_*.json` (ambos relatórios estruturados e
+separados) + `memory_levels_*.txt`.
+`tests/test_two_level_memory_diagnostic.py` e workflow
+Windows verificam casos OK/NG, OCR, hashes, escopo, conflitos
+e nenhum efeito colateral na memória.
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.two_level_memory_diagnostic_cli
+```
+
+**Permissões desta etapa:** READ-ONLY diagnóstico.
+É proibido migrar registros, criar pares gabarito/teste
+por inferência de nome, reclassificar o acervo, ajustar limiar
+só para obter 100%, retreinar CNN ou habilitar o bloqueio
+de inicialização. `main.py` e motores operacionais ficam
+inalterados. Após relatórios reais, decidir separadamente
+sobre pendências do arquivo e sobre o caso DESLOCADO SIDE
+revisado pela CNN FALTANDO V2.
+
+---
+
+
 ## 09/10/2026 — Recuperação de evidência visual histórica
 
 **Estado anterior confirmado nos relatórios da estação:**
