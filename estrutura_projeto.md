@@ -1,3 +1,47 @@
+## 09/10/2026 — Esclarecimento do segundo motor: MEMÓRIA KNN (não CNN)
+
+**Correção expressa do operador:** o nome "CNN MEMÓRIA" mencionado na
+definição anterior significa a **MEMÓRIA KNN que já existe no ODIN**.
+Não há segundo checkpoint CNN a criar/procurar. A arquitetura de
+verificação de início é **CNN FALTANDO V2 + MEMÓRIA KNN**:
+
+- **CNN FALTANDO V2:** inspeciona todas as imagens OK/NG de
+  FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO, nunca adesivo.
+  Usa inferência pura do checkpoint treinado, sem KNN ou motores físicos.
+- **MEMÓRIA KNN:** inspeciona todas as categorias, inclusive
+  MUITO ADESIVO, usando a mesma regra de `VerifiedKNNMemory.lookup`
+  da Produção. Só reconhece uma imagem por **par gabarito/teste exato,
+  OCR de placa/peça/valor, iluminação e rótulo humano confirmado**.
+  Não confundir a pasta `ok_archive/ng_archive` com o dataset KNN
+  `public/dataset/`; uma imagem arquivada pode NÃO estar na memória.
+- Resultado **KNOWN** OK/NG comparado ao rótulo da pasta = passou
+  ou regressão. **NEW / UNAVAILABLE / CONFLICT** = `SEM_COBERTURA`,
+  nunca acerto fabricado. OCR inválido, rótulo incoerente ou corrupção
+  = inválido. Nenhuma CNN substitui a memória faltante.
+- São **duas verificações independentes**: a aprovação de CNN não
+  encobre ausência ou erro KNN. Uma imagem repetida na KNN apenas
+  demonstra consistência de recuperação, não generalização visual.
+- Novos módulos: `knn_archive_predictor.py` e integração no
+  `cnn_archive_validation.py`, usados na CLI de diagnóstico existente.
+  Sem treino, sem mudança de rótulo, sem comandos XP ou MoE.
+  `main.py` **não foi alterado** e o gate automático não está ativo.
+
+O plano anterior que dizia que era necessário um segundo modelo CNN
+fica **substituído por esta correção**. Ainda é necessário avaliar
+os relatórios reais e a cobertura KNN antes de ativar o bloqueio.
+
+```powershell
+cd "C:\visionx-neural-main"
+python -m src.services.startup_regression.cnn_archive_validation_cli
+```
+
+Arquivos em `reports/startup_regression/cnn_validation_*.json` e
+`cnn_validation_*.txt`. Consultas KNN sem par verificado serão
+declaradas `SEM_COBERTURA`, portanto 100% do arquivo visual não
+é esperado automaticamente.
+
+---
+
 ## 09/10/2026 — Nova política do startup: validação SOMENTE por duas CNNs
 
 **Decisão do operador (substitui o plano anterior de replay MoE):**
