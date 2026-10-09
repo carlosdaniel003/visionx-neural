@@ -215,6 +215,8 @@ class FullHistoryReplayTests(unittest.TestCase):
             {"CHECKPOINTS_DIFERENTES_NO_EVENTO": 1}
         )
         self.assertEqual(report["overall"]["passed"], 3)
+        self.assertFalse(report["overall"]["explicit_event_integrity_passed"])
+        self.assertFalse(report["overall"]["historical_98pct_target_met"])
         self.assertFalse(report["production_approved"])
 
     def test_98_percent_boundary_and_two_errors_in_fifty(self):
