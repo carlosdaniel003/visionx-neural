@@ -39,6 +39,9 @@ def write_full_history_cnn_report(report: dict, output_dir: Path):
         f"Acertos efetivos OK/NG: {overall['passed']}/{overall['total']}",
         f"Retenção de todo o acervo: {overall['historical_full_archive_match_rate']}",
         f"Retenção no escopo da CNN: {overall['historical_supported_match_rate']}",
+        f"Retenção OK (todos OK): {overall['historical_OK_match_rate']}",
+        f"Retenção NG (todos NG): {overall['historical_NG_match_rate']}",
+        f"OK e NG separadamente >=98%: {overall['labeled_groups_at_98pct']}",
         f"Acerto binário bruto (não é decisão operacional): "
         f"{overall['raw_binary_correct']}/{overall['total']}",
         f"Revisões obrigatórias: {overall['review']}",
