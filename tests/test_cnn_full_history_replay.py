@@ -315,6 +315,20 @@ class FullHistoryReplayTests(unittest.TestCase):
         self.assertEqual(replay["overall"]["passed"], 49)
         self.assertTrue(replay["overall"]["historical_98pct_target_met"])
 
+    def test_98_percent_average_cannot_hide_ng_as_ok(self):
+        for i in range(49):
+            self.png("OK", f"2026-10-09_{1000+i:04d}_FALTANDO_SIDE.png", 51)
+        self.png("NG", "2026-10-09_1100_FALTANDO_SIDE.png", 151)
+        self.model = SimulatedCNN(wrong={151})
+        report = self.run_replay()
+        overall = report["overall"]
+        self.assertEqual(overall["passed"], 49)
+        self.assertAlmostEqual(overall["historical_full_archive_match_rate"], .98)
+        self.assertEqual(overall["historical_NG_match_rate"], 0.0)
+        self.assertEqual(overall["historical_OK_match_rate"], 1.0)
+        self.assertFalse(overall["labeled_groups_at_98pct"])
+        self.assertFalse(overall["historical_98pct_target_met"])
+
     def test_unlinked_three_similar_images_not_assumed_one_event(self):
         for light in ("SIDE", "TOP", "MID"):
             self.png("OK", f"2026-10-09_1000_FALTANDO_{light}.png", 51)
