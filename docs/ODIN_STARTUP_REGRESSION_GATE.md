@@ -1,5 +1,67 @@
 # ODIN — Gate de regressão visual na inicialização
 
+## 09/10/2026 — Recuperação de evidência visual histórica
+
+**Estado anterior confirmado nos relatórios da estação:**
+860 JSONs `visionx.memory.v2`, 45 pares de imagens legados
+auditáveis (somente simulação), 815 sem par PNG; três pares
+tinham correspondência com os screenshots históricos, sem
+migração. A etapa seguinte, autorizada pelo operador, é **apenas
+buscar evidência visual e diagnosticar o vínculo dos registros**.
+
+Novo código: `src/services/startup_regression/historical_evidence_recovery.py`,
+`historical_evidence_recovery_cli.py` e testes dedicados, mais
+extensão do workflow Windows de reconciliação.
+
+Busca de forma local e read-only nos PNGs dentro de
+`public/dataset`, `public/ok_archive` e `public/ng_archive`.
+Cria índice por hash de **pixels decodificados**, não por apenas
+nome, tempo, categoria ou hash de bytes comprimidos. Índices são
+efêmeros; nenhuma memória é escrita. Caminhos simbólicos externos,
+traversal e caminhos não localizados são ignorados.
+
+Para cada JSON:
+- verifica schema, confirmação de operador, assinatura e
+  referências declaradas pelo próprio registro;
+- procura as imagens em locais antigos por basename e hash,
+  reportando o **grau de confiança** de cada vínculo;
+- quando `storage.source_image_fingerprint` comprova a origem,
+  opcionalmente reextrai gabarito e teste via
+  `AOIPairExtractor` e confronta o OCR/identidade da placa,
+  componente, categoria e valor com o JSON;
+- a simulação `PAR_RECONSTRUIDO_PARA_REVISAO` exige também
+  hashes declarados do gabarito **e** do teste, idênticos aos
+  recortes reextraídos. Isso não vira automaticamente KNOWN;
+- versões antigas que jamais registraram os hashes ou PNGs podem
+  permanecer sem evidência suficiente. Esse é um resultado
+  válido de diagnóstico, não uma regressão da CNN.
+
+Exemplos de estados que **não autorizam migração**:
+`ARQUIVOS_POR_NOME_SEM_VINCULO_DE_HASH`,
+`TESTE_POR_HASH_SEM_GABARITO`,
+`DOIS_HASHES_DE_PARES_LOCALIZADOS_PARA_REVISAO`,
+`RECONSTRUCAO_OCR_DIVERGENTE`,
+`SEM_EVIDENCIA_VISUAL_LOCALIZAVEL`.
+Relatório inclui totais por categoria de recuperação, OK/NG
+separados e inventário de arquivos de evidência encontrados.
+
+Comando:
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.historical_evidence_recovery_cli
+```
+
+`reports/startup_regression/evidence_recovery_*.json` e
+`evidence_recovery_*.txt` são a saída solicitada.
+**Sem migração, sem alteração de CNN/KNN, sem gate bloqueante**.
+Só com essa evidência será possível definir a próxima etapa
+de recuperação auditável sem fabricar um resultado 100%.
+
+---
+
+
 ## 09/10/2026 — Adaptador legado somente leitura (fase de simulação)
 
 **Referência da estação:** em 212 PNGs e 952 JSONs da memória,
