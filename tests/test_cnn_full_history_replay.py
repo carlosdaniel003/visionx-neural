@@ -154,6 +154,78 @@ class FullHistoryReplayTests(unittest.TestCase):
         self.assertEqual(result["overall"]["invalid"], 1)
         self.assertEqual(self.model.calls, [])
 
+    def test_incomplete_identity_does_not_block_cnn_category_match(self):
+        self.png("OK", "2026-10-02_1542_FALTANDO.png", 51)
+
+        def incomplete_identity(frame):
+            return frame.copy(), frame.copy(), {
+                "board": "", "parts": "", "value": "FALTANDO",
+            }
+
+        report = replay_full_cnn_history(
+            self.root, extractor=incomplete_identity,
+            predictors={"CNN_FALTANDO_V2": self.model},
+        )
+        case = report["cases"][0]
+        self.assertEqual(case["status"], "PASSOU")
+        self.assertEqual(case["verdict"], "FALHA FALSA")
+        self.assertFalse(case["ocr_identification_complete"])
+        self.assertEqual(case["ocr_missing_identity_fields"], ["board", "parts"])
+        self.assertEqual(len(self.model.calls), 1)
+        self.assertTrue(report["requested_cnn_scope"]["target_met"])
+
+    def test_missing_ocr_category_still_blocks_cnn_inference(self):
+        self.png("OK", "2026-10-02_1542_FALTANDO.png", 51)
+
+        def missing_category(frame):
+            return frame.copy(), frame.copy(), {
+                "board": "", "parts": "", "value": "",
+            }
+
+        report = replay_full_cnn_history(
+            self.root, extractor=missing_category,
+            predictors={"CNN_FALTANDO_V2": self.model},
+        )
+        self.assertEqual(report["cases"][0]["status"], "INVALIDO")
+        self.assertFalse(report["requested_cnn_scope"]["target_met"])
+        self.assertEqual(self.model.calls, [])
+
+    def test_adhesive_is_excluded_only_from_requested_cnn_target(self):
+        self.png("OK", "2026-10-09_1000_FALTANDO_SIDE.png", 51)
+        self.png("NG", "2026-10-09_1001_FALTANDO_SIDE.png", 151)
+        self.png("NG", "2026-10-09_1002_MUITO_ADESIVO_SIDE.png", 58)
+        report = self.run_replay()
+        self.assertEqual(report["overall"]["total"], 3)
+        self.assertEqual(report["overall"]["unsupported"], 1)
+        self.assertFalse(report["overall"]["historical_98pct_target_met"])
+        self.assertTrue(report["overall"]["requested_cnn_scope_98pct_target_met"])
+        scope = report["requested_cnn_scope"]
+        self.assertTrue(scope["target_met"])
+        self.assertEqual(scope["excluded_categories"], ["MUITOADESIVO"])
+        self.assertEqual(scope["excluded_expected_NG"], 1)
+        self.assertEqual(scope["metrics"]["passed"], 2)
+        self.assertEqual(scope["metrics"]["total"], 2)
+
+    def test_borderline_cnn_review_not_promoted_by_human_ok_label(self):
+        self.png("OK", "2026-10-09_0857_DESLOCADO_SIDE.png", 55)
+        original = self.model.inspect
+
+        def borderline(reference, test, mode):
+            result = original(reference, test, mode)
+            result["verdict"] = "REVISÃO OBRIGATÓRIA"
+            result["production_review_required"] = True
+            result["detail"]["cnn_v2_ng_score_uncalibrated"] = .10031582415103912
+            return result
+
+        self.model.inspect = borderline
+        report = self.run_replay()
+        case = report["cases"][0]
+        self.assertEqual(case["expected_label"], "OK")
+        self.assertEqual(case["raw_binary_prediction"], "OK")
+        self.assertTrue(case["raw_binary_correct"])
+        self.assertEqual(case["status"], "REVISAO_OBRIGATORIA")
+        self.assertFalse(report["requested_cnn_scope"]["target_met"])
+
     def test_ng_adesivo_without_specialized_cnn_is_not_approved(self):
         self.png("NG", "2026-10-09_1000_MUITO_ADESIVO_SIDE.png", 58)
         result = self.run_replay()
