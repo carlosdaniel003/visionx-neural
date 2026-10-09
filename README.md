@@ -1,3 +1,33 @@
+## Recuperar evidências de memória legada (somente diagnóstico)
+
+Após a reconciliação encontrar 815 registros `visionx.memory.v2`
+sem PNGs de gabarito/teste, há um segundo comando para buscar
+automaticamente PNGs ainda disponíveis, cruzar referências de JSONs,
+hashes de conteúdo visual e tentar reconstrução com OCR somente
+quando houver uma imagem de origem **ligada por hash**.
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.historical_evidence_recovery_cli
+```
+
+Busca em `public/dataset`, `public/ok_archive` e
+`public/ng_archive`; não associa imagens por nomes/timestamps
+sem prova por hash. Gera
+`reports/startup_regression/evidence_recovery_*.json` e
+`evidence_recovery_*.txt`. Os estados `PAR_RECONSTRUIDO_PARA_REVISAO`
+e `DOIS_HASHES_DE_PARES_LOCALIZADOS_PARA_REVISAO` são
+**simulações pendentes de revisão**, não registros KNN
+automaticamente aprovados.
+
+Nenhum arquivo de memória é alterado; não há retreinamento,
+instalação de gate em `main.py`, mudança de operadores ou
+migração automática. Detalhes em
+[`docs/ODIN_STARTUP_REGRESSION_GATE.md`](docs/ODIN_STARTUP_REGRESSION_GATE.md).
+
+---
+
 ## Compatibilidade de memórias antigas — diagnóstico somente leitura
 
 A auditoria do ODIN encontrou **860 JSONs antigos excluídos por schema**
