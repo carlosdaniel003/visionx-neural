@@ -193,8 +193,7 @@ class HistoricalEvidenceTests(unittest.TestCase):
                     test_hash=image_fingerprint(self.test))
         report = self.run_recovery()
         self.assertEqual(report["status_counts"],
-                         {"TESTE_POR_HASH_SEM_GABARITO": 1})
-        # ref/test hashes here weren't present in any PNG; only test? correction
+                         {"ARQUIVOS_POR_NOME_SEM_VINCULO_DE_HASH": 1})
         self.assertFalse(report["cases"][0]["source"]["hash_verified"])
 
     def test_no_registered_images_are_retained_as_no_evidence(self):
