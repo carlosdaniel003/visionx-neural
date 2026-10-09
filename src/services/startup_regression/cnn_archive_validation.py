@@ -207,6 +207,12 @@ def validate_archive_cnns(
                     if not isinstance(_aoi_info, dict):
                         raise ValueError("OCR da AOI indisponível para KNN")
                     observed_info = dict(_aoi_info)
+                    from src.utils.text_normalizer import normalize_aoi_text
+                    extracted_category, normalized_value = normalize_aoi_text(
+                        observed_info.get("value", "")
+                    )
+                    observed_info["category"] = extracted_category
+                    observed_info["value"] = normalized_value
                     original = str(row["category_hint"] or "").strip().upper()
                     from src.core.strict_category_memory import canonical_memory_category
                     if (
