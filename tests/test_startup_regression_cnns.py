@@ -166,7 +166,7 @@ class CnnArchiveContractTests(unittest.TestCase):
         )
         self.assertTrue(report["models"][MODEL_FALTANDO]["passed_all"])
         self.assertEqual(report["models"][MODEL_MEMORY]["regressions"], 1)
-        self.assertFalse(report["both_cnns_passed"])
+        self.assertFalse(report["cnn_and_knn_passed"])
         self.assertTrue(any(
             row["model"] == MODEL_MEMORY and row["expected_label"] == "NG"
             and row["verdict"] == "FALHA FALSA"
@@ -216,8 +216,8 @@ class CnnArchiveContractTests(unittest.TestCase):
             },
         )
         self.assertEqual(report["models"][MODEL_FALTANDO]["regressions"], 1)
-        self.assertEqual(report["models"][MODEL_MEMORY]["regressions"], 1)
-        self.assertFalse(report["both_cnns_passed"])
+        self.assertEqual(report["models"][MODEL_MEMORY]["invalid"], 1)
+        self.assertFalse(report["cnn_and_knn_passed"])
 
     def test_incorrect_memory_identity_cannot_impersonate_a_cnn(self):
         self.png("OK", "FALTANDO", marker=55)
@@ -242,7 +242,7 @@ class CnnArchiveContractTests(unittest.TestCase):
             },
         )
         self.assertEqual(report["models"][MODEL_MEMORY]["invalid"], 1)
-        self.assertFalse(report["both_cnns_passed"])
+        self.assertFalse(report["cnn_and_knn_passed"])
 
     def test_corrupted_png_invalidates_all_applicable_models(self):
         self.png("OK", "FALTANDO", marker=55).write_bytes(b"bad image")
