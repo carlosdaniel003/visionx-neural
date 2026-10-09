@@ -52,7 +52,19 @@ def write_full_history_cnn_report(report: dict, output_dir: Path):
         f"OK classificados OK: {overall['OK_as_OK']}",
         f"OK classificados incorretamente NG: {overall['OK_as_NG']}",
         f"OK em revisão: {overall['OK_to_review']}",
+        f"Manifestos íntegros: {overall['manifest_integrity_passed']}",
+        f"Eventos explícitos íntegros: {overall['explicit_event_integrity_passed']}",
         f"Meta 98% (COM cobertura completa): {overall['historical_98pct_target_met']}",
+        "",
+        "POR MODELO:",
+    ]
+    for model, counts in report["by_model"].items():
+        lines.append(
+            f"  {model}: PASSOU={counts['passed']}/{counts['total']} "
+            f"revisao={counts['review']} regressao={counts['regression']} "
+            f"invalido={counts['invalid']} sem_cnn={counts['unsupported']}"
+        )
+    lines.extend([
         "",
         "POR CATEGORIA:",
     ]
@@ -78,6 +90,16 @@ def write_full_history_cnn_report(report: dict, output_dir: Path):
         "EVENTOS TOP/MID/SIDE COM MANIFESTO EXPLÍCITO:",
         f"  Total: {groups['events_with_explicit_manifest']}",
         f"  Status: {groups['status_counts']}",
+        "",
+        "EVENTOS EXPLÍCITOS NÃO APROVADOS:",
+    ])
+    for event in groups["events"]:
+        if event["status"] != "PASSOU_3_LUZES":
+            lines.append(
+                f"- {event['status']} | {event['event_id']} | "
+                f"{event['manifest_path']} | {', '.join(event['source_paths'])}"
+            )
+    lines.extend([
         "",
         "CASOS QUE NÃO PASSARAM:",
     ])
