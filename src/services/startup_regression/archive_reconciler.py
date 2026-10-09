@@ -29,6 +29,12 @@ from src.services.startup_regression.archive_inventory import inventory_archives
 from src.services.startup_regression.archive_inventory_report import _atomic_text
 from src.utils.text_normalizer import normalize_aoi_text
 
+from .legacy_memory_compat import (
+    COMPATIBLE as LEGACY_COMPATIBLE,
+    inspect_legacy_record,
+    summarize_legacy_profiles,
+)
+
 SCHEMA = "visionx.archive_memory_reconciliation.v1"
 HUMAN_SOURCES = frozenset({
     "button", "xp_keyboard", "keyboard", "manual",
@@ -125,6 +131,12 @@ def _audit_record(root: Path, json_path: Path, folder_label: str) -> dict:
 
         if data.get("schema") != "visionx.memory.v3":
             entry["reason"] = "SCHEMA_NAO_SUPORTADO"
+            # Auditoria complementar: não modificar schema nem considerar
+            # o registro antigo KNOWN. O adaptador só simula identidade
+            # exata caso os metadados e os dois PNGs sejam demonstráveis.
+            entry["legacy_profile"] = inspect_legacy_record(
+                json_path, folder_label, data
+            )
         elif label not in {"OK", "NG"} or label != folder_label or operator != label:
             entry["reason"] = "ROTULO_HUMANO_INCONSISTENTE"
         elif source not in HUMAN_SOURCES and not source.startswith("operator_"):
@@ -191,8 +203,8 @@ def scan_memory_dataset(root: Path) -> dict:
 
 
 def _index_records(rows: list[dict]) -> dict:
-    verified, contexts, visual_pairs, tests, screenshots = (
-        defaultdict(list) for _ in range(5)
+    verified, contexts, visual_pairs, tests, screenshots, legacy = (
+        defaultdict(list) for _ in range(6)
     )
     categories = Counter()
     for entry in rows:
@@ -211,12 +223,20 @@ def _index_records(rows: list[dict]) -> dict:
             verified[key].append(entry)
             visual_pairs[key[-2:]].append(entry)
             tests[key[-1]].append(entry)
+        profile = entry.get("legacy_profile")
+        if (
+            isinstance(profile, dict)
+            and profile.get("status") == LEGACY_COMPATIBLE
+            and profile.get("would_be_key") is not None
+        ):
+            legacy[tuple(profile["would_be_key"])].append(entry)
         if entry.get("source_pixel_sha256"):
             screenshots[entry["source_pixel_sha256"]].append(entry)
     return {
         "verified": verified, "contexts": contexts,
         "visual_pairs": visual_pairs, "tests": tests,
         "screenshots": screenshots, "categories": categories,
+        "legacy_simulated_exact": legacy,
     }
 
 
@@ -295,6 +315,12 @@ def reconcile_archive(
             "reason": None,
             "candidates": [], "candidate_count": 0,
             "ocr": None,
+            "legacy_compatibility": {
+                "status": "NAO_CONSULTADO",
+                "candidate_count": 0,
+                "candidates": [],
+                "verified_in_production": False,
+            },
         }
         try:
             if item["status"] != "VALID_PNG":
@@ -346,12 +372,43 @@ def reconcile_archive(
                             _summarize_candidate(entry, root)
                             for entry in candidates[:MAX_CANDIDATES]
                         ]
+                        legacy = indexes["legacy_simulated_exact"].get(key, [])
+                        legacy_labels = {entry["label"] for entry in legacy}
+                        verified_labels = {
+                            entry["label"]
+                            for entry in indexes["verified"].get(key, [])
+                        }
+                        if len(legacy_labels | verified_labels) > 1:
+                            legacy_status = "LEGADO_CONFLITO_EXATO"
+                        elif legacy and row["expected_label"] in legacy_labels:
+                            legacy_status = "LEGADO_PAR_SIMULADO_CONCORDA"
+                        elif legacy:
+                            legacy_status = "LEGADO_PAR_SIMULADO_DIVERGE"
+                        else:
+                            legacy_status = "SEM_PAR_LEGADO_AUDITAVEL"
+                        row["legacy_compatibility"] = {
+                            "status": legacy_status,
+                            "candidate_count": len(legacy),
+                            "candidates": [
+                                _summarize_candidate(entry, root)
+                                for entry in legacy[:MAX_CANDIDATES]
+                            ],
+                            # O adapter não instalou o registro no índice
+                            # do ODIN, então não é cobertura real da KNN.
+                            "verified_in_production": False,
+                        }
+                        if legacy_status == "LEGADO_CONFLITO_EXATO":
+                            row["status"] = "CONFLITO_COM_MEMORIA_LEGADA"
         except (OSError, ValueError, TypeError, cv2.error) as exc:
             row["status"] = "EXTRACAO_OU_LEITURA_INVALIDA"
             row["reason"] = f"{type(exc).__name__}: {exc}"
         cases.append(row)
         if progress is not None:
             progress(index, len(items), row["source_path"])
+    legacy_profile = summarize_legacy_profiles(dataset["rows"])
+    legacy_case_statuses = dict(sorted(Counter(
+        row["legacy_compatibility"]["status"] for row in cases
+    ).items()))
     return {
         "schema": SCHEMA,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -364,6 +421,27 @@ def reconcile_archive(
         "archive_png_count": len(items),
         "memory_json_count": len(dataset["rows"]),
         "memory_record_reasons": dataset["counts"],
+        "legacy_memory_profiles": legacy_profile,
+        "legacy_record_diagnostics": [
+            {
+                "path": item["path"],
+                "original_rejection": item.get("reason"),
+                "schema": item["legacy_profile"]["schema"],
+                "status": item["legacy_profile"]["status"],
+                "human_confirmed": item["legacy_profile"]["human_confirmed"],
+                "signature_present": item["legacy_profile"]["signature_present"],
+                "reference_png_present": item["legacy_profile"]["reference_png_present"],
+                "test_png_present": item["legacy_profile"]["test_png_present"],
+                "has_dedup_pointer": item["legacy_profile"]["has_dedup_pointer"],
+                "declared_test_fingerprint_matches": item["legacy_profile"][
+                    "declared_test_fingerprint_matches"
+                ],
+            }
+            for item in dataset["rows"] if isinstance(
+                item.get("legacy_profile"), dict
+            )
+        ],
+        "legacy_case_status_counts": legacy_case_statuses,
         "case_status_counts": dict(sorted(Counter(
             row["status"] for row in cases
         ).items())),
@@ -376,9 +454,11 @@ def reconcile_archive(
         },
         "cases": cases,
         "important": (
-            "Somente PAR_VERIFICADO confirma memória já recuperável. "
-            "Outros status são indícios de reconciliação e NÃO aprovam "
-            "KNN, não autorizam migração nem confirmam rótulo humano."
+            "Somente PAR_VERIFICADO confirma memória KNN atualmente "
+            "recuperável. LEGADO_PAR_SIMULADO_CONCORDA não é KNOWN: "
+            "descreve compatibilidade potencial em memória, sem modificar "
+            "o índice de produção. Conflitos e provas incompletas "
+            "não autorizam migração automática ou aprovação do gate."
         ),
     }
 
@@ -408,6 +488,21 @@ def write_reconciliation_report(report: dict, output_dir: Path):
     ]
     for key, count in report["memory_record_reasons"].items():
         text.append(f"  {key}: {count}")
+    text.extend(["", "SCHEMAS LEGADOS IDENTIFICADOS:"])
+    for key, count in report.get("legacy_memory_profiles", {}).get(
+        "schema_distribution", {}
+    ).items():
+        text.append(f"  {key}: {count}")
+    text.append("")
+    text.append("ELEGIBILIDADE DOS FORMATOS LEGADOS (SIMULAÇÃO):")
+    for key, count in report.get("legacy_memory_profiles", {}).get(
+        "eligibility_reasons", {}
+    ).items():
+        text.append(f"  {key}: {count}")
+    text.append("")
+    text.append("RESULTADO SIMULADO POR PNG, SEM EFEITO NA PRODUÇÃO:")
+    for key, count in report.get("legacy_case_status_counts", {}).items():
+        text.append(f"  {key}: {count}")
     text.append("")
     text.append("DIAGNÓSTICO DOS PNGs DO ACERVO:")
     for key, count in report["case_status_counts"].items():
@@ -420,10 +515,17 @@ def write_reconciliation_report(report: dict, output_dir: Path):
             f"{c['record']} [{c['eligibility']}]"
             for c in item["candidates"]
         )
+        legacy = item.get("legacy_compatibility") or {}
+        legacy_candidates = ", ".join(
+            str(c["record"]) for c in legacy.get("candidates", [])
+        )
         text.append(
             f"- {item['expected_label']} | {item['source_path']} | "
             f"{item['status']} | candidatos={item['candidate_count']} | "
-            f"{candidates or item['reason'] or '-'}"
+            f"{candidates or item['reason'] or '-'} | "
+            f"legado={legacy.get('status', 'N/D')}, "
+            f"pares={legacy.get('candidate_count', 0)} "
+            f"{legacy_candidates}"
         )
     text.extend([
         "", report["important"],
