@@ -1,3 +1,42 @@
+## 09/10/2026 — Ajuste de escopo CNN e duas falhas falsas confirmadas pelo operador
+
+**Decisão humana:** MUITO ADESIVO permanece no arquivo, mas fica **fora do
+denominador da meta de 98% da CNN atual**. Uma CNN própria para adesivo
+será considerada no futuro, quando houver dados OK/NG suficientes.
+Não apagar PNGs, não substituir a inspeção adesivo existente, não treinar
+CNN de adesivo agora. Os relatórios preservam também o placar do
+**acervo inteiro**, para não confundir exclusão com sucesso.
+
+**Replay real 09/10, antes desta alteração:** 212 PNGs, 202 do escopo
+CNN FALTANDO V2; 200/202 decisões conclusivas corretas (99,01%), com
+15/15 NG reconhecidos e 0 NG classificados OK. Os outros 10 são adesivo
+(8 OK e 2 NG), sem CNN. Zero manifestos explícitos multilight.
+
+**Duas imagens OK confirmadas pelo operador:**
+- `2026-10-02_1542_FALTANDO.png`: OCR identificou categoria FALTANDO,
+  mas faltou ao menos um campo de identidade. **Replay somente leitura**
+  agora registra quais campos `board/parts/value` estão ausentes e
+  **executa a CNN se o OCR da categoria coincidir**. O replay não usa
+  identidade para decidir visualmente; a proteção operacional de
+  identificação, KNN/XP e produção permanece inalterada. Resultado
+  CNN efetivo só será conhecido com nova execução na estação.
+- `2026-10-09_0857_DESLOCADO_SIDE.png`: OK confirmado; score CNN NG
+  `0.10031582415103912` e predição binária OK, mas decisão operacional
+  foi **REVISÃO OBRIGATÓRIA** porque o corte conservador para OK é 0,10.
+  **Não forçar FALHA FALSA nem modificar limiar com base em um único OK**:
+  não há NG DESLOCADO real disponível para validar segurança. A confirmação
+  humana do rótulo não altera o veredito obtido da CNN nem o histórico.
+  O desenvolvimento especializado DESLOCADO continua arquivado.
+
+Novos indicadores: `requested_cnn_scope.target_met` (meta das
+categorias cobertas), `overall.requested_cnn_scope_98pct_target_met`,
+e `overall.historical_98pct_target_met` (meta de TODO arquivo,
+incluindo categorias sem CNN; permanece separado). Revisões e casos
+inválidos na CNN continuam falhas. Nenhum checkpoint, treinamento,
+limiar produtivo ou gate foi modificado. Validar novamente na estação.
+
+---
+
 ## 09/10/2026 — Meta principal de regressão CNN em todo o histórico visual (98%)
 
 **Critério do operador:** todas as imagens históricas com rótulo OK/NG
