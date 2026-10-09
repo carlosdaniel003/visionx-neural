@@ -13,7 +13,7 @@ from src.ui.neural_influence_model import neural_influence_rows
 class DecisionInfluenceWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(220)
+        self.setMinimumHeight(285)
         self.setMinimumWidth(320)
         self.trace = {}
         self.rows = []
@@ -23,6 +23,15 @@ class DecisionInfluenceWidget(QWidget):
         trace = detail.get("decision_trace", {})
         self.trace = trace if isinstance(trace, dict) else {}
         self.rows = neural_influence_rows(analysis) or influence_rows(self.trace)
+        if self.rows and self.rows[0].get("telemetry_row"):
+            self.setToolTip(
+                "Verde: falha falsa/OK; vermelho: defeito/NG. "
+                "A barra representa os scores brutos da CNN por iluminação, "
+                "não acurácia nem probabilidade calibrada. "
+                "KNN exato recupera somente rótulos humanos confirmados."
+            )
+        else:
+            self.setToolTip("Influência dos especialistas ativos na decisão.")
         self.update()
 
     @staticmethod
@@ -89,6 +98,105 @@ class DecisionInfluenceWidget(QWidget):
 
         return f"{score:.0%}/{threshold:.0%} • {status} • peso direto 0%"
 
+    def _paint_neural(self, painter: QPainter, width: int, height: int) -> None:
+        """Cards SIDE/TOP/MID, verde=OK, vermelho=NG; sem pesos inventados."""
+        painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
+        painter.setPen(QColor("#f5c518"))
+        painter.drawText(
+            QRectF(12, 5, width - 24, 23),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            "COMO CADA MOTOR JULGOU",
+        )
+        painter.setFont(QFont("Consolas", 7))
+        painter.setPen(QColor("#9aa6b2"))
+        painter.drawText(
+            QRectF(12, 28, width - 24, 20),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            "Verde: sinal OK  |  Vermelho: sinal NG  |  Amarelo: revisão",
+        )
+
+        n = len(self.rows)
+        top, bottom, gap = 55, 35, 7
+        row_height = max(40.0, (height - top - bottom - gap * (n - 1)) / max(n, 1))
+        for index, row in enumerate(self.rows):
+            y = top + index * (row_height + gap)
+            h = min(row_height, max(35.0, height - bottom - y))
+            rect = QRectF(8, y, width - 16, h)
+            score = row.get("ng_score_uncalibrated")
+            known_label = str(row.get("known_memory_label", "")).upper()
+            verdict = str(row.get("summary", "")).upper()
+            if known_label in {"OK", "NG"}:
+                state = known_label
+                status_text = f"MEMÓRIA HUMANA • {known_label} • PAR EXATO"
+            elif "FALHA FALSA" in verdict:
+                state = "OK"
+                status_text = "OK • FALHA FALSA"
+            elif "DEFEITO REAL" in verdict:
+                state = "NG"
+                status_text = "NG • DEFEITO REAL"
+            else:
+                state = "REVISÃO"
+                status_text = "REVISÃO • EVIDÊNCIA INSUFICIENTE"
+
+            base_color = QColor(
+                "#4ade80" if state == "OK" else
+                "#ff6262" if state == "NG" else "#f5c518"
+            )
+            painter.setPen(QPen(base_color, 1))
+            painter.setBrush(QColor("#151e22"))
+            painter.drawRoundedRect(rect, 7, 7)
+
+            label_space = max(75.0, rect.width() * .40)
+            painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+            painter.setPen(QColor("#dae5ee"))
+            painter.drawText(
+                QRectF(rect.x() + 10, y + 3, label_space - 8, 19),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                self._elide(painter, row.get("label", ""), int(label_space - 10)),
+            )
+            painter.setPen(base_color)
+            painter.drawText(
+                QRectF(rect.x() + label_space, y + 3, rect.width() - label_space - 9, 19),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                self._elide(painter, status_text, int(rect.width() - label_space - 10)),
+            )
+            if score is not None:
+                # O comprimento representa o score bruto da CNN, não certeza.
+                bar_rect = QRectF(rect.x() + 10, y + 28, rect.width() - 20, 10)
+                ok_width = bar_rect.width() * (1.0 - float(score))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor("#4ade80"))
+                if ok_width > 0:
+                    painter.drawRect(QRectF(bar_rect.x(), bar_rect.y(), ok_width, 10))
+                painter.setBrush(QColor("#ff6262"))
+                if bar_rect.width() - ok_width > 0:
+                    painter.drawRect(QRectF(bar_rect.x() + ok_width, bar_rect.y(),
+                                            bar_rect.width() - ok_width, 10))
+                painter.setPen(QColor("#acb8c4"))
+                painter.setFont(QFont("Consolas", 7))
+                painter.drawText(
+                    QRectF(rect.x() + 10, y + 39, rect.width() - 20, 15),
+                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                    f"Score NG bruto {score * 100:.4f}%  •  OK complementar "
+                    f"{(1-score)*100:.4f}%",
+                )
+            else:
+                painter.setFont(QFont("Consolas", 7))
+                painter.setPen(QColor("#9aa6b2"))
+                painter.drawText(
+                    QRectF(rect.x() + 10, y + 24, rect.width() - 20, 21),
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                    "KNN: rótulo humano exato • sem score de probabilidade",
+                )
+
+        painter.setPen(QColor("#98a5b1"))
+        painter.setFont(QFont("Consolas", 7))
+        painter.drawText(
+            QRectF(10, max(0, height - 29), width - 20, 25),
+            Qt.AlignmentFlag.AlignCenter,
+            "Scores CNN não calibrados. Votos multilight não são soma de pesos.",
+        )
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -96,6 +204,11 @@ class DecisionInfluenceWidget(QWidget):
         width = self.width()
         height = self.height()
         painter.fillRect(0, 0, width, height, QColor("#101010"))
+
+        if self.rows and self.rows[0].get("telemetry_row"):
+            self._paint_neural(painter, width, height)
+            painter.end()
+            return
 
         if not self.rows:
             painter.setPen(QColor("#555555"))

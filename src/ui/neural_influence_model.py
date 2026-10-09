@@ -17,6 +17,8 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
             weight: float, selected: bool, value_format: str = "") -> dict:
         s = score if score is not None else 0.0
         return {
+            "ng_score_uncalibrated": None,
+            "known_memory_label": "",
             "id": key, "label": label, "active": True, "triggered": s >= .5,
             "raw_score": s, "effective_score": s, "threshold": .5,
             "evidence_score": s, "evidence_threshold": .5,
@@ -40,20 +42,24 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
                     (1 - score) if score is not None and vote == "FALHA FALSA"
                     else score
                 )
-                rows.append(row(
+                entry = row(
                     f"cnn_{light.lower()}", f"CNN FALTANDO • {light}",
                     strength, text=vote,
                     weight=0.0, selected=True,
                     value_format=f"{vote} • score NG {score*100:.4f}%" if score is not None
                     else f"{vote} • score indisponível",
-                ))
+                )
+                entry["ng_score_uncalibrated"] = score
+                rows.append(entry)
             elif it.get("route") == "KNOWN_KNN":
                 label = it.get("human_memory_label") or "-"
-                rows.append(row(
+                entry = row(
                     f"knn_{light.lower()}", f"KNN EXATO • {light}", 1.0,
                     text=f"Rótulo humano {label}", weight=0.0,
                     selected=True, value_format=f"Rótulo humano {label} • par exato",
-                ))
+                )
+                entry["known_memory_label"] = label
+                rows.append(entry)
         if rows:
             return rows
 
@@ -64,18 +70,22 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
             1 - score if score is not None and verdict == "FALHA FALSA"
             else score
         )
-        return [row(
+        entry = row(
             "cnn_faltando_v2", "CNN FALTANDO v2", strength,
             text=verdict, weight=1.0, selected=True,
             value_format=f"{verdict} • NG {score*100:.4f}% • única CNN"
                 if score is not None else "CNN sem score disponível",
-        )]
+        )
+        entry["ng_score_uncalibrated"] = score
+        return [entry]
 
     if m["memory_route"] == "KNOWN_KNN":
-        return [row(
+        entry = row(
             "knn_verified", "KNN • PAR EXATO", 1.0,
             text=f"Rótulo humano {m['memory_label'] or '-'}",
             weight=1.0, selected=True,
-            value_format=f"Rótulo {m['memory_label'] or '-'} • memória humana 100%",
-        )]
+            value_format=f"Rótulo {m['memory_label'] or '-'} • histórico confirmado",
+        )
+        entry["known_memory_label"] = m["memory_label"]
+        return [entry]
     return []

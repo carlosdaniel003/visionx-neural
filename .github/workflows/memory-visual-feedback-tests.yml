@@ -1,0 +1,43 @@
+name: ODIN Memory Panels and Visual Tooltip
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/ui/neural_telemetry_model.py"
+      - "src/ui/neural_influence_model.py"
+      - "src/ui/decision_panel.py"
+      - "src/ui/widgets/decision_influence.py"
+      - "src/ui/inspection_memory_feedback.py"
+      - "src/ui/decision_key_feedback.py"
+      - "main.py"
+      - "tests/test_memory_visual_feedback_v2.py"
+      - ".github/workflows/memory-visual-feedback-tests.yml"
+  pull_request:
+    branches: [central]
+  workflow_dispatch:
+
+jobs:
+  test-memory-panels:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: "offscreen"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Qt native dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0
+      - name: Python dependencies
+        run: |
+          python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
+      - name: Compile modified Python modules
+        run: |
+          python -m py_compile src/ui/neural_telemetry_model.py src/ui/neural_influence_model.py src/ui/decision_panel.py src/ui/widgets/decision_influence.py src/ui/inspection_memory_feedback.py src/ui/decision_key_feedback.py tests/test_memory_visual_feedback_v2.py main.py
+      - name: Visual memory, CNN and production feedback regressions
+        run: |
+          python -m unittest tests.test_memory_visual_feedback_v2 tests.test_neural_telemetry_panels tests.test_decision_influence_contract tests.test_decision_model tests.test_decision_key_feedback tests.test_decision_verdict_feedback tests.test_memory_ui tests.test_strict_category_memory -v

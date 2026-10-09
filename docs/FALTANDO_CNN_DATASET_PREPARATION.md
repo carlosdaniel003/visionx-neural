@@ -761,3 +761,22 @@ fixture INVERTIDO SIDE/TOP/MID de scores distintos baseado em captura
 real de 09/10/2026. Os testes comprovam renderização e mapeamento
 dos dados, **não avaliam sensibilidade da CNN a novos NG físicos**.
 
+
+
+## 09/10/2026 — Estado da memória KNN e influência visual
+
+- O painel **Memória de Anomalias • KNN** agora mostra estado de busca
+  independentemente de um rastreamento de pesos de outros especialistas.
+- **JÁ VISTO • MEMÓRIA KNN** só aparece para par gabarito/teste humano
+  exato. **CASO NOVO • SEM MATCH EXATO** significa que aquele par não foi
+  recuperado, não que o tipo físico de defeito jamais tenha ocorrido.
+- A mensagem flutuante permanece até o julgamento e desaparece com a
+  mesma animação sincronizada do 0/1; fontes com rota ausente não
+  recebem a etiqueta de "primeira vez".
+- **Influência dos motores** apresenta por luz SIDE/TOP/MID cards
+  explicativos com verde OK, vermelho NG, amarelo revisão e score
+  NG bruto da CNN. A proporção da barra não é confiança calibrada,
+  percentual de acerto nem peso real de fusão aritmética.
+- KNN exata apresenta rótulo humano sem inventar score de similaridade.
+- Não foram alterados treino, classificadores, prioridades de memória,
+  julgamento 0/1 ou política de produção.

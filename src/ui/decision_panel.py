@@ -21,14 +21,33 @@ def _render_panel(panel, analysis: dict | None) -> None:
     trace = decision_trace_from_analysis(analysis)
 
     panel.frame_decision_influence.update_data(analysis)
+    neural = neural_summary(analysis)
+    detail = (analysis or {}).get("detail", {})
+    detail = detail if isinstance(detail, dict) else {}
+    memory_title, memory_description = memory_panel_text(analysis)
+    # O painel KNN é independente da presença de decision_trace.engines.
+    # Mesmo uma CNN única ou multilight deve mostrar o estado da pesquisa.
+    panel.lbl_memory_role.setText(memory_title)
+    panel.lbl_db_info.setText(memory_description)
+    panel.lbl_memory_role.setToolTip(memory_description)
+    panel.lbl_db_info.setToolTip(memory_title + "\\n" + memory_description)
+    if hasattr(panel, "frame_knn"):
+        panel.frame_knn.update_data(detail)
+        panel.frame_knn.setVisible(True)
+        panel.frame_knn.setToolTip(memory_title + "\\n" + memory_description)
 
     if not trace:
-        panel.lbl_decision_summary.setText("Aguardando rastreamento da decisão.")
-        panel.lbl_decision_rule.setText("Sem regra de fusão disponível.")
-        panel.lbl_memory_role.setText("SEM MEMÓRIA")
+        panel.lbl_decision_summary.setText(
+            "CNN/KNN • resultado registrado, sem rastreamento de pesos."
+            if neural["cnn_active"] or neural["memory_route"] else
+            "Aguardando rastreamento da decisão."
+        )
+        panel.lbl_decision_rule.setText(
+            "Consulta KNN: " + memory_title if neural["memory_route"]
+            else "Sem regra de fusão disponível."
+        )
         return
 
-    neural = neural_summary(analysis)
     if neural["cnn_active"]:
         final_score = neural["cnn_ng_score"]
         main_score = (
@@ -70,10 +89,11 @@ def _render_panel(panel, analysis: dict | None) -> None:
         primary += " • imagem completa legada"
     if best_label in {"OK", "NG"}:
         primary += f" • melhor vizinho de anomalia {best_label}"
-    if neural["memory_route"]:
-        role, primary = memory_panel_text(analysis)
-    panel.lbl_db_info.setText(primary)
-    panel.lbl_memory_role.setText(role)
+    # Não recolocar aqui o texto legado (p.ex. "Dataset sem memória").
+    # A descrição de rota acima permanece visível em todos os motores.
+    if not neural["memory_route"] and not neural["cnn_active"]:
+        panel.lbl_db_info.setText(primary)
+        panel.lbl_memory_role.setText(role)
 
     review_required = bool(
         trace.get("operator_review_required", False)
@@ -92,8 +112,9 @@ def _render_panel(panel, analysis: dict | None) -> None:
 
     rule = str(trace.get("fusion_rule", "physical_only"))
     role_color = (
-        "#ff6262"
-        if rule in {"memory_veto", "memory_override"}
+        "#4ade80" if neural["memory_route"] == "KNOWN_KNN"
+        else "#ff6262" if neural["memory_route"] == "MEMORY_CONFLICT"
+        or rule in {"memory_veto", "memory_override"}
         else "#f5c518"
     )
     panel.lbl_memory_role.setStyleSheet(
