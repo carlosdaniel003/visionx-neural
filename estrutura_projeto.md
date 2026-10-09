@@ -1,3 +1,67 @@
+## 09/10/2026 — Memória KNN em dois níveis, somente SIMULAÇÃO
+
+**Origem da mudança:** após
+`evidence_recovery_20261009_172032_693807`, foram indexados
+578 PNGs e 952 JSONs: 92 memórias v3, 45 v2 com par PNG,
+e 815 v2 sem referência visual localizável (777 OK + 38 NG).
+Busca por arquivos ausentes terminou sem nova recuperação.
+Não é correto inventar imagens, sobrescrever rótulos ou declarar 100%.
+
+**Plano aprovado pelo operador, implementado sem alterar produção:**
+
+1. `src/services/startup_regression/legacy_knn_signature_audit.py`:
+   usa `KNNExpert._extract_anomaly_memory`,
+   `compare_anomaly_signatures` e `KNNExpert._weighted_vote`
+   para testar registros históricos por **leave-one-record-out**.
+   Cada JSON é avaliado sem si mesmo; a consulta limita candidatos
+   a categoria + iluminação idênticas, descarta observações com
+   `event_id` compartilhado (quando conhecido), respeita
+   rótulos humanos declarados e denuncia assinatura idêntica
+   com rótulos opostos. Status `CONCORDA`, `DIVERGE`,
+   `SEM_VIZINHOS`, `EMPATE_DE_VOTACAO` e
+   `CONFLITO_DE_ASSINATURA`. Simulação não mede inferência
+   nos 212 PNGs: as assinaturas históricas não são invertíveis.
+   Rótulos só são lidos para conferir o voto e validar procedência,
+   nunca utilizados para determinar a classe estimada.
+2. `src/services/startup_regression/archive_exact_memory_plan.py`:
+   reextrai para cada PNG íntegro gabarito + teste por
+   `AOIPairExtractor`, obtém OCR real e verifica categoria,
+   placa/peça, iluminação, hash SHA-256 visual e rótulos
+   contraditórios. Chama `VerifiedKNNMemory._key`, e compara
+   com entradas v3 já verificadas e pares legados v2 simulados.
+   **Não grava nem fabrica** memórias. Casos não presentes em
+   v3/v2 ficam `PENDENTE_ORIGEM_HUMANA` ou
+   `PENDENTE_ORIGEM_HUMANA_E_LUZ` (antigo SIDE presumido).
+   O nome da pasta `ok_archive/ng_archive` é apenas
+   expectativa histórica, não prova de aperto físico 1/0.
+   `ready_for_import` fica em zero sem evidência externa.
+3. `src/services/startup_regression/two_level_memory_diagnostic_cli.py`:
+   execução única, relatório `memory_levels_*.json` e TXT
+   em `reports/startup_regression`, com as duas métricas
+   separadas. Não mistura o teste de assinaturas entre JSONs
+   com a cobertura da KNN visual exata no arquivo de PNGs.
+4. `tests/test_two_level_memory_diagnostic.py` verifica
+   isolamento categoria/iluminação, autoexclusão, vínculos
+   de evento, conflitos, OCR vazio, hashes, rótulo NG
+   contraditório, proibição de importação e persistência
+   limitada à pasta de relatórios. Workflow Windows existente
+   inclui teste e compilação.
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.two_level_memory_diagnostic_cli
+```
+
+**Política:** nenhuma edição do `dataset`, dos PNGs e pesos da
+CNN FALTANDO V2; `main.py` e reconhecimento KNN de produção
+inalterados, **sem startup gate**. `CONCORDA` não equivale
+a memória exata KNOWN nem comprova generalização a placas
+desconhecidas. O objetivo 100% deve ser comprovado com os
+modelos e evidências, nunca forçado por rótulo de pasta.
+
+---
+
 ## 09/10/2026 — Recuperador de evidências históricas (somente leitura)
 
 **Motivação:** `reconciliation_20261009_170703_051863` identificou
