@@ -1,3 +1,10 @@
+## 13/10/2026 — Capturas originais XP nas imagens da inspeção
+
+- Em ciclos multilight normais de rede, cada cartão SIDE/TOP/MID mostra a **captura original completa enviada pelo Windows XP**, sem recorte ou desenhos, seguida do **teste recortado pela AOI** e das **caixas maior e menor** já existentes.
+- A origem de cada screenshot é o frame da **mesma iluminação e do mesmo evento**, sem reutilização como fallback entre luzes ou peças. Uma captura indisponível aparece como indisponível, nunca como cópia do teste.
+- Exibição somente visual em Modo Teste e Produção: não modifica o julgamento, as ROIs dos especialistas, o fluxo de arquivos, o agente XP nem o caminho rápido sem pixmaps do Modo Sombra.
+- Testes em `tests/test_adhesive_multilight_inspection.py` cobrem as doze imagens (quatro por iluminação), associação correta dos frames, ausência segura e limpeza no próximo ciclo.
+
 ## 13/10/2026 — BOTÃO TREINAMENTO VISUAL (REPLAY HISTÓRICO NÃO MUTANTE)
 
 - Seção visual independente de Sombra/Teste/Produção, instalada em `main.py` via `src/ui/training_validation_panel.py`, com `Iniciar treinamento`, `Cancelar`, progresso por verificação, estatísticas OK/NG KNN e CNN separadas, contagens de regressão/cobertura e caminhos dos relatórios.

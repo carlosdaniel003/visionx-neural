@@ -225,7 +225,7 @@ class _ResponsiveImageViewport(QLabel):
 
 
 class _LightingInspectionCard(QFrame):
-    """Uma iluminação com imagem completa + caixa maior + caixa menor."""
+    """Uma iluminação com frame XP bruto, teste e duas ROIs de inspeção."""
 
     def __init__(self, mode: str):
         super().__init__()
@@ -248,7 +248,16 @@ class _LightingInspectionCard(QFrame):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(title)
 
-        main_title = QLabel("IMAGEM RECEBIDA")
+        # Imagem original recebida do XP, antes de qualquer recorte/desenho.
+        original_title = QLabel("CAPTURA ORIGINAL DO XP")
+        original_title.setObjectName("imageTitle")
+        self.original_view = _ResponsiveImageViewport(
+            f"Aguardando original {self.mode}"
+        )
+        root.addWidget(original_title)
+        root.addWidget(self.original_view, stretch=3)
+
+        main_title = QLabel("TESTE • ÁREA DE INSPEÇÃO")
         main_title.setObjectName("imageTitle")
         self.main_view = _ResponsiveImageViewport(
             f"Aguardando {self.mode}"
@@ -284,6 +293,10 @@ class _LightingInspectionCard(QFrame):
 
     def set_payload(self, payload: dict) -> None:
         data = payload if isinstance(payload, dict) else {}
+        self.original_view.set_bgr_image(
+            data.get("original_frame"),
+            f"Original {self.mode} indisponível",
+        )
         self.main_view.set_bgr_image(
             data.get("main"),
             f"Aguardando {self.mode}",
@@ -298,13 +311,14 @@ class _LightingInspectionCard(QFrame):
         )
 
     def clear_payload(self) -> None:
+        self.original_view.clear_view(f"Aguardando original {self.mode}")
         self.main_view.clear_view(f"Aguardando {self.mode}")
         self.large_view.clear_view("Aguardando caixa maior")
         self.small_view.clear_view("Aguardando caixa menor")
 
 
 class AdhesiveMultiLightView(QWidget):
-    """Layout responsivo das nove imagens da inspeção multilight."""
+    """Layout responsivo das doze imagens da inspeção multilight."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -317,7 +331,7 @@ class AdhesiveMultiLightView(QWidget):
         root.setSpacing(7)
 
         hint = QLabel(
-            "MULTILIGHT • SIDE / TOP / MID • imagem recebida + caixas maior e menor"
+            "MULTILIGHT • SIDE / TOP / MID • captura XP original + teste + caixas maior e menor"
         )
         hint.setObjectName("sectionHint")
         hint.setWordWrap(True)
@@ -579,6 +593,7 @@ def _store_view(
     sample_crop,
     ng_crop,
     context: dict | None = None,
+    source_frame=None,
 ) -> bool:
     normalized = str(mode or "").strip().upper()
     if normalized not in LIGHTING_ORDER:
@@ -604,6 +619,11 @@ def _store_view(
         sample_crop,
         ng_crop,
         context=context,
+    )
+    # Frame XP completo é somente visual: sem crop, overlays ou conversão
+    # para evidência de decisão. O widget cria o próprio QPixmap.
+    payload["original_frame"] = (
+        source_frame if _valid_image(source_frame) else np.array([])
     )
     # Sondas visuais SOMENTE em categorias do escopo real FALTANDO v2.
     # ADESIVO e categorias desconhecidas nunca executam a rede em paralelo.
@@ -806,12 +826,32 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 if not frame_context.get("valid", False):
                     return False
 
+                pending_source_mode = str(
+                    getattr(
+                        self,
+                        "adhesive_multilight_pending_source_mode",
+                        "",
+                    ) or ""
+                ).strip().upper()
+                pending_source_frame = getattr(
+                    self,
+                    "adhesive_multilight_pending_source_frame",
+                    None,
+                )
+                # Nunca associar uma captura de outra luz a este cartão.
+                source_frame_for_view = (
+                    pending_source_frame
+                    if pending_source_mode == aux_mode
+                    and _valid_image(pending_source_frame)
+                    else None
+                )
                 stored = _store_view(
                     self,
                     aux_mode,
                     sample_crop,
                     ng_crop,
                     context=frame_context,
+                    source_frame=source_frame_for_view,
                 )
                 if not stored:
                     return False
@@ -849,25 +889,9 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     lighting_analysis
                 )
 
-                pending_source_mode = str(
-                    getattr(
-                        self,
-                        "adhesive_multilight_pending_source_mode",
-                        "",
-                    )
-                    or ""
-                ).strip().upper()
-                pending_source_frame = getattr(
-                    self,
-                    "adhesive_multilight_pending_source_frame",
-                    None,
-                )
                 source_for_learning = None
-                if (
-                    pending_source_mode == aux_mode
-                    and _valid_image(pending_source_frame)
-                ):
-                    source_copy = pending_source_frame.copy()
+                if _valid_image(source_frame_for_view):
+                    source_copy = source_frame_for_view.copy()
                     source_for_learning = source_copy
                     self.adhesive_multilight_source_frames[aux_mode] = (
                         source_copy
@@ -1030,7 +1054,13 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             )
 
         # Contrato da AOI: a iluminação padrão/primeira recebida é SIDE.
-        _store_view(self, "SIDE", sample_crop, ng_crop)
+        _store_view(
+            self,
+            "SIDE",
+            sample_crop,
+            ng_crop,
+            source_frame=side_source,
+        )
 
         # SIDE preserva a análise principal existente. TOP/MID serão analisados
         # separadamente quando seus frames auxiliares chegarem.

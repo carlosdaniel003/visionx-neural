@@ -115,14 +115,88 @@ class AdhesiveResponsiveViewTests(unittest.TestCase):
         self.assertEqual(AdhesiveMultiLightView.columns_for_width(1000), 3)
         self.assertEqual(AdhesiveMultiLightView.columns_for_width(1600), 3)
 
-    def test_three_lighting_cards_exist_with_nine_viewports(self):
+    def test_three_lighting_cards_exist_with_twelve_viewports(self):
         view = AdhesiveMultiLightView()
 
         self.assertEqual(set(view.cards), {"SIDE", "TOP", "MID"})
         for card in view.cards.values():
+            self.assertIsNotNone(card.original_view)
             self.assertIsNotNone(card.main_view)
             self.assertIsNotNone(card.large_view)
             self.assertIsNotNone(card.small_view)
+
+    def test_each_card_shows_its_own_full_xp_frame_and_original_test_crop(self):
+        view = AdhesiveMultiLightView()
+        for mode, value in (("SIDE", 35), ("TOP", 95), ("MID", 155)):
+            with self.subTest(mode=mode):
+                original = np.full((84, 116, 3), (value, 30, 10), dtype=np.uint8)
+                test = np.full((43, 31, 3), (10, 70, value), dtype=np.uint8)
+                self.assertTrue(view.set_lighting_payload(mode, {
+                    "original_frame": original,
+                    "main": test,
+                }))
+                card = view.cards[mode]
+                self.assertEqual(
+                    (card.original_view._source_pixmap.width(),
+                     card.original_view._source_pixmap.height()),
+                    (116, 84),
+                )
+                self.assertEqual(
+                    (card.main_view._source_pixmap.width(),
+                     card.main_view._source_pixmap.height()),
+                    (31, 43),
+                )
+                original_pixel = card.original_view._source_pixmap.toImage().pixelColor(0, 0)
+                test_pixel = card.main_view._source_pixmap.toImage().pixelColor(0, 0)
+                self.assertEqual(
+                    (original_pixel.red(), original_pixel.green(), original_pixel.blue()),
+                    (10, 30, value),
+                )
+                self.assertEqual(
+                    (test_pixel.red(), test_pixel.green(), test_pixel.blue()),
+                    (value, 70, 10),
+                )
+
+    def test_missing_original_does_not_display_test_as_original_and_reset_clears_all(self):
+        view = AdhesiveMultiLightView()
+        test = np.full((40, 50, 3), 100, dtype=np.uint8)
+        view.set_lighting_payload("SIDE", {"main": test})
+        card = view.cards["SIDE"]
+        self.assertTrue(card.original_view._source_pixmap.isNull())
+        self.assertFalse(card.main_view._source_pixmap.isNull())
+        self.assertIn("indisponível", card.original_view.text())
+
+        view.set_lighting_payload(
+            "MID", {"original_frame": np.full((80, 100, 3), 33, dtype=np.uint8)}
+        )
+        view.clear_all()
+        for card in view.cards.values():
+            self.assertTrue(card.original_view._source_pixmap.isNull())
+            self.assertTrue(card.main_view._source_pixmap.isNull())
+
+    def test_store_view_routes_raw_xp_frame_separately_from_inspection_crop(self):
+        from types import SimpleNamespace
+
+        view = AdhesiveMultiLightView()
+        panel = SimpleNamespace(
+            combo_mode=SimpleNamespace(currentText=lambda: "Modo Teste"),
+            adhesive_multilight_views={},
+            adhesive_multilight_view=view,
+            adhesive_multilight_analysis_view=None,
+            current_aoi_info={"category": "FALTANDO"},
+        )
+        sample = np.full((40, 40, 3), 12, dtype=np.uint8)
+        test = np.full((40, 40, 3), 45, dtype=np.uint8)
+        original = np.full((80, 120, 3), 90, dtype=np.uint8)
+        self.assertTrue(multilight_module._store_view(
+            panel, "TOP", sample, test, context={"valid": False},
+            source_frame=original,
+        ))
+        payload = panel.adhesive_multilight_views["TOP"]
+        self.assertTrue(np.array_equal(payload["original_frame"], original))
+        self.assertTrue(np.array_equal(payload["main"], test))
+        self.assertFalse(view.cards["TOP"].original_view._source_pixmap.isNull())
+        self.assertTrue(view.cards["SIDE"].original_view._source_pixmap.isNull())
 
 
 class AuxiliaryNetworkModeTests(unittest.TestCase):

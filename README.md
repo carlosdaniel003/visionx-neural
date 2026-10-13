@@ -1,3 +1,10 @@
+## 13/10/2026 — Capturas originais XP nas imagens da inspeção
+
+- Em ciclos multilight normais de rede, cada cartão SIDE/TOP/MID mostra a **captura original completa enviada pelo Windows XP**, sem recorte ou desenhos, seguida do **teste recortado pela AOI** e das **caixas maior e menor** já existentes.
+- A origem de cada screenshot é o frame da **mesma iluminação e do mesmo evento**, sem reutilização como fallback entre luzes ou peças. Uma captura indisponível aparece como indisponível, nunca como cópia do teste.
+- Exibição somente visual em Modo Teste e Produção: não modifica o julgamento, as ROIs dos especialistas, o fluxo de arquivos, o agente XP nem o caminho rápido sem pixmaps do Modo Sombra.
+- Testes em `tests/test_adhesive_multilight_inspection.py` cobrem as doze imagens (quatro por iluminação), associação correta dos frames, ausência segura e limpeza no próximo ciclo.
+
 ## Botão Treinamento: validação visual do histórico CNN FALTANDO V2 + KNN
 
 Na janela principal do ODIN, em **Teste, Produção ou Sombra**, a seção `TREINAMENTO • VALIDAÇÃO DO ACERVO` oferece `Iniciar treinamento`, uma barra de progresso por imagem/motor, `Cancelar` e resultados visuais: acertos OK e NG de cada motor, taxas, regressões, revisões, casos sem cobertura, inválidos e imagens fora do escopo CNN. Ao final, os relatórios completos são salvos em `reports/startup_regression/training_validation_*.json` e `.txt`, com caminhos exibidos no painel.
