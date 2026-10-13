@@ -289,6 +289,7 @@ def _assess(model, records: list[dict], size: int, focus: float) -> dict:
             if not r["correct"] or
             not all(x["correct"] for x in r["per_light"].values())
         ],
+        "cases": outcomes,
     }
 
 
@@ -315,7 +316,7 @@ def train_online(
         recovery = [_on_disk_event(path, root) for path in approved["events"]]
         if not any(item["source"] == event for item in recovery):
             raise ValueError("Evento inicial não faz parte dos três eventos corrigidos")
-    _, prior = _base_model(root)
+    base_path, prior = _base_model(root)
     if recovery:
         # O último replay do operador foi feito com a base pinada. Um
         # ponteiro online anterior pode conter os rótulos OK incorretos.
@@ -438,6 +439,7 @@ def train_online(
         "created_at_utc": when.isoformat(),
         "category": "FALTANDO",
         "train_epochs": epochs,
+        "base_checkpoint_sha256": sha256(base_path.read_bytes()).hexdigest(),
         "new_event_forced_each_epoch": True,
         "forced_events_per_epoch": [item["id"] for item in forced_items],
         "recovery_correction_id": recovery_correction_id,

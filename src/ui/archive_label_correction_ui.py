@@ -85,7 +85,7 @@ class ArchiveLabelCorrectionDialog(QDialog):
 
         recovery_row = QHBoxLayout()
         self.recovery_button = QPushButton(
-            "Treinar CNN FALTANDO V2 — somente candidato"
+            "Comparar CNN FALTANDO V2 — 5 e 7 épocas"
         )
         self.recovery_cancel = QPushButton("Cancelar experimento")
         self.recovery_cancel.setEnabled(False)
@@ -114,7 +114,7 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.recovery_cancel.clicked.connect(self.cancel_recovery)
 
     def start_recovery(self):
-        """Treino CPU separado, sem receiver XP ou promoção de pesos."""
+        """Duas rodadas independentes; sem receiver XP ou promoção de pesos."""
         if self.train_process is not None:
             return
         try:
@@ -127,21 +127,22 @@ class ArchiveLabelCorrectionDialog(QDialog):
 
         answer = QMessageBox.question(
             self, "Confirmar treinamento experimental",
-            "Serão usados 3 eventos NG corrigidos (9 recortes) e o histórico "
-            "confiável do FALTANDO V2. O treino pode levar vários minutos e "
-            "consumir CPU/RAM.\n\n"
-            "Nenhum peso será ativado e nenhum 0/1 será enviado ao XP. "
-            "O modelo atual continuará inalterado.\n\n"
-            "Iniciar experimento SOMENTE CANDIDATO?",
+            "Serão feitas duas rodadas INDEPENDENTES, de 5 e 7 épocas, "
+            "sempre a partir dos mesmos pesos originais. Cada rodada utiliza "
+            "3 eventos NG corrigidos (9 recortes) e o histórico confiável.\n\n"
+            "O experimento pode levar vários minutos e consumir CPU/RAM. "
+            "Nenhum checkpoint será ativado e nenhum 0/1 será enviado ao XP.\n\n"
+            "Executar comparação SOMENTE COM CANDIDATOS?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.log.setPlainText(
-            "TREINAMENTO EXPERIMENTAL — SEM PROMOÇÃO\n"
+            "COMPARAÇÃO 5 E 7 ÉPOCAS — PESOS ATIVOS PRESERVADOS\n"
             f"Correção: {correction_id}\n"
             f"Eventos NG completos: {len(verified['events'])}\n"
+            "Cada rodada reinicia a CNN dos pesos originais.\n"
             "Validação offline confirmada; iniciando processo CPU...\n"
         )
         proc = QProcess(self)
@@ -150,10 +151,9 @@ class ArchiveLabelCorrectionDialog(QDialog):
         proc.setWorkingDirectory(str(self.root))
         proc.setProgram(sys.executable)
         proc.setArguments([
-            "-u", "-m", "src.scripts.train_faltando_cnn_v2_online",
+            "-u", "-m", "src.scripts.compare_faltando_recovery_epochs",
             "--root", str(self.root),
-            "--candidate-only", "--recovery-correction-id", correction_id,
-            "--epochs", "3",
+            "--correction-id", correction_id,
         ])
         proc.readyReadStandardOutput.connect(self._read_training_output)
         proc.finished.connect(self._training_finished)
@@ -177,7 +177,8 @@ class ArchiveLabelCorrectionDialog(QDialog):
     def _training_finished(self, code, _status):
         self._read_training_output()
         self.log.append(
-            "\nEXPERIMENTO CONCLUÍDO — verifique o relatório JSON da CNN. "
+            "\nCOMPARAÇÃO CONCLUÍDA — consulte o JSON em "
+            "reports/neural_online/recovery_comparisons. "
             if code == 0 else
             f"\nEXPERIMENTO INTERROMPIDO/FALHOU (código {code}); "
             "nenhum peso foi ativado por esta ferramenta."
