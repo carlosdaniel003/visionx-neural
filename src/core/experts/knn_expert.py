@@ -190,30 +190,13 @@ class KNNExpert:
                 except Exception as exc:
                     print(f"KNN ignorou JSON inválido {json_path}: {exc}")
 
-        # Memória histórica durável: não depende da existência dos PNGs
-        # originais. Disponibiliza assinaturas também para consulta KNN
-        # aproximada, SEM permitir que ela autorize OK automático.
+        # Memória histórica durável, capturada em snapshot: mesmo sem PNGs.
         try:
             persistent = PersistentArchiveKNN()
             for entry in persistent.records():
-                info = entry.get("aoi_info") or {}
-                record = {
-                    "part": self._clean_string(info.get("parts", "")),
-                    "category": self._clean_string(entry["identity"][0]),
-                    "lighting_mode": entry["identity"][1],
-                    "path": entry["sources"][0]["source_path"],
-                    "json_path": str(persistent.path),
-                    "label": entry["label"],
-                    "folder_label": entry["label"],
-                    "mode": "anomaly",
-                    "anomaly_signature": entry["anomaly_signature"],
-                    "sig": None,
-                    "archive_persistent": True,
-                }
+                record = self._persistent_archive_record(entry, persistent.path)
                 (loaded_ng if entry["label"] == "NG" else loaded_ok).append(record)
         except (OSError, ValueError, TypeError) as exc:
-            # O lookup exato do roteador recusa snapshot corrompido;
-            # nunca converter essa falha em liberação OK automática.
             print(f"Memória KNN durável indisponível: {exc}")
 
         # O scan acontece fora do lock. A troca dos dois conjuntos é
@@ -221,6 +204,48 @@ class KNNExpert:
         with self._memory_lock:
             self.signatures_ok = loaded_ok
             self.signatures_ng = loaded_ng
+
+    @staticmethod
+    def _persistent_archive_record(entry: dict, snapshot_path: Path) -> dict:
+        """Assinatura já verificada de uma entrada do arquivo durável."""
+        details = entry.get("aoi_info") or {}
+        return {
+            "part": KNNExpert._clean_string(details.get("parts", "")),
+            "category": KNNExpert._clean_string(entry["identity"][0]),
+            "lighting_mode": entry["identity"][1],
+            "path": entry["sources"][0]["source_path"],
+            "json_path": str(snapshot_path),
+            "label": entry["label"], "folder_label": entry["label"],
+            "mode": "anomaly",
+            "anomaly_signature": entry["anomaly_signature"], "sig": None,
+            "archive_persistent": True,
+            "archive_record_id": entry["id"],
+        }
+
+    def refresh_archive_memory(self) -> int:
+        """Troca em RAM apenas entradas duráveis, sem varredura do legado.
+
+        Thread-safe: leitura de snapshot fora do lock, swap de listas dentro.
+        Chamado por worker após cada lote de novos PNGs persistidos.
+        """
+        store = PersistentArchiveKNN()
+        records = store.records()  # falha de checksum NÃO esvazia RAM
+        loaded_ok = [
+            self._persistent_archive_record(entry, store.path)
+            for entry in records if entry["label"] == "OK"
+        ]
+        loaded_ng = [
+            self._persistent_archive_record(entry, store.path)
+            for entry in records if entry["label"] == "NG"
+        ]
+        with self._memory_lock:
+            old_ok = [r for r in self.signatures_ok
+                      if not r.get("archive_persistent")]
+            old_ng = [r for r in self.signatures_ng
+                      if not r.get("archive_persistent")]
+            self.signatures_ok = old_ok + loaded_ok
+            self.signatures_ng = old_ng + loaded_ng
+        return len(records)
 
     def reload_memory(self):
         self._load_all()
