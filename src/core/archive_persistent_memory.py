@@ -122,13 +122,27 @@ def _check_record(item: dict):
     if not isinstance(item.get("sources"), list) or not item["sources"]:
         raise ValueError("Registro sem proveniência do arquivo")
     for source in item["sources"]:
-        if (not isinstance(source, dict)
-                or not _is_hex_hash(source.get("source_sha256"))
-                or not isinstance(source.get("source_path"), str)
-                or not (source["source_path"].startswith("public/ok_archive/")
-                        if item["label"] == "OK" else
-                        source["source_path"].startswith("public/ng_archive/"))):
-            raise ValueError("Proveniência do arquivo inválida")
+        if not isinstance(source, dict):
+            raise ValueError("Proveniência da memória inválida")
+        kind = source.get("source_kind", "ARCHIVE_PNG")
+        if kind == "OPERATOR_CONFIRMED":
+            # A confirmação humana usa o par AOI capturado na própria
+            # inspeção e não depende do arquivo visual de arquivo opcional.
+            if (source.get("source_path", "").startswith("operator_confirmed/")
+                    and source.get("source_label") == item["label"]
+                    and source.get("source") in
+                    {"button", "xp_keyboard", "keyboard", "manual",
+                     "operator", "physical_keyboard", "human"}
+                    and _is_hex_hash(source.get("source_sha256"))):
+                continue
+        elif kind == "ARCHIVE_PNG":
+            if (isinstance(source.get("source_path"), str)
+                    and _is_hex_hash(source.get("source_sha256"))
+                    and (source["source_path"].startswith("public/ok_archive/")
+                         if item["label"] == "OK" else
+                         source["source_path"].startswith("public/ng_archive/"))):
+                continue
+        raise ValueError("Proveniência de memória OK/NG não confiável")
 
 
 class PersistentArchiveKNN:
@@ -310,4 +324,51 @@ def make_record(*, label: str, source_path: str, source_sha256: str,
     return result
 
 
-__all__ = ["PersistentArchiveKNN", "make_record", "SCHEMA"]
+def make_operator_record(*, label: str, source: str,
+                         event_id: str, category: str, lighting: str,
+                         reference, test, anomaly_signature: dict,
+                         aoi_info: dict | None = None) -> dict:
+    """Registra um julgamento humano real SEM fabricar caminho PNG.
+
+    O caso pode ser reapresentado no mesmo segundo, mesmo quando o
+    arquivamento visual estiver desativado ou atrasado.
+    """
+    normalized = str(source or "").strip().lower()
+    if normalized not in {
+        "button", "xp_keyboard", "keyboard", "manual", "operator",
+        "physical_keyboard", "human",
+    }:
+        raise ValueError("Predição automática não é rótulo para aprendizado")
+    if label not in ("OK", "NG"):
+        raise ValueError("Rótulo humano inválido")
+    key = identity(category, lighting,
+                   image_fingerprint(reference), image_fingerprint(test))
+    digest = sha256(_canonical([key, label]).encode("utf-8")).hexdigest()
+    # A identidade do registro é estável e colapsa confirmações iguais;
+    # evento só identifica a proveniência de cada confirmação.
+    import uuid
+    source_id = uuid.uuid4().hex
+    entry = {
+        "id": digest, "identity": key, "label": label,
+        "anomaly_signature": anomaly_signature,
+        "aoi_info": {
+            k: str((aoi_info or {}).get(k, "") or "")
+            for k in ("board", "parts", "value")
+        },
+        "sources": [{
+            "source_path": "operator_confirmed/" + source_id,
+            "source_sha256": sha256(
+                (source_id + str(event_id)).encode("utf-8")
+            ).hexdigest(),
+            "source_kind": "OPERATOR_CONFIRMED",
+            "source_label": label, "source": normalized,
+            "event_id": str(event_id or ""),
+        }],
+    }
+    _check_record(entry)
+    return entry
+
+
+__all__ = [
+    "PersistentArchiveKNN", "make_record", "make_operator_record", "SCHEMA",
+]
