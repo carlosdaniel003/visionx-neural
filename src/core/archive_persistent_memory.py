@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from copy import deepcopy
+from contextlib import contextmanager
 from hashlib import sha256
 import json
 import os
@@ -19,6 +20,7 @@ from pathlib import Path
 import shutil
 from threading import RLock
 import tempfile
+import time
 
 from src.config.settings import BASE_DIR
 from src.core.anomaly_signature import valid_anomaly_signature
@@ -30,6 +32,50 @@ from src.services.image_archive_dedup import image_fingerprint
 SCHEMA = "visionx.archive_persistent_knn.v1"
 DEFAULT_RELATIVE_PATH = Path("data") / "knn_archive_memory" / "memory.json"
 _HEX = set("0123456789abcdef")
+
+
+@contextmanager
+def _writer_lock(lock_path: Path):
+    """Lock entre processos: CLI manual e observador não perdem entradas.
+
+    Evita read-modify-write concorrente em Windows (msvcrt) e Linux (flock).
+    Não remove o .lock, pois excluir o inode enquanto um processo o possui
+    pode criar dois cadeados diferentes no mesmo diretório.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    if lock_path.is_symlink():
+        raise ValueError("Arquivo de lock KNN não pode ser symlink")
+    with lock_path.open("a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            if handle.read(1) == b"":
+                handle.write(b"\0")
+                handle.flush()
+        else:
+            import fcntl
+        acquired = False
+        deadline = time.monotonic() + 30.0
+        while not acquired:
+            try:
+                handle.seek(0)
+                if os.name == "nt":
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Outra sincronização KNN mantém o lock de escrita")
+                time.sleep(0.1)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _canonical(obj) -> str:
@@ -134,7 +180,7 @@ class PersistentArchiveKNN:
 
     def add(self, proposed: list[dict]) -> dict:
         """Append-only, nunca remove um exemplo antigo se o PNG foi excluído."""
-        with self._lock:
+        with self._lock, _writer_lock(self.path.with_suffix(".json.lock")):
             old = self._read()  # não converter snapshot corrompido em vazio
             by_id = {r["id"]: deepcopy(r) for r in old}
             new_count = 0
