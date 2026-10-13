@@ -27,3 +27,6 @@ reports/neural_online/
 
 # Treino DESLOCADO: fotos AOI derivadas e pesos locais privados
 reports/deslocado_neural/
+
+# Memória KNN histórica persistente local (snapshot e backups de dados)
+data/knn_archive_memory/
