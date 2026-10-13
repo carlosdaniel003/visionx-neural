@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from src.services.decision_persistence import DecisionPersistenceQueue
+from src.services.live_session_learning import immediate_confirmed_memory
 
 
 def _image_snapshot(value):
@@ -214,6 +215,30 @@ def install_anomaly_learning(control_panel_cls) -> None:
             source=source,
             ai_decision=ai_decision,
         )
+
+        # Commit da memória visual ANTES da próxima inspeção.
+        # É o único ponto síncrono para garantir que 2ª imagem idêntica
+        # já encontre o 1º rótulo humano, independentemente de worker/OCR.
+        # Treinamento CNN pesado continua em processo separado.
+        try:
+            memory_writer = getattr(self, "_live_memory_writer", None)
+            learned = (
+                memory_writer(task) if callable(memory_writer)
+                else immediate_confirmed_memory(task)
+            )
+            if learned.get("committed"):
+                knn = getattr(
+                    getattr(self, "orchestrator", None), "experts", {}
+                ).get("knn")
+                refresh = getattr(knn, "refresh_archive_memory", None)
+                if callable(refresh):
+                    refresh()
+            else:
+                print("KNN live: confirmação não importada: " +
+                      str(learned.get("reason")))
+        except Exception as exc:
+            # Uma falha de disco NUNCA deve criar sucesso fictício.
+            print("KNN live: memória NÃO persistida: " + str(exc))
 
         # Caminho crítico termina aqui: a peça já está julgada. A interface pode
         # limpar o resultado e o gate externo pode liberar a próxima imagem.
