@@ -265,6 +265,16 @@ class AdhesiveSourceContractTests(unittest.TestCase):
             source,
         )
 
+    def test_side_display_rejects_debug_fallback_from_another_event(self):
+        source = open(
+            "src/ui/adhesive_multilight_inspection.py",
+            encoding="utf-8",
+        ).read()
+        self.assertIn("side_original_for_view = (", source)
+        self.assertIn('"network_intake_last_image_event_id"', source)
+        self.assertIn("source_frame=side_original_for_view", source)
+        self.assertIn("capture_debug_last_image", source)
+
     def test_auxiliary_frames_do_not_reopen_main_cycle(self):
         source = open("src/services/network_receiver.py", encoding="utf-8").read()
 

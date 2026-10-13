@@ -1040,6 +1040,20 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             "network_intake_last_image",
             None,
         )
+        # A captura original visível deve pertencer ao evento SIDE atual.
+        # Não utilizar capture_debug_last_image como fallback visual: esse
+        # buffer de diagnóstico pode pertencer a outro ciclo.
+        side_original_for_view = (
+            side_source
+            if (
+                _valid_image(side_source)
+                and self.adhesive_multilight_primary_event_id
+                and str(getattr(
+                    self, "network_intake_last_image_event_id", ""
+                ) or "") == str(self.adhesive_multilight_primary_event_id)
+            )
+            else None
+        )
         if not _valid_image(side_source):
             side_source = getattr(
                 self,
@@ -1059,7 +1073,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             "SIDE",
             sample_crop,
             ng_crop,
-            source_frame=side_source,
+            source_frame=side_original_for_view,
         )
 
         # SIDE preserva a análise principal existente. TOP/MID serão analisados
