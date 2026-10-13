@@ -229,6 +229,8 @@ class ArchiveTrainingPanel(QObject):
         for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
             env.insert(key, "1")
         env.insert("PYTHONUNBUFFERED", "1")
+        env.insert("PYTHONIOENCODING", "utf-8")
+        env.insert("PYTHONUTF8", "1")
         proc.setProcessEnvironment(env)
         proc.setWorkingDirectory(str(self.root))
         proc.setProgram(sys.executable)
@@ -393,6 +395,8 @@ class ArchiveTrainingPanel(QObject):
             )
         if self._cancel_path is not None:
             self._cancel_path.unlink(missing_ok=True)
+        if self.process is not None:
+            self.process.deleteLater()
         self.process = None
 
     def shutdown(self, *_args):
