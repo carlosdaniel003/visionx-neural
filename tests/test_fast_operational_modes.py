@@ -94,6 +94,36 @@ class OperationalFastCaptureTests(unittest.TestCase):
                     ControlPanel.process_aoi_images(
                         panel, frame, frame, {"value": "FALTANDO"})
 
+    def test_auxiliary_light_requires_settle_and_two_stable_frames(self):
+        from src.services.network_receiver import NetworkReceiver
+
+        receiver = NetworkReceiver()
+        frame = np.zeros((64, 64, 3), np.uint8)
+        self.assertFalse(receiver.arm_auxiliary_capture("TOP"))
+        receiver.set_auxiliary_image_mode(True)
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=100.0):
+            self.assertTrue(receiver.arm_auxiliary_capture("TOP"))
+        self.assertFalse(receiver._auxiliary_frame_ready(frame, at=100.20))
+        self.assertFalse(receiver._auxiliary_frame_ready(frame, at=100.36))
+        self.assertTrue(receiver._auxiliary_frame_ready(frame, at=100.60))
+        self.assertFalse(receiver._auxiliary_frame_ready(frame, at=100.80))
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=101.0):
+            self.assertTrue(receiver.arm_auxiliary_capture("MID"))
+        self.assertFalse(receiver._auxiliary_frame_ready(frame, at=101.36))
+        self.assertTrue(receiver._auxiliary_frame_ready(frame, at=101.60))
+        receiver.set_auxiliary_image_mode(False)
+        self.assertFalse(receiver._auxiliary_frame_ready(frame, at=110.0))
+
+    def test_automation_arms_receiver_before_requesting_light(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "src/ui/adhesive_multilight_automation.py").read_text(encoding="utf-8")
+        self.assertLess(
+            source.index("arm_capture(normalized)"),
+            source.index("if not self._send_mode(normalized):"),
+        )
+
     def test_production_policy_remains_separate_from_fast_capture(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "src/ui/control_panel.py").read_text(encoding="utf-8")
