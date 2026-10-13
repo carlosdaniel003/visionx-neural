@@ -26,7 +26,7 @@ DESLOCADO ou de consenso multilight por evento.
 
 **Produto final sem humano:** ODIN deve decidir OK/NG automaticamente e
 não depender de operador apertando 0/1. "REVISÃO OBRIGATÓRIA" não será
-fila bloqueante na configuração autônoma final. Incertidão, erro de
+fila bloqueante na configuração autônoma final. Incerteza, erro de
 aquisição e conflitos jamais viram OK por conveniência; definir e
 testar **rejeição/segregação automática segura** da peça, distinta
 de NG físico confirmado, sem travar esperando humano. Só considerar
