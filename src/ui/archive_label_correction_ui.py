@@ -19,6 +19,9 @@ from src.services.archive_label_correction import (
 from src.services.faltando_cnn_recovery_preflight import (
     latest_completed_correction, validate_recovery_inputs,
 )
+from src.services.faltando_cnn_candidate_archive_validation import (
+    candidate_preflight,
+)
 
 
 def wait_for_parent_to_exit(pid: int) -> None:
@@ -56,6 +59,7 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.files: list[str] = []
         self.plan = None
         self.train_process = None
+        self._active_workflow = None
         self.setWindowTitle("ODIN • Corrigir julgamento humano")
         self.setMinimumSize(760, 520)
 
@@ -97,6 +101,13 @@ class ArchiveLabelCorrectionDialog(QDialog):
         recovery_row.addWidget(self.recovery_cancel)
         layout.addLayout(recovery_row)
 
+        validation_row = QHBoxLayout()
+        self.validation_button = QPushButton(
+            "Validar candidato CNN 0,50 contra acervo completo (sem ativar)"
+        )
+        validation_row.addWidget(self.validation_button)
+        layout.addLayout(validation_row)
+
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setPlainText(
@@ -117,6 +128,67 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.recovery_button.clicked.connect(self.start_recovery)
         self.light_weight_button.clicked.connect(self.start_light_weight_comparison)
         self.recovery_cancel.clicked.connect(self.cancel_recovery)
+        self.validation_button.clicked.connect(self.start_candidate_validation)
+
+    def start_candidate_validation(self):
+        """Duas avaliações operacionais reais com checkpoints imutáveis."""
+        if self.train_process is not None:
+            return
+        try:
+            audit = candidate_preflight(self.root)
+        except Exception as exc:
+            self.log.setPlainText(
+                f"VALIDAÇÃO DO CANDIDATO BLOQUEADA:\n{exc}\n"
+                "Nenhuma inferência executada."
+            )
+            QMessageBox.warning(self, "Validação bloqueada", str(exc))
+            return
+        confirmation = QMessageBox.question(
+            self, "Validar CNN 0,50 no acervo inteiro",
+            "Este diagnóstico lê o acervo OK/NG inteiro DUAS VEZES "
+            "(CNN original e candidata 0,50) e poderá demorar vários minutos.\n\n"
+            "Os resultados incluem revisões obrigatórias da CNN operacional. "
+            "Parte das imagens participou do treinamento: isto NÃO é "
+            "validação independente de generalização.\n\n"
+            "Nenhum peso será ativado, nenhuma memória será alterada, "
+            "nenhum comando 0/1 será enviado. Prosseguir?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirmation != QMessageBox.StandardButton.Yes:
+            return
+        self.log.setPlainText(
+            "VALIDAÇÃO CNN 0,50 — SOMENTE LEITURA, SEM ATIVAÇÃO\n"
+            f"Checkpoint candidato SHA-256: {audit['candidate_sha256']}\n"
+            "Executando checkpoint ORIGINAL e CANDIDATO, acervo idêntico.\n"
+            "Relatório final em reports/startup_regression/"
+            "cnn_candidate_validation/\n"
+        )
+        self._launch_worker(
+            "src.services.faltando_cnn_candidate_archive_validation",
+            ["--root", str(self.root)],
+            workflow="candidate_validation",
+        )
+
+    def _launch_worker(self, module: str, args: list[str], *,
+                       workflow: str):
+        proc = QProcess(self)
+        self.train_process = proc
+        self._active_workflow = workflow
+        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        proc.setWorkingDirectory(str(self.root))
+        proc.setProgram(sys.executable)
+        proc.setArguments(["-u", "-m", module, *args])
+        proc.readyReadStandardOutput.connect(self._read_training_output)
+        proc.finished.connect(self._training_finished)
+        proc.errorOccurred.connect(self._training_error)
+        self.recovery_button.setEnabled(False)
+        self.light_weight_button.setEnabled(False)
+        self.validation_button.setEnabled(False)
+        self.recovery_cancel.setEnabled(True)
+        for button in (self.select_button, self.preview_button, self.commit_button):
+            button.setEnabled(False)
+        proc.start()
 
     def start_recovery(self):
         """Conserva a comparação anterior de 5 e 7 épocas."""
@@ -169,29 +241,15 @@ class ArchiveLabelCorrectionDialog(QDialog):
             "Cada rodada reinicia a CNN dos pesos originais.\n"
             "Validação offline confirmada; iniciando processo CPU...\n"
         )
-        proc = QProcess(self)
-        self.train_process = proc
-        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        proc.setWorkingDirectory(str(self.root))
-        proc.setProgram(sys.executable)
         module = (
             "src.scripts.compare_faltando_recovery_light_weights"
             if light_weights else "src.scripts.compare_faltando_recovery_epochs"
         )
-        proc.setArguments([
-            "-u", "-m", module,
-            "--root", str(self.root),
-            "--correction-id", correction_id,
-        ])
-        proc.readyReadStandardOutput.connect(self._read_training_output)
-        proc.finished.connect(self._training_finished)
-        proc.errorOccurred.connect(self._training_error)
-        self.recovery_button.setEnabled(False)
-        self.light_weight_button.setEnabled(False)
-        self.recovery_cancel.setEnabled(True)
-        for button in (self.select_button, self.preview_button, self.commit_button):
-            button.setEnabled(False)
-        proc.start()
+        self._launch_worker(
+            module, ["--root", str(self.root),
+                     "--correction-id", correction_id],
+            workflow="training_comparison",
+        )
 
     def _read_training_output(self):
         if self.train_process is None:
@@ -205,16 +263,27 @@ class ArchiveLabelCorrectionDialog(QDialog):
 
     def _training_finished(self, code, _status):
         self._read_training_output()
-        self.log.append(
-            "\nCOMPARAÇÃO CONCLUÍDA — consulte o JSON em "
-            "reports/neural_online/recovery_comparisons. "
-            if code == 0 else
-            f"\nEXPERIMENTO INTERROMPIDO/FALHOU (código {code}); "
-            "nenhum peso foi ativado por esta ferramenta."
-        )
+        if code == 0:
+            if self._active_workflow == "candidate_validation":
+                self.log.append(
+                    "\nVALIDAÇÃO CONCLUÍDA. Envie o JSON comparacao_acervo_"
+                    "cnn_peso050_*.json em reports/startup_regression/"
+                    "cnn_candidate_validation/. Checkpoints intactos."
+                )
+            else:
+                self.log.append(
+                    "\nCOMPARAÇÃO DE TREINO CONCLUÍDA — consulte o JSON em "
+                    "reports/neural_online/recovery_comparisons."
+                )
+        else:
+            self.log.append(
+                f"\nPROCESSO INTERROMPIDO/FALHOU (código {code}); "
+                "nenhum peso foi ativado por esta ferramenta."
+            )
         self.recovery_cancel.setEnabled(False)
         self.recovery_button.setEnabled(True)
         self.light_weight_button.setEnabled(True)
+        self.validation_button.setEnabled(True)
         self.select_button.setEnabled(True)
         self.preview_button.setEnabled(True)
         # A prévia de correção deve ser refeita após qualquer experimento.
@@ -222,6 +291,7 @@ class ArchiveLabelCorrectionDialog(QDialog):
         if self.train_process is not None:
             self.train_process.deleteLater()
         self.train_process = None
+        self._active_workflow = None
 
     def _training_error(self, _error):
         if self.train_process is not None:
