@@ -282,6 +282,32 @@ class ChampionGateTests(OnlineFixtures):
             baseline_hash,
         )
 
+    def test_candidate_only_never_updates_pointer_or_outcomes_with_green_gates(self):
+        with patch("src.scripts.train_faltando_cnn_v2_online._base_model",
+                   lambda root: (self.root/"original.pt", self.prior)), \
+             patch("src.scripts.train_faltando_cnn_v2_online._historical",
+                   lambda root, obj: self.paired), \
+             patch("src.scripts.train_faltando_cnn_v2_online._assess",
+                   self.successful_assessment):
+            report = train_online(
+                self.root, self.event, epochs=1, candidate_only=True
+            )
+        self.assertTrue(report["passed_internal_gates"])
+        self.assertFalse(report["promoted"])
+        self.assertTrue(report["candidate_only"])
+        self.assertEqual(len(report["forced_events_per_epoch"]), 1)
+        self.assertTrue(
+            (self.root / report["candidate"]).is_file()
+        )
+        self.assertIn("recovery_candidates", report["candidate"])
+        self.assertFalse(
+            (self.root/"reports"/"neural_online"/"live_active.json").exists()
+        )
+        self.assertFalse(
+            (self.root/"reports"/"neural_online"/"outcomes"/
+             (self.event.stem + ".json")).exists()
+        )
+
     def test_regression_failure_rejects_candidate_and_preserves_champion(self):
         passed = self.successful_assessment(FaltandoCNNV2(), self.paired, 64, .7)
         failed = {**passed, "all_correct": False, "correct_images": 0,
