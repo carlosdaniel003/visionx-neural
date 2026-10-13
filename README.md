@@ -1,3 +1,18 @@
+## Botão Treinamento: validação visual do histórico CNN FALTANDO V2 + KNN
+
+Na janela principal do ODIN, em **Teste, Produção ou Sombra**, a seção `TREINAMENTO • VALIDAÇÃO DO ACERVO` oferece `Iniciar treinamento`, uma barra de progresso por imagem/motor, `Cancelar` e resultados visuais: acertos OK e NG de cada motor, taxas, regressões, revisões, casos sem cobertura, inválidos e imagens fora do escopo CNN. Ao final, os relatórios completos são salvos em `reports/startup_regression/training_validation_*.json` e `.txt`, com caminhos exibidos no painel.
+
+Apesar do nome do botão, trata-se de **validação somente leitura**, NÃO de novo treinamento de pesos ou inclusão de rótulos. A KNN usa a memória persistente existente para todos os PNGs OK/NG, incluindo adesivo; a CNN FALTANDO V2 executa o checkpoint atual em FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO, sinalizando MUITO ADESIVO como fora do escopo, nunca como acerto. Revisa um arquivo por vez; a avaliação é executada por processo separado de baixa prioridade, mantendo o uso normal do ODIN. Cancelar interrompe cooperativamente e salva relatório parcial quando possível; se OCR/inferência travar, o processo pode ser forçado a parar sem gerar parcial. Os arquivos de origem e o motor de produção não são modificados. Não confundir replay histórico com precisão em imagens inéditas.
+
+Atualizar e abrir normalmente:
+
+    cd "C:\visionx-neural-main"
+    git pull origin central
+    python main.py
+
+Documentação em `docs/ODIN_STARTUP_REGRESSION_GATE.md`.
+
+---
 ## Aprendizado ao vivo na mesma sessão — KNN + CNN FALTANDO V2
 
 Após confirmação humana 0/OK ou 1/NG, inclusive pelo teclado XP no Modo Sombra, a memória KNN grava **o par AOI imediatamente antes de avançar a peça**, não apenas quando uma imagem for arquivada. Uma nova captura com o mesmo gabarito/teste pixel-a-pixel, categoria e iluminação recupera o rótulo confirmado sem esperar worker. Isso funciona em Modo Teste, Sombra e intervenção humana na Produção, mesmo que o arquivamento visual esteja desativado. A identidade gravada é permanente em `data/knn_archive_memory/memory.json` e independe dos PNGs originais.
