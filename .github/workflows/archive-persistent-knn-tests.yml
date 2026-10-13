@@ -9,6 +9,8 @@ on:
       - "src/core/experts/knn_expert.py"
       - "src/services/startup_regression/knn_archive_memory_cli.py"
       - "tests/test_archive_persistent_knn.py"
+      - "tests/test_knn_archive_auto_memory.py"
+      - "src/services/knn_archive_auto_memory.py"
       - ".github/workflows/archive-persistent-knn-tests.yml"
   workflow_dispatch:
 
@@ -28,4 +30,4 @@ jobs:
         run: |
           python -m py_compile src/core/archive_persistent_memory.py src/core/verified_memory_router.py src/core/experts/knn_expert.py src/services/startup_regression/knn_archive_memory_cli.py tests/test_archive_persistent_knn.py
       - name: Verify learning persistence and production exact lookup
-        run: python -m unittest tests.test_archive_persistent_knn tests.test_verified_memory_router -v
+        run: python -m unittest tests.test_archive_persistent_knn tests.test_knn_archive_auto_memory tests.test_verified_memory_router -v
