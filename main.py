@@ -88,6 +88,7 @@ from src.ui.production_session_feedback import (
 from src.ui.qt_button_signal_adapter import install_qt_button_signal_adapter
 from src.ui.strict_category_memory_ui import install_strict_category_memory_ui
 from src.ui.test_mode_dataset_controls import install_test_mode_dataset_controls
+from src.ui.training_validation_panel import install_training_validation_panel
 from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
 from src.ui.widgets.semantic_dna import SemanticDNAWidget
 from src.ui.xp_decision_shortcuts import install_xp_decision_shortcuts
@@ -201,6 +202,8 @@ def main():
     install_decision_panel(panel)
     install_test_mode_dataset_controls(panel)
     install_operational_controls(panel)
+    # Diagnóstico KNN/CNN em processo isolado; nunca altera inspeção/0/1.
+    install_training_validation_panel(panel)
     install_svg_iconography(panel)
     install_production_session_feedback(panel)
     install_production_autonomy_controller(panel)
