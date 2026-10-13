@@ -114,7 +114,7 @@ class XpAdaptiveCaptureTests(unittest.TestCase):
             self.assertFalse(ControlPanel._send_xp_shadow_control(panel, True))
         self.assertIsNone(panel._xp_shadow_last_ack)
 
-    def test_shadow_timer_only_runs_in_shadow(self):
+    def test_fast_capture_lease_in_all_operational_modes(self):
         class Mode:
             current = "Modo Sombra"
             def currentText(self):
@@ -133,8 +133,16 @@ class XpAdaptiveCaptureTests(unittest.TestCase):
         panel.combo_mode.current = "Modo Produção"
         ControlPanel._on_xp_mode_changed(panel, "Modo Produção")
         ControlPanel._renew_xp_shadow_lease(panel)
+        self.assertEqual(panel.calls[-2:], [(True, True), (True, True)])
+        panel.combo_mode.current = "Modo Teste"
+        ControlPanel._on_xp_mode_changed(panel, "Modo Teste")
+        ControlPanel._renew_xp_shadow_lease(panel)
+        self.assertEqual(panel.calls[-2:], [(True, True), (True, True)])
+        panel.combo_mode.current = "Desativado"
+        ControlPanel._on_xp_mode_changed(panel, "Desativado")
+        ControlPanel._renew_xp_shadow_lease(panel)
         self.assertEqual(panel.calls[-1], (False, True))
-        self.assertEqual(len(panel.calls), 3)
+        self.assertEqual(len(panel.calls), 7)
         panel._xp_shadow_lease_timer.stop.assert_called_once()
 
 
