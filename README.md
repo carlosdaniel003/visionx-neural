@@ -1,3 +1,12 @@
+## Aprendizado ao vivo na mesma sessão — KNN + CNN FALTANDO V2
+
+Após confirmação humana 0/OK ou 1/NG, inclusive pelo teclado XP no Modo Sombra, a memória KNN grava **o par AOI imediatamente antes de avançar a peça**, não apenas quando uma imagem for arquivada. Uma nova captura com o mesmo gabarito/teste pixel-a-pixel, categoria e iluminação recupera o rótulo confirmado sem esperar worker. Isso funciona em Modo Teste, Sombra e intervenção humana na Produção, mesmo que o arquivamento visual esteja desativado. A identidade gravada é permanente em `data/knn_archive_memory/memory.json` e independe dos PNGs originais.
+
+A CNN FALTANDO V2 também consulta essa experiência exata para casos confirmados, enquanto os pesos aprendem de maneira incremental e assíncrona. O journal `reports/neural_online/events/` conserva pares gabarito/teste e rótulos humanos de novos casos `NEW_CNN` de FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO, com 1–3 luzes reais do mesmo evento. Os checkpoints só são promovidos após gates de regressão. Cache efêmero da CNN evita refazer inferência de pares idênticos na mesma sessão, mas **não transforma uma decisão automática em rótulo supervisionado**.
+
+Após excluir fotos dos arquivos OK/NG, o snapshot KNN e os checkpoints CNN continuam. Faça backup externo de `data/knn_archive_memory/`, `reports/neural_online/` e `reports/faltando_neural/` antes de limpar/reinstalar a estação. A memória de correspondência exata não equivale a generalização para imagens diferentes. Regras de decisão de produção e segurança do XP não foram alteradas. Instruções e limitações em `docs/ODIN_STARTUP_REGRESSION_GATE.md`.
+
+---
 ## Sincronização automática KNN entre Modo Teste, Produção e Sombra
 
 Um observador de pastas iniciado automaticamente em `main.py` monitora `public/ok_archive/` e `public/ng_archive/`. Cada PNG novo corretamente gravado é validado, convertido em assinatura AOI e adicionado à memória KNN permanente em `data/knn_archive_memory/memory.json`, sem interação e sem executar sincronização manual. A persistência ocorre em worker separado da análise rápida. As filas de arquivamento avisam quando um arquivo foi salvo; cópias externas também são detectadas. Após reiniciar, o sistema recupera os PNGs ainda não importados; os dados já importados sobrevivem à exclusão das imagens de origem.
