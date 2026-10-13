@@ -1,3 +1,11 @@
+## 13/10/2026 — Captura XP rápida para os três modos sem alterar julgamento
+
+- Sombra, Teste e Produção usam a mesma negociação ACK/lease do intervalo de 0,18 s entre envios do XP. O nome legado `VISIONX_SHADOW_ON` **não altera as permissões de decisão**.
+- TOP/MID reutilizam OCR da SIDE estritamente no ciclo multilight da mesma peça, sem repetir Tesseract. Nenhuma foto ou análise de outra peça pode ser reutilizada.
+- O receptor exige 0,35 s de estabilização após cada comando LEFT/RIGHT e duas imagens auxiliares estáveis, com uma única entrega por luz. O gate da imagem principal e a identificação por `event_id` permanecem ativos.
+- Teste e Produção preservam os PNGs de debug, o extrator geométrico, todos os painéis e a mesma classificação CNN/KNN. Produção mantém scroll, pausa por Space, consenso e o atraso antes de enviar 0/1; Teste continua sob julgamento humano; Sombra não envia 0/1.
+- No XP é preciso instalar manualmente a versão compatível do agente. Sem ACK ou sem medição, a meta de 2–3 s não está comprovada. Testar na AOI para excluir mistura de iluminações e confirmar comportamento autônomo.
+
 ## 09/10/2026 — Meta principal de regressão CNN em todo o histórico visual (98%)
 
 **Critério do operador:** todas as imagens históricas com rótulo OK/NG
