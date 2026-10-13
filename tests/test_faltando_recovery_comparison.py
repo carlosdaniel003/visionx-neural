@@ -23,7 +23,7 @@ class RecoveryComparisonTests(unittest.TestCase):
         )
         self.fixture.setUp()
         self.addCleanup(self.fixture.tearDown)
-        self.root = self.fixture.root
+        self.root = self.fixture.root.resolve()
         self.original = self.root / faltando_live.PINNED_RELATIVE_CHECKPOINT
         self.original.parent.mkdir(parents=True, exist_ok=True)
         self.original.write_bytes(b"checkpoint pinado sintetico, imutavel")
@@ -42,7 +42,7 @@ class RecoveryComparisonTests(unittest.TestCase):
         self.assertTrue(candidate_only)
         self.assertEqual(recovery_correction_id, ID)
         self.assertEqual(epochs, EPOCHS[len(self.calls) - 1])
-        self.assertEqual(first_event, self.fixture.journals[0])
+        self.assertEqual(first_event.resolve(), self.fixture.journals[0].resolve())
 
         stem = f"fake_{epochs}_epochs"
         candidate = self.root / "reports/neural_online/recovery_candidates" / (

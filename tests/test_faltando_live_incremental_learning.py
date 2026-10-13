@@ -236,6 +236,7 @@ class ChampionGateTests(OnlineFixtures):
             "state_dict": original.state_dict(),
             "source_manifest_sha256": "some-historical-source",
         }
+        torch.save(self.prior, self.root / "original.pt")
         self.paired = [
             {"id": "historical_good", "label": "NG",
              "views": {"SIDE": {
