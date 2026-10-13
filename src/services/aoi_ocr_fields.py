@@ -20,7 +20,10 @@ def strip_ocr_field_noise(value: str) -> str:
 
 
 def normalize_board_ocr(value: str) -> str:
-    return strip_ocr_field_noise(value)
+    """Corrige apenas um dígito ambíguo no sufixo final L<número>."""
+    text = strip_ocr_field_noise(value)
+    # Ex.: "... Li3" -> "... L13". Não modifica nomes da placa.
+    return re.sub(r"(?<=\s)L[IL|](?=\d{1,3}\Z)", "L1", text, flags=re.I)
 
 
 _NUMERIC_OCR_TRANSLATION = str.maketrans(
@@ -245,6 +248,17 @@ def _find_field_crop(text_zone, field_name: str, pytesseract_module):
     return binary[y1:y2, x1:x2].copy()
 
 
+def _recover_ambiguous_diode_range(value: str) -> str:
+    """Fallback restrito a D + 1 ambíguo + intervalo com 5 ambíguo.
+
+    RI~5, por exemplo, pode representar R3~5 e não recebe esta inferência.
+    """
+    match = re.fullmatch(r"D[IL|]([~-])S", str(value or "").upper())
+    if match:
+        return f"D1{match.group(1)}5"
+    return value
+
+
 def recover_parts_from_text_zone(
     text_zone,
     parsed_value: str,
@@ -257,7 +271,7 @@ def recover_parts_from_text_zone(
 
     crop = _find_field_crop(text_zone, "Parts", pytesseract_module)
     if crop is None or crop.size == 0:
-        return fallback
+        return _recover_ambiguous_diode_range(fallback)
 
     candidates = []
     try:
@@ -305,7 +319,7 @@ def recover_parts_from_text_zone(
     if valid:
         return min(valid, key=lambda item: (len(item), item))
 
-    return fallback
+    return _recover_ambiguous_diode_range(fallback)
 
 
 __all__ = [

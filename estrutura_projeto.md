@@ -7602,6 +7602,11 @@ P22-22200 (PRINCIPAL) L13
 
 Não existe substituição global de letras ou números no nome da placa.
 
+**Ajuste em 13/10/2026:** no sufixo numérico final da placa, um `I/i/l/|`
+imediatamente após `L` e antes de dígitos é interpretado como `1`
+(ex.: `P22-22200 (PRINCIPAL) Li3` → `P22-22200 (PRINCIPAL) L13`).
+O restante do nome continua intocado.
+
 #### Value
 
 Confusões entre letras e números são corrigidas somente quando aparecem no
@@ -7661,6 +7666,11 @@ resultado:           R3~5
 A estratégia é deliberadamente condicional para não aumentar o custo do OCR em
 todas as capturas: a releitura dirigida só ocorre quando Parts falha na
 validação de formato.
+
+**Ajuste em 13/10/2026:** se a releitura dirigida não produzir uma referência
+válida, um fallback estritamente limitado a diodos com dois caracteres
+ambíguos recupera `DI~S` como `D1~5`. A inferência não se aplica a `RI~5`,
+que pode representar `R3~5` e continua exigindo releitura dirigida.
 
 ### Resultado esperado para o caso de 07/10/2026
 

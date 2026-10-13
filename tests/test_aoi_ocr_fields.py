@@ -48,6 +48,20 @@ class AOIOCRFieldNormalizationTests(unittest.TestCase):
             "P22-22200 (PRINCIPAL) L13",
         )
 
+    def test_board_normalizes_only_ambiguous_final_l_number(self):
+        self.assertEqual(
+            normalize_board_ocr("P22-22200 (PRINCIPAL) Li3"),
+            "P22-22200 (PRINCIPAL) L13",
+        )
+        self.assertEqual(
+            normalize_board_ocr("P22-22200 (PRINCIPAL) L13"),
+            "P22-22200 (PRINCIPAL) L13",
+        )
+        self.assertEqual(
+            normalize_board_ocr("P22-22200 (Li3) PRINCIPAL"),
+            "P22-22200 (Li3) PRINCIPAL",
+        )
+
     def test_value_recovers_numeric_comparison_prefix(self):
         self.assertEqual(
             normalize_value_ocr("[io <= 2 <= 80 FALTANDO"),
@@ -82,6 +96,11 @@ class AOIOCRFieldNormalizationTests(unittest.TestCase):
         self.assertFalse(looks_like_component_reference("RI~5"))
 
 
+class _NoPartsAnchorTesseract(_FakeTesseract):
+    def image_to_data(self, _image, config="", output_type=None):
+        return {"text": []}
+
+
 class AOIPartsDirectedOCRTests(unittest.TestCase):
     def test_invalid_general_ocr_uses_numeric_directed_reading(self):
         image = np.full((100, 320, 3), 220, dtype=np.uint8)
@@ -95,6 +114,19 @@ class AOIPartsDirectedOCRTests(unittest.TestCase):
 
         self.assertEqual(recovered, "R3~5")
         self.assertEqual(len(fake.image_calls), 2)
+
+    def test_double_ambiguity_diode_fallback_without_anchor(self):
+        image = np.full((100, 320, 3), 220, dtype=np.uint8)
+        fake = _NoPartsAnchorTesseract()
+        recovered = recover_parts_from_text_zone(image, "[Di~s", fake)
+        self.assertEqual(recovered, "D1~5")
+        self.assertEqual(fake.image_calls, [])
+
+    def test_other_ambiguous_designator_is_not_forced_to_one(self):
+        image = np.full((100, 320, 3), 220, dtype=np.uint8)
+        fake = _NoPartsAnchorTesseract()
+        recovered = recover_parts_from_text_zone(image, "RI~5", fake)
+        self.assertEqual(recovered, "RI~5")
 
     def test_valid_parts_skips_extra_tesseract_calls(self):
         image = np.full((100, 320, 3), 220, dtype=np.uint8)
