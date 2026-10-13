@@ -21,6 +21,7 @@ from src.services.capture_evidence import (
     current_copy_image_snapshot,
 )
 from src.services.image_archive_candidates import archive_image_candidates
+from src.services.knn_archive_auto_memory import notify_archive_image_saved
 from src.services.image_archive_dedup import (
     image_fingerprint,
     load_archive_fingerprints,
@@ -126,6 +127,9 @@ class OKImageArchiveQueue:
 
                 if fingerprint:
                     self._seen_fingerprints.add(fingerprint)
+                # Apenas notifica. OCR e KNN são assíncronos e não bloqueiam
+                # a confirmação do operador nem a captura XP.
+                notify_archive_image_saved(target)
             except Exception as exc:
                 print(f"Falha não fatal ao arquivar imagem OK: {exc}")
             finally:
