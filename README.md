@@ -1,3 +1,30 @@
+## Diretriz atual — 13/10/2026: meta CNN 100% do acervo e ODIN sem operador
+
+A prioridade do projeto passou de >=98% para **100% de concordância
+operacional OK/NG** nas imagens efetivamente arquivadas em
+`public/ok_archive/` e `public/ng_archive/`, usando a **CNN sem KNN**;
+outras auditorias e JSONs legados não entram nessa aprovação. 
+A exceção previamente definida é **MUITO ADESIVO**, preservado e
+adiado para CNN especializada; não conta como sucesso nem como
+imagem elegível da CNN compartilhada.
+
+No replay real mais recente (09/10/2026), a CNN obteve **202/202
+predições binárias históricas corretas**, porém **201/202 decisões
+operacionais conclusivas**, por uma revisão no caso
+`2026-10-09_0857_DESLOCADO_SIDE.png`. Portanto, a nova meta de
+100% operacional ainda está pendente. A CNN não foi retreinada.
+
+O ODIN final **não terá um humano julgando inspeções**, logo o
+`REVISÃO OBRIGATÓRIA` bloqueante não é aceitável como comportamento
+final em produção. Casos inconclusivos exigem um caminho autônomo
+**seguro de rejeição/segregação**, não transformação silenciosa em OK.
+A política atual e os comandos 0/1 permanecem intactos até que essa
+solução seja implementada e validada no equipamento. 100% no histórico
+não garante confiabilidade de novas imagens, especialmente sem NG real
+DESLOCADO. Ver plano e critérios em
+[`docs/ODIN_STARTUP_REGRESSION_GATE.md`](docs/ODIN_STARTUP_REGRESSION_GATE.md).
+
+---
 ## 09/10/2026 — Ajuste de escopo CNN e duas falhas falsas confirmadas pelo operador
 
 **Decisão humana:** MUITO ADESIVO permanece no arquivo, mas fica **fora do
