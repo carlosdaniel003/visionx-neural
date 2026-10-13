@@ -6,6 +6,7 @@ congelar a interface nem tocar nos motores ao vivo. Nenhuma chamada de
 """
 from __future__ import annotations
 
+from html import escape
 from datetime import datetime
 import json
 from pathlib import Path
@@ -39,6 +40,16 @@ QLabel#archiveTrainingMetric {
   font-size: 12px; font-weight: 700; color: #cfcfcf;
   background-color: #171717; border: 1px solid #303030;
   border-radius: 6px; padding: 8px;
+}
+QLabel#archiveTrainingLegendOK {
+  color: #4ade80; background: #14271a;
+  border: 1px solid #285c38; border-radius: 5px;
+  padding: 4px 10px; font-size: 11px; font-weight: 900;
+}
+QLabel#archiveTrainingLegendNG {
+  color: #ff7777; background: #2b171b;
+  border: 1px solid #78343b; border-radius: 5px;
+  padding: 4px 10px; font-size: 11px; font-weight: 900;
 }
 QLabel#archiveTrainingDetails {
   font-size: 11px; font-weight: 600; color: #a9a9a9;
@@ -82,7 +93,11 @@ def format_model_line(name: str, info: dict) -> str:
         total = int(metrics.get("total") or 0)
         rate = metrics.get("accuracy")
         pct = f"{100*rate:.1f}%" if isinstance(rate, (int, float)) else "N/D"
-        segments.append(f"{group} {num}/{total} ({pct})")
+        color = "#4ade80" if group == "OK" else "#ff7777"
+        segments.append(
+            f'<span style="color:{color};font-weight:900;">'
+            f'{group} {num}/{total} ({pct})</span>'
+        )
     misses = int(info.get("incorrect") or 0)
     coverage = int(info.get("no_coverage") or 0)
     invalid = int(info.get("invalid") or 0)
@@ -90,7 +105,11 @@ def format_model_line(name: str, info: dict) -> str:
     tail = f" • Erros {misses} • Sem cobertura {coverage} • Inválidos {invalid}"
     if skipped:
         tail += f" • Fora da CNN {skipped}"
-    return f"{label}  |  {'  •  '.join(segments)}{tail}"
+    return (
+        f'<span style="color:#e8e8e8;font-weight:800;">{label}</span>'
+        f' &nbsp;|&nbsp; {" &nbsp;•&nbsp; ".join(segments)}'
+        f'<span style="color:#aaaaaa;">{escape(tail)}</span>'
+    )
 
 
 class ArchiveTrainingPanel(QObject):
@@ -109,8 +128,31 @@ class ArchiveTrainingPanel(QObject):
         self._count = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
         self._passes = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
         self._errors = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
+        self._by_label = self._empty_label_counts()
         self._build()
         panel.destroyed.connect(self.shutdown)
+
+    @staticmethod
+    def _empty_label_counts():
+        return {
+            model: {label: {"passed": 0, "checked": 0}
+                    for label in ("OK", "NG")}
+            for model in ("KNN_MEMORIA", "CNN_FALTANDO_V2")
+        }
+
+    def _live_metric_html(self, model: str) -> str:
+        name = "KNN MEMÓRIA" if model == "KNN_MEMORIA" else "CNN FALTANDO V2"
+        ok = self._by_label[model]["OK"]
+        ng = self._by_label[model]["NG"]
+        return (
+            f'<span style="color:#e8e8e8;font-weight:800;">{name}</span>'
+            f' &nbsp;|&nbsp; <span style="color:#4ade80;font-weight:900;">'
+            f'OK {ok["passed"]}/{ok["checked"]}</span>'
+            f' &nbsp;•&nbsp; <span style="color:#ff7777;font-weight:900;">'
+            f'NG {ng["passed"]}/{ng["checked"]}</span>'
+            f' &nbsp;•&nbsp; <span style="color:#aaaaaa;">'
+            f'{self._errors[model]} pendências/erros</span>'
+        )
 
     def _build(self):
         frame = QFrame()
@@ -147,6 +189,17 @@ class ArchiveTrainingPanel(QObject):
         hint.setWordWrap(True)
         container.addWidget(hint)
 
+        legend = QHBoxLayout()
+        legend.setSpacing(7)
+        ok_legend = QLabel("● OK")
+        ok_legend.setObjectName("archiveTrainingLegendOK")
+        ng_legend = QLabel("● NG")
+        ng_legend.setObjectName("archiveTrainingLegendNG")
+        legend.addWidget(ok_legend)
+        legend.addWidget(ng_legend)
+        legend.addStretch(1)
+        container.addLayout(legend)
+
         self.status = QLabel("Pronto para validar o histórico OK e NG.")
         self.status.setObjectName("archiveTrainingStatus")
         self.status.setWordWrap(True)
@@ -166,6 +219,7 @@ class ArchiveTrainingPanel(QObject):
         self.cnn_metric = QLabel("CNN FALTANDO V2 | ainda não avaliada")
         for widget in (self.knn_metric, self.cnn_metric):
             widget.setObjectName("archiveTrainingMetric")
+            widget.setTextFormat(Qt.TextFormat.RichText)
             widget.setWordWrap(True)
             widget.setMinimumWidth(0)
         metrics.addWidget(self.knn_metric, 0, 0)
@@ -209,6 +263,7 @@ class ArchiveTrainingPanel(QObject):
         self._count = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
         self._passes = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
         self._errors = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
+        self._by_label = self._empty_label_counts()
         reports = self.root / "reports" / "startup_regression"
         reports.mkdir(parents=True, exist_ok=True)
         self._cancel_path = reports / (
@@ -300,15 +355,26 @@ class ArchiveTrainingPanel(QObject):
                     self._errors[model] += 1
                 target = (self.knn_metric if model == "KNN_MEMORIA"
                           else self.cnn_metric)
-                target.setText(
-                    f"{'KNN MEMÓRIA' if model == 'KNN_MEMORIA' else 'CNN FALTANDO V2'}"
-                    f" | {self._passes[model]}/{self._count[model]} corretas"
-                    f" • {self._errors[model]} pendências/erros"
-                )
+                label = str(packet.get("expected") or "").upper()
+                if label in ("OK", "NG"):
+                    values = self._by_label[model][label]
+                    values["checked"] += 1
+                    if packet.get("status") == "PASSOU":
+                        values["passed"] += 1
+                target.setText(self._live_metric_html(model))
             name = Path(str(packet.get("path", ""))).name
             display_model = "KNN" if model == "KNN_MEMORIA" else "CNN"
             if not self._cancel_requested:
-                self.status.setText(f"{done}/{total} • {display_model} • {name}")
+                label = str(packet.get("expected") or "").upper()
+                badge = (
+                    '<span style="color:#4ade80;font-weight:900;">OK</span>'
+                    if label == "OK" else
+                    '<span style="color:#ff7777;font-weight:900;">NG</span>'
+                    if label == "NG" else ""
+                )
+                self.status.setText(
+                    f'{done}/{total} • {display_model} • {badge} • {escape(name)}'
+                )
         elif event == "finished":
             self._last_finished = packet
         elif event == "error":
