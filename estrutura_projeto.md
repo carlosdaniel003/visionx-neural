@@ -1,3 +1,46 @@
+## 13/10/2026 — META ESPECÍFICA KNN >=98% E MODO PRODUÇÃO SEM REVISOR
+
+**Nova exigência do responsável:** a memória **KNN** deve devolver
+`FALHA FALSA/OK` para **>=98% dos PNGs** de
+`public/ok_archive/` e `DEFEITO REAL/NG` para **>=98% dos PNGs**
+de `public/ng_archive/`, **separadamente**, usando somente esse acervo
+para a avaliação e a referência KNN. Não levar à métrica os 952 JSONs
+legados, experimentos anteriores, dados de outras pastas nem previsões
+CNN. Percorrer todos os PNGs em cada execução, contando imagens inválidas,
+não reconhecidas, revisões e erros como **não acertos**.
+
+**Abrangência:** inclui todos os casos KNN das duas pastas, **inclusive
+ADESIVO**. A exceção de ADESIVO na CNN especializada **não se aplica
+automaticamente à meta KNN**. No último inventário havia 195 OK e 17 NG
+(212 PNGs); para >=98% por classe, os mínimos nesse acervo seriam
+**192 OK e 17 NG**. São mínimos condicionados ao tamanho do próximo
+inventário, **não resultados KNN já medidos**.
+
+**Método:** distinguir recuperação exata de memória de desempenho
+KNN generalizável; impedir que a própria consulta, suas duplicatas
+e o mesmo evento integrem os vizinhos de avaliação; usar o gabarito
+OK/NG apenas após a predição, nunca para decidir. Rastrear falsos
+OK em NG, falsos NG em OK, ausências e conflitos, separados por classe,
+categoria e iluminação. KNN >=98% e CNN 100% em seu escopo
+são metas diferentes, sem soma de acertos entre elas.
+
+**Produto final:** inspeção sem operador humano, sem estado
+`REVISÃO OBRIGATÓRIA` paralisando indefinidamente a produção.
+Qualquer incerteza exige tratamento automático seguro,
+segregação/rejeição de peça não aprovada por inspeção e evidência
+registrada; **nunca fallback para OK**. Aprovar uma saída
+`1/NG` para falha técnica só após conferir sua semântica na
+máquina e testar os intertravamentos. O controle e os comandos
+atuais **NÃO foram modificados nesta etapa**. Não alegar
+autonomia completa antes de demonstrar a integração segura.
+
+**Estado:** requisito documentado; validação KNN >=98% pendente;
+sem mudanças no modelo, memória, dataset, CNN ou Modo Produção.
+Detalhamento vigente em
+`docs/ODIN_STARTUP_REGRESSION_GATE.md`.
+
+---
+
 ## 13/10/2026 — REQUISITOS ATUAIS: CNN 100% ACERVO, ODIN AUTÔNOMO
 
 **Esta seção prevalece sobre metas históricas de 98% e a ideia de revisão
