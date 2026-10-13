@@ -36,6 +36,9 @@ class NetworkReceiver(QThread):
     SAME_FRAME_P95_DELTA = 4.5
     SAME_FRAME_CHANGED_RATIO = 0.004
     STABLE_REQUIRED_FRAMES = 2
+    # Pequena janela de estabilizacao apos mudar a luz no XP. A recepcao
+    # auxiliar exige duas imagens consecutivas estaveis antes da entrega.
+    AUXILIARY_LIGHT_SETTLE_SECONDS = 0.35
 
     def __init__(self, port=5001):
         super().__init__()
@@ -79,6 +82,11 @@ class NetworkReceiver(QThread):
         # principal somente durante uma sessão visual de adesivo.
         self._auxiliary_image_mode = False
         self.last_auxiliary_image_received_at = 0.0
+        self._aux_expected_lighting = ""
+        self._aux_not_before = 0.0
+        self._aux_signature = None
+        self._aux_stable_frames = 0
+        self._aux_dispatched = False
 
     def lock_image_gate(self) -> None:
         """Impede que uma nova imagem principal seja emitida para a interface."""
@@ -88,6 +96,48 @@ class NetworkReceiver(QThread):
         """Permite previews da mesma peça sem reabrir o gate principal."""
         with self._state_lock:
             self._auxiliary_image_mode = bool(enabled)
+            if not enabled:
+                self._aux_expected_lighting = ""
+                self._aux_not_before = 0.0
+                self._aux_signature = None
+                self._aux_stable_frames = 0
+                self._aux_dispatched = False
+
+    def arm_auxiliary_capture(self, lighting: str) -> bool:
+        """Reinicia a janela de estabilizacao ao solicitar TOP/MID."""
+        normalized = str(lighting or "").upper()
+        if normalized not in {"TOP", "MID"}:
+            return False
+        with self._state_lock:
+            if not self._auxiliary_image_mode:
+                return False
+            self._aux_expected_lighting = normalized
+            self._aux_not_before = (
+                time.perf_counter() + self.AUXILIARY_LIGHT_SETTLE_SECONDS
+            )
+            self._aux_signature = None
+            self._aux_stable_frames = 0
+            self._aux_dispatched = False
+            return True
+
+    def _auxiliary_frame_ready(self, image: np.ndarray, *, at: float) -> bool:
+        """Uma entrega por iluminacao, apos estabilizacao de duas fotos."""
+        with self._state_lock:
+            if (not self._auxiliary_image_mode
+                    or not self._aux_expected_lighting
+                    or self._aux_dispatched
+                    or at < self._aux_not_before):
+                return False
+            signature = self._frame_signature(image)
+            if self._same_signature(signature, self._aux_signature):
+                self._aux_stable_frames += 1
+            else:
+                self._aux_signature = signature
+                self._aux_stable_frames = 1
+            if self._aux_stable_frames < self.STABLE_REQUIRED_FRAMES:
+                return False
+            self._aux_dispatched = True
+            return True
 
     def is_auxiliary_image_mode(self) -> bool:
         with self._state_lock:
@@ -414,6 +464,10 @@ class NetworkReceiver(QThread):
                         continue
 
                     if auxiliary_delivery:
+                        if not self._auxiliary_frame_ready(
+                            img, at=payload_received_at
+                        ):
+                            continue
                         self.last_auxiliary_image_received_at = (
                             payload_received_at
                         )
