@@ -48,10 +48,9 @@ def _writer_lock(lock_path: Path):
     with lock_path.open("a+b") as handle:
         if os.name == "nt":
             import msvcrt
-            handle.seek(0)
-            if handle.read(1) == b"":
-                handle.write(b"\0")
-                handle.flush()
+            # A posição inicial do lock será inicializada APÓS adquirir
+            # exclusividade. Ler/escrever o byte antes do lock cria corrida no
+            # Windows e pode lançar PermissionError no segundo escritor.
         else:
             import fcntl
         acquired = False
@@ -69,6 +68,11 @@ def _writer_lock(lock_path: Path):
                     raise TimeoutError("Outra sincronização KNN mantém o lock de escrita")
                 time.sleep(0.1)
         try:
+            if os.name == "nt":
+                handle.seek(0, os.SEEK_END)
+                if handle.tell() == 0:
+                    handle.write(b"\0")
+                    handle.flush()
             yield
         finally:
             handle.seek(0)

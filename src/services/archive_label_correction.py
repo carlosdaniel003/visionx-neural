@@ -161,7 +161,10 @@ def prepare_correction(root: Path | str, selected: list[str | Path]) -> dict:
                 )
 
     latest = root / "reports" / "neural_online" / "latest_event.json"
-    if latest.is_file() and _json(latest).get("status") in ("TRAINING", "QUEUED"):
+    if latest.is_file() and (
+        _json(latest).get("state") in ("TRAINING", "QUEUED")
+        or _json(latest).get("status") in ("TRAINING", "QUEUED")
+    ):
         raise ValueError("Treinamento CNN ainda está na fila/em execução. Aguarde seu término")
 
     selected_data = {}

@@ -304,6 +304,9 @@ class ArchiveTrainingPanel(QObject):
                 "Falha ao abrir o corretor. O ODIN continua em operação."
             )
             return
+        # closeEvent encerra explicitamente o NetworkReceiver QThread.
+        # Quit isolado não garante que closeEvent será emitido.
+        self.panel.close()
         QApplication.instance().quit()
 
     def _active(self) -> bool:
