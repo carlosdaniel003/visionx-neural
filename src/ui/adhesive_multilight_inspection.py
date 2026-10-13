@@ -760,8 +760,11 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             )
             shadow = self.combo_mode.currentText() == "Modo Sombra"
             self.processor_monitor._shadow_fast = shadow
-            self.processor_monitor._shadow_auxiliary_info = (
-                dict(self.current_aoi_info or {}) if shadow else None
+            # OCR da SIDE vale para TOP/MID somente enquanto esta sessao
+            # multilight da mesma peca estiver ativa. Teste e Producao
+            # mantem os PNGs e as visualizacoes completas.
+            self.processor_monitor._shadow_auxiliary_info = dict(
+                self.current_aoi_info or {}
             )
             try:
                 self.processor_monitor.process_external_image(img_bgr)
