@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import tempfile
+from functools import partial
+from unittest.mock import patch
+import json
 import unittest
 
 import numpy as np
@@ -11,6 +14,10 @@ from src.core.archive_persistent_memory import PersistentArchiveKNN
 from src.core.neural.faltando_live import FaltandoCNNLive
 from src.core.verified_memory_router import VerifiedKNNMemory
 from src.services.live_session_learning import immediate_confirmed_memory
+from src.services.anomaly_learning import install_anomaly_learning
+from src.services.neural_online_learning import (
+    eligible_online_case, OnlineLearningQueue,
+)
 
 
 def pair(color=80):
@@ -150,6 +157,90 @@ class LiveSessionLearningTests(unittest.TestCase):
         self.assertEqual(len(self.store.records()), 2)
         self.assertTrue(all(r["label"] == "NG"
                             for r in self.store.records()))
+
+    def test_real_label_hook_commits_before_interface_releases_next_case(self):
+        from types import SimpleNamespace
+
+        class Button:
+            def setEnabled(self, value):
+                self.enabled = value
+            def setText(self, value):
+                self.text = value
+
+        class Panel:
+            def __init__(self):
+                task = labeled_task()
+                self.current_sample = task["sample_image"]
+                self.current_ng = task["ng_image"]
+                self.current_aoi_info = task["aoi_info"]
+                self.current_analysis = task["analysis"]
+                self.combo_mode = SimpleNamespace(currentText=lambda: "Modo Sombra")
+                self.capture_cycle_source = "network"
+                self.adhesive_multilight_learning_samples = {}
+                self.adhesive_multilight_primary_event_id = ""
+                self.btn_save_ok = Button()
+                self.btn_save_ng = Button()
+                self.btn_skip = Button()
+                self.btn_start = Button()
+                self._live_memory_writer = partial(
+                    immediate_confirmed_memory, store=memory
+                )
+                self._anomaly_persistence_submitter = lambda task: collected.append(task)
+                self.orchestrator = SimpleNamespace(experts={})
+                self.advance_label = None
+            def save_label(self, *args, **kwargs):
+                raise AssertionError("No legacy save should be required")
+            def send_command_to_xp(self, value):
+                return True
+            def prepare_for_next_network_image(self):
+                match = memory.lookup(
+                    self.current_sample, self.current_ng, self.current_aoi_info
+                )
+                self.advance_label = match.get("label")
+            def update_history_status(self, *args):
+                pass
+
+        memory = self.store
+        collected = []
+        install_anomaly_learning(Panel)
+        panel = Panel()
+        panel.save_label("OK", source="xp_keyboard")
+        self.assertEqual(panel.advance_label, "OK")
+        self.assertEqual(len(collected), 1)
+        self.assertEqual(self.store.records()[0]["label"], "OK")
+
+    def test_online_cnn_eligibility_uses_all_4_categories_and_human_source(self):
+        for category in ("FALTANDO", "EMBORCADO", "INVERTIDO", "DESLOCADO"):
+            task = labeled_task(category=category)
+            self.assertTrue(eligible_online_case(task))
+            task["source"] = "production_auto"
+            self.assertFalse(eligible_online_case(task))
+            task["source"] = "button"
+            task["analysis"]["detail"]["recognition_route"] = "KNOWN_KNN"
+            self.assertFalse(eligible_online_case(task))
+
+    def test_partial_shadow_cnn_journal_survives_archive_deletion(self):
+        task = labeled_task("OK")
+        ref, test = task["sample_image"], task["ng_image"]
+        task["multilight_samples"] = [
+            {"lighting_mode": light, "sample_image": ref, "test_image": test}
+            for light in ("SIDE", "TOP")
+        ]
+        queue = OnlineLearningQueue(root=self.root, start_worker=False)
+        event_id = queue.submit_saved(task)
+        self.assertTrue(event_id)
+        journal = self.root / "reports" / "neural_online" / "events"
+        row = json.loads((journal / (event_id + ".json")).read_text("utf-8"))
+        self.assertEqual(len(row["images"]), 2)
+        self.assertEqual(
+            {r["lighting_mode"] for r in row["images"]}, {"SIDE", "TOP"}
+        )
+        for item in row["images"]:
+            self.assertTrue((journal / item["reference"]).is_file())
+            self.assertTrue((journal / item["test"]).is_file())
+        # Network archive PNGs can now be deleted; CNN samples are
+        # separate durable data and replays remain possible.
+        self.assertFalse((self.root / "public" / "ok_archive").exists())
 
     def test_human_dedup_across_repeated_confirmations(self):
         task = labeled_task()
