@@ -1,5 +1,6 @@
 """Memória KNN permanece após exclusão de PNGs e rejeita conflitos."""
 import json
+from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from pathlib import Path
 import tempfile
@@ -167,6 +168,22 @@ class DurableMemoryTests(unittest.TestCase):
         )
         self.assertTrue(path_j.exists())
         self.assertIn("NG: 1/1", path_t.read_text(encoding="utf-8"))
+
+    def test_two_writers_do_not_erase_each_other(self):
+        a = entry("OK")
+        b = entry("NG")
+        left = PersistentArchiveKNN(self.root)
+        right = PersistentArchiveKNN(self.root)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            a_task = pool.submit(left.add, [a])
+            b_task = pool.submit(right.add, [b])
+            a_task.result()
+            b_task.result()
+        persisted = PersistentArchiveKNN(self.root)
+        self.assertEqual(len(persisted.records()), 2)
+        self.assertEqual(
+            {r["label"] for r in persisted.records()}, {"OK", "NG"}
+        )
 
     def test_match_only_exact_and_same_light(self):
         self.store.add([entry("OK")])
