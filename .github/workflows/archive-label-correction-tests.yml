@@ -11,6 +11,8 @@ on:
       - "src/ui/training_validation_panel.py"
       - "main.py"
       - "tests/test_archive_label_correction.py"
+      - "tests/test_archive_label_correction_ui_encoding.py"
+      - "tests/utf8_console_probe.py"
       - "tests/test_archive_persistent_knn.py"
       - ".github/workflows/archive-label-correction-tests.yml"
   workflow_dispatch:
@@ -35,8 +37,8 @@ jobs:
       - name: Check syntax
         shell: pwsh
         run: |
-          python -m py_compile src/services/archive_label_correction.py src/ui/archive_label_correction_ui.py src/core/archive_persistent_memory.py src/ui/training_validation_panel.py main.py tests/test_archive_label_correction.py
+          python -m py_compile src/services/archive_label_correction.py src/ui/archive_label_correction_ui.py src/core/archive_persistent_memory.py src/ui/training_validation_panel.py main.py tests/test_archive_label_correction.py tests/test_archive_label_correction_ui_encoding.py tests/utf8_console_probe.py
       - name: Correction and persistent memory regression
         shell: pwsh
         run: |
-          python -m unittest tests.test_archive_label_correction tests.test_archive_persistent_knn -v
+          python -m unittest tests.test_archive_label_correction tests.test_archive_persistent_knn tests.test_archive_label_correction_ui_encoding -v

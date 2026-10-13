@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import time
 
-from PyQt6.QtCore import Qt, QProcess
+from PyQt6.QtCore import Qt, QProcess, QProcessEnvironment
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel,
     QMessageBox, QPushButton, QTextEdit, QVBoxLayout,
@@ -178,7 +178,14 @@ class ArchiveLabelCorrectionDialog(QDialog):
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         proc.setWorkingDirectory(str(self.root))
         proc.setProgram(sys.executable)
-        proc.setArguments(["-u", "-m", module, *args])
+        # O Python Windows pode herdar saída CP1252 mesmo que a aplicação
+        # exiba Unicode. ScreenMonitor imprime ✅ ao detectar Tesseract:
+        # forçar UTF-8 apenas neste processo offline e nas saídas capturadas.
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert("PYTHONUTF8", "1")
+        environment.insert("PYTHONIOENCODING", "utf-8")
+        proc.setProcessEnvironment(environment)
+        proc.setArguments(["-X", "utf8", "-u", "-m", module, *args])
         proc.readyReadStandardOutput.connect(self._read_training_output)
         proc.finished.connect(self._training_finished)
         proc.errorOccurred.connect(self._training_error)
