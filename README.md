@@ -1,3 +1,10 @@
+## Sincronização automática KNN entre Modo Teste, Produção e Sombra
+
+Um observador de pastas iniciado automaticamente em `main.py` monitora `public/ok_archive/` e `public/ng_archive/`. Cada PNG novo corretamente gravado é validado, convertido em assinatura AOI e adicionado à memória KNN permanente em `data/knn_archive_memory/memory.json`, sem interação e sem executar sincronização manual. A persistência ocorre em worker separado da análise rápida. As filas de arquivamento avisam quando um arquivo foi salvo; cópias externas também são detectadas. Após reiniciar, o sistema recupera os PNGs ainda não importados; os dados já importados sobrevivem à exclusão das imagens de origem.
+
+A pasta define o rótulo OK/NG do exemplo importado; as predições não ganham validação independente por isso. Corrupções, conflitos de rótulo e arquivos não processáveis não recebem OK automático. Essa função **não exige arquivar todos os eventos** e não altera as configurações de captura/arquivamento de cada modo. Para garantia contra perda de disco, manter backup externo de `data/knn_archive_memory` e conferir importações pendentes antes de excluir PNGs. Mais detalhes e testes em `docs/ODIN_STARTUP_REGRESSION_GATE.md`.
+
+---
 ## Memória KNN permanente dos arquivos OK/NG — 13/10/2026
 
 O ODIN agora dispõe de memória KNN histórica durável, independente dos PNGs depois de uma sincronização bem-sucedida. A importação aprende OK e NG a partir de public/ok_archive e public/ng_archive, grava identidades do par gabarito/teste e assinaturas visuais em data/knn_archive_memory/memory.json, reabre o arquivo salvo e testa a recuperação dos mesmos casos. A recuperação do acervo memorizado é distinta da validação de generalização KNN (>=98% por classe).
@@ -12,7 +19,7 @@ Verificar memória já salva sem ler fotos:
 
     python -m src.services.startup_regression.knn_archive_memory_cli --status
 
-Relatórios: reports/startup_regression/knn_archive_memory_*.json e *.txt. Os registros memorizados persistem após exclusão dos PNGs. Nunca excluir imagens antes de verificar que foram importadas. Memória local não é enviada pelo GitHub: faça backup externo de data/knn_archive_memory. Novos PNGs exigem nova sincronização manual; captura automática de novas entradas ainda não foi conectada. O roteador de produção passa a reconhecer pares exatos dessa memória mesmo sem fotos originais; qualquer conflito de rótulo impede decisão automática OK. Mais detalhes em docs/ODIN_STARTUP_REGRESSION_GATE.md.
+Relatórios: reports/startup_regression/knn_archive_memory_*.json e *.txt. Os registros memorizados persistem após exclusão dos PNGs. Nunca excluir imagens antes de verificar que foram importadas. Memória local não é enviada pelo GitHub: faça backup externo de data/knn_archive_memory. **Novos PNGs agora são importados automaticamente** ao entrar em `ok_archive` ou `ng_archive`, em qualquer modo, por observador em background iniciado em `main.py`. Importação é assíncrona e erros de arquivo/OCR são retentados; excluir PNG antes da importação impede retenção. A sincronização manual permanece opcional para auditorias completas. O roteador de produção passa a reconhecer pares exatos dessa memória mesmo sem fotos originais; qualquer conflito de rótulo impede decisão automática OK. Mais detalhes em docs/ODIN_STARTUP_REGRESSION_GATE.md.
 
 ---
 ## 13/10/2026 — Aquisição XP rápida em Sombra, Teste e Produção
