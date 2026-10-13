@@ -1105,3 +1105,10 @@ NG/OK, teclas 0/1 ou modo Produção.
 ### Agente XP opcional para reduzir o intervalo de captura em Sombra (09/10/2026)
 
 O ODIN envia um controle separado de 0/1 ao XP para reduzir o intervalo fixo entre fotos de 3 s para 0,18 s **somente em Modo Sombra**. Sem confirmação do novo protocolo a captura antiga permanece funcional e mais lenta. O receptor continua exigindo dois frames estáveis e os rótulos 0/1 continuam exclusivos do humano. É indispensável atualizar o arquivo `agente_industrial_xp.py` manualmente no XP; ver `docs/AGENTE_INDUSTRIAL_WINDOWS_XP.md`. Metas de tempo aguardam medição física.
+
+
+### 13/10/2026 — Captura rápida e OCR compartilhados entre os três modos
+
+A ativação legada `VISIONX_SHADOW_ON` do agente XP passa a ser requisitada por Sombra, Teste e Produção para reduzir a pausa de transmissão para 0,18 s. A identificação obtida via OCR da SIDE é reutilizada apenas em TOP/MID pertencentes à mesma sessão ativa multilight. O valor original e o rótulo da categoria não mudam.
+
+Teste e Produção continuam executando extração geométrica completa, painéis visuais, geração de debug e respectivas políticas de decisão. A apresentação e o atraso de segurança da Produção continuam necessários antes de uma tecla automática. **Nenhum modelo CNN/KNN, fusão, checkpoint, treinamento ou limiar de decisão foi alterado.** Sem ACK do XP, a frequência antiga é preservada; o tempo real da estação continua por verificar.
