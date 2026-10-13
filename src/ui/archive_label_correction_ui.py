@@ -163,7 +163,7 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.log.setPlainText(
             ("COMPARAÇÃO PESOS POR ILUMINAÇÃO — 7 ÉPOCAS CADA\n"
              if light_weights else
-             "COMPARAÇÃO 5 E 7 ÉPOCAS — PESOS ATIVOS PRESERVADOS\n")
+             "COMPARAÇÃO 5 E 7 ÉPOCAS — PESOS ATIVOS PRESERVADOS\n") +
             f"Correção: {correction_id}\n"
             f"Eventos NG completos: {len(verified['events'])}\n"
             "Cada rodada reinicia a CNN dos pesos originais.\n"
