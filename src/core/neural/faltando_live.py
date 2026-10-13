@@ -170,6 +170,42 @@ class FaltandoCNNLive:
             self._error = (type(exc).__name__, str(exc))
             raise
 
+    def recognize_confirmed(self, reference, test, category: str,
+                            mode: str) -> dict | None:
+        """Experiência visual durável, separada dos pesos CNN V2.
+
+        Atalho exato supervisionado: a imagem 2 pode reconhecer a imagem 1
+        sem aguardar backpropagation; o treino CNN real segue em background.
+        Em caso novo, retorna None e a CNN normalmente faz inferência.
+        """
+        from src.core.archive_persistent_memory import PersistentArchiveKNN
+        from src.core.verified_memory_router import _recognized_result
+        if not uses_faltando_v2(category):
+            return None
+        try:
+            result = PersistentArchiveKNN(self._online_root).lookup(
+                reference, test, {
+                    "category": category, "lighting_mode": mode,
+                }
+            )
+        except Exception as exc:
+            return _fail_review("EXPERIENCE_UNAVAILABLE", str(exc), mode)
+        if result["status"] == "NEW":
+            return None
+        if result["status"] != "KNOWN":
+            return _fail_review(
+                "EXPERIENCE_CONFLICT", str(result.get("reason", "")), mode
+            )
+        decision = _recognized_result(result, mode)
+        decision["detail"]["cnn_v2_experience_memory"] = True
+        decision["detail"]["cnn_v2_weight_update"] = False
+        decision["reason"] = (
+            "CNN FALTANDO V2: experiência supervisionada EXATA na "
+            "memória permanente compartilhada (não retreinamento de pesos). "
+            + decision["reason"]
+        )
+        return decision
+
     def inspect(self, reference: np.ndarray, test: np.ndarray, mode: str) -> dict:
         light = str(mode or "SIDE").strip().upper()
         if light not in LIGHTS:
@@ -292,6 +328,17 @@ def install_faltando_cnn_live(orchestrator_cls, *, predictor=None) -> None:
                 self, full_gab, full_test, raw_anomalies,
                 aoi_info, global_box_info, aoi_epicenters,
             )
+        # Mesma experiência durável que a KNN: não exige que o
+        # retreinamento pesado da CNN já tenha terminado para reconhecer
+        # um par idêntico confirmado pelo operador na mesma sessão.
+        memory_lookup = getattr(engine, "recognize_confirmed", None)
+        if callable(memory_lookup):
+            recalled = memory_lookup(
+                full_gab, full_test, info.get("category", ""),
+                info.get("lighting_mode") or "SIDE",
+            )
+            if recalled is not None:
+                return recalled
         return engine.inspect(
             full_gab, full_test, info.get("lighting_mode") or "SIDE"
         )
