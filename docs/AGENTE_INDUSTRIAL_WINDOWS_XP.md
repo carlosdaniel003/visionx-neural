@@ -1160,3 +1160,5 @@ O ODIN passa a solicitar o **mesmo intervalo rápido de 0,18 s** do agente XP no
 - O receptor principal continua exigindo dois frames estáveis. Capturas TOP/MID permanecem no mesmo `event_id` e não devem passar para outra peça.
 - Se não houver ACK, permanece o comportamento legado de 3,0 s. Atualizar o repositório no computador moderno não instala o arquivo `agente_industrial_xp.py` no XP; instalar/reiniciar o agente manualmente.
 - Medir separadamente **tempo de aquisição**, **tempo de classificação** e **tempo até envio de 0/1**. Meta de 2–3 s permanece não comprovada na linha. Validar troca de iluminação e rótulos reais antes de uso autônomo.
+
+**Proteção de estabilidade (13/10/2026):** antes de enviar LEFT/RIGHT para TOP/MID, a automação arma o receptor para aquela iluminação. O receptor ignora frames que cheguem nos primeiros 0,35 s após a solicitação e entrega no máximo um frame após receber **duas imagens estáveis consecutivas** da luz solicitada. Repetição, aborto e encerramento reiniciam o estado. Trata-se de uma defesa temporal/visual, não uma confirmação elétrica da luz; a validação física continua obrigatória.
