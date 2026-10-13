@@ -6,6 +6,89 @@
 - Teste e Produção preservam os PNGs de debug, o extrator geométrico, todos os painéis e a mesma classificação CNN/KNN. Produção mantém scroll, pausa por Space, consenso e o atraso antes de enviar 0/1; Teste continua sob julgamento humano; Sombra não envia 0/1.
 - No XP é preciso instalar manualmente a versão compatível do agente. Sem ACK ou sem medição, a meta de 2–3 s não está comprovada. Testar na AOI para excluir mistura de iluminações e confirmar comportamento autônomo.
 
+## 13/10/2026 — META ESPECÍFICA KNN >=98% E MODO PRODUÇÃO SEM REVISOR
+
+**Nova exigência do responsável:** a memória **KNN** deve devolver
+`FALHA FALSA/OK` para **>=98% dos PNGs** de
+`public/ok_archive/` e `DEFEITO REAL/NG` para **>=98% dos PNGs**
+de `public/ng_archive/`, **separadamente**, usando somente esse acervo
+para a avaliação e a referência KNN. Não levar à métrica os 952 JSONs
+legados, experimentos anteriores, dados de outras pastas nem previsões
+CNN. Percorrer todos os PNGs em cada execução, contando imagens inválidas,
+não reconhecidas, revisões e erros como **não acertos**.
+
+**Abrangência:** inclui todos os casos KNN das duas pastas, **inclusive
+ADESIVO**. A exceção de ADESIVO na CNN especializada **não se aplica
+automaticamente à meta KNN**. No último inventário havia 195 OK e 17 NG
+(212 PNGs); para >=98% por classe, os mínimos nesse acervo seriam
+**192 OK e 17 NG**. São mínimos condicionados ao tamanho do próximo
+inventário, **não resultados KNN já medidos**.
+
+**Método:** distinguir recuperação exata de memória de desempenho
+KNN generalizável; impedir que a própria consulta, suas duplicatas
+e o mesmo evento integrem os vizinhos de avaliação; usar o gabarito
+OK/NG apenas após a predição, nunca para decidir. Rastrear falsos
+OK em NG, falsos NG em OK, ausências e conflitos, separados por classe,
+categoria e iluminação. KNN >=98% e CNN 100% em seu escopo
+são metas diferentes, sem soma de acertos entre elas.
+
+**Produto final:** inspeção sem operador humano, sem estado
+`REVISÃO OBRIGATÓRIA` paralisando indefinidamente a produção.
+Qualquer incerteza exige tratamento automático seguro,
+segregação/rejeição de peça não aprovada por inspeção e evidência
+registrada; **nunca fallback para OK**. Aprovar uma saída
+`1/NG` para falha técnica só após conferir sua semântica na
+máquina e testar os intertravamentos. O controle e os comandos
+atuais **NÃO foram modificados nesta etapa**. Não alegar
+autonomia completa antes de demonstrar a integração segura.
+
+**Estado:** requisito documentado; validação KNN >=98% pendente;
+sem mudanças no modelo, memória, dataset, CNN ou Modo Produção.
+Detalhamento vigente em
+`docs/ODIN_STARTUP_REGRESSION_GATE.md`.
+
+---
+
+## 13/10/2026 — REQUISITOS ATUAIS: CNN 100% ACERVO, ODIN AUTÔNOMO
+
+**Esta seção prevalece sobre metas históricas de 98% e a ideia de revisão
+humana obrigatória em produção, presentes nas seções antigas deste arquivo.**
+Detalhes e critérios de aceite: `docs/ODIN_STARTUP_REGRESSION_GATE.md`.
+
+**CNN / escopo de validação:** usar **exclusivamente** os PNGs de
+`public/ok_archive/` e `public/ng_archive/`, executar novamente a
+CNN sem KNN, exigir **100% OK→OK e 100% NG→NG** com vereditos
+operacionais conclusivos e nenhum caso em revisão. Não misturar JSONs
+legados, conjuntos experimentais ou números de outras auditorias.
+Não remover casos difíceis. MUITO ADESIVO é a exceção previamente
+aprovada, adiada para uma CNN própria com novos dados; manter seus
+arquivos preservados e fora do denominador, mas sempre contabilizados.
+
+**Linha de base real de 09/10/2026:** 212 PNGs nas duas pastas, 10
+adesivos sem CNN, 202 elegíveis à CNN compartilhada (187 OK e 15 NG);
+**202/202 predições binárias corretas**, mas **201/202 vereditos
+operacionais corretos**, com revisão em
+`2026-10-09_0857_DESLOCADO_SIDE.png`. O caso
+`2026-10-02_1542_FALTANDO.png` agora é reconhecido como FALHA FALSA
+pela CNN apesar de `board` ausente no OCR. Não chamar 99,50% de 100%
+conclusivo e não mascarar a única revisão. 0 NG reais DESLOCADO e 0
+manifestos explícitos TOP/MID/SIDE: não há prova de acerto em NG futuro
+DESLOCADO ou de consenso multilight por evento.
+
+**Produto final sem humano:** ODIN deve decidir OK/NG automaticamente e
+não depender de operador apertando 0/1. "REVISÃO OBRIGATÓRIA" não será
+fila bloqueante na configuração autônoma final. Incerteza, erro de
+aquisição e conflitos jamais viram OK por conveniência; definir e
+testar **rejeição/segregação automática segura** da peça, distinta
+de NG físico confirmado, sem travar esperando humano. Só considerar
+`1/NG` como caminho de falha depois de verificar semântica e segurança
+da integração com a máquina. Aprendizagem não deve rotular imagens com
+a própria predição. Não reduzir limiares, forçar rótulos ou retirar
+travas de segurança antes da validação de NG independentes, incluindo
+NG reais DESLOCADO. **Esta atualização é documentação, não mudança
+operacional executada.**
+
+---
 ## 09/10/2026 — Meta principal de regressão CNN em todo o histórico visual (98%)
 
 **Critério do operador:** todas as imagens históricas com rótulo OK/NG

@@ -1,3 +1,192 @@
+# REQUISITO ATUAL — 13/10/2026: KNN >=98% POR PASTA E PRODUÇÃO SEM OPERADOR
+
+**Solicitação expressa do responsável:** acrescentar uma meta **específica
+da memória KNN**, independente da meta CNN já documentada neste arquivo.
+A KNN deverá reconhecer **pelo menos 98% dos PNGs OK como OK e pelo menos
+98% dos PNGs NG como NG**, avaliando **exclusivamente**:
+
+- `public/ok_archive/` — verdade esperada `OK` / `FALHA FALSA`;
+- `public/ng_archive/` — verdade esperada `NG` / `DEFEITO REAL`.
+
+**Escopo exato:** inventariar os **100% dos arquivos PNG** dessas duas
+pastas em cada execução, sem escolha de amostra nem lista fixa; incluir
+novos PNGs que forem adicionados. **Não usar** relatórios históricos
+de assinaturas JSON v2/v3 (inclusive 952 registros), banco externo,
+outros datasets, resultados anteriores ou classificações CNN como
+verdade de referência ou como acertos da KNN. Manter OCR, categoria,
+SIDE/TOP/MID, nomes, hashes e fonte do dado no relatório. **Não
+excluir ADESIVO da meta KNN por causa do adiamento da CNN adesivo**:
+são compromissos de avaliação diferentes, e aqui o pedido é sobre
+todos os PNGs OK/NG das duas pastas.
+
+**Critério de aceite da KNN:** duas taxas independentes
+`OK_corretos/total_OK >= 0.98` **E**
+`NG_corretos/total_NG >= 0.98`, sem esconder erros NG pela
+quantidade de OK. `REVISAO_OBRIGATORIA`, `SEM_COBERTURA`,
+`INVALIDO`, erro de OCR e divergência são **não acertos**;
+reportar cada caso e a confusão OK→NG / NG→OK. Com o inventário
+observado em 09/10 (**195 OK / 17 NG, incluindo adesivo**), isso
+exigiria pelo menos **192/195 OK** e **17/17 NG** classificados
+corretamente, sem revisão nos respectivos numeradores. Os números
+mudam automaticamente conforme o acervo cresce.
+
+**Integridade do ensaio:** consultar pixels reais sem ler o rótulo
+da pasta para decidir. Não copiar a própria imagem consultada para
+a memória de referência e depois contabilizar o acerto como
+generalização: quando houver teste por vizinhos, excluir a própria
+consulta, duplicatas exatas e imagens do mesmo evento/placa do
+conjunto de referência, com partições auditáveis. Medir em separado
+**(a) cobertura de memória exata de casos já conhecidos** e
+**(b) qualidade de inferência KNN em imagens não utilizadas para
+formar a referência**. Um acervo previamente memorizado pode
+alcançar 100% de recuperação por identidade sem demonstrar
+reconhecimento de novas imagens; nenhum dos dois indicadores
+substitui o outro. **Não ajustar limiares usando a mesma avaliação
+final para fabricar 98%.**
+
+**Autonomia de produção — requisito definitivo:** o ODIN deverá
+julgar automaticamente OK/NG e prosseguir sem depender de operador
+de inspeção. O estado `REVISÃO OBRIGATÓRIA` **não poderá parar
+indefinidamente a linha** na configuração final. Definir um
+tratamento automático de incerteza/falha de aquisição ou de modelo:
+registrar, sinalizar e **segregar/rejeitar de modo seguro**, como
+`INSPECAO_NAO_CONCLUIDA` distinta de NG físico confirmado. Isso
+**não conta como acerto OK ou NG** no benchmark. Nunca liberar
+`0/OK` por falta de confiança. Qualquer mapeamento para `1/NG`
+depende de validar a semântica e o intertravamento do equipamento,
+testando retomada de ciclo, retentativa limitada e prevenção de
+comandos duplicados. Sem uma saída de segregação validada, a
+autonomia sem humano permanece **não habilitada**.
+
+**Estado real em 13/10/2026:** **requisito documentado, NÃO
+implementado ou validado nesta alteração**. O roteador atual
+`src/core/verified_memory_router.py` usa correspondência exata
+de memória humana com pares AOI e, para casos novos, encaminha
+às CNNs/especialistas. `src/services/startup_regression/knn_archive_predictor.py`
+retorna revisão sem par KNN verificado. O controlador
+`src/ui/production_autonomy_controller.py` ainda pausa para
+intervenção quando a política não autoriza a decisão automática.
+Portanto, **não afirmar que a KNN já atingiu 98% nem que a
+produção já é totalmente autônoma**. Nenhuma memória, motor,
+threshold, CNN, dataset, comando XP ou política de produção
+foi alterada por esta documentação.
+
+**Convivência de metas:** este é o requisito **KNN >=98%**.
+A diretriz anterior **CNN 100% em seu escopo, excluindo adesivo**
+continua separada até nova decisão expressa. Não misturar as
+métricas dos motores nem usar a CNN para completar a taxa KNN.
+
+---
+
+# DIRETRIZ VIGENTE — 13/10/2026: CNN 100% DO ACERVO VISUAL E PRODUÇÃO AUTÔNOMA
+
+> **Prioridade definida pelo responsável do projeto.** Esta decisão substitui a antiga
+> meta de tolerância histórica de 98% e a premissa de que haverá operador
+> humano disponível para avaliar "REVISÃO OBRIGATÓRIA" no Modo Produção.
+> Registros anteriores deste arquivo ficam como histórico, não como a meta atual.
+> **Estado: requisito formalizado; mudanças correspondentes do motor e do
+> controlador de produção NÃO estão implementadas por esta anotação.**
+
+## 1. Única fonte de verdade para a validação histórica da CNN
+
+- **OK:** todos os PNGs existentes em `public/ok_archive/`.
+- **NG:** todos os PNGs existentes em `public/ng_archive/`.
+- Ler efetivamente os pixels do arquivo e executar a **CNN sem KNN** para
+  cada imagem elegível. Não usar resultados de auditorias de 952 assinaturas
+  JSON, holdout KNN, banco legado sem PNG, datasets de experimento,
+  simulações ou análises anteriores externas a essas pastas na aprovação.
+- Não escolher amostras; processar **100% dos PNGs elegíveis encontrados na
+  varredura da execução**. Incluir imagens novas dessas pastas automaticamente,
+  sem lista fixa de nomes. Evidenciar contagem de inventário, SHA das imagens,
+  checkpoint usado, categoria, iluminação, rótulo e saída da CNN.
+- **Meta obrigatória: 100% OK→OK e 100% NG→NG nas imagens dessas pastas,
+  separadamente**, com 0 revisões, 0 inválidos, 0 resultados inconclusivos,
+  0 NG→OK e 0 OK→NG dentro do escopo CNN. Um score binário correto com
+  veredito de revisão **não equivale** a decisão operacional correta.
+  Não arredondar, não admitir 1–2% de erro e não excluir casos difíceis.
+- **Exceção previamente expressa:** `MUITO ADESIVO` está temporariamente
+  **fora do escopo da CNN compartilhada**, mesmo quando seus PNGs estejam
+  nessas duas pastas. Preservar e contabilizar essas imagens no inventário,
+  marcando claramente `ADIADO_CNN_ADESIVO`; jamais contá-las como acerto
+  ou apagá-las. O motor atual de adesivo permanece como está. Desenvolver
+  CNN específica somente futuramente, com mais casos reais e nova aprovação.
+- A memória **KNN não pode corrigir a nota do replay CNN**, nem transformar
+  uma decisão inconclusiva em `PASSOU`. A fonte para os rótulos esperados
+  é a pasta correspondente. O replay histórico não pode aprender o rótulo
+  da imagem que está sendo usada para julgá-lo na mesma execução.
+
+## 2. Objetivo operacional: ODIN sem operador humano de inspeção
+
+**Requisito de produto:** após a fase atual de desenvolvimento e qualificação,
+o ODIN deve captar TOP/MID/SIDE, avaliar, emitir **um único OK ou NG**,
+registrar evidências e comandar o ciclo **sem aguardar uma pessoa apertar 0/1**.
+A etapa `REVISÃO OBRIGATÓRIA` como fila bloqueante é incompatível com essa
+meta de produção autônoma. A palavra "revisão" pode continuar em logs para
+diagnóstico, mas não deve exigir operador como condição de continuação.
+
+**Segurança e implementação futura (ainda não realizadas):**
+1. Separar `classificação CNN` (OK/NG) de `incerteza técnica`,
+   `falha de aquisição`, `ausência de checkpoint` ou `conflito entre luzes`.
+   **Nunca promover incerteza a OK só para alcançar 100%**. Também não
+   usar rótulos históricos, nomes de arquivos ou KNN para forçar saída.
+2. Quando a CNN produzir uma decisão OK/NG admissível e as três luzes
+   verificadas concordarem conforme política de segurança, enviar a decisão
+   automaticamente, com rastreabilidade de SHA, evento e tempo.
+3. Se não houver decisão confiável, desenhar caminho **não bloqueante e
+   seguro**: segregação/rejeição da peça como *não aprovada por falha de
+   inspeção* (distinta de defeito físico confirmado), registro e alarme.
+   Avaliar envio de `1/NG` **somente após confirmar/testar a semântica do
+   equipamento** e que essa ação efetivamente rejeita a peça sem risco.
+   `0/OK` jamais é fallback para erro, conflito ou perda de imagem.
+   Se o hardware não suportar rejeição/segregação segura, **não afirmar que
+   a automação sem humano está pronta**: a integração deve ser resolvida
+   antes de sua liberação, não por um atalho perigoso no classificador.
+4. Não instalar aprovação automática, não baixar limiar do NG ou remover
+   travas produtivas nesta etapa documental. Exigir testes de integração
+   reais do caminho de rejeição, retentativas limitadas, ausência de duplo
+   comando 0/1, recuperação de falhas, três luzes e latência/ciclo.
+5. Aprendizado online somente com gabaritos confiáveis e validação
+   independente. Sem operador presente, **não tratar a própria predição
+   da CNN como novo rótulo verdadeiro**; isso causaria auto-reforço de erros.
+6. **100% no histórico fechado não equivale a 100% de precisão futura**.
+   Antes da autonomia plena, verificar também NG reais novos de cada
+   categoria e eventos multilight independentes. Em DESLOCADO, o arquivo
+   atual tem 0 NG reais; ainda não há comprovação de detecção de NG dessa
+   categoria.
+
+## 3. Linha de base real anterior à nova meta (replay 09/10/2026 18:54 UTC)
+
+- Inventário de `ok_archive` + `ng_archive`: **212 PNGs**.
+- `MUITO ADESIVO` adiado: **10 PNGs** (8 OK / 2 NG).
+- CNN compartilhada: **202 PNGs**, sendo 187 OK e 15 NG.
+- **Predição binária histórica:** 202/202 corretas; **decisão
+  operacional conclusiva:** 201/202 corretas, **1 revisão obrigatória**.
+- FALTANDO 117/117, EMBORCADO 29/29, INVERTIDO 19/19,
+  DESLOCADO 36/37 conclusivos. Há 0 NG real DESLOCADO no conjunto.
+- `public/ok_archive/2026-10-02_1542_FALTANDO.png`: CNN executou
+  apesar de OCR `board` ausente e devolveu **FALHA FALSA**.
+- `public/ok_archive/2026-10-09_0857_DESLOCADO_SIDE.png`:
+  gabarito humano OK, predição binária CNN OK, score NG bruto
+  `0.10031582415103912`, porém **REVISÃO OBRIGATÓRIA** pela faixa
+  operacional `0.10 < score < 0.90`. **É a pendência observada para
+  fechar 202/202 de decisões conclusivas**, sem alterar artificialmente
+  rótulo, checkpoint ou regra de segurança.
+- **0 eventos TOP/MID/SIDE ligados por manifesto explícito** no relatório;
+  contagem por PNG não comprova consenso entre três capturas de um evento.
+
+## 4. Critério de aceite futuro (a implementar)
+
+O relatório de regressão deverá ter visão explícita
+`META_CNN_ACERVO_100_POR_PASTA` com **100% OK e 100% NG**, sem
+`REVISAO_OBRIGATORIA` no escopo e sem contar adesivo adiado, mais uma
+lista separada de qualquer entrada corrompida/não processada; o relatório
+**deve reprovar** enquanto houver falha ou revisão. O Modo Produção terá
+aceite separado: nenhuma fila permanente aguardando revisão humana,
+nenhuma aprovação silenciosa de defeitos/incertezas e rejeição/segregação
+comprovadamente segura. Não confundir *meta histórica* com *certificação
+produtiva*.
+
+---
 ## 09/10/2026 — Ajuste de escopo CNN e duas falhas falsas confirmadas pelo operador
 
 **Decisão humana:** MUITO ADESIVO permanece no arquivo, mas fica **fora do
