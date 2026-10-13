@@ -9,6 +9,7 @@ from __future__ import annotations
 from html import escape
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import sys
 from uuid import uuid4
@@ -16,7 +17,7 @@ from uuid import uuid4
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Qt
 from PyQt6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar,
-    QPushButton, QSizePolicy, QVBoxLayout,
+    QPushButton, QSizePolicy, QVBoxLayout, QApplication, QMessageBox,
 )
 
 from src.config.settings import BASE_DIR
@@ -177,8 +178,15 @@ class ArchiveTrainingPanel(QObject):
         self.cancel_button.setObjectName("archiveTrainingCancel")
         self.cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_button.setEnabled(False)
+        self.correction_button = QPushButton("Corrigir julgamento")
+        self.correction_button.setObjectName("archiveTrainingCancel")
+        self.correction_button.setToolTip(
+            "Encerra o ODIN e abre o modo manutenção para corrigir 9 "
+            "capturas OK classificadas incorretamente."
+        )
         title_row.addWidget(self.start_button)
         title_row.addWidget(self.cancel_button)
+        title_row.addWidget(self.correction_button)
         container.addLayout(title_row)
 
         hint = QLabel(
@@ -236,6 +244,7 @@ class ArchiveTrainingPanel(QObject):
 
         self.start_button.clicked.connect(self.start)
         self.cancel_button.clicked.connect(self.cancel)
+        self.correction_button.clicked.connect(self.open_correction_mode)
 
         layout = self.panel.content_layout
         target = getattr(self.panel, "network_debug_frame", None)
@@ -248,6 +257,54 @@ class ArchiveTrainingPanel(QObject):
         self.panel.btn_training = self.start_button
         self.panel.btn_cancel_training = self.cancel_button
         self.panel.training_progress_bar = self.progress_bar
+
+    def open_correction_mode(self):
+        """Reinicia em manutenção para impedir watcher/treino no processo da AOI."""
+        if self._active() or bool(getattr(self.panel, "is_locked", False)):
+            QMessageBox.warning(
+                self.panel, "ODIN ocupado",
+                "Finalize a inspeção e qualquer validação antes da manutenção."
+            )
+            return
+        if bool(getattr(self.panel, "adhesive_multilight_active", False)):
+            QMessageBox.warning(
+                self.panel, "Coleta ativa",
+                "Encerre a coleta SIDE/TOP/MID antes de corrigir rótulos."
+            )
+            return
+        for queue_name in ("_decision_persistence_queue", "_ok_archive_queue",
+                           "_ng_archive_queue"):
+            pending = getattr(getattr(self.panel, queue_name, None),
+                              "pending_count", None)
+            if callable(pending) and pending():
+                QMessageBox.warning(
+                    self.panel, "Gravações pendentes",
+                    "Aguarde todas as filas de persistência terminarem."
+                )
+                return
+        answer = QMessageBox.question(
+            self.panel, "Modo manutenção",
+            "O ODIN será encerrado para impedir que o monitor de arquivos "
+            "importe registros durante a correção. Abrir o corretor agora?\n\n"
+            "Confirme que as imagens e o histórico já possuem backup externo.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        ok, _pid = QProcess.startDetached(
+            sys.executable,
+            [str(self.root / "main.py"), "--corrigir-rotulos",
+             "--wait-parent", str(os.getpid())],
+            str(self.root),
+        )
+        if not ok:
+            QMessageBox.critical(
+                self.panel, "Não iniciado",
+                "Falha ao abrir o corretor. O ODIN continua em operação."
+            )
+            return
+        QApplication.instance().quit()
 
     def _active(self) -> bool:
         return (self.process is not None

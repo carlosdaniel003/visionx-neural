@@ -255,6 +255,93 @@ class PersistentArchiveKNN:
                 ),
             }
 
+    def replace_verified_labels(self, corrected_ng_records: list[dict]) -> dict:
+        """Corrige identidades EXATAS: elimina rótulos antigos apenas dessas chaves.
+
+        Exclusivo de manutenção offline com vínculo visual confirmado. Não é
+        chamado no julgamento normal nem pelo observador de arquivos.
+        """
+        if not corrected_ng_records:
+            raise ValueError("Nenhuma correção validada")
+        for record in corrected_ng_records:
+            _check_record(record)
+            if record["label"] != "NG":
+                raise ValueError("Correção autorizada somente para NG")
+        keys = {tuple(r["identity"]) for r in corrected_ng_records}
+        with self._lock, _writer_lock(self.path.with_suffix(".json.lock")):
+            old = self._read()
+            preserved = [
+                deepcopy(r) for r in old
+                if tuple(r["identity"]) not in keys
+            ]
+            corrected = {
+                r["id"]: deepcopy(r) for r in old
+                if tuple(r["identity"]) in keys and r["label"] == "NG"
+            }
+            removed_ok = sum(
+                r["label"] == "OK" and tuple(r["identity"]) in keys
+                for r in old
+            )
+            for record in corrected_ng_records:
+                record_id = record["id"]
+                if record_id not in corrected:
+                    corrected[record_id] = deepcopy(record)
+                    continue
+                existing = corrected[record_id]
+                seen = {
+                    (s["source_path"], s["source_sha256"])
+                    for s in existing["sources"]
+                }
+                for source in record["sources"]:
+                    marker = (source["source_path"], source["source_sha256"])
+                    if marker not in seen:
+                        existing["sources"].append(deepcopy(source))
+                        seen.add(marker)
+            rows = sorted(preserved + list(corrected.values()), key=lambda r: r["id"])
+            for item in rows:
+                _check_record(item)
+            labels_by_key = _labels_by_key(rows)
+            if any(len(labels_by_key.get(key, set())) > 1 for key in keys):
+                raise ValueError("Conflito de rótulo após retificação")
+
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            if self.path.is_symlink():
+                raise ValueError("Snapshot KNN não pode ser symlink")
+            temp_name = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", newline="\n",
+                    dir=self.path.parent, prefix="._knn_",
+                    suffix=".tmp", delete=False
+                ) as handle:
+                    temp_name = handle.name
+                    handle.write(_canonical({
+                        "schema": SCHEMA, "checksum": _checksum(rows),
+                        "records": rows,
+                    }) + "\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                if self.path.exists():
+                    shutil.copy2(self.path, self.path.with_suffix(".json.bak"))
+                os.replace(temp_name, self.path)
+            finally:
+                if temp_name and os.path.exists(temp_name):
+                    os.unlink(temp_name)
+            self._cached = None
+            self._stat = None
+            result = {tuple(record["identity"]): record["label"]
+                      for record in self.records()}
+            if any(result.get(key) != "NG" for key in keys):
+                raise ValueError("Verificação do snapshot corrigido falhou")
+            return {
+                "identities_corrected": len(keys),
+                "old_ok_removed": removed_ok,
+                "total": len(rows),
+                "conflicting_identities": sum(
+                    len(labels) > 1 for labels in _labels_by_key(rows).values()
+                ),
+            }
+
     def lookup_identity(self, key: list[str]) -> dict:
         """Lookup exato em snapshot persistido, para teste após sincronização."""
         key = identity(*key)

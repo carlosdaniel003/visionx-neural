@@ -95,6 +95,15 @@ from src.ui.xp_decision_shortcuts import install_xp_decision_shortcuts
 
 
 def main():
+    # Ferramenta de manutenção inicia sem receiver XP, KNN watcher ou MoE.
+    if "--corrigir-rotulos" in sys.argv:
+        from src.ui.archive_label_correction_ui import run_archive_label_correction
+        parent = 0
+        if "--wait-parent" in sys.argv:
+            index = sys.argv.index("--wait-parent")
+            parent = int(sys.argv[index + 1])
+        sys.exit(run_archive_label_correction(parent_pid=parent))
+
     app = QApplication(sys.argv)
 
     # Os hooks precisam ser instalados antes de o controller conectar os sinais.

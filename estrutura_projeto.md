@@ -1,3 +1,12 @@
+## 13/10/2026 — Retificação offline de 9 julgamentos humanos OK → NG (Etapa 2)
+
+- Ferramenta nativa acessível em **TREINAMENTO • VALIDAÇÃO DO ACERVO → Corrigir julgamento**. Ao abrir, o ODIN encerra a operação normal e reinicia em **modo manutenção** (sem receptor XP, observador de arquivo, fusão nem painel de Produção). Em caso de bloqueio de inspeção/filas pendentes, a abertura é recusada.
+- Seleção manual de **9 PNGs** em `public/ok_archive` e prévia **somente leitura**: para cada captura, exige igualdade visual pixel a pixel com exatamente um `*_source.png` do dataset, metadados `label=OK`, categoria/iluminação coerentes e `event_id` real. O conjunto deve formar **3 eventos completos SIDE/TOP/MID**, sem associação baseada em nomes ou proximidade de horários.
+- Após digitar `CORRIGIR NG`, arquiva backups verificados por SHA-256 em `reports/label_corrections/<id>/before/`, move PNGs para `public/ng_archive`, move pares JSON/imagens de `public/dataset/nao_anomalia` para `public/dataset/anomalia` com `label=NG`, atualiza journals CNN vinculados ao `event_id`, substitui exclusivamente as identidades visuais afetadas na memória KNN persistente, registra proveniência de correção e verifica a leitura NG pós-gravação. Destinos preexistentes ou vínculos ambíguos bloqueiam a operação.
+- Falhas tratáveis restauram as cópias originais automaticamente; transações interrompidas são bloqueadas até recuperação. Não altera checkpoints nem pesos da CNN (serão avaliados somente na Etapa 3). Ao concluir, fechar a janela de manutenção antes de iniciar o ODIN produtivo.
+- A ferramenta depende de os registros `*_source.png` existirem e comprovarem o vínculo com os arquivos. Se o histórico local não satisfizer o contrato, **não forçar** nem manipular os JSONs manualmente; enviar o erro de prévia para diagnóstico.
+- Código: `src/services/archive_label_correction.py`, `src/ui/archive_label_correction_ui.py`, `src/core/archive_persistent_memory.py`. Testes: `tests/test_archive_label_correction.py` e workflow `.github/workflows/archive-label-correction-tests.yml`.
+
 ## 13/10/2026 — Capturas originais XP nas imagens da inspeção
 
 - Em ciclos multilight normais de rede, cada cartão SIDE/TOP/MID mostra a **captura original completa enviada pelo Windows XP**, sem recorte ou desenhos, seguida do **teste recortado pela AOI** e das **caixas maior e menor** já existentes.
