@@ -143,9 +143,15 @@ class KnnArchiveReplayTests(unittest.TestCase):
                 return extract("OK")
             return extract(frame)
 
-        report = runner(self.rows, extractor=misclassified)
+        # NG em dia sem nenhum NG de referência: vizinhos são somente OK.
+        rows = [
+            item("2026-10-02", "1000", "NG", "NG"),
+            item("2026-10-03", "0900", "OK", "OK"),
+            item("2026-10-04", "0900", "OK", "OK"),
+        ]
+        report = runner(rows, extractor=misclassified)
         self.assertFalse(report["results"]["target_98pct_met"])
-        self.assertGreater(report["results"]["NG_as_OK"], 0)
+        self.assertEqual(report["results"]["NG_as_OK"], 1)
 
     def test_writer_does_not_touch_archives(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -157,7 +163,6 @@ class KnnArchiveReplayTests(unittest.TestCase):
             )
             self.assertTrue(json_path.is_file())
             self.assertTrue(txt_path.is_file())
-            self.assertIn("KNN OK", "KNN OK")
             self.assertIn("NG perigosamente como OK", txt_path.read_text("utf-8"))
             with self.assertRaisesRegex(ValueError, "reports"):
                 write_knn_archive_reports(report, root / "public" / "ok_archive")
