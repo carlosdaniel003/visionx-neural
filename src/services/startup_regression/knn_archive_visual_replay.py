@@ -99,7 +99,7 @@ def _measure(rows: list[dict]) -> dict:
         "NG_as_OK": by_label["NG"]["as_OK"],
         "target_98pct_met": (
             all(by_label[label]["total"] > 0
-                and by_label[label]["rate"] >= 0.98
+                and by_label[label]["correct"] / by_label[label]["total"] >= 0.98
                 for label in ("OK", "NG"))
         ),
     }
@@ -172,6 +172,8 @@ def replay_knn_archive_visual(
                 raise ValueError("PNG inválido no inventário")
             if row["source_path"] in conflicting:
                 raise ValueError("Pixels idênticos com rótulos OK e NG")
+            if protocol == "leave_day_out" and not row["session_day_hint"]:
+                raise ValueError("Data ausente no nome: sem isolamento por dia")
             frame = frame_loader(root, item)
             reference, test, info = extractor(frame)
             if not isinstance(info, dict):
