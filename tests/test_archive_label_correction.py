@@ -220,7 +220,9 @@ class ArchiveLabelCorrectionTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "interrompida"):
             prepare_correction(self.root, self.captures)
-        self.assertEqual(unfinished_corrections(self.root), [transaction])
+        self.assertEqual(
+            unfinished_corrections(self.root), [transaction.resolve()]
+        )
 
 
 if __name__ == "__main__":
