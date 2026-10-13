@@ -84,6 +84,10 @@ class VerifiedKNNMemory:
 
     @staticmethod
     def _entry(record: dict) -> tuple[tuple, dict] | None:
+        if record.get("archive_persistent"):
+            # Já consultada no snapshot indexado; não reabrir memory.json
+            # como se fosse um arquivo visionx.memory.v3 para cada exemplo.
+            return None
         if record.get("mode") != "anomaly":
             return None
         path = Path(str(record.get("json_path", "")))
