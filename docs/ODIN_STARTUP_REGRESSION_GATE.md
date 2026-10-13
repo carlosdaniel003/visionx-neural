@@ -1,5 +1,81 @@
 # REQUISITO ATUAL — 13/10/2026: KNN >=98% POR PASTA E PRODUÇÃO SEM OPERADOR
 
+## 13/10/2026 — RESULTADO REAL DO REPLAY KNN (arquivos 11:36:40 UTC)
+
+**Evidência:** `knn_archive_visual_20261013_113640_089929.json` e
+`.txt`, produzidos localmente com `leave_day_out`, `k=5`,
+212 PNGs das pastas `ok_archive` e `ng_archive`.
+
+**Resultado mensurado no protocolo experimental:** 129/212 acertos
+(60,85%); **OK 129/195 (66,15%)**, 16 OK→NG,
+50 OK sem cobertura; **NG 0/17 (0%)**, 17 NG→OK;
+33 divergências totais, 50 sem cobertura. A meta >=98%
+**não foi atingida por nenhuma das duas classes**.
+
+**Causa estrutural relevante — NÃO chamar 0/17 de avaliação justa
+da discriminação NG da KNN:** 15 dos NG (10 FALTANDO,
+3 EMBORCADO, 2 INVERTIDO) ocorreram todos em **01/10**;
+os 2 NG de MUITO ADESIVO, em **06/10**.
+Com `leave_day_out`, **todas as amostras NG de cada categoria
+ficam indisponíveis para qualquer consulta NG**: todos os
+17 defeitos receberam exatamente 5 vizinhos OK e
+`knn_score_ng=0.0` por construção. Não existe nesse
+acervo uma segunda sessão com NG de uma mesma categoria,
+independente por dia, para fazer esse holdout. O valor
+0/17 exprime o comportamento do voto **sem referências NG**,
+não demonstra que a KNN falharia 17/17 se tivesse exemplos
+NG independentes.
+
+**Outra limitação de cobertura:** 50 registros OK de FALTANDO
+(25 TOP, 25 MID), todos em **08/10**, são os únicos exemplos
+de sua categoria/iluminação em datas diferentes? **Não**:
+são os únicos exemplos TOP/MID de FALTANDO do acervo e,
+aplicada a exclusão de 08/10, não resta nenhum vizinho.
+Portanto esses 50 casos estão sem referência, não
+classificados erradamente.
+
+**Divergências com vizinhos mistos:** 16 OK→NG;
+13 FALTANDO (12 de 08/10, 1 de 05/10),
+3 MUITO ADESIVO (05/10). Essas divergências
+merecem investigar assinaturas/ponderação, mas o
+modelo de referência é **uma KNN temporária**, não
+o atalho `VerifiedKNNMemory` de produção.
+
+**Limitação adicional do protótipo:** o replay cria
+`build_anomaly_signature(reference, test, {}, info)`
+com `detail={}`, isto é, **sem telemetria completa de
+especialistas físicos**. O teste não comprova desempenho
+da KNN operacional com todos os sinais. O uso de arquivos
+da pasta como rótulo de vizinhos é intencional no ensaio
+KNN, e não transforma automaticamente os PNGs em memória
+exata humana verificada de produção.
+
+**Próxima ação diagnóstica:** executar o segundo protocolo
+(já suportado pelo CLI) que exclui somente a própria imagem,
+duplicatas e prefixo da captura, **permitindo vizinhos da
+mesma data**, sem declarar independência de sessão:
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.knn_archive_visual_replay_cli --protocol leave_one_out
+```
+
+Comparar casos/vizinhos entre protocolos. `leave_one_out`
+**não substitui** prova com NG independentes, não
+qualifica produção e pode inflar acerto por imagens
+correlacionadas da mesma placa. Para validar
+generalização independente por categoria/luz, coletar
+NG reais em sessões diferentes e auditar eventos
+TOP/MID/SIDE. Para medir memória exata, é necessária
+**outra validação** contra o índice real
+`VerifiedKNNMemory`, sem confundir o resultado do
+classificador por vizinhos com lookup por hash.
+**Não alterar limiares operacionais ou liberar OK
+automaticamente com base nesses números.**
+
+---
+
 **Solicitação expressa do responsável:** acrescentar uma meta **específica
 da memória KNN**, independente da meta CNN já documentada neste arquivo.
 A KNN deverá reconhecer **pelo menos 98% dos PNGs OK como OK e pelo menos
