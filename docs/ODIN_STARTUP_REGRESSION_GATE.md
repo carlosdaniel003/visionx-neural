@@ -1,3 +1,23 @@
+## 13/10/2026 — SINCRONIZAÇÃO KNN AUTOMÁTICA, QUALQUER MODO
+
+**Implementado em `central`:** `src/services/knn_archive_auto_memory.py` observa diretamente e continuamente `public/ok_archive` e `public/ng_archive`, independentemente de Modo Teste, Modo Produção ou Modo Sombra. O programa registra todo novo PNG validado na memória permanente `data/knn_archive_memory/memory.json`; não é necessário executar o CLI manual a cada nova imagem.
+
+- Inicialização do monitor em `main.py` após abertura do painel; varredura de recuperação de arquivos pendentes quando reinicia o ODIN.
+- `src/services/ok_image_archive.py` e `ng_image_archive.py` avisam o monitor imediatamente após a escrita completa do PNG; cópias externas de arquivos também são encontradas pelas varreduras periódicas.
+- As imagens são estabilizadas por tamanho e tempo de modificação antes de começar o OCR. A extração AOI, assinatura e escrita durável ocorrem em uma **thread daemon independente**, nunca na thread crítica de captura/inspeção.
+- Só imagens PNG corretamente decodificadas e com categoria AOI coerente são importadas. Uma foto incompleta, OCR falho ou erro de disco **não é contado como aprendido**; a falha fica pendente em `KNNArchiveAutoMemory.status()` e é tentada novamente, inclusive em reinicialização.
+- O importador consulta as proveniências já salvas para evitar processar novamente todos os PNGs existentes. Reimportar o mesmo conteúdo é idempotente, mas caminhos diferentes continuam registrados como proveniência. Remover PNGs das pastas **não remove** os registros permanentes.
+- Após cada lote de persistência, `KNNExpert.refresh_archive_memory()` atualiza apenas assinaturas duráveis na RAM sob lock, sem revarrer os JSONs antigos; o roteador de correspondência exata consulta diretamente o snapshot persistente atualizado.
+- Mesmos pares AOI com rótulos OK/NG opostos resultam em `CONFLICT`, não em aprovação automática. A classificação por similaridade continua sem autorização para liberar OK sem os gates existentes. Nenhuma regra de acionamento 0/1 foi alterada.
+- **Os modos não precisam ser identificados pelo arquivo**: a fonte efetiva de rótulo é a pasta OK ou NG. Essa regra aceita a categorização da pasta como base de aprendizagem e **não comprova que o rótulo é realmente correto**. Se uma decisão automática errada for arquivada no lugar errado, ela poderá contaminar a memória; a política de auditoria dos rótulos da produção precisa continuar válida.
+- A sincronização **não força que todas as inspeções sejam arquivadas**. Apenas captura PNGs que efetivamente forem gravados nas duas pastas. Controles de arquivamento, filtros de evidência e decisões operacionais dos três modos permanecem inalterados.
+- A importação é assíncrona: excluir um PNG antes de ele ter sido processado impede seu aprendizado. Antes de limpezas em massa, conferir as falhas/pêndencias e fazer backup externo do snapshot. O watcher não equivale a replicação off-machine; falha total do SSD ou exclusão de `data/knn_archive_memory` exige restauração do backup.
+
+**Testes de integração:** `tests/test_knn_archive_auto_memory.py` adiciona cobertura para OK e NG novos, retomada idempotente após reiniciar, recuperação após exclusão, gravações parciais e retentativas, conflito e refresh imediato da RAM. O workflow `.github/workflows/archive-persistent-knn-tests.yml` executou **31 testes** com sucesso no GitHub Actions (run 38396943661). Esses são **testes sintéticos automatizados**, não uma comprovação da ingestão ao vivo com máquina XP/operadora.
+
+**Instalação:** atualizar `central` com `git pull origin central`, iniciar o ODIN normalmente e inserir um PNG novo em `public/ok_archive` ou `public/ng_archive`. A observação roda automaticamente e não exige rodar `knn_archive_memory_cli`. Este CLI permanece útil para relatório integral e verificações de recuperação.
+
+---
 # 13/10/2026 — KNN: MEMÓRIA HISTÓRICA PERSISTENTE, SEM DEPENDER DOS PNGs
 
 **Decisão vigente:** a KNN deverá aprender deliberadamente todos os PNGs de public/ok_archive e public/ng_archive, gravar as identidades visuais, rótulos OK/NG e assinaturas em memória independente, e reconhecer depois os mesmos exemplos, inclusive quando as fotografias originais tiverem sido apagadas.
