@@ -1,3 +1,14 @@
+## 13/10/2026 — APRENDIZADO LIVE SEM ESPERAR DISCO/CNN
+
+Fluxo: operador (Teste/Sombra/Produção assistida) confirma 0/1 -> `src/services/anomaly_learning.py` persiste o par AOI exato em `PersistentArchiveKNN` antes de permitir a próxima inspeção -> nova imagem idêntica encontra `KNOWN_KNN` na mesma sessão. A fonte `operator_confirmed/<uuid>` é diferente de uma foto de arquivo; o registro vive em `data/knn_archive_memory/memory.json`, sem depender das imagens originais. Fonte `production_auto` não cria rótulo supervisionado para não reforçar falsos OK/NG.
+
+Em `src/core/neural/faltando_live.py`, a CNN V2 consulta a experiência persistente antes de rodar inferência; essa recuperação é um atalho visual exato **sem modificação instantânea dos pesos**. Para pares novos, a CNN tem cache de até 64 inferências por checkpoint/luz/par idêntico: repetições de uma previsão automática são consistentes e rápidas, porém não passam a ser treinamento. Cache efêmero invalida com troca de checkpoint.
+
+Aprendizado REAL de pesos continua em `OnlineLearningQueue` + `train_faltando_cnn_v2_online.py`, usando decisões humanas `NEW_CNN` das quatro categorias de ausência FALTANDO/EMBORCADO/INVERTIDO/DESLOCADO, imagens originais de 1 a 3 luzes persistidas em `reports/neural_online/events/`, replay completo e gates de regressão antes de promover checkpoint. Pesos duram em `reports/neural_online/checkpoints/` com ponteiro atômico `live_active.json`. Registros antigos de DESLOCADO `NEW_EXPERTS` não entram no treinador V2.
+
+Backups: `data/knn_archive_memory/`, `reports/neural_online/`, `reports/faltando_neural/` devem sobreviver a limpeza de `ok_archive`/`ng_archive`; o snapshot KNN permite recuperar rótulo mesmo sem foto, mas não reproduz sozinho os tensores de treinamento para retreino CNN. Sem teste em estação não afirmar prazo 2–3s nem confiabilidade em casos novos. Conduta de linha e comando 0/1 permanecem intactos.
+
+---
 ## 13/10/2026 — KNN HISTÓRICA AUTOMÁTICA NOS TRÊS MODOS
 
 Qualquer PNG de `public/ok_archive` ou `public/ng_archive`, gerado em Teste, Produção, Sombra ou copiado manualmente, deve ser reconhecido pelo observador iniciado em `main.py`, com importação assíncrona em `data/knn_archive_memory/memory.json`. Não executar o CLI manual a cada imagem. As filas de arquivamento despertam o worker após salvar PNG; este também varre pastas periodicamente para detectar arquivos externos e recuperar pendências após reinício. Espera estabilização, valida PNG e categoria OCR, retenta erros, grava em lote com lock entre processos e atualiza KNN em RAM.
