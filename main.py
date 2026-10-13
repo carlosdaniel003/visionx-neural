@@ -41,6 +41,9 @@ from src.services.anomaly_learning import install_anomaly_learning
 from src.services.dataset_manager import DatasetManager
 from src.services.ng_image_archive import install_ng_image_archive
 from src.services.ok_image_archive import install_ok_image_archive
+from src.services.knn_archive_auto_memory import (
+    KNNArchiveAutoMemory, activate_archive_auto_memory,
+)
 from src.ui.adhesive_multilight_automation import (
     install_adhesive_multilight_automation,
 )
@@ -205,6 +208,24 @@ def main():
     install_xp_decision_shortcuts(panel)
     panel.show()
 
+    # Memória KNN histórica em background, independente do modo atual.
+    # Não faz OCR nem serialização no thread de captura da interface.
+    def on_archive_memory_committed(_result):
+        knn = getattr(panel.orchestrator, "experts", {}).get("knn")
+        if knn is not None:
+            knn.refresh_archive_memory()  # troca atômica de RAM após persistir
+
+    archive_memory_worker = KNNArchiveAutoMemory(
+        on_committed=on_archive_memory_committed,
+    )
+    activate_archive_auto_memory(archive_memory_worker)
+    archive_memory_worker.start()
+
+    def stop_archive_memory_worker():
+        activate_archive_auto_memory(None)
+        archive_memory_worker.stop(timeout=3.0)
+
+    app.aboutToQuit.connect(stop_archive_memory_worker)
     sys.exit(app.exec())
 
 
