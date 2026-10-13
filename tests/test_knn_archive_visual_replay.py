@@ -124,7 +124,7 @@ class KnnArchiveReplayTests(unittest.TestCase):
         report = runner(self.rows, conflicts=[{"paths": bad}])
         self.assertFalse(report["results"]["target_98pct_met"])
         self.assertEqual(report["results"]["status_counts"]["INVALIDO"], 2)
-        self.assertEqual(report["results"]["by_label"]["NG"]["no_decision"], 1)
+        self.assertEqual(report["results"]["by_label"]["NG"]["no_decision"], 2)
 
     def test_category_ocr_mismatch_is_invalid(self):
         def wrong_ocr(frame):
