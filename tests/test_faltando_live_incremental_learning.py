@@ -105,10 +105,11 @@ class EventSpoolingTests(OnlineFixtures):
         for source in ("production_auto", "auto", "unknown"):
             self.assertIsNone(self.q.submit_saved(self.task("OK", source)))
         self.assertIsNone(self.q.submit_saved(self.task("NG", route="KNOWN_KNN")))
-        self.assertIsNone(self.q.submit_saved({
+        # A política nova inclui os quatro defeitos cobertos pela CNN V2.
+        self.assertIsNotNone(self.q.submit_saved({
             **self.task("NG"), "aoi_info": {**self.info, "category": "INVERTIDO"}
         }))
-        self.assertFalse(list(self.q.events.glob("*.json")))
+        self.assertEqual(len(list(self.q.events.glob("*.json"))), 1)
 
     def test_corrupted_image_or_fake_source_rejected(self):
         path = self.case()
