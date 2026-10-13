@@ -1,3 +1,83 @@
+# REQUISITO ATUAL — 13/10/2026: KNN >=98% POR PASTA E PRODUÇÃO SEM OPERADOR
+
+**Solicitação expressa do responsável:** acrescentar uma meta **específica
+da memória KNN**, independente da meta CNN já documentada neste arquivo.
+A KNN deverá reconhecer **pelo menos 98% dos PNGs OK como OK e pelo menos
+98% dos PNGs NG como NG**, avaliando **exclusivamente**:
+
+- `public/ok_archive/` — verdade esperada `OK` / `FALHA FALSA`;
+- `public/ng_archive/` — verdade esperada `NG` / `DEFEITO REAL`.
+
+**Escopo exato:** inventariar os **100% dos arquivos PNG** dessas duas
+pastas em cada execução, sem escolha de amostra nem lista fixa; incluir
+novos PNGs que forem adicionados. **Não usar** relatórios históricos
+de assinaturas JSON v2/v3 (inclusive 952 registros), banco externo,
+outros datasets, resultados anteriores ou classificações CNN como
+verdade de referência ou como acertos da KNN. Manter OCR, categoria,
+SIDE/TOP/MID, nomes, hashes e fonte do dado no relatório. **Não
+excluir ADESIVO da meta KNN por causa do adiamento da CNN adesivo**:
+são compromissos de avaliação diferentes, e aqui o pedido é sobre
+todos os PNGs OK/NG das duas pastas.
+
+**Critério de aceite da KNN:** duas taxas independentes
+`OK_corretos/total_OK >= 0.98` **E**
+`NG_corretos/total_NG >= 0.98`, sem esconder erros NG pela
+quantidade de OK. `REVISAO_OBRIGATORIA`, `SEM_COBERTURA`,
+`INVALIDO`, erro de OCR e divergência são **não acertos**;
+reportar cada caso e a confusão OK→NG / NG→OK. Com o inventário
+observado em 09/10 (**195 OK / 17 NG, incluindo adesivo**), isso
+exigiria pelo menos **192/195 OK** e **17/17 NG** classificados
+corretamente, sem revisão nos respectivos numeradores. Os números
+mudam automaticamente conforme o acervo cresce.
+
+**Integridade do ensaio:** consultar pixels reais sem ler o rótulo
+da pasta para decidir. Não copiar a própria imagem consultada para
+a memória de referência e depois contabilizar o acerto como
+generalização: quando houver teste por vizinhos, excluir a própria
+consulta, duplicatas exatas e imagens do mesmo evento/placa do
+conjunto de referência, com partições auditáveis. Medir em separado
+**(a) cobertura de memória exata de casos já conhecidos** e
+**(b) qualidade de inferência KNN em imagens não utilizadas para
+formar a referência**. Um acervo previamente memorizado pode
+alcançar 100% de recuperação por identidade sem demonstrar
+reconhecimento de novas imagens; nenhum dos dois indicadores
+substitui o outro. **Não ajustar limiares usando a mesma avaliação
+final para fabricar 98%.**
+
+**Autonomia de produção — requisito definitivo:** o ODIN deverá
+julgar automaticamente OK/NG e prosseguir sem depender de operador
+de inspeção. O estado `REVISÃO OBRIGATÓRIA` **não poderá parar
+indefinidamente a linha** na configuração final. Definir um
+tratamento automático de incerteza/falha de aquisição ou de modelo:
+registrar, sinalizar e **segregar/rejeitar de modo seguro**, como
+`INSPECAO_NAO_CONCLUIDA` distinta de NG físico confirmado. Isso
+**não conta como acerto OK ou NG** no benchmark. Nunca liberar
+`0/OK` por falta de confiança. Qualquer mapeamento para `1/NG`
+depende de validar a semântica e o intertravamento do equipamento,
+testando retomada de ciclo, retentativa limitada e prevenção de
+comandos duplicados. Sem uma saída de segregação validada, a
+autonomia sem humano permanece **não habilitada**.
+
+**Estado real em 13/10/2026:** **requisito documentado, NÃO
+implementado ou validado nesta alteração**. O roteador atual
+`src/core/verified_memory_router.py` usa correspondência exata
+de memória humana com pares AOI e, para casos novos, encaminha
+às CNNs/especialistas. `src/services/startup_regression/knn_archive_predictor.py`
+retorna revisão sem par KNN verificado. O controlador
+`src/ui/production_autonomy_controller.py` ainda pausa para
+intervenção quando a política não autoriza a decisão automática.
+Portanto, **não afirmar que a KNN já atingiu 98% nem que a
+produção já é totalmente autônoma**. Nenhuma memória, motor,
+threshold, CNN, dataset, comando XP ou política de produção
+foi alterada por esta documentação.
+
+**Convivência de metas:** este é o requisito **KNN >=98%**.
+A diretriz anterior **CNN 100% em seu escopo, excluindo adesivo**
+continua separada até nova decisão expressa. Não misturar as
+métricas dos motores nem usar a CNN para completar a taxa KNN.
+
+---
+
 # DIRETRIZ VIGENTE — 13/10/2026: CNN 100% DO ACERVO VISUAL E PRODUÇÃO AUTÔNOMA
 
 > **Prioridade definida pelo responsável do projeto.** Esta decisão substitui a antiga
