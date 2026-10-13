@@ -9,6 +9,8 @@ Instalar depois de todos os demais wrappers MoE em main.py.
 from __future__ import annotations
 
 from hashlib import sha256
+from collections import OrderedDict
+from copy import deepcopy
 import json
 import math
 from pathlib import Path
@@ -16,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from src.core.neural.faltando_category_scope import uses_faltando_v2
+from src.services.image_archive_dedup import image_fingerprint
 
 LIGHTS = ("SIDE", "TOP", "MID")
 PINNED_RELATIVE_CHECKPOINT = (
@@ -85,6 +88,8 @@ class FaltandoCNNLive:
         self.expected_sha256 = expected_sha256
         self._model = None
         self._metadata = {}
+        self._inference_cache = OrderedDict()
+        self._checkpoint_stat = None
         self._error: tuple[str, str] | None = None
         self._online_pointer_seen = False
         self._online_root = (
@@ -121,6 +126,8 @@ class FaltandoCNNLive:
             self.expected_sha256 = digest
             self._model = None
             self._metadata = {}
+            self._checkpoint_stat = None
+            self._inference_cache.clear()
             self._error = None
 
     def _load(self):
@@ -163,6 +170,8 @@ class FaltandoCNNLive:
                 "source_manifest_sha256": state.get("source_manifest_sha256"),
             }
             self._model = model
+            stamp = self.path.stat()
+            self._checkpoint_stat = (stamp.st_mtime_ns, stamp.st_size)
             return model
         except Exception as exc:
             # Fail-closed: qualquer erro de leitura/deserialização do modelo
@@ -222,6 +231,30 @@ class FaltandoCNNLive:
         ):
             return _fail_review("INVALID_PAIR", "par de gabarito/teste inválido", light)
         try:
+            # O primeiro resultado não supervisionado pode ser reutilizado
+            # para inputs PIXEL-IDENTICOS na mesma sessão, sem aprender seu
+            # rótulo como verdade nem afrouxar o gate de Produção.
+            # Novo checkpoint invalida todas as inferências guardadas.
+            self._refresh_live_pointer()
+            stamp = self.path.stat()
+            current_stat = (stamp.st_mtime_ns, stamp.st_size)
+            if (self._checkpoint_stat is not None
+                    and self._checkpoint_stat != current_stat):
+                self._model = None
+                self._error = None
+                self._metadata = {}
+                self._inference_cache.clear()
+            cache_key = (
+                self.expected_sha256, light,
+                image_fingerprint(reference), image_fingerprint(test),
+            )
+            cached = self._inference_cache.get(cache_key)
+            if cached is not None:
+                self._inference_cache.move_to_end(cache_key)
+                answer = deepcopy(cached)
+                answer["detail"]["cnn_v2_session_inference_cache"] = True
+                answer["detail"]["cnn_v2_session_cache_is_training"] = False
+                return answer
             model = self._load()
             import torch
             from src.scripts.train_faltando_cnn_v2 import (
@@ -271,7 +304,7 @@ class FaltandoCNNLive:
             "cnn_ng_score_uncalibrated": ng_score,
             "cnn_lighting_mode": light,
         }
-        return {
+        response = {
             "is_defect": bool(is_defect and not review),
             "verdict": verdict,
             "confidence": max(ng_score, 1.0-ng_score),
@@ -302,8 +335,16 @@ class FaltandoCNNLive:
                 "fusion_rule": "cnn_v2_dualscale_direct",
                 "operator_review_required": review,
                 "decision_trace": trace,
+                "cnn_v2_session_inference_cache": False,
+                "cnn_v2_session_cache_is_training": False,
             },
         }
+        if not review:
+            self._inference_cache[cache_key] = deepcopy(response)
+            self._inference_cache.move_to_end(cache_key)
+            if len(self._inference_cache) > 64:
+                self._inference_cache.popitem(last=False)
+        return response
 
 
 def install_faltando_cnn_live(orchestrator_cls, *, predictor=None) -> None:
