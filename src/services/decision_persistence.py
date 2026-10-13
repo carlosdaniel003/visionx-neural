@@ -127,13 +127,11 @@ class DecisionPersistenceQueue:
                 if samples:
                     persisted = self._persist_multilight(work, samples)
                 elif partial:
-                    # O operador já deu 0/1: persistir APENAS os frames
-                    # obtidos antes da decisão. Nunca aguardar TOP/MID
-                    # posteriores (podem pertencer a uma outra placa).
+                    # O operador já deu 0/1: persistir somente imagens
+                    # captadas ANTES do julgamento. CNN V2 aceita de 1 a 3
+                    # luzes reais no journal, sem inventar TOP/MID.
                     persisted = self._persist_multilight(work, partial)
-                    # Treino incremental de trio exige três iluminações;
-                    # os pares parciais ficam no dataset para revisão futura.
-                    work["_online_all_persisted"] = False
+                    work["multilight_samples"] = partial
                 else:
                     # Campos de orquestração não pertencem ao contrato legado
                     # do DatasetManager quando a captura é monoimagem.
