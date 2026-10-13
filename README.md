@@ -1,3 +1,20 @@
+## Memória KNN permanente dos arquivos OK/NG — 13/10/2026
+
+O ODIN agora dispõe de memória KNN histórica durável, independente dos PNGs depois de uma sincronização bem-sucedida. A importação aprende OK e NG a partir de public/ok_archive e public/ng_archive, grava identidades do par gabarito/teste e assinaturas visuais em data/knn_archive_memory/memory.json, reabre o arquivo salvo e testa a recuperação dos mesmos casos. A recuperação do acervo memorizado é distinta da validação de generalização KNN (>=98% por classe).
+
+PowerShell (primeira importação e novas imagens):
+
+    cd "C:\visionx-neural-main"
+    git pull origin central
+    python -m src.services.startup_regression.knn_archive_memory_cli
+
+Verificar memória já salva sem ler fotos:
+
+    python -m src.services.startup_regression.knn_archive_memory_cli --status
+
+Relatórios: reports/startup_regression/knn_archive_memory_*.json e *.txt. Os registros memorizados persistem após exclusão dos PNGs. Nunca excluir imagens antes de verificar que foram importadas. Memória local não é enviada pelo GitHub: faça backup externo de data/knn_archive_memory. Novos PNGs exigem nova sincronização manual; captura automática de novas entradas ainda não foi conectada. O roteador de produção passa a reconhecer pares exatos dessa memória mesmo sem fotos originais; qualquer conflito de rótulo impede decisão automática OK. Mais detalhes em docs/ODIN_STARTUP_REGRESSION_GATE.md.
+
+---
 ## 13/10/2026 — Aquisição XP rápida em Sombra, Teste e Produção
 
 Os três modos solicitam o intervalo de envio de imagens de 0,18 s do agente XP (se houver ACK, com lease de 25 s). OCR realizado na SIDE é reutilizado apenas em TOP/MID da mesma peça. TOP/MID exigem janela de estabilização de 0,35 s após o comando e dois frames consecutivos estáveis antes de serem processados; o julgamento final permanece baseado em SIDE/TOP/MID. Teste e Produção preservam imagens, especialistas, debug e regras atuais. Em Produção, a apresentação/scroll, a pausa por Space e a espera antes de 0/1 automático **não são reduzidas**, por segurança. Nenhuma regra CNN/KNN mudou. Atualização do agente XP exige instalação manual, e os 2–3 s de latência ainda precisam de medição na linha.
