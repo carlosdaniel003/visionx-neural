@@ -14,6 +14,7 @@ import numpy as np
 from numpy.linalg import norm
 
 from src.config.settings import settings
+from src.core.archive_persistent_memory import PersistentArchiveKNN
 from src.core.anomaly_signature import (
     compare_anomaly_signatures,
     valid_anomaly_signature,
@@ -188,6 +189,32 @@ class KNNExpert:
                     loaded_paths.add(canonical_path)
                 except Exception as exc:
                     print(f"KNN ignorou JSON inválido {json_path}: {exc}")
+
+        # Memória histórica durável: não depende da existência dos PNGs
+        # originais. Disponibiliza assinaturas também para consulta KNN
+        # aproximada, SEM permitir que ela autorize OK automático.
+        try:
+            persistent = PersistentArchiveKNN()
+            for entry in persistent.records():
+                info = entry.get("aoi_info") or {}
+                record = {
+                    "part": self._clean_string(info.get("parts", "")),
+                    "category": self._clean_string(entry["identity"][0]),
+                    "lighting_mode": entry["identity"][1],
+                    "path": entry["sources"][0]["source_path"],
+                    "json_path": str(persistent.path),
+                    "label": entry["label"],
+                    "folder_label": entry["label"],
+                    "mode": "anomaly",
+                    "anomaly_signature": entry["anomaly_signature"],
+                    "sig": None,
+                    "archive_persistent": True,
+                }
+                (loaded_ng if entry["label"] == "NG" else loaded_ok).append(record)
+        except (OSError, ValueError, TypeError) as exc:
+            # O lookup exato do roteador recusa snapshot corrompido;
+            # nunca converter essa falha em liberação OK automática.
+            print(f"Memória KNN durável indisponível: {exc}")
 
         # O scan acontece fora do lock. A troca dos dois conjuntos é
         # atômica, então uma análise concorrente nunca observa memória parcial.
