@@ -1148,3 +1148,17 @@ Portanto, **esta funcionalidade não exige atualizar manualmente o `agente_indus
 - **Meta 2–3 s ainda não validada fisicamente.** Cronometrar XP→rede→SIDE/TOP/MID→veredito na fábrica; a latência real depende também de atualização da AOI, OCR, inferência e rede.
 
 A partir do primeiro pacote de rede recebido, o receptor anuncia o IP do XP. Assim o ODIN ativa Sombra **antes de completar a dupla de frames estáveis**. Quando o agente estiver na pausa original, o comando ON desperta a espera atual e aplica um intervalo de estabilização (0,18 s). Isso reduz o gargalo inicial sem eliminar a validação de dois frames no VisionX.
+
+
+## 13/10/2026 — Captura rápida XP em Sombra, Teste e Produção
+
+O ODIN passa a solicitar o **mesmo intervalo rápido de 0,18 s** do agente XP nos três modos. Os nomes `VISIONX_SHADOW_ON/OFF`, `ACK_SHADOW_ON/OFF` e o lease de 25 s, renovado a cada 8 s, são mantidos **por compatibilidade** com o agente já atualizado: o protocolo só controla a frequência de envio de fotos, **não** o modo de julgamento ou a permissão para pressionar 0/1.
+
+- **Modo Sombra**: mantém captura visual reduzida, rótulo humano e bloqueio de 0/1 gerado pelo ODIN.
+- **Modo Teste**: mantém interface completa e confirmação manual, além de PNGs de debug e geometria; a única alteração é captura mais frequente e OCR da SIDE reutilizado em TOP/MID da mesma peça.
+- **Modo Produção**: mantém interface completa, veredito fundido SIDE/TOP/MID, apresentação com scroll, tempo de observação, tecla Space, regras de confiança e política anterior de 0/1. Reduzir intervalo XP **não** encurta a apresentação de segurança ou autoriza novo julgamento autônomo.
+- O receptor principal continua exigindo dois frames estáveis. Capturas TOP/MID permanecem no mesmo `event_id` e não devem passar para outra peça.
+- Se não houver ACK, permanece o comportamento legado de 3,0 s. Atualizar o repositório no computador moderno não instala o arquivo `agente_industrial_xp.py` no XP; instalar/reiniciar o agente manualmente.
+- Medir separadamente **tempo de aquisição**, **tempo de classificação** e **tempo até envio de 0/1**. Meta de 2–3 s permanece não comprovada na linha. Validar troca de iluminação e rótulos reais antes de uso autônomo.
+
+**Proteção de estabilidade (13/10/2026):** antes de enviar LEFT/RIGHT para TOP/MID, a automação arma o receptor para aquela iluminação. O receptor ignora frames que cheguem nos primeiros 0,35 s após a solicitação e entrega no máximo um frame após receber **duas imagens estáveis consecutivas** da luz solicitada. Repetição, aborto e encerramento reiniciam o estado. Trata-se de uma defesa temporal/visual, não uma confirmação elétrica da luz; a validação física continua obrigatória.

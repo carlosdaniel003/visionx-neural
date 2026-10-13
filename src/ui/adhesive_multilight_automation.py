@@ -130,9 +130,14 @@ class AdhesiveMultiLightAutomation(QObject):
         if reset_retry:
             self.retry_count = 0
 
-        # Define a expectativa antes do envio para que qualquer retorno rápido
-        # do XP já pertença ao estado correto da máquina.
+        # Define a expectativa e arma a janela de estabilizacao antes
+        # do comando: fotos ainda em transito da luz anterior nao podem
+        # ser entregues como TOP ou MID. O receptor exige duas fotos estaveis.
         self.expected_mode = normalized
+        receiver = getattr(self.panel, "network_receiver", None)
+        arm_capture = getattr(receiver, "arm_auxiliary_capture", None)
+        if callable(arm_capture):
+            arm_capture(normalized)
 
         if not self._send_mode(normalized):
             self.abort(

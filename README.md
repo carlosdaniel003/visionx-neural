@@ -1,3 +1,7 @@
+## 13/10/2026 — Aquisição XP rápida em Sombra, Teste e Produção
+
+Os três modos solicitam o intervalo de envio de imagens de 0,18 s do agente XP (se houver ACK, com lease de 25 s). OCR realizado na SIDE é reutilizado apenas em TOP/MID da mesma peça. TOP/MID exigem janela de estabilização de 0,35 s após o comando e dois frames consecutivos estáveis antes de serem processados; o julgamento final permanece baseado em SIDE/TOP/MID. Teste e Produção preservam imagens, especialistas, debug e regras atuais. Em Produção, a apresentação/scroll, a pausa por Space e a espera antes de 0/1 automático **não são reduzidas**, por segurança. Nenhuma regra CNN/KNN mudou. Atualização do agente XP exige instalação manual, e os 2–3 s de latência ainda precisam de medição na linha.
+
 ## Meta KNN e autonomia de produção — 13/10/2026
 
 A memória **KNN** tem uma nova meta própria: **>=98% de OK→OK nos PNGs

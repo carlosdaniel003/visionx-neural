@@ -43,6 +43,18 @@ from src.utils.text_normalizer import normalize_aoi_text
 from src.core.moe_orchestrator import MoEOrchestrator
 from src.core.epicenter_extractor import EpicenterExtractor
 
+
+# A captura rapida XP muda somente o intervalo entre imagens.
+# A automacao de 0/1 continua exclusiva do Modo Producao.
+FAST_XP_CAPTURE_MODES = frozenset({
+    "Modo Sombra", "Modo Teste", "Modo Produção",
+})
+
+
+def uses_fast_xp_capture(mode: str) -> bool:
+    return str(mode or "") in FAST_XP_CAPTURE_MODES
+
+
 class ImageRenderer:
     @staticmethod
     def draw_multilayer_boxes(img_bgr: np.ndarray, analysis: dict) -> np.ndarray:
@@ -102,8 +114,8 @@ class ControlPanel(QWidget):
         self.ui_builder = ControlPanelUI()
         self.ui_builder.setup_ui(self)
 
-        # Lease XP apenas para Modo Sombra. A manutencao ocorre a cada 8 s,
-        # sempre sem enviar PRESS_0/PRESS_1 ao equipamento.
+        # Lease para captura rapida XP nos tres modos. O protocolo
+        # VISIONX_SHADOW_* e mantido para compatibilidade com o agente XP.
         self._xp_shadow_lease_timer = QTimer(self)
         self._xp_shadow_lease_timer.setInterval(8000)
         self._xp_shadow_lease_timer.timeout.connect(self._renew_xp_shadow_lease)
@@ -124,7 +136,7 @@ class ControlPanel(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def handle_xp_peer_discovered(self, ip: str) -> None:
-        """Sincroniza Sombra desde a primeira transmissao XP."""
+        """Negocia a taxa de captura desde a primeira transmissao XP."""
         new_ip = str(ip or "").strip()
         if not new_ip:
             return
@@ -132,14 +144,15 @@ class ControlPanel(QWidget):
             self._xp_shadow_last_attempt = None
         self.last_xp_ip = new_ip
         self._send_xp_shadow_control(
-            self.combo_mode.currentText() == "Modo Sombra"
+            uses_fast_xp_capture(self.combo_mode.currentText())
         )
 
     def _send_xp_shadow_control(self, enabled: bool, *, force: bool = False) -> bool:
-        """Solicita pausa reduzida ao agente XP somente em Modo Sombra.
+        """Solicita pausa reduzida ao agente XP nos tres modos.
 
-        Um XP antigo simplesmente ignora o comando: a captura legada continua
-        funcionando sem reduzir a pausa. ACK distingue deploy real de desejo UI.
+        O protocolo legado tem SHADOW no nome, mas somente altera o intervalo
+        de imagem. Nao habilita comportamento Sombra nem envia teclas 0/1.
+        Sem ACK, a captura continua no intervalo antigo.
         """
         ip = str(getattr(self, "last_xp_ip", "") or "").strip()
         if not ip:
@@ -169,17 +182,17 @@ class ControlPanel(QWidget):
             return False
 
     def _on_xp_mode_changed(self, mode: str) -> None:
-        shadow = str(mode or "") == "Modo Sombra"
+        enabled = uses_fast_xp_capture(mode)
         timer = getattr(self, "_xp_shadow_lease_timer", None)
         if timer is not None:
-            if shadow:
+            if enabled:
                 timer.start()
             else:
                 timer.stop()
-        self._send_xp_shadow_control(shadow, force=True)
+        self._send_xp_shadow_control(enabled, force=True)
 
     def _renew_xp_shadow_lease(self) -> None:
-        if self.combo_mode.currentText() == "Modo Sombra":
+        if uses_fast_xp_capture(self.combo_mode.currentText()):
             self._send_xp_shadow_control(True, force=True)
 
     def keyPressEvent(self, event):
@@ -310,7 +323,7 @@ class ControlPanel(QWidget):
         # o agente XP. O controle fica restrito ao modo; sem eco 0/1.
         sender = getattr(self, "_send_xp_shadow_control", None)
         if callable(sender):
-            sender(self.combo_mode.currentText() == "Modo Sombra")
+            sender(uses_fast_xp_capture(self.combo_mode.currentText()))
         received_at = float(
             getattr(
                 self.network_receiver,
