@@ -1,3 +1,28 @@
+# 13/10/2026 — KNN: MEMÓRIA HISTÓRICA PERSISTENTE, SEM DEPENDER DOS PNGs
+
+**Decisão vigente:** a KNN deverá aprender deliberadamente todos os PNGs de public/ok_archive e public/ng_archive, gravar as identidades visuais, rótulos OK/NG e assinaturas em memória independente, e reconhecer depois os mesmos exemplos, inclusive quando as fotografias originais tiverem sido apagadas.
+
+**Separação de avaliações:** (1) memorizar todo acervo e recuperar o mesmo par visual = replay in-sample, alvo 100% das imagens aptas; (2) generalizar para imagens novas = validação separada, meta >=98% por classe OK/NG; (3) autorização de produção exige também identificação confiável, hardware e política segura. Um replay in-sample de 100% não prova qualidade em imagens novas.
+
+**Código:** src/core/archive_persistent_memory.py salva a memória local incremental (append-only) em data/knn_archive_memory/memory.json, fora dos arquivos de fotos e dataset, com .bak na atualização e checksum de integridade. Retém hashes exatos SHA256 dos pares gabarito/teste, categoria, iluminação, rótulo, características KNN e proveniência, sem depender do PNG após a importação. src/core/verified_memory_router.py consulta essa memória na operação normal; conflitos de rótulo não autorizam OK. src/core/experts/knn_expert.py carrega suas assinaturas para análise de memória. Nenhum limiar CNN, comando 0/1 ou regra de segurança foi relaxado.
+
+**Comando de sincronização inicial / incremental no PowerShell:**
+
+    cd "C:\visionx-neural-main"
+    git pull origin central
+    python -m src.services.startup_regression.knn_archive_memory_cli
+
+Este comando lê os PNGs, extrai os pares AOI, memoriza os dois rótulos, reabre o snapshot do disco e reconsulta todos os exemplos processados. Relatórios JSON/TXT ficam em reports/startup_regression/. Sucesso integral requer que todos os PNGs presentes sejam recuperados como seus rótulos; o relatório calcula ainda a meta >=98% por classe. Casos inválidos, não recuperados e conflitos NÃO são classificados como aprendidos.
+
+**Comando de verificação do snapshot, sem PNGs:**
+
+    python -m src.services.startup_regression.knn_archive_memory_cli --status
+
+**Retenção e limites:** a pasta data/knn_archive_memory/ é ignorada pelo Git, portanto git pull atualiza somente o código, não sincroniza os dados aprendidos entre máquinas. FAZER BACKUP EXTERNO do snapshot para sobreviver a perda de disco, reinstalação ou exclusão da pasta data. Não excluir PNGs ainda não importados. Após acrescentar novos PNGs, executar nova sincronização ANTES de excluir; **ingestão automática de novos arquivos no instante do salvamento ainda não foi implementada**. O carregamento das memórias já persistidas ocorre automaticamente ao abrir o ODIN. Rótulos do arquivo são aceitos como fonte de aprendizagem por decisão do operador, mas o replay não é uma validação independente da verdade do rótulo. Não incluir predições da própria IA como rótulo verdadeiro sem confirmação.
+
+**Estado:** rotina, roteamento de memória persistente e testes sintéticos disponíveis; falta executar com os 212 PNGs reais e conferir os novos relatórios. A antiga avaliação leave_day_out continua válida como métrica SEPARADA de generalização; não substitui a recuperação dos exemplos vistos.
+
+---
 # REQUISITO ATUAL — 13/10/2026: KNN >=98% POR PASTA E PRODUÇÃO SEM OPERADOR
 
 ## 13/10/2026 — RESULTADO REAL DO REPLAY KNN (arquivos 11:36:40 UTC)
