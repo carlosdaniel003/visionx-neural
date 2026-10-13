@@ -87,9 +87,13 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.recovery_button = QPushButton(
             "Comparar CNN FALTANDO V2 — 5 e 7 épocas"
         )
+        self.light_weight_button = QPushButton(
+            "Comparar CNN — perda por iluminação (0,15 / 0,50 / 1,00)"
+        )
         self.recovery_cancel = QPushButton("Cancelar experimento")
         self.recovery_cancel.setEnabled(False)
         recovery_row.addWidget(self.recovery_button)
+        recovery_row.addWidget(self.light_weight_button)
         recovery_row.addWidget(self.recovery_cancel)
         layout.addLayout(recovery_row)
 
@@ -111,10 +115,19 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.preview_button.clicked.connect(self.preview)
         self.commit_button.clicked.connect(self.commit)
         self.recovery_button.clicked.connect(self.start_recovery)
+        self.light_weight_button.clicked.connect(self.start_light_weight_comparison)
         self.recovery_cancel.clicked.connect(self.cancel_recovery)
 
     def start_recovery(self):
-        """Duas rodadas independentes; sem receiver XP ou promoção de pesos."""
+        """Conserva a comparação anterior de 5 e 7 épocas."""
+        self._start_experimental_comparison(light_weights=False)
+
+    def start_light_weight_comparison(self):
+        """Três rodadas independentes, mudando somente o peso auxiliar por luz."""
+        self._start_experimental_comparison(light_weights=True)
+
+    def _start_experimental_comparison(self, *, light_weights: bool):
+        """Um único subprocesso na manutenção, sem XP e sem promoção."""
         if self.train_process is not None:
             return
         try:
@@ -125,11 +138,20 @@ class ArchiveLabelCorrectionDialog(QDialog):
             self.log.setPlainText(f"PRÉ-VALIDAÇÃO BLOQUEADA:\n{exc}")
             return
 
-        answer = QMessageBox.question(
-            self, "Confirmar treinamento experimental",
+        proposal = (
+            "Serão feitas três rodadas INDEPENDENTES de 7 épocas, "
+            "com pesos auxiliares da perda SIDE/TOP/MID: 0,15 (controle), "
+            "0,50 e 1,00. Todas partem do checkpoint original verificado. "
+            "Os mesmos 3 eventos NG (9 recortes) e histórico entram em "
+            "todos os treinamentos.\n\n"
+            if light_weights else
             "Serão feitas duas rodadas INDEPENDENTES, de 5 e 7 épocas, "
             "sempre a partir dos mesmos pesos originais. Cada rodada utiliza "
             "3 eventos NG corrigidos (9 recortes) e o histórico confiável.\n\n"
+        )
+        answer = QMessageBox.question(
+            self, "Confirmar treinamento experimental",
+            proposal +
             "O experimento pode levar vários minutos e consumir CPU/RAM. "
             "Nenhum checkpoint será ativado e nenhum 0/1 será enviado ao XP.\n\n"
             "Executar comparação SOMENTE COM CANDIDATOS?",
@@ -139,7 +161,9 @@ class ArchiveLabelCorrectionDialog(QDialog):
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.log.setPlainText(
-            "COMPARAÇÃO 5 E 7 ÉPOCAS — PESOS ATIVOS PRESERVADOS\n"
+            ("COMPARAÇÃO PESOS POR ILUMINAÇÃO — 7 ÉPOCAS CADA\n"
+             if light_weights else
+             "COMPARAÇÃO 5 E 7 ÉPOCAS — PESOS ATIVOS PRESERVADOS\n")
             f"Correção: {correction_id}\n"
             f"Eventos NG completos: {len(verified['events'])}\n"
             "Cada rodada reinicia a CNN dos pesos originais.\n"
@@ -150,8 +174,12 @@ class ArchiveLabelCorrectionDialog(QDialog):
         proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         proc.setWorkingDirectory(str(self.root))
         proc.setProgram(sys.executable)
+        module = (
+            "src.scripts.compare_faltando_recovery_light_weights"
+            if light_weights else "src.scripts.compare_faltando_recovery_epochs"
+        )
         proc.setArguments([
-            "-u", "-m", "src.scripts.compare_faltando_recovery_epochs",
+            "-u", "-m", module,
             "--root", str(self.root),
             "--correction-id", correction_id,
         ])
@@ -159,6 +187,7 @@ class ArchiveLabelCorrectionDialog(QDialog):
         proc.finished.connect(self._training_finished)
         proc.errorOccurred.connect(self._training_error)
         self.recovery_button.setEnabled(False)
+        self.light_weight_button.setEnabled(False)
         self.recovery_cancel.setEnabled(True)
         for button in (self.select_button, self.preview_button, self.commit_button):
             button.setEnabled(False)
@@ -185,6 +214,7 @@ class ArchiveLabelCorrectionDialog(QDialog):
         )
         self.recovery_cancel.setEnabled(False)
         self.recovery_button.setEnabled(True)
+        self.light_weight_button.setEnabled(True)
         self.select_button.setEnabled(True)
         self.preview_button.setEnabled(True)
         # A prévia de correção deve ser refeita após qualquer experimento.

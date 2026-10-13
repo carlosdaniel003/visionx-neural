@@ -19,6 +19,7 @@ from src.services.neural_online_learning import (
 )
 from src.scripts.train_faltando_cnn_v2_online import (
     _on_disk_event, _all_online, train_online, PairDataset, POINTER_SCHEMA,
+    _supervised_loss,
 )
 from src.services.anomaly_learning import _decision_task
 from src.services.decision_persistence import DecisionPersistenceQueue
@@ -282,6 +283,43 @@ class ChampionGateTests(OnlineFixtures):
             sha256(json.dumps(sorted(self.prior["state_dict"])).encode()).hexdigest(),
             baseline_hash,
         )
+
+    def test_auxiliary_loss_increases_mid_penalty_without_changing_event_logits(self):
+        event_logits = torch.tensor([5.0], requires_grad=True)
+        light_logits = torch.tensor(
+            [[5.0, 5.0, -5.0]], requires_grad=True
+        )
+        active_mask = torch.ones(1, 3)
+        truth = torch.ones(1)
+        losses = [
+            _supervised_loss(
+                event_logits, light_logits, active_mask, truth,
+                light_weight=weight,
+            )
+            for weight in (0.15, 0.5, 1.0)
+        ]
+        self.assertTrue(float(losses[0]) < float(losses[1]) < float(losses[2]))
+        mid_gradients = [
+            abs(float(torch.autograd.grad(
+                loss, light_logits, retain_graph=True
+            )[0][0, 2]))
+            for loss in losses
+        ]
+        self.assertTrue(
+            mid_gradients[0] < mid_gradients[1] < mid_gradients[2]
+        )
+        # Iluminação mascarada não entra na perda auxiliar.
+        mask = torch.tensor([[1.0, 1.0, 0.0]])
+        hidden = _supervised_loss(
+            event_logits, light_logits, mask, truth, light_weight=1.0
+        )
+        self.assertLess(float(hidden), float(losses[0]))
+
+    def test_online_training_disallows_experimental_weight_without_recovery(self):
+        with self.assertRaisesRegex(ValueError, "somente na"):
+            train_online(self.root, self.event, epochs=1, light_loss_weight=0.5)
+        with self.assertRaisesRegex(ValueError, "fora dos valores"):
+            train_online(self.root, self.event, epochs=1, light_loss_weight=2.0)
 
     def test_candidate_only_never_updates_pointer_or_outcomes_with_green_gates(self):
         with patch("src.scripts.train_faltando_cnn_v2_online._base_model",

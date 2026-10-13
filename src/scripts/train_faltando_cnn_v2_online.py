@@ -293,15 +293,34 @@ def _assess(model, records: list[dict], size: int, focus: float) -> dict:
     }
 
 
+def _supervised_loss(logits, by_light, mask, truth, *, light_weight: float):
+    """Perda por evento + penalidade independente nas luzes presentes."""
+    primary = nn.functional.binary_cross_entropy_with_logits(logits, truth)
+    aux = nn.functional.binary_cross_entropy_with_logits(
+        by_light, truth[:, None].expand_as(by_light), reduction="none"
+    )
+    return primary + light_weight * (aux * mask).sum() / mask.sum().clamp_min(1)
+
+
 def train_online(
     root: Path, event: Path, *, epochs: int = 3,
     candidate_only: bool = False, recovery_correction_id: str | None = None,
+    light_loss_weight: float = 0.15,
 ) -> dict:
     """Modifica só candidate/pointer; nunca mexe em checkpoint base."""
     root = Path(root).resolve()
     event = Path(event).resolve()
     if not 1 <= epochs <= 10:
         raise ValueError("epochs fora do intervalo")
+    if type(light_loss_weight) is not float or light_loss_weight not in (0.15, 0.5, 1.0):
+        raise ValueError("Peso da perda por luz fora dos valores auditados")
+    if light_loss_weight != 0.15 and (
+        not candidate_only or recovery_correction_id is None
+    ):
+        raise ValueError(
+            "Mudança da perda por iluminação é permitida somente na "
+            "recuperação experimental candidate_only"
+        )
     torch.set_num_threads(max(1, min(2, torch.get_num_threads())))
     torch.manual_seed(42)
     random.seed(42)
@@ -364,12 +383,9 @@ def train_online(
         average = 0.
         for r, t, rf, tf, mask, truth in loader:
             logits, by_light = net(r, t, rf, tf, mask)
-            base = nn.functional.binary_cross_entropy_with_logits(logits, truth)
-            lights = nn.functional.binary_cross_entropy_with_logits(
-                by_light, truth[:, None].expand_as(by_light), reduction="none"
+            loss = _supervised_loss(
+                logits, by_light, mask, truth, light_weight=light_loss_weight
             )
-            regularizer = (lights * mask).sum() / mask.sum().clamp_min(1)
-            loss = base + .15 * regularizer
             if not bool(torch.isfinite(loss)):
                 raise ValueError("Perda neural não finita")
             opt.zero_grad(set_to_none=True)
@@ -381,11 +397,9 @@ def train_online(
         # trincas SIDE/TOP/MID) ou apenas o caso novo online normal.
         for r, t, rf, tf, mask, truth in fresh_loader:
             logits, by_light = net(r, t, rf, tf, mask)
-            primary = nn.functional.binary_cross_entropy_with_logits(logits, truth)
-            aux = nn.functional.binary_cross_entropy_with_logits(
-                by_light, truth[:, None].expand_as(by_light), reduction="none"
+            loss = _supervised_loss(
+                logits, by_light, mask, truth, light_weight=light_loss_weight
             )
-            loss = primary + .15 * (aux * mask).sum()/mask.sum().clamp_min(1)
             if not bool(torch.isfinite(loss)):
                 raise ValueError("Perda neural não finita no evento novo")
             opt.zero_grad(set_to_none=True)
@@ -429,6 +443,7 @@ def train_online(
         "online_training_schema": ONLINE_MODEL_SCHEMA,
         "online_training_last_event": event.stem,
         "online_training_at_utc": when.isoformat(),
+        "training_light_loss_weight": light_loss_weight,
         "experimental": True, "production_approved": False,
     }
     torch.save(candidate, target)
@@ -439,6 +454,7 @@ def train_online(
         "created_at_utc": when.isoformat(),
         "category": "FALTANDO",
         "train_epochs": epochs,
+        "light_loss_weight": light_loss_weight,
         "base_checkpoint_sha256": sha256(base_path.read_bytes()).hexdigest(),
         "new_event_forced_each_epoch": True,
         "forced_events_per_epoch": [item["id"] for item in forced_items],
@@ -523,6 +539,7 @@ def main(argv=None) -> int:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--event", type=Path)
     parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--light-loss-weight", type=float, default=0.15)
     parser.add_argument("--candidate-only", action="store_true")
     parser.add_argument("--recovery-correction-id", type=str)
     args = parser.parse_args(argv)
@@ -539,6 +556,7 @@ def main(argv=None) -> int:
         args.root, event, epochs=args.epochs,
         candidate_only=args.candidate_only,
         recovery_correction_id=args.recovery_correction_id,
+        light_loss_weight=args.light_loss_weight,
     )
     print("Ativo atualizado:", result["promoted"], flush=True)
     return 0
