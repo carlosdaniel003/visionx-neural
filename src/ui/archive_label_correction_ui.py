@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import time
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QProcess
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel,
     QMessageBox, QPushButton, QTextEdit, QVBoxLayout,
@@ -15,6 +15,9 @@ from PyQt6.QtWidgets import (
 from src.config.settings import BASE_DIR
 from src.services.archive_label_correction import (
     apply_correction, prepare_correction,
+)
+from src.services.faltando_cnn_recovery_preflight import (
+    latest_completed_correction, validate_recovery_inputs,
 )
 
 
@@ -52,6 +55,7 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.root = Path(root).resolve()
         self.files: list[str] = []
         self.plan = None
+        self.train_process = None
         self.setWindowTitle("ODIN • Corrigir julgamento humano")
         self.setMinimumSize(760, 520)
 
@@ -79,6 +83,16 @@ class ArchiveLabelCorrectionDialog(QDialog):
         buttons.addWidget(self.commit_button)
         layout.addLayout(buttons)
 
+        recovery_row = QHBoxLayout()
+        self.recovery_button = QPushButton(
+            "Treinar CNN FALTANDO V2 — somente candidato"
+        )
+        self.recovery_cancel = QPushButton("Cancelar experimento")
+        self.recovery_cancel.setEnabled(False)
+        recovery_row.addWidget(self.recovery_button)
+        recovery_row.addWidget(self.recovery_cancel)
+        layout.addLayout(recovery_row)
+
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setPlainText(
@@ -96,6 +110,110 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.select_button.clicked.connect(self.select_files)
         self.preview_button.clicked.connect(self.preview)
         self.commit_button.clicked.connect(self.commit)
+        self.recovery_button.clicked.connect(self.start_recovery)
+        self.recovery_cancel.clicked.connect(self.cancel_recovery)
+
+    def start_recovery(self):
+        """Treino CPU separado, sem receiver XP ou promoção de pesos."""
+        if self.train_process is not None:
+            return
+        try:
+            correction_id = latest_completed_correction(self.root)
+            verified = validate_recovery_inputs(self.root, correction_id)
+        except Exception as exc:
+            QMessageBox.warning(self, "Treinamento bloqueado", str(exc))
+            self.log.setPlainText(f"PRÉ-VALIDAÇÃO BLOQUEADA:\n{exc}")
+            return
+
+        answer = QMessageBox.question(
+            self, "Confirmar treinamento experimental",
+            "Serão usados 3 eventos NG corrigidos (9 recortes) e o histórico "
+            "confiável do FALTANDO V2. O treino pode levar vários minutos e "
+            "consumir CPU/RAM.\n\n"
+            "Nenhum peso será ativado e nenhum 0/1 será enviado ao XP. "
+            "O modelo atual continuará inalterado.\n\n"
+            "Iniciar experimento SOMENTE CANDIDATO?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.log.setPlainText(
+            "TREINAMENTO EXPERIMENTAL — SEM PROMOÇÃO\n"
+            f"Correção: {correction_id}\n"
+            f"Eventos NG completos: {len(verified['events'])}\n"
+            "Validação offline confirmada; iniciando processo CPU...\n"
+        )
+        proc = QProcess(self)
+        self.train_process = proc
+        proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        proc.setWorkingDirectory(str(self.root))
+        proc.setProgram(sys.executable)
+        proc.setArguments([
+            "-u", "-m", "src.scripts.train_faltando_cnn_v2_online",
+            "--root", str(self.root),
+            "--candidate-only", "--recovery-correction-id", correction_id,
+            "--epochs", "3",
+        ])
+        proc.readyReadStandardOutput.connect(self._read_training_output)
+        proc.finished.connect(self._training_finished)
+        proc.errorOccurred.connect(self._training_error)
+        self.recovery_button.setEnabled(False)
+        self.recovery_cancel.setEnabled(True)
+        for button in (self.select_button, self.preview_button, self.commit_button):
+            button.setEnabled(False)
+        proc.start()
+
+    def _read_training_output(self):
+        if self.train_process is None:
+            return
+        chunk = bytes(self.train_process.readAllStandardOutput()).decode(
+            "utf-8", errors="replace"
+        )
+        if chunk:
+            self.log.insertPlainText(chunk)
+            self.log.ensureCursorVisible()
+
+    def _training_finished(self, code, _status):
+        self._read_training_output()
+        self.log.append(
+            "\nEXPERIMENTO CONCLUÍDO — verifique o relatório JSON da CNN. "
+            if code == 0 else
+            f"\nEXPERIMENTO INTERROMPIDO/FALHOU (código {code}); "
+            "nenhum peso foi ativado por esta ferramenta."
+        )
+        self.recovery_cancel.setEnabled(False)
+        self.recovery_button.setEnabled(True)
+        self.select_button.setEnabled(True)
+        self.preview_button.setEnabled(True)
+        # A prévia de correção deve ser refeita após qualquer experimento.
+        self.plan = None
+        if self.train_process is not None:
+            self.train_process.deleteLater()
+        self.train_process = None
+
+    def _training_error(self, _error):
+        if self.train_process is not None:
+            self._read_training_output()
+            self.log.append("\nErro ao iniciar ou executar o subprocesso de treino.")
+
+    def cancel_recovery(self):
+        if self.train_process is None:
+            return
+        self.log.append("\nCancelamento solicitado. Aguarde o encerramento...")
+        self.recovery_cancel.setEnabled(False)
+        self.train_process.kill()
+
+    def closeEvent(self, event):
+        if self.train_process is not None:
+            QMessageBox.warning(
+                self, "Treinamento em execução",
+                "Cancele o experimento e aguarde o encerramento antes "
+                "de fechar a manutenção."
+            )
+            event.ignore()
+            return
+        event.accept()
 
     def select_files(self):
         paths, _ = QFileDialog.getOpenFileNames(

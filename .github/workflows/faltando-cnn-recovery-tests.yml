@@ -1,0 +1,34 @@
+name: CNN FALTANDO V2 Recovery Candidate Preflight
+
+on:
+  push:
+    branches:
+      - central
+    paths:
+      - "src/services/faltando_cnn_recovery_preflight.py"
+      - "src/scripts/train_faltando_cnn_v2_online.py"
+      - "src/ui/archive_label_correction_ui.py"
+      - "tests/test_faltando_cnn_recovery_preflight.py"
+      - ".github/workflows/faltando-cnn-recovery-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  recovery-preflight:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install required packages
+        run: |
+          python -m pip install numpy opencv-python-headless scipy scikit-image PyQt6
+      - name: Compile updated modules
+        run: |
+          python -m py_compile src/services/faltando_cnn_recovery_preflight.py src/scripts/train_faltando_cnn_v2_online.py src/ui/archive_label_correction_ui.py tests/test_faltando_cnn_recovery_preflight.py
+      - name: Verify offline recovery preflight
+        run: |
+          python -m unittest tests.test_faltando_cnn_recovery_preflight -v

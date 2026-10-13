@@ -292,7 +292,10 @@ def _assess(model, records: list[dict], size: int, focus: float) -> dict:
     }
 
 
-def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
+def train_online(
+    root: Path, event: Path, *, epochs: int = 3,
+    candidate_only: bool = False, recovery_correction_id: str | None = None,
+) -> dict:
     """Modifica só candidate/pointer; nunca mexe em checkpoint base."""
     root = Path(root).resolve()
     event = Path(event).resolve()
@@ -303,7 +306,28 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
     random.seed(42)
     np.random.seed(42)
     newest = _on_disk_event(event, root)
+    recovery = []
+    if recovery_correction_id is not None:
+        if not candidate_only:
+            raise ValueError("Recuperação supervisionada exige modo candidate_only")
+        from src.services.faltando_cnn_recovery_preflight import validate_recovery_inputs
+        approved = validate_recovery_inputs(root, recovery_correction_id)
+        recovery = [_on_disk_event(path, root) for path in approved["events"]]
+        if not any(item["source"] == event for item in recovery):
+            raise ValueError("Evento inicial não faz parte dos três eventos corrigidos")
     _, prior = _base_model(root)
+    if recovery:
+        # O último replay do operador foi feito com a base pinada. Um
+        # ponteiro online anterior pode conter os rótulos OK incorretos.
+        pinned = root / PINNED_RELATIVE_CHECKPOINT
+        if not pinned.is_file() or sha256(pinned.read_bytes()).hexdigest() != PINNED_CHECKPOINT_SHA256:
+            raise ValueError("Checkpoint original não corresponde ao SHA-256 publicado")
+        active = root / "reports" / "neural_online" / "live_active.json"
+        if active.exists():
+            raise ValueError(
+                "Há checkpoint online ativo. Auditar o ponteiro antes de "
+                "recuperar pesos para evitar aprendizado com rótulos antigos."
+            )
     historical = _historical(root, prior)
     online = _all_online(root)
     size = int(prior["image_size"])
@@ -329,8 +353,9 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
     opt = torch.optim.AdamW(net.parameters(), lr=.00002, weight_decay=.02)
     # Garantir gradiente da amostra nova em TODA época, em vez de
     # depender de sua seleção probabilística no replay balanceado.
+    forced_items = recovery if recovery else [newest]
     fresh_loader = DataLoader(
-        PairDataset([newest], size, focus), batch_size=1,
+        PairDataset(forced_items, size, focus), batch_size=1,
         shuffle=False, num_workers=0,
     )
     net.train()
@@ -351,8 +376,8 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
             nn.utils.clip_grad_norm_(net.parameters(), 2.)
             opt.step()
             average += float(loss.item())
-        # Atualização supervisionada obrigatória para o novo evento, com
-        # SIDE/TOP/MID na mesma amostra (uma decisão humana por peça).
+        # Atualização obrigatória para todos os eventos retificados (3
+        # trincas SIDE/TOP/MID) ou apenas o caso novo online normal.
         for r, t, rf, tf, mask, truth in fresh_loader:
             logits, by_light = net(r, t, rf, tf, mask)
             primary = nn.functional.binary_cross_entropy_with_logits(logits, truth)
@@ -390,7 +415,10 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
     accepted = all(isinstance(v, bool) and v for k, v in gates.items()
                    if k not in ("source_historical_count",))
     when = datetime.now(timezone.utc)
-    checkpoints = root / "reports" / "neural_online" / "checkpoints"
+    checkpoints = (
+        root / "reports" / "neural_online" /
+        ("recovery_candidates" if candidate_only else "checkpoints")
+    )
     checkpoints.mkdir(parents=True, exist_ok=True)
     stem = "faltando_v2_" + when.strftime("%Y%m%dT%H%M%S_%fZ") + "_" + uuid4().hex[:6]
     target = checkpoints / (stem + ".pt")
@@ -411,6 +439,10 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
         "category": "FALTANDO",
         "train_epochs": epochs,
         "new_event_forced_each_epoch": True,
+        "forced_events_per_epoch": [item["id"] for item in forced_items],
+        "recovery_correction_id": recovery_correction_id,
+        "candidate_only": bool(candidate_only),
+        "passed_internal_gates": bool(accepted),
         "training_event_count": len(examples),
         "online_events": len(online),
         "online_illuminations": dict(Counter(
@@ -421,7 +453,7 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
         "online_baseline": old_online,
         "online_candidate": new_online,
         "gates": gates,
-        "promoted": accepted,
+        "promoted": bool(accepted and not candidate_only),
         "automatic_ok_authorized": False,
         "candidate": str(target.relative_to(root)),
         "candidate_sha256": digest,
@@ -435,7 +467,7 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
     report_path = reports / (stem + ".json")
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2),
                            encoding="utf-8")
-    if accepted:
+    if accepted and not candidate_only:
         pointer = root / "reports" / "neural_online" / "live_active.json"
         payload = {
             "schema": POINTER_SCHEMA,
@@ -457,23 +489,25 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
     # Resultado de máquina para o journal/status da UI. A promoção só
     # ocorre pelo ponteiro após a validação; um candidato rejeitado permanece
     # auditável no disco, sem tocar o modelo ativo.
-    outcomes = root / "reports" / "neural_online" / "outcomes"
-    outcomes.mkdir(parents=True, exist_ok=True)
-    outcome = outcomes / (event.stem + ".json")
-    temp = outcome.with_suffix(".json.tmp")
-    temp.write_text(json.dumps({
-        "event_id": event.stem,
-        "promoted": accepted,
-        "validation_report": report_path.relative_to(root).as_posix(),
-        "candidate": target.relative_to(root).as_posix(),
-        "historical_correct_images": new_result["correct_images"],
-        "historical_images": new_result["images"],
-        "online_correct_images": new_online["correct_images"],
-        "online_images": new_online["images"],
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(temp, outcome)
+    if not candidate_only:
+        outcomes = root / "reports" / "neural_online" / "outcomes"
+        outcomes.mkdir(parents=True, exist_ok=True)
+        outcome = outcomes / (event.stem + ".json")
+        temp = outcome.with_suffix(".json.tmp")
+        temp.write_text(json.dumps({
+            "event_id": event.stem,
+            "promoted": accepted,
+            "validation_report": report_path.relative_to(root).as_posix(),
+            "candidate": target.relative_to(root).as_posix(),
+            "historical_correct_images": new_result["correct_images"],
+            "historical_images": new_result["images"],
+            "online_correct_images": new_online["correct_images"],
+            "online_images": new_online["images"],
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temp, outcome)
     print(
-        f"CNN ONLINE: candidato {'PROMOVIDO' if accepted else 'REJEITADO'}; "
+        f"CNN {'RECUPERACAO - somente candidato' if candidate_only else 'ONLINE'}: "
+        f"gates {'APROVADOS' if accepted else 'REPROVADOS'}; "
         f"histórico={new_result['correct_images']}/{new_result['images']}, "
         f"online={new_online['correct_images']}/{new_online['images']}",
         flush=True,
@@ -485,10 +519,25 @@ def train_online(root: Path, event: Path, *, epochs: int = 3) -> dict:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Treino online seguro CNN FALTANDO v2")
     parser.add_argument("--root", type=Path, required=True)
-    parser.add_argument("--event", type=Path, required=True)
+    parser.add_argument("--event", type=Path)
     parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--candidate-only", action="store_true")
+    parser.add_argument("--recovery-correction-id", type=str)
     args = parser.parse_args(argv)
-    result = train_online(args.root, args.event, epochs=args.epochs)
+    event = args.event
+    if args.recovery_correction_id:
+        if not args.candidate_only:
+            parser.error("recuperação exige --candidate-only")
+        from src.services.faltando_cnn_recovery_preflight import validate_recovery_inputs
+        verified = validate_recovery_inputs(args.root, args.recovery_correction_id)
+        event = verified["events"][0]
+    if event is None:
+        parser.error("--event é obrigatório sem --recovery-correction-id")
+    result = train_online(
+        args.root, event, epochs=args.epochs,
+        candidate_only=args.candidate_only,
+        recovery_correction_id=args.recovery_correction_id,
+    )
     print("Ativo atualizado:", result["promoted"], flush=True)
     return 0
 
