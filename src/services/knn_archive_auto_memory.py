@@ -12,7 +12,6 @@ pendentes com retentativa e mensagem explícita, sem promover a OK.
 """
 from __future__ import annotations
 
-from collections import Counter
 from hashlib import sha256
 import logging
 from pathlib import Path
@@ -186,9 +185,10 @@ class KNNArchiveAutoMemory:
             if previous_stamp == stamp and instant < due:
                 pending += 1
                 continue
-            candidates.append((path, label, relative, stamp))
-            if len(candidates) >= self.batch_size:
-                break
+            if len(candidates) < self.batch_size:
+                candidates.append((path, label, relative, stamp))
+            else:
+                pending += 1
 
         proposed = []
         accepted = []
