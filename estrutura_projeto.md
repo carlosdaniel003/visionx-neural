@@ -1,3 +1,12 @@
+## 13/10/2026 — KNN HISTÓRICA AUTOMÁTICA NOS TRÊS MODOS
+
+Qualquer PNG de `public/ok_archive` ou `public/ng_archive`, gerado em Teste, Produção, Sombra ou copiado manualmente, deve ser reconhecido pelo observador iniciado em `main.py`, com importação assíncrona em `data/knn_archive_memory/memory.json`. Não executar o CLI manual a cada imagem. As filas de arquivamento despertam o worker após salvar PNG; este também varre pastas periodicamente para detectar arquivos externos e recuperar pendências após reinício. Espera estabilização, valida PNG e categoria OCR, retenta erros, grava em lote com lock entre processos e atualiza KNN em RAM.
+
+Código: `src/services/knn_archive_auto_memory.py`, `src/core/archive_persistent_memory.py`, `src/core/experts/knn_expert.py`, `src/services/ok_image_archive.py`, `src/services/ng_image_archive.py`, `main.py`. Testes: `tests/test_knn_archive_auto_memory.py` e `tests/test_archive_persistent_knn.py` (GitHub Actions).
+
+**Importante:** a persistência pressupõe que o PNG esteja presente até completar sua importação; arquivos já aprendidos sobrevivem à exclusão. Backups externos protegem contra perda de SSD. Entradas com mesmo par visual e rótulos contraditórios não liberam OK. O rótulo adotado vem da pasta, não constitui prova independente de qualidade dos exemplos; não confundir replay memorizado com generalização >=98% nem autorizar produção irrestrita. A função observa tudo que **efetivamente for salvo** nas pastas; não modifica quais inspeções os modos escolhem arquivar nem o acionamento 0/1.
+
+---
 ## 13/10/2026 — Captura XP rápida para os três modos sem alterar julgamento
 
 - Sombra, Teste e Produção usam a mesma negociação ACK/lease do intervalo de 0,18 s entre envios do XP. O nome legado `VISIONX_SHADOW_ON` **não altera as permissões de decisão**.
