@@ -7,7 +7,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame, QLabel
 
 from src.ui.training_validation_panel import (
     format_model_line, install_training_validation_panel,
@@ -44,21 +44,49 @@ class TrainingPanelUITests(unittest.TestCase):
         ), 1)
         self.assertFalse(self.window.btn_cancel_training.isEnabled())
         self.assertEqual(self.window.training_progress_bar.value(), 0)
+        ok_chip = self.window.archive_training_frame.findChild(
+            QLabel, "archiveTrainingLegendOK"
+        )
+        ng_chip = self.window.archive_training_frame.findChild(
+            QLabel, "archiveTrainingLegendNG"
+        )
+        self.assertIsNotNone(ok_chip)
+        self.assertIsNotNone(ng_chip)
+        self.assertIn("#4ade80", self.window.archive_training_frame.styleSheet())
+        self.assertIn("#ff7777", self.window.archive_training_frame.styleSheet())
 
     def test_progress_includes_both_engines_and_can_show_counts(self):
         ui = install_training_validation_panel(self.window, root=self.root)
         ui._handle({"event": "started", "images": 212, "total": 414})
         ui._handle({"event": "progress", "done": 1, "total": 414,
                     "model": "KNN_MEMORIA", "path": "public/ok_archive/a.png",
-                    "status": "PASSOU"})
+                    "expected": "OK", "status": "PASSOU"})
         ui._handle({"event": "progress", "done": 2, "total": 414,
-                    "model": "CNN_FALTANDO_V2", "path": "public/ok_archive/a.png",
-                    "status": "ERRO_CLASSIFICACAO"})
+                    "model": "CNN_FALTANDO_V2", "path": "public/ng_archive/b.png",
+                    "expected": "NG", "status": "ERRO_CLASSIFICACAO"})
         self.assertEqual(self.window.training_progress_bar.maximum(), 414)
         self.assertEqual(self.window.training_progress_bar.value(), 2)
-        self.assertIn("1/1 corretas", ui.knn_metric.text())
+        self.assertIn("OK 1/1", ui.knn_metric.text())
+        self.assertIn("NG 0/1", ui.cnn_metric.text())
         self.assertIn("1 pendências/erros", ui.cnn_metric.text())
-        self.assertIn("a.png", ui.status.text())
+        self.assertIn("#4ade80", ui.knn_metric.text())
+        self.assertIn("#ff7777", ui.cnn_metric.text())
+        self.assertIn("b.png", ui.status.text())
+        self.assertIn("color:#ff7777", ui.status.text())
+
+    def test_path_escaping_and_reset_does_not_confuse_ng_color(self):
+        ui = install_training_validation_panel(self.window, root=self.root)
+        ui._handle({"event": "started", "images": 1, "total": 2})
+        ui._handle({"event": "progress", "done": 1, "total": 2,
+                    "model": "KNN_MEMORIA",
+                    "path": "public/ng_archive/<bad>.png",
+                    "expected": "NG", "status": "PASSOU"})
+        self.assertIn("NG 1/1", ui.knn_metric.text())
+        self.assertIn("&lt;bad&gt;.png", ui.status.text())
+        self.assertNotIn("<bad>", ui.status.text())
+        ui._by_label = ui._empty_label_counts()
+        ui._errors = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
+        self.assertIn("NG 0/0", ui._live_metric_html("KNN_MEMORIA"))
 
     def test_summary_independently_reports_ok_and_ng(self):
         text = format_model_line("CNN_FALTANDO_V2", {
@@ -72,6 +100,8 @@ class TrainingPanelUITests(unittest.TestCase):
         self.assertIn("OK 190/195", text)
         self.assertIn("NG 17/17", text)
         self.assertIn("Fora da CNN 10", text)
+        self.assertIn('<span style="color:#4ade80', text)
+        self.assertIn('<span style="color:#ff7777', text)
 
 
 if __name__ == "__main__":
