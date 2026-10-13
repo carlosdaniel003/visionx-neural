@@ -1,3 +1,27 @@
+## Meta KNN e autonomia de produção — 13/10/2026
+
+A memória **KNN** tem uma nova meta própria: **>=98% de OK→OK nos PNGs
+de `public/ok_archive/` e >=98% de NG→NG nos PNGs de
+`public/ng_archive/`**, usando só essas duas pastas como
+fonte de dados e verdade esperada. Contar cada PNG, inclusive ADESIVO,
+e contar erros, revisões e casos sem cobertura como não acertos.
+Não incluir os 952 registros legados nem aproveitar acertos CNN para
+elevar a nota KNN. Separar recuperação por memória exata da avaliação
+KNN sem consultar a própria imagem como vizinho.
+
+A versão final do ODIN **não dependerá de um operador** para cada
+decisão. O bloqueio permanente por `REVISÃO OBRIGATÓRIA` deve ser
+substituído por um caminho automático **seguro e comprovado** de
+tratamento de incerteza e segregação/rejeição da peça, nunca liberando
+OK por falta de evidência. **São requisitos futuros ainda não
+implementados nesta atualização documental.** A meta anterior
+CNN 100% no seu escopo continua separada.
+
+Referência: [requisitos detalhados](docs/ODIN_STARTUP_REGRESSION_GATE.md)
+e [histórico de arquitetura](estrutura_projeto.md).
+
+---
+
 ## Diretriz atual — 13/10/2026: meta CNN 100% do acervo e ODIN sem operador
 
 A prioridade do projeto passou de >=98% para **100% de concordância
