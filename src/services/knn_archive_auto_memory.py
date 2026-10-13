@@ -94,6 +94,7 @@ class KNNArchiveAutoMemory:
         self._completed: set[tuple[str, tuple[int, int]]] = set()
         self._attempts: dict[str, tuple[int, float, tuple[int, int]]] = {}
         self._errors: dict[str, str] = {}
+        self._refresh_pending = False
         self._lock = Lock()
         self._total_added = 0
         self._last_pass = None
@@ -236,10 +237,7 @@ class KNNArchiveAutoMemory:
                     with self._lock:
                         self._errors.pop(relative, None)
                 if result["changed"] and self.on_committed is not None:
-                    try:
-                        self.on_committed(result)
-                    except Exception as exc:
-                        LOG.exception("KNN memória gravada; falha ao atualizar RAM: %s", exc)
+                    self._refresh_pending = True
                 LOG.info(
                     "KNN memória permanente: %d novas, total %d, OK %d / NG %d",
                     result["new"], result["total"],
@@ -250,10 +248,26 @@ class KNNArchiveAutoMemory:
                     self._errors["SNAPSHOT_WRITE"] = str(exc)
                 LOG.exception("KNN falhou na gravação atômica da memória: %s", exc)
                 errors += len(proposed)
+        # Memória persistida já é consultável; se o refresh de RAM falhar,
+        # tentar de novo nas próximas varreduras sem reaprender PNGs.
+        if self._refresh_pending and self.on_committed is not None:
+            try:
+                self.on_committed({"path": str(self.store.path)})
+                self._refresh_pending = False
+                with self._lock:
+                    self._errors.pop("HOT_REFRESH", None)
+            except Exception as exc:
+                with self._lock:
+                    self._errors["HOT_REFRESH"] = f"{type(exc).__name__}: {exc}"
+                LOG.warning("KNN snapshot salvo; refresh de RAM pendente: %s", exc)
         self._observed = {
             p: observation for p, observation in self._observed.items()
             if p in live
         }
+        self._completed = {(p, stamp) for p, stamp in self._completed
+                           if p in live}
+        self._attempts = {p: attempt for p, attempt in self._attempts.items()
+                          if p in live}
         with self._lock:
             self._total_added += newly_added
             self._last_pass = instant
