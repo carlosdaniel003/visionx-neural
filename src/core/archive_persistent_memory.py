@@ -11,6 +11,7 @@ fora do arquivo/dataset, fazer cópia .bak em cada atualização e backup extern
 from __future__ import annotations
 
 from collections import defaultdict
+from copy import deepcopy
 from hashlib import sha256
 import json
 import os
@@ -135,7 +136,7 @@ class PersistentArchiveKNN:
         """Append-only, nunca remove um exemplo antigo se o PNG foi excluído."""
         with self._lock:
             old = self._read()  # não converter snapshot corrompido em vazio
-            by_id = {r["id"]: r for r in old}
+            by_id = {r["id"]: deepcopy(r) for r in old}
             new_count = 0
             for record in proposed:
                 _check_record(record)
@@ -194,6 +195,25 @@ class PersistentArchiveKNN:
                 ),
             }
 
+    def lookup_identity(self, key: list[str]) -> dict:
+        """Lookup exato em snapshot persistido, para teste após sincronização."""
+        key = identity(*key)
+        matches = [r for r in self.records() if r["identity"] == key]
+        if not matches:
+            return {"status": "NEW", "reason": "Par não consta da memória durável"}
+        labels = {r["label"] for r in matches}
+        if len(labels) != 1:
+            return {
+                "status": "CONFLICT", "matches": len(matches),
+                "reason": "Par idêntico com rótulos OK e NG",
+            }
+        return {
+            "status": "KNOWN", "label": labels.pop(), "matches": len(matches),
+            "source_json": str(self.path),
+            "reason": "Par visual exato da memória durável dos arquivos OK/NG",
+            "memory_source": "ARCHIVE_PERSISTENT",
+        }
+
     def lookup(self, reference, test, info: dict) -> dict:
         if (reference is None or test is None
                 or getattr(reference, "size", 0) == 0
@@ -207,21 +227,7 @@ class PersistentArchiveKNN:
         except ValueError as exc:
             return {"status": "NEW", "reason": str(exc)}
         # Falha de integridade dispara exceção; não converter em memória vazia.
-        matches = [r for r in self.records() if r["identity"] == key]
-        if not matches:
-            return {"status": "NEW", "reason": "Par visual não consta da memória arquivada"}
-        labels = {r["label"] for r in matches}
-        if len(labels) != 1:
-            return {
-                "status": "CONFLICT", "matches": len(matches),
-                "reason": "Par idêntico com rótulos OK e NG",
-            }
-        return {
-            "status": "KNOWN", "label": labels.pop(), "matches": len(matches),
-            "source_json": str(self.path),
-            "reason": "Par visual exato da memória durável dos arquivos OK/NG",
-            "memory_source": "ARCHIVE_PERSISTENT",
-        }
+        return self.lookup_identity(key)
 
 
 def _labels_by_key(rows):
