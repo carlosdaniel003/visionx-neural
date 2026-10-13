@@ -106,6 +106,21 @@ def main():
 
     app = QApplication(sys.argv)
 
+    # Falha elétrica no meio do move: não permitir o watcher de arquivos
+    # reler dados parcialmente corrigidos como se fossem verdade validada.
+    from src.services.archive_label_correction import unfinished_corrections
+    from src.config.settings import BASE_DIR
+    pending = unfinished_corrections(BASE_DIR)
+    if pending:
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.critical(
+            None, "ODIN • Retificação interrompida",
+            "O ODIN não será iniciado para proteger a memória de produção. "
+            "Restaure ou audite o backup desta transação antes de continuar:\n"
+            + str(pending[0]),
+        )
+        return
+
     # Os hooks precisam ser instalados antes de o controller conectar os sinais.
     install_iconography_hooks(ControlPanel, OperationalControlsPresenter)
     install_capture_button_copy(OperationalControlsPresenter)

@@ -18,7 +18,7 @@ from src.core.archive_persistent_memory import (
     PersistentArchiveKNN, make_operator_record, make_record,
 )
 from src.services.archive_label_correction import (
-    apply_correction, prepare_correction,
+    apply_correction, prepare_correction, unfinished_corrections,
 )
 from src.services.image_archive_dedup import image_fingerprint
 
@@ -220,6 +220,7 @@ class ArchiveLabelCorrectionTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "interrompida"):
             prepare_correction(self.root, self.captures)
+        self.assertEqual(unfinished_corrections(self.root), [transaction])
 
 
 if __name__ == "__main__":

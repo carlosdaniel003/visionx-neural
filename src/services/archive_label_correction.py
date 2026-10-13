@@ -135,6 +135,30 @@ def _online_events(root: Path, event_ids: set[str], by_event_mode: dict) -> list
     return found
 
 
+def unfinished_corrections(root: Path | str) -> list[Path]:
+    """Transações sem conclusão verificada: bloquear startup produtivo."""
+    history = Path(root).resolve() / "reports" / "label_corrections"
+    if not history.is_dir():
+        return []
+    incomplete = []
+    for folder in history.iterdir():
+        if not folder.is_dir():
+            continue
+        status = folder / "status.json"
+        if not status.is_file():
+            # A falta do journal exige revisão quando existem backups.
+            if (folder / "before").exists():
+                incomplete.append(folder)
+            continue
+        try:
+            state = _json(status).get("state")
+        except Exception:
+            state = "CORRUPTED"
+        if state not in ("COMPLETED", "ROLLED_BACK"):
+            incomplete.append(folder)
+    return sorted(incomplete)
+
+
 def prepare_correction(root: Path | str, selected: list[str | Path]) -> dict:
     """Preflight rigoroso. Não altera NENHUM dado original."""
     root = Path(root).resolve()
@@ -150,15 +174,12 @@ def prepare_correction(root: Path | str, selected: list[str | Path]) -> dict:
     if any(not p.is_file() or p.is_symlink() or (ng / p.name).exists() for p in files):
         raise ValueError("Imagem ausente, link simbólico ou nome já existente em ng_archive")
 
-    status_root = root / "reports" / "label_corrections"
-    if status_root.is_dir():
-        for record in status_root.glob("*/status.json"):
-            state = _json(record).get("state")
-            if state not in ("COMPLETED", "ROLLED_BACK"):
-                raise ValueError(
-                    "Correção anterior interrompida: faça auditoria/restauração do backup "
-                    f"antes de continuar ({record.parent})"
-                )
+    incomplete = unfinished_corrections(root)
+    if incomplete:
+        raise ValueError(
+            "Correção anterior interrompida: restaure/audite o backup antes "
+            "de continuar (" + str(incomplete[0]) + ")"
+        )
 
     latest = root / "reports" / "neural_online" / "latest_event.json"
     if latest.is_file() and (
@@ -478,4 +499,4 @@ def apply_correction(plan: dict) -> dict:
         ) from exc
 
 
-__all__ = ["prepare_correction", "apply_correction"]
+__all__ = ["prepare_correction", "apply_correction", "unfinished_corrections"]
