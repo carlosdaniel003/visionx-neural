@@ -22,6 +22,7 @@ import numpy as np
 
 from src.config.settings import BASE_DIR
 from src.core.strict_category_memory import canonical_memory_category
+from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.services.image_archive_dedup import image_fingerprint
 
 ONLINE_SCHEMA = "visionx.specialist_online_case.v1"
@@ -34,9 +35,9 @@ LIGHTS = ("SIDE", "TOP", "MID")
 # Futuros especialistas apenas registram categoria, entrypoint e versão.
 SPECIALIST_TRAINERS = {
     "FALTANDO": "src.scripts.train_faltando_cnn_v2_online",
-    # DESLOCADO permanece com os motores físicos até NG reais independentes.
-    # Este treinador atualiza somente CANDIDATOS, nunca a CNN em produção.
-    "DESLOCADO": "src.scripts.train_deslocado_cnn_online",
+    "EMBORCADO": "src.scripts.train_faltando_cnn_v2_online",
+    "INVERTIDO": "src.scripts.train_faltando_cnn_v2_online",
+    "DESLOCADO": "src.scripts.train_faltando_cnn_v2_online",
 }
 
 
@@ -48,23 +49,15 @@ def _known_human_source(source: str) -> bool:
 def _is_novel_specialist(analysis: dict, category: str) -> bool:
     details = analysis.get("detail", {}) if isinstance(analysis, dict) else {}
     details = details if isinstance(details, dict) else {}
-    if category == "DESLOCADO":
-        routes = details.get("recognition_light_routes", {})
-        return (
-            details.get("recognition_route") == "NEW_EXPERTS"
-            or (isinstance(routes, dict)
-                and "NEW_EXPERTS" in routes.values())
-        )
-    if category == "FALTANDO":
-        if details.get("recognition_route") == "NEW_CNN":
-            return True
-        lighting = details.get("recognition_light_routes", {})
-        return (
-            isinstance(lighting, dict)
-            and "NEW_CNN" in lighting.values()
-        )
-    return details.get("recognition_route") == "NEW_CNN"
-
+    route = details.get("recognition_route")
+    routes = details.get("recognition_light_routes", {})
+    multilight = routes.values() if isinstance(routes, dict) else ()
+    # CNN V2 cobre FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO.
+    # NÃO treinar se a inspeção já foi reconhecida pela memória KNN.
+    return bool(
+        uses_faltando_v2(category)
+        and (route == "NEW_CNN" or "NEW_CNN" in multilight)
+    )
 
 def eligible_online_case(task: dict) -> bool:
     """Defesa contra pseudo-rótulos e treinamento da mesma imagem repetida."""
@@ -222,9 +215,11 @@ class OnlineLearningQueue:
         category = canonical_memory_category(task["aoi_info"].get("category"))
         samples = task.get("multilight_samples", [])
         if (
-            isinstance(samples, list) and len(samples) == 3
-            and set(str(s.get("lighting_mode", "")).upper() for s in samples)
-            == set(LIGHTS)
+            isinstance(samples, list) and 1 <= len(samples) <= 3
+            and len({str(s.get("lighting_mode", "")).upper()
+                     for s in samples}) == len(samples)
+            and all(str(s.get("lighting_mode", "")).upper() in LIGHTS
+                    for s in samples)
         ):
             inputs = samples
         else:
