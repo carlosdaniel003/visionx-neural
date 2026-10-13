@@ -1,3 +1,43 @@
+## 13/10/2026 — REQUISITOS ATUAIS: CNN 100% ACERVO, ODIN AUTÔNOMO
+
+**Esta seção prevalece sobre metas históricas de 98% e a ideia de revisão
+humana obrigatória em produção, presentes nas seções antigas deste arquivo.**
+Detalhes e critérios de aceite: `docs/ODIN_STARTUP_REGRESSION_GATE.md`.
+
+**CNN / escopo de validação:** usar **exclusivamente** os PNGs de
+`public/ok_archive/` e `public/ng_archive/`, executar novamente a
+CNN sem KNN, exigir **100% OK→OK e 100% NG→NG** com vereditos
+operacionais conclusivos e nenhum caso em revisão. Não misturar JSONs
+legados, conjuntos experimentais ou números de outras auditorias.
+Não remover casos difíceis. MUITO ADESIVO é a exceção previamente
+aprovada, adiada para uma CNN própria com novos dados; manter seus
+arquivos preservados e fora do denominador, mas sempre contabilizados.
+
+**Linha de base real de 09/10/2026:** 212 PNGs nas duas pastas, 10
+adesivos sem CNN, 202 elegíveis à CNN compartilhada (187 OK e 15 NG);
+**202/202 predições binárias corretas**, mas **201/202 vereditos
+operacionais corretos**, com revisão em
+`2026-10-09_0857_DESLOCADO_SIDE.png`. O caso
+`2026-10-02_1542_FALTANDO.png` agora é reconhecido como FALHA FALSA
+pela CNN apesar de `board` ausente no OCR. Não chamar 99,50% de 100%
+conclusivo e não mascarar a única revisão. 0 NG reais DESLOCADO e 0
+manifestos explícitos TOP/MID/SIDE: não há prova de acerto em NG futuro
+DESLOCADO ou de consenso multilight por evento.
+
+**Produto final sem humano:** ODIN deve decidir OK/NG automaticamente e
+não depender de operador apertando 0/1. "REVISÃO OBRIGATÓRIA" não será
+fila bloqueante na configuração autônoma final. Incertidão, erro de
+aquisição e conflitos jamais viram OK por conveniência; definir e
+testar **rejeição/segregação automática segura** da peça, distinta
+de NG físico confirmado, sem travar esperando humano. Só considerar
+`1/NG` como caminho de falha depois de verificar semântica e segurança
+da integração com a máquina. Aprendizagem não deve rotular imagens com
+a própria predição. Não reduzir limiares, forçar rótulos ou retirar
+travas de segurança antes da validação de NG independentes, incluindo
+NG reais DESLOCADO. **Esta atualização é documentação, não mudança
+operacional executada.**
+
+---
 ## 09/10/2026 — Meta principal de regressão CNN em todo o histórico visual (98%)
 
 **Critério do operador:** todas as imagens históricas com rótulo OK/NG
