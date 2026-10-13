@@ -1,3 +1,12 @@
+## 13/10/2026 — BOTÃO TREINAMENTO VISUAL (REPLAY HISTÓRICO NÃO MUTANTE)
+
+- Seção visual independente de Sombra/Teste/Produção, instalada em `main.py` via `src/ui/training_validation_panel.py`, com `Iniciar treinamento`, `Cancelar`, progresso por verificação, estatísticas OK/NG KNN e CNN separadas, contagens de regressão/cobertura e caminhos dos relatórios.
+- Processo isolado `src.services.startup_regression.interactive_training_validation` criado por QProcess com prioridade CPU reduzida, máximo 1 thread Torch/OpenCV, JSON progressivo por stdout, encerramento cooperativo via marcador `.cancel` e timeout para forçar encerramento. Não executa 0/1, treina pesos, atualiza snapshot KNN nem muda classificação real da linha.
+- Diagnóstico varre os atuais `public/ok_archive` e `public/ng_archive`, identifica classe por rótulo da pasta; compara KNN persistente exata para todos os PNGs e CNN FALTANDO V2 do checkpoint ativo para as quatro categorias de ausência. ADESIVO fora da CNN não conta acerto. Revisão, cobertura ausente e inválidos são falhas; OK e NG calculados independentemente; até cancelamento parcial mantém os não avaliados no denominador.
+- Grava `reports/startup_regression/training_validation_*.json/.txt`; cancelamento antes de OCR retornar pode ser forçado e não gravar parcial. Snapshot de produção e dataset não são alterados. Testes: `tests/test_interactive_training_validation.py`, `tests/test_training_validation_panel.py`; CI `.github/workflows/interactive-training-validation-tests.yml` aprovado (9 testes, run 38402329552).
+- Esse replay não constitui treinamento supervisionado dos modelos, nem holdout de generalização; valida se fotos históricas são hoje reconhecidas. Atividade separada no sistema pode consumir recursos, portanto reduzir prioridade e medir latência na estação antes de declarar zero impacto.
+
+---
 ## 13/10/2026 — APRENDIZADO LIVE SEM ESPERAR DISCO/CNN
 
 Fluxo: operador (Teste/Sombra/Produção assistida) confirma 0/1 -> `src/services/anomaly_learning.py` persiste o par AOI exato em `PersistentArchiveKNN` antes de permitir a próxima inspeção -> nova imagem idêntica encontra `KNOWN_KNN` na mesma sessão. A fonte `operator_confirmed/<uuid>` é diferente de uma foto de arquivo; o registro vive em `data/knn_archive_memory/memory.json`, sem depender das imagens originais. Fonte `production_auto` não cria rótulo supervisionado para não reforçar falsos OK/NG.
