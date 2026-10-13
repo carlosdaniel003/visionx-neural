@@ -23,6 +23,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2, LIGHTS, MODEL_SCHEMA_V2
+from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.core.neural.faltando_live import (
     PINNED_CHECKPOINT_SHA256, PINNED_RELATIVE_CHECKPOINT,
 )
@@ -60,7 +61,7 @@ def _on_disk_event(json_path: Path, root: Path) -> dict:
         raise ValueError("Evento online fora do journal")
     row = json.loads(json_path.read_text(encoding="utf-8"))
     if (row.get("schema") != ONLINE_SCHEMA
-            or row.get("category") != "FALTANDO"
+            or not uses_faltando_v2(row.get("category", ""))
             or row.get("label") not in ("OK", "NG")
             or not row.get("training_requested")
             or not _known_human_source(row.get("human_source", ""))):
@@ -179,7 +180,7 @@ def _all_online(root: Path) -> list[dict]:
             raise ValueError("Schema de evento incremental desconhecido")
         # Treinadores de futuras CNNs compartilharão a mesma fila,
         # mas não poderão contaminar o dataset de FALTANDO.
-        if entry.get("category") != "FALTANDO":
+        if not uses_faltando_v2(entry.get("category", "")):
             continue
         rows.append(_on_disk_event(path, root))
     by_identity = {}
