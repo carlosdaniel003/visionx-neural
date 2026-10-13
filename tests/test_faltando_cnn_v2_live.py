@@ -150,6 +150,34 @@ class ModelTests(unittest.TestCase):
         self.assertIsNone(clf._model)
 
 
+    def test_identical_cnn_inference_is_cached_in_session_not_self_trained(self):
+        from unittest.mock import patch
+
+        class DeterministicModel:
+            calls = 0
+            def __call__(self, *args):
+                self.calls += 1
+                return torch.tensor([-11.0]), torch.tensor([[-11.0, -11.0, -11.0]])
+
+        clf = FaltandoCNNLive(self.checkpoint, self.hash)
+        clf._metadata = {"image_size": 64, "focus_fraction": .70}
+        dummy = DeterministicModel()
+        r, t = pair()
+        with patch.object(clf, "_load", return_value=dummy):
+            first = clf.inspect(r, t, "SIDE")
+            second = clf.inspect(r, t, "SIDE")
+            other_light = clf.inspect(r, t, "TOP")
+            changed = t.copy()
+            changed[1, 1, 0] ^= 1
+            changed_result = clf.inspect(r, changed, "SIDE")
+        self.assertEqual(dummy.calls, 3)
+        self.assertFalse(first["detail"]["cnn_v2_session_inference_cache"])
+        self.assertTrue(second["detail"]["cnn_v2_session_inference_cache"])
+        self.assertFalse(other_light["detail"]["cnn_v2_session_inference_cache"])
+        self.assertFalse(changed_result["detail"]["cnn_v2_session_inference_cache"])
+        self.assertEqual(first["verdict"], second["verdict"])
+        self.assertFalse(second["detail"]["cnn_v2_session_cache_is_training"])
+
     def test_unexpected_model_exception_forces_review(self):
         class BrokenModel:
             def __call__(self, *inputs):
