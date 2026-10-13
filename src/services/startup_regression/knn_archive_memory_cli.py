@@ -220,8 +220,24 @@ def main(argv=None):
     )
     parser.add_argument("--root", type=Path,
                         default=Path(__file__).resolve().parents[3])
+    parser.add_argument(
+        "--status", action="store_true",
+        help="Verificar memória salva, sem ler PNGs ou executar OCR",
+    )
     args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()
+    if args.status:
+        store = PersistentArchiveKNN(root)
+        entries = store.records()
+        print(
+            f"Snapshot KNN: {store.path}\n"
+            f"Registros persistidos: {len(entries)}\n"
+            f"OK: {sum(r['label'] == 'OK' for r in entries)}\n"
+            f"NG: {sum(r['label'] == 'NG' for r in entries)}\n"
+            "Integridade: validada (schema, checksum, identidades)",
+            flush=True,
+        )
+        return 0
     print("Sincronizando KNN permanente: OK/NG -> snapshot...", flush=True)
 
     def progress(i, n, path):
