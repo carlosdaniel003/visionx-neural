@@ -182,6 +182,11 @@ def _all_online(root: Path) -> list[dict]:
         # mas não poderão contaminar o dataset de FALTANDO.
         if not uses_faltando_v2(entry.get("category", "")):
             continue
+        routes = entry.get("recognition_route")
+        if entry.get("category") == "DESLOCADO" and routes == "NEW_EXPERTS":
+            # Histórico do treinador especializado DESLOCADO não pode ser
+            # reclassificado como supervisão da CNN FALTANDO V2.
+            continue
         rows.append(_on_disk_event(path, root))
     by_identity = {}
     for row in rows:
