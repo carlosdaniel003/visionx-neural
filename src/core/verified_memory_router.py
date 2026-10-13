@@ -15,6 +15,7 @@ from threading import RLock
 import cv2
 import numpy as np
 
+from src.core.archive_persistent_memory import PersistentArchiveKNN
 from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.core.strict_category_memory import (
     canonical_memory_category, canonical_memory_lighting,
@@ -57,7 +58,8 @@ def _fingerprint_png(path: Path) -> str:
 class VerifiedKNNMemory:
     """Índice da memória KNN, apenas entradas humanas com dois PNGs auditáveis."""
 
-    def __init__(self):
+    def __init__(self, *, archive_store=None):
+        self.archive_store = archive_store if archive_store is not None else PersistentArchiveKNN()
         self._lock = RLock()
         self._index: dict[tuple, list[dict]] | None = None
         self._record_identity: tuple | None = None
@@ -141,13 +143,22 @@ class VerifiedKNNMemory:
         """Retorna KNOWN/NEW/CONFLICT/UNAVAILABLE, sem similaridade aproximada."""
         if not _image_ok(reference) or not _image_ok(test):
             return {"status": "UNAVAILABLE", "reason": "Par AOI inválido"}
+        # Consulta independente dos PNGs (o snapshot continua após exclusão).
+        # Erro de integridade é elevado e bloqueia a aprovação por segurança.
+        durable = self.archive_store.lookup(reference, test, info)
+        if durable["status"] in {"CONFLICT", "UNAVAILABLE"}:
+            return durable
         key = self._key(
             info, image_fingerprint(reference), image_fingerprint(test)
         )
         if key is None:
-            return {"status": "NEW", "reason": "OCR/categoria ou par incompleto"}
+            return durable if durable["status"] == "KNOWN" else {
+                "status": "NEW", "reason": "OCR/categoria ou par incompleto"
+            }
         if knn is None:
-            return {"status": "NEW", "reason": "Nenhuma memória KNN carregada"}
+            return durable if durable["status"] == "KNOWN" else {
+                "status": "NEW", "reason": "Nenhuma memória KNN carregada"
+            }
 
         lock = getattr(knn, "_memory_lock", None)
         if lock is not None:
@@ -178,20 +189,27 @@ class VerifiedKNNMemory:
 
             matched = list(self._index.get(key, ()))
         if not matched:
-            return {
+            return durable if durable["status"] == "KNOWN" else {
                 "status": "NEW",
-                "reason": "Par exato não encontrado nos PNGs humanos da memória KNN",
+                "reason": "Par exato não encontrado na memória humana nem no arquivo KNN",
             }
         labels = {item["label"] for item in matched}
+        if durable["status"] == "KNOWN":
+            labels.add(durable["label"])
         if len(labels) != 1:
             return {
-                "status": "CONFLICT", "reason": "Par idêntico rotulado como OK e NG",
-                "matches": len(matched),
+                "status": "CONFLICT",
+                "reason": "Memória humana e/ou arquivo histórico divergem em OK/NG",
+                "matches": len(matched) + (durable.get("matches", 0)
+                                            if durable["status"] == "KNOWN" else 0),
             }
         return {
             "status": "KNOWN", "label": labels.pop(),
-            "source_json": matched[0]["source_json"], "matches": len(matched),
-            "reason": "Par exato confirmado no índice de memória KNN",
+            "source_json": matched[0]["source_json"],
+            "matches": len(matched) + (durable.get("matches", 0)
+                                       if durable["status"] == "KNOWN" else 0),
+            "reason": "Par visual exato com rótulo consistente",
+            "memory_source": "HUMAN_VERIFIED_PAIR",
         }
 
 
@@ -221,7 +239,7 @@ def _recognized_result(match: dict, mode: str) -> dict:
         "verdict": "DEFEITO REAL" if ng else "FALHA FALSA",
         "reason": (
             f"MEMÓRIA KNN: caso já analisado e confirmado como {label}. "
-            "Gabarito/teste, placa, componente, categoria e iluminação idênticos."
+            "Gabarito/teste, categoria e iluminação idênticos."
         ),
         "production_review_required": False,
         "active_engines": ["knn_expert.py"],
@@ -235,6 +253,7 @@ def _recognized_result(match: dict, mode: str) -> dict:
             "recognition_memory_path": match["source_json"],
             "recognition_memory_matches": match["matches"],
             "recognition_memory_verified": True,
+            "recognition_memory_source": match.get("memory_source", "HUMAN_VERIFIED_PAIR"),
             "recognition_specialists_skipped": True,
             "has_memory": True, "memory_available": True,
             "best_similarity": 1.0, "best_match_label": label,
