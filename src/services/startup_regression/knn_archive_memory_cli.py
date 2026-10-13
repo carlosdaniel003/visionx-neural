@@ -145,11 +145,12 @@ def synchronize_archive_knn(
         "uses_cnn": False,
         "training_truth": "OK_AND_NG_ARCHIVE_FOLDER",
         "memory_path": str(store.path),
-        "memory_survives_archive_file_deletion": True,
+        "retained_records_survive_archive_file_deletion": True,
         "snapshot": saved,
         "summary": {
             "total": len(cases), "recalled_correct": passed,
             "failed": len(cases) - passed,
+            "all_current_archive_memorized": len(cases) > 0 and passed == len(cases),
             "status_counts": dict(sorted(Counter(
                 c["status"] for c in cases).items())),
             "by_label": by_label,
@@ -192,6 +193,7 @@ def write_report(report: dict, output_dir: Path):
         f"Memorizados e recuperados: {s['recalled_correct']}/{s['total']}",
         f"Status: {s['status_counts']}",
         f"Meta recuperação por classe >=98%: {s['archive_98pct_target_met']}",
+        f"TODO acervo atual persistido: {s['all_current_archive_memorized']}",
         f"Snapshot: {report['snapshot']}",
         "",
         "POR CLASSE:",
@@ -251,10 +253,11 @@ def main(argv=None):
     print(
         f"Memória salva: {report['memory_path']}\n"
         f"Meta >=98% por classe: {report['summary']['archive_98pct_target_met']}\n"
+        f"Todos os PNGs atuais memorizados: {report['summary']['all_current_archive_memorized']}\n"
         f"JSON: {j}\nTXT: {t}",
         flush=True,
     )
-    return 0 if report["summary"]["archive_98pct_target_met"] else 1
+    return 0 if report["summary"]["all_current_archive_memorized"] else 1
 
 
 if __name__ == "__main__":
