@@ -78,6 +78,59 @@ métricas dos motores nem usar a CNN para completar a taxa KNN.
 
 ---
 
+## 13/10/2026 — Execução disponível: replay KNN visual apenas das duas pastas
+
+**Código de diagnóstico (sem modificar o motor produtivo):**
+- `src/services/startup_regression/knn_archive_visual_replay.py`
+- `src/services/startup_regression/knn_archive_visual_replay_cli.py`
+- `tests/test_knn_archive_visual_replay.py`
+- CI: `.github/workflows/knn-archive-visual-replay-tests.yml`.
+
+**Na estação que contém os PNGs reais:**
+
+```powershell
+cd "C:\visionx-neural-main"
+git pull origin central
+python -m src.services.startup_regression.knn_archive_visual_replay_cli
+```
+
+A execução padrão (`--protocol leave_day_out --k 5`) percorre
+todos os PNGs nas pastas, extrai o **par AOI real** por OCR,
+constrói assinaturas de anomalia com o código do projeto
+(`build_anomaly_signature`), compara por
+`compare_anomaly_signatures` e usa o voto de
+`KNNExpert._weighted_vote`. Consulta cada imagem sem o próprio
+PNG, sem conteúdo pixel-a-pixel duplicado, sem o mesmo prefixo de
+captura e **sem nenhuma referência da mesma data**.
+Quando não houver data auditável no nome, a amostra é inválida
+no protocolo por dia, não ganha uma avaliação frouxa sem aviso.
+Os vizinhos pertencem somente à mesma categoria e iluminação;
+não há busca global que misture defeitos diferentes.
+
+**Saída:** `reports/startup_regression/knn_archive_visual_*.json`
+e `*.txt`, com lista de casos, voto NG, vizinhos, falsos OK em NG,
+falsos NG em OK, não cobertos, OCR inválido, categorias e iluminação.
+`--protocol leave_one_out` é apenas diagnóstico comparativo menos
+rigoroso; **não usar como substituto da avaliação por dia**.
+O script nunca lê os JSONs da memória legada nem consulta CNN.
+
+**Distinção obrigatória:** isto é uma **KNN temporária avaliada a
+partir das assinaturas extraídas do arquivo**, não o mesmo índice
+`VerifiedKNNMemory` de produção, cujo atalho exige o par exato
+gabarito/teste previamente confirmado por humano.
+Portanto, não chamar a aprovação desse replay de validação da
+KNN de produção. O teste mede se o algoritmo de vizinhos tem
+discriminação OK/NG em dados arquivados, sem auto-memorização do
+próprio exemplo. Nenhum resultado real foi medido pelo GitHub CI
+porque os PNGs não estão no repositório: os resultados só surgem
+após rodar na estação e avaliar o relatório.
+
+**Estado:** implementação do teste executável concluída;
+a taxa KNN histórica real >=98% por classe permanece por medir.
+Modo Produção, rotas, memória e segurança existentes inalterados.
+
+---
+
 # DIRETRIZ VIGENTE — 13/10/2026: CNN 100% DO ACERVO VISUAL E PRODUÇÃO AUTÔNOMA
 
 > **Prioridade definida pelo responsável do projeto.** Esta decisão substitui a antiga
