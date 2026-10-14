@@ -195,6 +195,101 @@ class AutoArchiveTests(unittest.TestCase):
         activate_archive_auto_memory(None)
         self.assertIsNone(archive_auto_memory_activity())
 
+    def test_scandir_nested_pngs_are_sorted_and_do_not_follow_symlinks(self):
+        """Enumera o mesmo conjunto seguro, sem resolver cada caminho."""
+        from pathlib import Path
+
+        a = self.ng_dir / "sub" / "Z-last.PNG"
+        b = self.ok_dir / "sub" / "a-first.png"
+        c = self.ok_dir / "root.png"
+        for path in (a, b, c):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"png candidate for enumeration only")
+        (self.ok_dir / "ignored.jpeg").write_bytes(b"not png")
+        discovered = self.watcher._list_files()
+        self.assertEqual(
+            discovered,
+            sorted(
+                [(a, "NG"), (b, "OK"), (c, "OK")],
+                key=lambda pair: str(pair[0]).casefold(),
+            ),
+        )
+
+        outside = self.root / "untrusted"
+        outside.mkdir()
+        (outside / "escape.png").write_bytes(b"not imported")
+        linked_dir = self.ok_dir / "linked_dir"
+        linked_png = self.ng_dir / "linked.png"
+        try:
+            linked_dir.symlink_to(outside, target_is_directory=True)
+            linked_png.symlink_to(outside / "escape.png")
+        except (OSError, NotImplementedError):
+            # Criacao de links no Windows corporativo pode requerer direitos.
+            pass
+        else:
+            self.assertEqual(self.watcher._list_files(), discovered)
+        # A varredura nao avalia valores ou integra memoria.
+        self.assertEqual(self.store.records(), [])
+
+    def test_win32_background_priority_only_uses_current_thread(self):
+        import ctypes
+        from unittest.mock import MagicMock
+        from src.services import knn_archive_auto_memory as service
+
+        api = MagicMock()
+        api.GetCurrentThread.return_value = 1234
+        api.SetThreadPriority.return_value = 1
+        with patch.object(service.sys, "platform", "win32"), patch.object(
+            ctypes, "WinDLL", return_value=api, create=True,
+        ):
+            self.assertTrue(service._set_background_thread_mode(True))
+            self.assertTrue(service._set_background_thread_mode(False))
+        self.assertEqual(
+            [call.args for call in api.SetThreadPriority.call_args_list],
+            [(1234, 0x00010000), (1234, 0x00020000)],
+        )
+        self.assertEqual(api.GetCurrentThread.call_count, 2)
+        api.SetThreadPriority.return_value = 0
+        with patch.object(service.sys, "platform", "win32"), patch.object(
+            ctypes, "WinDLL", return_value=api, create=True,
+        ), patch.object(ctypes, "get_last_error", return_value=5, create=True):
+            self.assertFalse(service._set_background_thread_mode(True))
+
+    def test_priority_is_set_and_restored_inside_watcher_thread(self):
+        from src.services import knn_archive_auto_memory as service
+
+        entered = Event()
+        release = Event()
+        mode_calls = []
+
+        def scan():
+            entered.set()
+            release.wait(timeout=2.0)
+            return {"imported": 0}
+
+        def mode(enable):
+            mode_calls.append(enable)
+            return True
+
+        try:
+            with patch.object(
+                service, "_set_background_thread_mode", side_effect=mode,
+            ), patch.object(self.watcher, "scan_once", side_effect=scan):
+                self.watcher.start()
+                self.assertTrue(entered.wait(timeout=2.0))
+                self.assertTrue(
+                    self.watcher.activity()["background_priority_applied"]
+                )
+                release.set()
+                self.watcher.stop(timeout=2.0)
+                self.assertFalse(
+                    self.watcher.activity()["background_priority_applied"]
+                )
+        finally:
+            release.set()
+            self.watcher.stop(timeout=2.0)
+        self.assertEqual(mode_calls, [True, False])
+
     def test_worker_thread_and_instant_notification(self):
         done = Event()
         self.watcher.on_committed = lambda _result: done.set()
