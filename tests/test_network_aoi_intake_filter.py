@@ -44,6 +44,81 @@ class NetworkLatestCandidateTests(unittest.TestCase):
         self.assertIsNotNone(candidate)
         self.assertTrue(np.array_equal(candidate[0], self.first))
 
+    def test_xp_backlog_must_not_starve_after_four_plus_stable_frames(self):
+        sig = self.receiver._frame_signature(self.first)
+        for n in range(2):
+            count = self.receiver._stage_latest_candidate(
+                self.first, sig, "192.168.0.10",
+                received_at=100.0 + n * 0.18,
+            )
+        self.assertEqual(count, 2)
+        self.assertTrue(self.receiver._defer_candidate_for_pending_socket(
+            pending=True, received_at=100.18,
+        ))
+        self.assertFalse(self.receiver._defer_candidate_for_pending_socket(
+            pending=False, received_at=100.18,
+        ))
+
+        for n in (2, 3):
+            self.receiver._stage_latest_candidate(
+                self.first, sig, "192.168.0.10",
+                received_at=100.0 + n * 0.18,
+            )
+        # 4 quadros e 540 ms ainda privilegiam a fila mais nova.
+        self.assertTrue(self.receiver._defer_candidate_for_pending_socket(
+            pending=True, received_at=100.54,
+        ))
+        self.receiver._stage_latest_candidate(
+            self.first, sig, "192.168.0.10", received_at=100.72,
+        )
+        self.assertFalse(self.receiver._defer_candidate_for_pending_socket(
+            pending=True, received_at=100.72,
+        ))
+        self.assertEqual(self.receiver._candidate_stable_frames, 5)
+        self.assertEqual(self.receiver._candidate_socket_backlog_deferrals, 2)
+        self.receiver._reserve_candidate(sig)
+        self.assertEqual(self.receiver._candidate_socket_backlog_deferrals, 0)
+
+    def test_new_screen_resets_backlog_bypass_until_stable_again(self):
+        a = self.receiver._frame_signature(self.first)
+        b = self.receiver._frame_signature(self.second)
+        for i in range(5):
+            self.receiver._stage_latest_candidate(
+                self.first, a, "192.168.0.10",
+                received_at=100.0 + i * 0.18,
+            )
+        self.assertFalse(self.receiver._defer_candidate_for_pending_socket(
+            pending=True, received_at=100.72,
+        ))
+        self.assertEqual(
+            self.receiver._stage_latest_candidate(
+                self.second, b, "192.168.0.10", received_at=100.90,
+            ), 1,
+        )
+        self.assertIsNone(self.receiver._candidate_snapshot())
+        self.receiver._stage_latest_candidate(
+            self.second, b, "192.168.0.10", received_at=101.08,
+        )
+        self.assertTrue(self.receiver._defer_candidate_for_pending_socket(
+            pending=True, received_at=101.08,
+        ))
+        self.assertEqual(self.receiver._candidate_stable_frames, 2)
+
+    def test_release_gate_resets_pending_backlog_count(self):
+        sig = self.receiver._frame_signature(self.first)
+        self.receiver._stage_latest_candidate(
+            self.first, sig, "192.168.0.10", received_at=100.0,
+        )
+        self.receiver._stage_latest_candidate(
+            self.first, sig, "192.168.0.10", received_at=100.2,
+        )
+        self.assertTrue(self.receiver._defer_candidate_for_pending_socket(
+            pending=True, received_at=100.2,
+        ))
+        self.receiver.release_image_gate()
+        self.assertEqual(self.receiver._candidate_socket_backlog_deferrals, 0)
+        self.assertIsNone(self.receiver._candidate_snapshot())
+
     def test_newer_different_frame_replaces_candidate(self):
         first_signature = self.receiver._frame_signature(self.first)
         second_signature = self.receiver._frame_signature(self.second)
