@@ -2,15 +2,15 @@
 
 O nome da classe/módulo é mantido por compatibilidade histórica. A automação
 controla a troca de iluminação, a coleta das imagens auxiliares e o fechamento
-do ciclo multilight. TOP/MID são analisadas antes do avanço da máquina de
-estados e, ao final, SIDE/TOP/MID são fundidas em um único julgamento.
+do ciclo multilight. Após receber TOP estável, solicita MID enquanto TOP ainda
+é analisada. O julgamento final aguarda as três análises e a fusão.
 
 No Modo Produção, a fusão final não envia 0/1 diretamente. Ela entrega o
 resultado ao ProductionAutonomyController, que apresenta a interface com scroll
 e aplica a política operacional do modo.
 
-SIDE já recebido -> TOP -> análise TOP -> MID -> análise MID -> restaura SIDE
--> fusão final -> apresentação do Modo Produção.
+SIDE já recebido -> TOP estável -> comanda MID e analisa TOP -> MID estável
+-> análise MID -> restaura SIDE -> fusão final -> apresentação da Produção.
 
 As setas da AOI são seletores absolutos:
 LEFT=TOP, DOWN=SIDE, RIGHT=MID.
@@ -195,18 +195,24 @@ class AdhesiveMultiLightAutomation(QObject):
 
         return False
 
-    def shadow_top_captured(self) -> bool:
-        """Após armazenar TOP, solicitar MID antes da análise TOP.
+    def top_captured(self) -> bool:
+        """Inicia a aquisição MID assim que TOP estável foi armazenada.
 
-        Só muda iluminação RIGHT. Não envia nenhuma decisão 0/1.
+        A análise TOP continua normalmente em Teste, Sombra e Produção.
+        Só envia PRESS_RIGHT; jamais autoriza uma decisão 0/1.
         """
-        if (not self.active or self.expected_mode != "TOP"
-                or self.panel.combo_mode.currentText() != "Modo Sombra"):
+        if not self.active or self.expected_mode != "TOP":
             return False
         self._timeout.stop()
         self.captured_modes.add("TOP")
         self.retry_count = 0
         return self._request_mode("MID", reset_retry=True)
+
+    def shadow_top_captured(self) -> bool:
+        """Compatibilidade com a chamada original exclusiva da Sombra."""
+        if self.panel.combo_mode.currentText() != "Modo Sombra":
+            return False
+        return self.top_captured()
 
     def _handle_timeout(self) -> None:
         if not self.active or not self.expected_mode:
