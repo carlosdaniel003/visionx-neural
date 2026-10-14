@@ -507,6 +507,22 @@ def format_multilight_debug_report(panel) -> str:
                 "Elegível para resultado final multilight: False",
             ]
         )
+        verified = detail.get("verified_memory_timing")
+        if isinstance(verified, dict) and verified:
+            lines.extend([
+                "",
+                "PERFIL DO ROTEADOR KNN VERIFICADO (ms)",
+                f"Status: {verified.get('status', '-')}",
+                f"Consulta total: {verified.get('total_ms', '-')} ms",
+                f"Consulta ao arquivo persistente: {verified.get('archive_lookup_ms', '-')} ms",
+                f"Hashes dos pares no roteador: {verified.get('fingerprints_ms', '-')} ms",
+                f"Snapshot dos registros KNN: {verified.get('records_snapshot_ms', '-')} ms",
+                f"Reconstrucao do indice: {verified.get('index_build_ms', '-')} ms",
+                f"Consulta ao indice (inclui reconstrucao): {verified.get('index_lookup_ms', '-')} ms",
+                f"Indice reutilizado: {verified.get('index_reused', '-')}",
+                f"Registros no indice: {verified.get('record_count', '-')}",
+                f"Pares encontrados: {verified.get('matched_count', '-')}",
+            ])
         profile = detail.get("cnn_v2_performance")
         if isinstance(profile, dict) and profile:
             lines.extend([""] + format_inference_profile(profile))

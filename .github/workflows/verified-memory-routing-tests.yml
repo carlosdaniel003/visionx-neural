@@ -12,6 +12,12 @@ on:
       - "main.py"
       - "tests/test_verified_memory_router.py"
       - ".github/workflows/verified-memory-routing-tests.yml"
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/core/verified_memory_router.py"
+      - "tests/test_verified_memory_router.py"
+      - ".github/workflows/verified-memory-routing-tests.yml"
   workflow_dispatch:
 
 jobs:

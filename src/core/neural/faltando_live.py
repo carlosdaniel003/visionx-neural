@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from src.core.neural.faltando_category_scope import uses_faltando_v2
+from src.core.neural.faltando_checkpoint_contract import POINTER_SCHEMA
 from src.core.neural.faltando_inference_telemetry import (
     InferencePhaseProfile, elapsed_ms,
 )
@@ -105,7 +106,6 @@ class FaltandoCNNLive:
 
     def _refresh_live_pointer(self) -> None:
         """Ativa atomicamente pesos online SOMENTE após o gate de regressão."""
-        from src.scripts.train_faltando_cnn_v2_online import POINTER_SCHEMA
         root = self._online_root
         pointer = root / "reports" / "neural_online" / "live_active.json"
         if not pointer.exists():
@@ -305,7 +305,7 @@ class FaltandoCNNLive:
             profile.record_checkpoint(self._last_load_profile)
             profile.checkpoint_loaded = bool(self._last_load_did_reload)
             import torch
-            from src.scripts.train_faltando_cnn_v2 import (
+            from src.core.neural.faltando_preprocessing import (
                 _focus_crop, _letterbox_rgb,
             )
             prepare_started_at = time.perf_counter()
