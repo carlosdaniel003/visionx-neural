@@ -143,7 +143,7 @@ class OCRBenchmarkTests(unittest.TestCase):
         sources = benchmark._image_paths(SimpleNamespace(
             manifest=str(manifest), images=None,
         ))
-        self.assertEqual(sources, [(self.path, EXPECTED)])
+        self.assertEqual(sources, [(self.path.resolve(strict=True), EXPECTED)])
 
         manifest.write_text(json.dumps([
             {"path": "frame.png", "expected": {"board": "fake"}}
@@ -198,13 +198,21 @@ class OCRBenchmarkTests(unittest.TestCase):
             "--images", str(self.path), "--repeats", "1",
             "--output", str(output),
         ]
+        actual_compare = benchmark.compare_variants
+
+        def mocked_compare(sources, repeats):
+            return actual_compare(
+                sources, repeats,
+                monitor_factory=self.monitor_factory,
+                tesseract_module=self.fake,
+            )
+
         with patch.object(screen_monitor, "HAS_TESSERACT", True), patch.object(
             screen_monitor, "pytesseract", self.fake
         ), patch.object(benchmark, "locate_bars", return_value=(
             (120, 220, 240, 14), (510, 220, 240, 14),
         )), patch.object(
-            benchmark, "compare_variants",
-            wraps=lambda sources, repeats: self.run_benchmark(sources, repeats),
+            benchmark, "compare_variants", side_effect=mocked_compare,
         ):
             self.assertEqual(benchmark.main(args), 0)
             first = output.read_bytes()
