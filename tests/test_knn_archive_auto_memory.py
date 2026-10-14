@@ -155,6 +155,46 @@ class AutoArchiveTests(unittest.TestCase):
         self.assertEqual(self.store.path.read_text("utf-8"),
                          '{"schema":"not-compatible"}')
 
+    def test_live_worker_activity_reports_only_sanitized_load(self):
+        from src.services.knn_archive_auto_memory import (
+            archive_auto_memory_activity,
+        )
+        started = Event()
+        release = Event()
+
+        def slow_pass():
+            self.watcher._set_worker_phase("extracting_png")
+            started.set()
+            release.wait(timeout=2)
+            return {"imported": 0}
+
+        self.addCleanup(release.set)
+        activate_archive_auto_memory(self.watcher)
+        self.addCleanup(activate_archive_auto_memory, None)
+        with patch.object(self.watcher, "scan_once", side_effect=slow_pass):
+            self.watcher.start()
+            self.assertTrue(started.wait(timeout=2))
+            busy = archive_auto_memory_activity()
+            self.assertTrue(busy["running"])
+            self.assertTrue(busy["scan_active"])
+            self.assertEqual(busy["phase"], "extracting_png")
+            self.assertGreaterEqual(busy["busy_total_ms"], 0)
+            self.assertNotIn("source_path", busy)
+            self.assertNotIn("png_path", busy)
+            release.set()
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                finished = archive_auto_memory_activity()
+                if finished["scan_count"] >= 1 and not finished["scan_active"]:
+                    break
+                time.sleep(.01)
+            self.assertGreaterEqual(finished["scan_count"], 1)
+            self.assertGreaterEqual(finished["last_scan_ms"], 0)
+            self.assertEqual(finished["phase"], "idle")
+            self.watcher.stop(timeout=2)
+        activate_archive_auto_memory(None)
+        self.assertIsNone(archive_auto_memory_activity())
+
     def test_worker_thread_and_instant_notification(self):
         done = Event()
         self.watcher.on_committed = lambda _result: done.set()
