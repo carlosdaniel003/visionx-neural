@@ -282,6 +282,33 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(result["detail"]["cnn_v2_status"], "AssertionError")
         self.assertTrue(result["production_review_required"])
 
+    def test_lightweight_pointer_contract_preserves_schema_without_training_import(self):
+        from unittest.mock import patch
+        from src.core.neural.faltando_checkpoint_contract import POINTER_SCHEMA
+        from src.core.neural.faltando_live import FaltandoCNNLive
+
+        self.assertEqual(POINTER_SCHEMA, "visionx.specialist_active_pointer.v1")
+        clf = FaltandoCNNLive(self.checkpoint, self.hash,
+                              online_root=Path(self.temp.name))
+        # Falharia na implementação anterior, que importava o script de
+        # treinamento dentro da consulta do checkpoint ativo.
+        with patch.dict(
+            "sys.modules",
+            {"src.scripts.train_faltando_cnn_v2_online": None},
+        ):
+            clf._refresh_live_pointer()
+            self.assertEqual(
+                clf.inspect(*pair(), "SIDE")["detail"]["cnn_v2_status"],
+                "INFERENCE_OK",
+            )
+
+    def test_pointer_schema_is_shared_with_online_trainer(self):
+        from src.core.neural.faltando_checkpoint_contract import POINTER_SCHEMA
+        from src.scripts.train_faltando_cnn_v2_online import (
+            POINTER_SCHEMA as TRAIN_POINTER_SCHEMA,
+        )
+        self.assertEqual(TRAIN_POINTER_SCHEMA, POINTER_SCHEMA)
+
     def test_pin_uses_approved_archive_digest(self):
         self.assertEqual(
             PINNED_CHECKPOINT_SHA256,
