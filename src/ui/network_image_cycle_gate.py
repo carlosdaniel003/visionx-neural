@@ -8,6 +8,8 @@ frame repetido do Windows XP.
 
 from __future__ import annotations
 
+import time
+
 from PyQt6.QtCore import QTimer
 
 
@@ -57,6 +59,10 @@ def _lock_cycle(panel) -> None:
 
 
 def _release_cycle(panel) -> None:
+    was_network = (
+        str(getattr(panel, "capture_cycle_source", "") or "").lower()
+        == "network"
+    )
     panel.capture_cycle_active = False
     panel.capture_cycle_ignored_signals = 0
     panel.capture_cycle_source = None
@@ -66,6 +72,10 @@ def _release_cycle(panel) -> None:
             receiver.release_image_gate()
         except Exception as exc:
             print(f"Falha não fatal ao liberar entrada de imagens: {exc}")
+    if was_network:
+        # Tempo desde a liberação produtiva ate a próxima SIDE estável.
+        # Não confundir este intervalo com a inferência da peça anterior.
+        panel._inspection_previous_gate_release_at = time.perf_counter()
     _safe_sync(panel)
 
 
