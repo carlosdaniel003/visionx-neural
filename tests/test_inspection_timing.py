@@ -121,6 +121,85 @@ class InspectionTimingTests(unittest.TestCase):
         begin_cycle(panel, "new", "Modo Teste")
         self.assertEqual(snapshot(panel, "new")["lights"]["SIDE"]["network"], {})
 
+    def test_live_archive_worker_timing_runs_without_processing_images(self):
+        from threading import Event
+        from unittest.mock import patch
+        from src.services.knn_archive_auto_memory import KNNArchiveAutoMemory
+
+        started = Event()
+        release = Event()
+        watcher = KNNArchiveAutoMemory(poll_interval=0.1)
+
+        def dummy_scan():
+            watcher._set_worker_phase("extracting_png")
+            started.set()
+            release.wait(timeout=2.0)
+            return {"imported": 0}
+
+        try:
+            with patch.object(watcher, "scan_once", side_effect=dummy_scan):
+                watcher.start()
+                self.assertTrue(started.wait(timeout=2.0))
+                before = watcher.activity()
+                self.assertTrue(before["scan_active"])
+                self.assertEqual(before["phase"], "extracting_png")
+                self.assertGreaterEqual(before["busy_total_ms"], 0.0)
+                release.set()
+                deadline = time.monotonic() + 2.0
+                while time.monotonic() < deadline:
+                    after = watcher.activity()
+                    if not after["scan_active"] and after["scan_count"] >= 1:
+                        break
+                    time.sleep(0.01)
+                self.assertEqual(after["phase"], "idle")
+                self.assertGreaterEqual(after["scan_count"], 1)
+                self.assertGreaterEqual(after["busy_total_ms"], 0.0)
+        finally:
+            release.set()
+            watcher.stop(timeout=2.0)
+
+    def test_archive_worker_overlap_is_per_light_and_non_authoritative(self):
+        from unittest.mock import patch
+        states = [
+            {
+                "running": True, "scan_active": True,
+                "phase": "hashing_png", "busy_total_ms": 200.0,
+                "scan_count": 10, "last_scan_ms": 36.0,
+                "imports_this_session": 100,
+            },
+            {
+                "running": True, "scan_active": False,
+                "phase": "idle", "busy_total_ms": 315.0,
+                "scan_count": 11, "last_scan_ms": 115.0,
+                "imports_this_session": 101,
+            },
+        ]
+        panel = SimpleNamespace()
+        with patch(
+            "src.services.inspection_timing._archive_activity",
+            side_effect=states,
+        ):
+            begin_cycle(panel, "worker-overlap", "Modo Teste")
+            note_steps(panel, "SIDE", inference_ms=66)
+        data = snapshot(panel, "worker-overlap")
+        worker = data["lights"]["SIDE"]["archive_worker"]
+        self.assertEqual(worker["busy_overlap_ms"], 115.0)
+        self.assertEqual(worker["at_frame"]["phase"], "hashing_png")
+        self.assertEqual(worker["after_step"]["phase"], "idle")
+        self.assertEqual(data["lights"]["SIDE"]["steps"]["inference_ms"], 66)
+        self.assertEqual(data["lights"]["TOP"]["archive_worker"], {})
+        report = "\n".join(format_report(data))
+        self.assertIn(
+            "Observador KNN: atividade simultanea estimada: 115.0 ms",
+            report,
+        )
+        self.assertIn("varreduras no periodo: 1", report)
+        begin_cycle(panel, "worker-next", "Modo Teste")
+        self.assertEqual(
+            snapshot(panel, "worker-next")["lights"]["SIDE"]["archive_worker"],
+            {},
+        )
+
     def test_crop_io_phase_breakdown_is_reported_without_double_counting(self):
         panel = SimpleNamespace()
         begin_cycle(panel, "crop-1", "Modo Teste")

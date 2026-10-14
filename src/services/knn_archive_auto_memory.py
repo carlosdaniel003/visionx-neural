@@ -98,6 +98,39 @@ class KNNArchiveAutoMemory:
         self._lock = Lock()
         self._total_added = 0
         self._last_pass = None
+        # Telemetria passiva: mede tempo de parede do observador em scan
+        # (não é tempo de CPU nem autoriza alterar inspeção ou memória).
+        self._worker_scan_active = False
+        self._worker_scan_started = 0.0
+        self._worker_busy_total_s = 0.0
+        self._worker_scan_count = 0
+        self._worker_last_scan_ms = None
+        self._worker_phase = "idle"
+
+    def _set_worker_phase(self, phase: str) -> None:
+        with self._lock:
+            if self._worker_scan_active:
+                self._worker_phase = str(phase)
+
+    def activity(self) -> dict:
+        """Snapshot sem caminhos, PNGs, identificação AOI ou dados sensíveis."""
+        with self._lock:
+            now = time.monotonic()
+            active = self._worker_scan_active
+            total = self._worker_busy_total_s + (
+                max(0.0, now - self._worker_scan_started)
+                if active else 0.0
+            )
+            return {
+                "running": bool(self._thread is not None
+                                and self._thread.is_alive()),
+                "scan_active": bool(active),
+                "phase": self._worker_phase,
+                "busy_total_ms": round(total * 1000.0, 2),
+                "scan_count": self._worker_scan_count,
+                "last_scan_ms": self._worker_last_scan_ms,
+                "imports_this_session": self._total_added,
+            }
 
     def _ensure_extractor(self):
         if self._extractor is None:
@@ -151,6 +184,7 @@ class KNNArchiveAutoMemory:
             (src["source_path"], src["source_sha256"])
             for r in current for src in r["sources"]
         }
+        self._set_worker_phase("enumerating_files")
         candidates = []
         live = set()
         pending = 0
@@ -195,6 +229,7 @@ class KNNArchiveAutoMemory:
         accepted = []
         for path, label, relative, stamp in candidates:
             try:
+                self._set_worker_phase("hashing_png")
                 # Fast path de reinicialização: sem OCR dos PNGs já importados.
                 raw_sha = sha256(path.read_bytes()).hexdigest()
                 if (relative, raw_sha) in imported_sources:
@@ -203,6 +238,7 @@ class KNNArchiveAutoMemory:
                     with self._lock:
                         self._errors.pop(relative, None)
                     continue
+                self._set_worker_phase("extracting_png")
                 entry = _extract_entry(
                     self.root, path, label,
                     extractor=self._ensure_extractor(),
@@ -229,6 +265,7 @@ class KNNArchiveAutoMemory:
         newly_added = 0
         if proposed:
             try:
+                self._set_worker_phase("persisting_memory")
                 result = self.store.add(proposed)
                 newly_added = result["new"]
                 for relative, stamp in accepted:
@@ -252,6 +289,7 @@ class KNNArchiveAutoMemory:
         # tentar de novo nas próximas varreduras sem reaprender PNGs.
         if self._refresh_pending and self.on_committed is not None:
             try:
+                self._set_worker_phase("refreshing_knn")
                 self.on_committed({"path": str(self.store.path)})
                 self._refresh_pending = False
                 with self._lock:
@@ -281,10 +319,25 @@ class KNNArchiveAutoMemory:
     def _run(self):
         LOG.info("KNN sincronização automática de arquivos OK/NG iniciada")
         while not self._stop.is_set():
+            started = time.monotonic()
+            with self._lock:
+                self._worker_scan_active = True
+                self._worker_scan_started = started
+                self._worker_phase = "reading_snapshot"
             try:
                 self.scan_once()
             except Exception:
                 LOG.exception("KNN observador: erro; retentativa na próxima passagem")
+            finally:
+                finished = time.monotonic()
+                with self._lock:
+                    elapsed = max(0.0, finished - started)
+                    self._worker_busy_total_s += elapsed
+                    self._worker_last_scan_ms = round(elapsed * 1000.0, 2)
+                    self._worker_scan_count += 1
+                    self._worker_scan_active = False
+                    self._worker_scan_started = 0.0
+                    self._worker_phase = "idle"
             self._wake.wait(self.poll_interval)
             self._wake.clear()
 
@@ -321,7 +374,14 @@ def notify_archive_image_saved(path: Path):
         worker.notify(path)
 
 
+def archive_auto_memory_activity() -> dict | None:
+    """Apenas status da thread KNN; não consulta arquivos ou imagens."""
+    with _active_lock:
+        worker = _active_monitor
+    return worker.activity() if worker is not None else None
+
+
 __all__ = [
     "KNNArchiveAutoMemory", "activate_archive_auto_memory",
-    "notify_archive_image_saved",
+    "notify_archive_image_saved", "archive_auto_memory_activity",
 ]
