@@ -19,6 +19,12 @@ on:
       - "src/services/decision_persistence.py"
       - "src/scripts/train_faltando_cnn_v2_online.py"
       - ".github/workflows/archive-persistent-knn-tests.yml"
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/services/knn_archive_auto_memory.py"
+      - "tests/test_knn_archive_auto_memory.py"
+      - ".github/workflows/archive-persistent-knn-tests.yml"
   workflow_dispatch:
 
 jobs:
