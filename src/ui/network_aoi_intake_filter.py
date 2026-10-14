@@ -691,6 +691,9 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
             self, event_id, _mode(self),
             getattr(receiver, "last_delivered_timing", None),
             fast_ack=fast_ack,
+            previous_gate_release_at=getattr(
+                self, "_inspection_previous_gate_release_at", None
+            ),
         )
         self.network_intake_last_validation = _transport_record(
             self,
