@@ -13,7 +13,9 @@ LIGHTS = ("SIDE", "TOP", "MID")
 STEPS = ("layout_crop_ms", "ocr_ms", "extraction_ms", "validation_ms", "geometry_ms",
          "preview_ms", "inference_ms", "render_ms", "processing_ms")
 NETWORK_STEPS = ("tcp_payload_ms", "decode_ms", "stability_ms",
+                 "last_stable_pair_gap_ms", "configured_settle_ms",
                  "payload_to_dispatch_ms", "dispatch_to_ui_ms")
+NETWORK_COUNTS = ("stable_frame_count", "pre_settle_frames")
 
 
 def _ms(start, end):
@@ -57,7 +59,7 @@ def note_frame(panel, light, transport=None):
     slot = state["lights"][light]
     slot["network"] = {
         key: data.get(key)
-        for key in NETWORK_STEPS
+        for key in (*NETWORK_STEPS, *NETWORK_COUNTS)
         if isinstance(data.get(key), (float, int))
     }
     payload = data.get("payload_at")
@@ -195,6 +197,8 @@ def format_report(data):
         "tcp_payload_ms": "Transferencia do payload TCP",
         "decode_ms": "Descompressao/decode",
         "stability_ms": "Aguardando estabilidade de frames",
+        "last_stable_pair_gap_ms": "Intervalo do ultimo par estavel",
+        "configured_settle_ms": "Janela minima apos comando de luz",
         "payload_to_dispatch_ms": "Recebimento ate despacho",
         "dispatch_to_ui_ms": "Fila Qt: despacho ate UI",
         "layout_crop_ms": "Localizacao AOI / recortes",
@@ -228,6 +232,19 @@ def format_report(data):
             for key in (NETWORK_STEPS if group_name == "network" else STEPS):
                 if key in group:
                     lines.append("{}: {} ms".format(names[key], _show(group[key])))
+            if group_name == "network":
+                if "stable_frame_count" in group:
+                    lines.append(
+                        "Frames consecutivos estaveis confirmados: {}".format(
+                            _show(group["stable_frame_count"])
+                        )
+                    )
+                if "pre_settle_frames" in group:
+                    lines.append(
+                        "Frames antes da janela de troca de luz: {}".format(
+                            _show(group["pre_settle_frames"])
+                        )
+                    )
         ocr_profile = item.get("ocr_profile", {})
         if isinstance(ocr_profile, dict) and ocr_profile:
             lines.extend([
