@@ -14,6 +14,8 @@ from __future__ import annotations
 from PyQt6.QtCore import QEasingCurve, QObject, QPropertyAnimation, QTimer, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 
+from src.services.inspection_timing import presentation_mark
+
 from src.ui.production_confidence_gate import (
     enter_production_review,
     production_decision_policy,
@@ -276,6 +278,7 @@ class ProductionAutonomyController(QObject):
         self.generation += 1
         generation = self.generation
         self.state = "rendered_wait"
+        presentation_mark(self.panel, "ready")
 
         try:
             if self.paused:
@@ -528,6 +531,7 @@ class ProductionAutonomyController(QObject):
         if not self._analysis_still_current(generation):
             return
 
+        presentation_mark(self.panel, "presented")
         analysis = self.pending_analysis
         policy = production_decision_policy(analysis)
 
@@ -600,6 +604,7 @@ class ProductionAutonomyController(QObject):
             return
 
         self.state = "emitting_auto_decision"
+        presentation_mark(self.panel, "decision")
         self.panel.last_decision_command_success = None
         try:
             outcome = self.panel.save_label(

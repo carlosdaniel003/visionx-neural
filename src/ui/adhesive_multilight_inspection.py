@@ -34,6 +34,9 @@ from src.core.adhesive_multilight_analysis import (
 )
 from src.core.multilight_fusion import fuse_multilight
 from src.services.capture_debug_payload import decision_record
+from src.services.inspection_timing import (
+    finish_cycle, note_extraction, note_frame, note_steps,
+)
 from src.services.capture_evidence import (
     capture_debug_record,
     update_capture_debug_record,
@@ -465,6 +468,7 @@ def _finalize_multilight_decision(panel) -> dict | None:
             QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
         )
     completed_at = time.perf_counter()
+    finish_cycle(panel, completed_at)
     started_at = float(
         getattr(panel, "capture_start_time", 0.0) or 0.0
     )
@@ -771,6 +775,10 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 else _current_lighting(self)
             )
             self.last_xp_ip = str(ip)
+            note_frame(
+                self, mode,
+                getattr(self.network_receiver, "last_auxiliary_timing", None),
+            )
             self.adhesive_multilight_aux_mode = mode
             self.adhesive_multilight_pending_source_mode = mode
             self.adhesive_multilight_pending_source_frame = (
@@ -806,6 +814,8 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             getattr(self, "adhesive_multilight_active", False)
         ):
             try:
+                aux_started_at = time.perf_counter()
+                note_extraction(self, aux_mode, self.processor_monitor)
                 shadow = self.combo_mode.currentText() == "Modo Sombra"
                 from src.core.neural.faltando_category_scope import uses_faltando_v2
                 shadow_neural = shadow and uses_faltando_v2(
@@ -823,6 +833,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     if shadow_neural
                     else build_lighting_context(sample_crop, ng_crop)
                 )
+                context_finished_at = time.perf_counter()
                 if not frame_context.get("valid", False):
                     return False
 
@@ -853,20 +864,22 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     context=frame_context,
                     source_frame=source_frame_for_view,
                 )
+                preview_finished_at = time.perf_counter()
                 if not stored:
                     return False
 
-                # Em Sombra TOP é recebido ANTES da análise. Solicitar
-                # MID já neste momento sobrepõe a aquisição pela rede ao
-                # cálculo de TOP (sem emitir tecla 0/1).
+                # Nos três modos, a imagem TOP já está recortada e guardada.
+                # Solicitar MID agora permite que a aquisição física se sobreponha
+                # ao cálculo de TOP. A análise/fusão final permanece obrigatória.
                 early_advanced = False
-                if shadow and aux_mode == "TOP":
+                if aux_mode == "TOP":
                     automation = getattr(self, "adhesive_multilight_automation", None)
-                    advance = getattr(automation, "shadow_top_captured", None)
+                    advance = getattr(automation, "top_captured", None)
                     if callable(advance):
                         early_advanced = bool(advance())
 
                 # O resultado local continua isolado até a fusão.
+                inference_started_at = time.perf_counter()
                 lighting_analysis = analyze_lighting(
                     getattr(self, "orchestrator", None),
                     sample_crop,
@@ -875,6 +888,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     aux_mode,
                     context=frame_context,
                 )
+                inference_finished_at = time.perf_counter()
                 if not isinstance(lighting_analysis, dict):
                     try:
                         self.update_network_status(
@@ -965,6 +979,15 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     )
                 except Exception:
                     pass
+                aux_finished_at = time.perf_counter()
+                note_steps(
+                    self, aux_mode,
+                    geometry_ms=(context_finished_at - aux_started_at) * 1000,
+                    preview_ms=(preview_finished_at - context_finished_at) * 1000,
+                    inference_ms=(inference_finished_at - inference_started_at) * 1000,
+                    render_ms=(aux_finished_at - inference_finished_at) * 1000,
+                    processing_ms=(aux_finished_at - aux_started_at) * 1000,
+                )
                 return True
             except Exception as exc:
                 try:

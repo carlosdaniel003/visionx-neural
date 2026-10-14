@@ -1,0 +1,266 @@
+"""Telemetria passiva dos tempos do ciclo XP SIDE/TOP/MID.
+
+Nunca interfere em comandos, liberação do gate, inspeção ou julgamento.
+Usa um único relógio monotônico do PC ODIN; captura interna ao XP, antes
+do primeiro pacote, não é mensurável sem instrumentação no agente.
+"""
+from __future__ import annotations
+
+import time
+
+
+LIGHTS = ("SIDE", "TOP", "MID")
+STEPS = ("layout_crop_ms", "ocr_ms", "extraction_ms", "validation_ms", "geometry_ms",
+         "preview_ms", "inference_ms", "render_ms", "processing_ms")
+NETWORK_STEPS = ("tcp_payload_ms", "decode_ms", "stability_ms",
+                 "payload_to_dispatch_ms", "dispatch_to_ui_ms")
+
+
+def _ms(start, end):
+    if isinstance(start, (float, int)) and isinstance(end, (float, int)):
+        if start > 0 and end >= start:
+            return round((end - start) * 1000.0, 2)
+    return None
+
+
+def _state(panel):
+    value = getattr(panel, "_inspection_timing", None)
+    return value if isinstance(value, dict) else None
+
+
+def begin_cycle(
+    panel, event_id, mode, transport=None, fast_ack=None,
+    previous_gate_release_at=None,
+):
+    """Abre registro isolado pela identidade da primeira imagem SIDE."""
+    transport = transport if isinstance(transport, dict) else {}
+    started = float(transport.get("payload_at") or 0.0)
+    panel._inspection_timing = {
+        "event_id": str(event_id),
+        "mode": str(mode),
+        "start_at": started if started > 0 else time.perf_counter(),
+        "finished_at": None,
+        "fast_ack": fast_ack if fast_ack in (True, False) else None,
+        "release_to_side_ms": _ms(previous_gate_release_at, started),
+        "lights": {light: {"steps": {}, "network": {}, "command": {}}
+                   for light in LIGHTS},
+        "presentation": {},
+    }
+    note_frame(panel, "SIDE", transport)
+
+
+def note_frame(panel, light, transport=None):
+    state = _state(panel)
+    if state is None or light not in LIGHTS:
+        return
+    data = transport if isinstance(transport, dict) else {}
+    slot = state["lights"][light]
+    slot["network"] = {
+        key: data.get(key)
+        for key in NETWORK_STEPS
+        if isinstance(data.get(key), (float, int))
+    }
+    payload = data.get("payload_at")
+    ready = data.get("ready_at")
+    if isinstance(payload, (float, int)) and payload > 0:
+        slot["payload_at"] = float(payload)
+    if isinstance(ready, (float, int)) and ready > 0:
+        slot["ready_at"] = float(ready)
+        slot["network"]["dispatch_to_ui_ms"] = _ms(
+            ready, time.perf_counter()
+        )
+    command_started = slot["command"].get("started_at")
+    if command_started:
+        slot["command"]["to_payload_ms"] = _ms(command_started, payload)
+        slot["command"]["to_ready_ms"] = _ms(command_started, ready)
+
+
+def note_command(panel, light, started_at, completed_at, success):
+    state = _state(panel)
+    if state is None or light not in LIGHTS:
+        return
+    state["lights"][light]["command"] = {
+        "started_at": float(started_at),
+        "send_ms": _ms(started_at, completed_at),
+        "success": bool(success),
+    }
+
+
+def note_steps(panel, light, **durations):
+    state = _state(panel)
+    if state is None or light not in LIGHTS:
+        return
+    slot = state["lights"][light]["steps"]
+    for key, value in durations.items():
+        if key in STEPS and isinstance(value, (float, int)):
+            slot[key] = round(max(0.0, float(value)), 2)
+
+
+def note_extraction(panel, light, monitor):
+    timing = getattr(monitor, "last_external_timing", None)
+    if isinstance(timing, dict):
+        note_steps(panel, light, **timing)
+
+
+def finish_cycle(panel, when=None):
+    state = _state(panel)
+    if state is not None:
+        state["finished_at"] = float(
+            when if when is not None else time.perf_counter()
+        )
+
+
+def presentation_mark(panel, marker, when=None):
+    state = _state(panel)
+    if state is None or marker not in ("ready", "presented", "decision"):
+        return
+    state["presentation"][marker] = float(
+        when if when is not None else time.perf_counter()
+    )
+
+
+def snapshot(panel, event_id):
+    """Cópia JSON-safe; nunca expõe timestamps monotônicos brutos."""
+    state = _state(panel)
+    if state is None or not event_id or state["event_id"] != str(event_id):
+        return {}
+    lights = {}
+    for light in LIGHTS:
+        slot = state["lights"][light]
+        command = slot["command"]
+        lights[light] = {
+            "network": dict(slot["network"]),
+            "steps": dict(slot["steps"]),
+            "command": {
+                key: command[key]
+                for key in ("send_ms", "to_payload_ms", "to_ready_ms", "success")
+                if key in command
+            },
+            "payload_to_complete_ms": (
+                _ms(slot.get("payload_at"), state["finished_at"])
+                if light == "MID" else None
+            ),
+        }
+    ready = state["presentation"].get("ready")
+    presented = state["presentation"].get("presented")
+    decision = state["presentation"].get("decision")
+    return {
+        "schema": "visionx.inspection_timing.v1",
+        "event_id": state["event_id"],
+        "mode": state["mode"],
+        "xp_fast_ack": state["fast_ack"],
+        "previous_gate_release_to_side_ms": state["release_to_side_ms"],
+        "cycle_side_to_result_ms": _ms(
+            state["start_at"], state["finished_at"]
+        ),
+        "lights": lights,
+        "production_presentation_ms": _ms(ready, presented),
+        "production_post_presentation_decision_ms": _ms(presented, decision),
+        "note": (
+            "Duracoes podem se sobrepor: nao somar etapas. "
+            "Tempo anterior ao primeiro pacote SIDE e tempo interno do XP "
+            "nao sao observaveis no ODIN."
+        ),
+    }
+
+
+def format_report(data):
+    if not isinstance(data, dict) or not data:
+        return []
+    lines = ["", "PERFIL DE TEMPO POR ETAPA (ms)", "-" * 72,
+             "Ciclo SIDE recebido -> resultado final: {}".format(
+                 _show(data.get("cycle_side_to_result_ms"))
+             ),
+             "XP captura rapida confirmada (ACK): {}".format(
+                 _show(data.get("xp_fast_ack"))
+             ),
+             "Gate liberado -> proxima SIDE estavel: {} ms".format(
+                 _show(data.get("previous_gate_release_to_side_ms"))
+             )]
+    names = {
+        "tcp_payload_ms": "Transferencia do payload TCP",
+        "decode_ms": "Descompressao/decode",
+        "stability_ms": "Aguardando estabilidade de frames",
+        "payload_to_dispatch_ms": "Recebimento ate despacho",
+        "dispatch_to_ui_ms": "Fila Qt: despacho ate UI",
+        "layout_crop_ms": "Localizacao AOI / recortes",
+        "ocr_ms": "OCR",
+        "extraction_ms": "Extracao total (inclui OCR)",
+        "validation_ms": "Validacao de entrada AOI",
+        "geometry_ms": "Geometria / epicentros",
+        "preview_ms": "Preparo visual / miniaturas",
+        "inference_ms": "Inferencia dos especialistas",
+        "render_ms": "Renderizacao / debug visual",
+        "processing_ms": "Processamento local total",
+    }
+    for light in LIGHTS:
+        item = data.get("lights", {}).get(light, {})
+        if not isinstance(item, dict):
+            continue
+        lines.extend(["", "ILUMINACAO " + light])
+        command = item.get("command", {})
+        if command:
+            lines.append("Comando TCP: {} ms | Sucesso: {}".format(
+                _show(command.get("send_ms")), _show(command.get("success"))
+            ))
+            lines.append("Comando -> payload completo: {} ms".format(
+                _show(command.get("to_payload_ms"))
+            ))
+            lines.append("Comando -> frame estavel entregue: {} ms".format(
+                _show(command.get("to_ready_ms"))
+            ))
+        for group_name in ("network", "steps"):
+            group = item.get(group_name, {})
+            for key in (NETWORK_STEPS if group_name == "network" else STEPS):
+                if key in group:
+                    lines.append("{}: {} ms".format(names[key], _show(group[key])))
+    if data.get("production_presentation_ms") is not None:
+        lines.append("Apresentacao da Producao apos resultado: {} ms".format(
+            _show(data["production_presentation_ms"])
+        ))
+    if data.get("production_post_presentation_decision_ms") is not None:
+        lines.append("Espera apos apresentacao ate decisao automatica: {} ms".format(
+            _show(data["production_post_presentation_decision_ms"])
+        ))
+    candidates = []
+    for light in LIGHTS:
+        entry = data.get("lights", {}).get(light, {})
+        if not isinstance(entry, dict):
+            continue
+        for group, keys in (
+            ("network", ("tcp_payload_ms", "decode_ms", "dispatch_to_ui_ms")),
+            ("steps", ("validation_ms", "geometry_ms", "ocr_ms",
+                       "inference_ms", "preview_ms", "render_ms")),
+        ):
+            values = entry.get(group, {})
+            for key in keys:
+                number = values.get(key)
+                if isinstance(number, (float, int)) and number > 0:
+                    candidates.append((float(number), "{}: {}".format(
+                        light, names[key])))
+        command_wait = entry.get("command", {}).get("to_ready_ms")
+        if isinstance(command_wait, (float, int)) and command_wait > 0:
+            candidates.append((float(command_wait), light + ": comando ate frame"))
+    prev_gap = data.get("previous_gate_release_to_side_ms")
+    if isinstance(prev_gap, (float, int)) and prev_gap > 0:
+        candidates.append((float(prev_gap), "Entre pecas: gate ate proxima SIDE"))
+    presentation = data.get("production_presentation_ms")
+    if isinstance(presentation, (float, int)) and presentation > 0:
+        candidates.append((float(presentation), "Producao: apresentacao"))
+    if candidates:
+        lines.extend(["", "MAIORES TEMPOS OBSERVADOS (INDICATIVOS)"])
+        for duration, label in sorted(candidates, reverse=True)[:5]:
+            lines.append("- {}: {} ms".format(label, round(duration, 2)))
+    lines.extend([
+        "",
+        "NOTAS DE MEDICAO",
+        "Etapas OCR/extracao, geometria e processamento incluem subetapas.",
+        "Comando->frame inclui espera XP, transporte e estabilidade.",
+        "Tempos sobrepostos nao devem ser somados.",
+        "O XP anterior ao primeiro frame SIDE nao e mensuravel aqui.",
+    ])
+    return lines
+
+
+def _show(value):
+    return "-" if value is None else str(value)

@@ -38,6 +38,7 @@ from src.services.screen_monitor import ScreenMonitor
 from src.services.dataset_manager import DatasetManager
 from src.core.inspection import detect_anomalies
 from src.services.network_receiver import NetworkReceiver
+from src.services.inspection_timing import note_extraction, note_steps
 from src.ui.control_panel_ui import ControlPanelUI
 from src.utils.text_normalizer import normalize_aoi_text
 from src.core.moe_orchestrator import MoEOrchestrator
@@ -147,6 +148,21 @@ class ControlPanel(QWidget):
             uses_fast_xp_capture(self.combo_mode.currentText())
         )
 
+    def _report_xp_capture_rate(self, ip: str, fast_active: bool) -> None:
+        """Relata apenas mudanças do ACK de captura rápida por estação XP."""
+        state = (str(ip), bool(fast_active))
+        if getattr(self, "_xp_capture_rate_notice", None) == state:
+            return
+        self._xp_capture_rate_notice = state
+        notifier = getattr(self, "update_network_status", None)
+        if callable(notifier):
+            notifier(
+                "XP confirmou captura rápida (intervalo de 0,18 s)."
+                if fast_active
+                else "XP não confirmou a captura rápida (sem ACK). "
+                     "A pausa pode continuar em 3 s; verifique o agente instalado."
+            )
+
     def _send_xp_shadow_control(self, enabled: bool, *, force: bool = False) -> bool:
         """Solicita pausa reduzida ao agente XP nos tres modos.
 
@@ -174,11 +190,17 @@ class ControlPanel(QWidget):
                 response = connection.recv(32).strip()
             if response == expected:
                 self._xp_shadow_last_ack = target
+                if enabled:
+                    ControlPanel._report_xp_capture_rate(self, ip, True)
                 return True
             self._xp_shadow_last_ack = None
+            if enabled:
+                ControlPanel._report_xp_capture_rate(self, ip, False)
             return False
         except (OSError, TimeoutError):
             self._xp_shadow_last_ack = None
+            if enabled:
+                ControlPanel._report_xp_capture_rate(self, ip, False)
             return False
 
     def _on_xp_mode_changed(self, mode: str) -> None:
@@ -631,6 +653,8 @@ class ControlPanel(QWidget):
 
         shadow = self.combo_mode.currentText() == "Modo Sombra"
         shadow_started = time.perf_counter()
+        if str(getattr(self, "capture_cycle_source", "") or "") == "network":
+            note_extraction(self, "SIDE", getattr(self, "processor_monitor", None))
         self._inspection_images_visible = not shadow
         self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)
 
@@ -653,6 +677,7 @@ class ControlPanel(QWidget):
             if self.lbl_sample.width() > 0 and self.lbl_sample.height() > 0:
                 self.lbl_sample.setPixmap(px_sample)
 
+        geometry_started_at = time.perf_counter()
         # FALTANDO v2 / KNN exato recebem pares integrais e crop central
         # internamente; detectar geometria AOI/SSIM antes da CNN é custo sem
         # impacto no resultado da classe. Não alterar categorias físicas.
@@ -669,6 +694,7 @@ class ControlPanel(QWidget):
                 sample_crop, ng_crop, old_epicenters, global_box_info
             )
 
+        geometry_finished_at = time.perf_counter()
         if not shadow and focus_gab.size > 0 and hasattr(self, 'lbl_sample_focus') and self.lbl_sample_focus.width() > 0:
             px_focus_gab = self.numpy_to_pixmap(focus_gab)
             self.lbl_sample_focus.setPixmap(px_focus_gab)
@@ -681,7 +707,9 @@ class ControlPanel(QWidget):
         else:
             if hasattr(self, 'lbl_ng_focus'): self.lbl_ng_focus.setText("Inválido/Sem Foco")
 
+        inference_started_at = time.perf_counter()
         analysis = self.orchestrator.inspect(sample_crop, ng_crop, raw_anomalies, aoi_info, global_box_info, real_epicenters)
+        inference_finished_at = time.perf_counter()
         self.current_analysis = analysis
 
         if not shadow:
@@ -744,6 +772,14 @@ class ControlPanel(QWidget):
             - float(getattr(self, "capture_start_time", 0.0) or 0.0),
         )
         self.last_analysis_time_seconds = elapsed_time
+        if str(getattr(self, "capture_cycle_source", "") or "") == "network":
+            note_steps(
+                self, "SIDE",
+                geometry_ms=(geometry_finished_at - geometry_started_at) * 1000,
+                inference_ms=(inference_finished_at - inference_started_at) * 1000,
+                render_ms=(analysis_displayed_at - inference_finished_at) * 1000,
+                processing_ms=(analysis_displayed_at - shadow_started) * 1000,
+            )
 
         detail = analysis.setdefault("detail", {})
         detail["analysis_time_seconds"] = float(elapsed_time)

@@ -129,6 +129,37 @@ class AdhesiveMultiLightAutomationTests(unittest.TestCase):
             {"SIDE", "TOP", "MID"},
         )
 
+    def test_early_mid_acquisition_preserves_final_fusion_in_all_modes(self):
+        for mode in ("Modo Teste", "Modo Sombra", "Modo Produção"):
+            with self.subTest(mode=mode):
+                panel = _FakePanel()
+                panel.combo_mode.value = mode
+                automation = AdhesiveMultiLightAutomation(panel)
+                self.assertTrue(automation.start())
+                self.assertTrue(automation.top_captured())
+
+                # TOP foi capturada, mas ainda não houve análise/fusão nem 0/1.
+                self.assertEqual(panel.commands, ["LEFT", "RIGHT"])
+                self.assertEqual(automation.expected_mode, "MID")
+                self.assertEqual(automation.captured_modes, {"SIDE", "TOP"})
+                self.assertEqual(panel.finalize_calls, 0)
+                self.assertEqual(panel.saved_labels, [])
+
+                # Só depois de MID analisada a automação encerra a sequência.
+                self.assertTrue(automation.frame_stored("MID"))
+                self._flush_events()
+                self._flush_events()
+                self.assertEqual(panel.commands, ["LEFT", "RIGHT", "DOWN"])
+                self.assertEqual(automation.captured_modes, {"SIDE", "TOP", "MID"})
+                self.assertEqual(panel.finalize_calls, 1)
+                self.assertEqual(panel.saved_labels, [])
+                self.assertFalse(automation.active)
+                self.assertTrue(automation.completed)
+                if mode == "Modo Produção":
+                    self.assertEqual(len(panel.production_ready), 1)
+                else:
+                    self.assertEqual(panel.production_ready, [])
+
     def test_production_delivers_fused_result_to_autonomy_controller(self):
         self.panel.combo_mode.value = "Modo Produção"
         self.panel.fused_analysis = {

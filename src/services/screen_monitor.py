@@ -479,6 +479,10 @@ class ScreenMonitor(QThread):
             self.log_updated.emit("Monitor AOI: Imagem de rede inválida ou vazia.")
             return
 
+        # Medições encerradas ANTES de emitir layout_detected, pois o
+        # callback de análise Qt roda sincronamente nesta mesma thread.
+        extraction_started_at = time.perf_counter()
+        self.last_external_timing = {}
         self.last_capture_frame = frame_bgr.copy()
         frame_h, frame_w = frame_bgr.shape[:2]
         hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
@@ -517,7 +521,20 @@ class ScreenMonitor(QThread):
 
         # Extrai info e Emite
         if crop_sample.size > 0 and crop_ng.size > 0:
+            layout_finished_at = time.perf_counter()
             aoi_info = self._extract_text_info(frame_bgr, blue_bar, red_bar)
+            ocr_finished_at = time.perf_counter()
+            self.last_external_timing = {
+                "layout_crop_ms": round(
+                    (layout_finished_at - extraction_started_at) * 1000, 2
+                ),
+                "ocr_ms": round(
+                    (ocr_finished_at - layout_finished_at) * 1000, 2
+                ),
+                "extraction_ms": round(
+                    (ocr_finished_at - extraction_started_at) * 1000, 2
+                ),
+            }
             self.layout_detected.emit(crop_sample, crop_ng, aoi_info)
             self.log_updated.emit(
                 f"Monitor AOI (Rede): SUCESSO! "
