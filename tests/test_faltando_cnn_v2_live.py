@@ -183,39 +183,45 @@ class ModelTests(unittest.TestCase):
 
         clf = FaltandoCNNLive(self.checkpoint, self.hash)
         r, t = pair()
-        first = clf.inspect(r, t, "SIDE")
-        self.assertEqual(first["detail"]["cnn_v2_status"], "INFERENCE_OK")
-        first_profile = first["detail"]["cnn_v2_performance"]
-        self.assertFalse(first_profile["cache_hit"])
-        self.assertTrue(first_profile["checkpoint_loaded"])
-        self.assertIn("checkpoint_hash_ms", first_profile["checkpoint_load_ms"])
-        self.assertIn("checkpoint_deserialize_ms", first_profile["checkpoint_load_ms"])
-        self.assertIn("model_construct_ms", first_profile["checkpoint_load_ms"])
-        self.assertIn("fingerprints_ms", first_profile["stages_ms"])
-        self.assertIn("input_prepare_ms", first_profile["stages_ms"])
-        self.assertIn("torch_forward_ms", first_profile["stages_ms"])
-        self.assertGreaterEqual(first_profile["total_ms"], 0)
-        self.assertGreaterEqual(first_profile["torch_num_threads"], 1)
+        # Pesos aleatorios podem produzir REVISAO, que corretamente nao
+        # entra no cache. Fixar somente a faixa de revisao neste teste
+        # para exercitar a politica real de reutilizacao de pares exatos.
+        from unittest.mock import patch
+        with patch("src.core.neural.faltando_live.REVIEW_LOW_NG", 0.0), \
+             patch("src.core.neural.faltando_live.REVIEW_HIGH_NG", 0.0):
+            first = clf.inspect(r, t, "SIDE")
+            self.assertEqual(first["detail"]["cnn_v2_status"], "INFERENCE_OK")
+            first_profile = first["detail"]["cnn_v2_performance"]
+            self.assertFalse(first_profile["cache_hit"])
+            self.assertTrue(first_profile["checkpoint_loaded"])
+            self.assertIn("checkpoint_hash_ms", first_profile["checkpoint_load_ms"])
+            self.assertIn("checkpoint_deserialize_ms", first_profile["checkpoint_load_ms"])
+            self.assertIn("model_construct_ms", first_profile["checkpoint_load_ms"])
+            self.assertIn("fingerprints_ms", first_profile["stages_ms"])
+            self.assertIn("input_prepare_ms", first_profile["stages_ms"])
+            self.assertIn("torch_forward_ms", first_profile["stages_ms"])
+            self.assertGreaterEqual(first_profile["total_ms"], 0)
+            self.assertGreaterEqual(first_profile["torch_num_threads"], 1)
 
-        second = clf.inspect(r, t, "SIDE")
-        second_profile = second["detail"]["cnn_v2_performance"]
-        self.assertTrue(second_profile["cache_hit"])
-        self.assertEqual(second_profile["checkpoint_load_ms"], {})
-        self.assertNotIn("torch_forward_ms", second_profile["stages_ms"])
-        self.assertFalse(second_profile["checkpoint_loaded"])
-        self.assertEqual(
-            first["detail"]["cnn_v2_ng_score_uncalibrated"],
-            second["detail"]["cnn_v2_ng_score_uncalibrated"],
-        )
-        self.assertFalse(
-            first["detail"]["cnn_v2_performance"]["cache_hit"]
-        )
-        other = clf.inspect(r, t, "TOP")
-        other_profile = other["detail"]["cnn_v2_performance"]
-        self.assertFalse(other_profile["cache_hit"])
-        self.assertFalse(other_profile["checkpoint_loaded"])
-        self.assertIn("torch_forward_ms", other_profile["stages_ms"])
-        self.assertIn("model_acquire_ms", other_profile["stages_ms"])
+            second = clf.inspect(r, t, "SIDE")
+            second_profile = second["detail"]["cnn_v2_performance"]
+            self.assertTrue(second_profile["cache_hit"])
+            self.assertEqual(second_profile["checkpoint_load_ms"], {})
+            self.assertNotIn("torch_forward_ms", second_profile["stages_ms"])
+            self.assertFalse(second_profile["checkpoint_loaded"])
+            self.assertEqual(
+                first["detail"]["cnn_v2_ng_score_uncalibrated"],
+                second["detail"]["cnn_v2_ng_score_uncalibrated"],
+            )
+            self.assertFalse(
+                first["detail"]["cnn_v2_performance"]["cache_hit"]
+            )
+            other = clf.inspect(r, t, "TOP")
+            other_profile = other["detail"]["cnn_v2_performance"]
+            self.assertFalse(other_profile["cache_hit"])
+            self.assertFalse(other_profile["checkpoint_loaded"])
+            self.assertIn("torch_forward_ms", other_profile["stages_ms"])
+            self.assertIn("model_acquire_ms", other_profile["stages_ms"])
 
     def test_profile_failure_preserves_required_review(self):
         clf = FaltandoCNNLive(self.checkpoint, "0" * 64)
