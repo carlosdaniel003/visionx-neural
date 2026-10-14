@@ -1346,6 +1346,33 @@ class AdhesiveMultiLightDebugTests(unittest.TestCase):
         self.assertIn("Threads PyTorch CPU: 8 | interop: 4", report)
         self.assertEqual(report.count("PERFIL INTERNO CNN FALTANDO V2"), 1)
 
+    def test_memory_index_profile_visible_only_for_measured_light(self):
+        panel = self._panel("knn-index-verified-timing")
+        panel.adhesive_multilight_last_category = "FALTANDO"
+        side = panel.adhesive_multilight_last_analyses["SIDE"]
+        side["detail"]["verified_memory_timing"] = {
+            "schema": "visionx.verified_knn_lookup_timing.v1",
+            "status": "NEW",
+            "total_ms": 4120.5,
+            "archive_lookup_ms": 75.0,
+            "fingerprints_ms": 2.2,
+            "records_snapshot_ms": 4.5,
+            "index_build_ms": 4020.0,
+            "index_lookup_ms": 4023.0,
+            "index_reused": False,
+            "record_count": 240,
+            "matched_count": 0,
+        }
+        report = format_multilight_debug_report(panel)
+        self.assertIn("PERFIL DO ROTEADOR KNN VERIFICADO (ms)", report)
+        self.assertIn("Consulta total: 4120.5 ms", report)
+        self.assertIn("Reconstrucao do indice: 4020.0 ms", report)
+        self.assertIn("Indice reutilizado: False", report)
+        self.assertIn("Registros no indice: 240", report)
+        self.assertEqual(
+            report.count("PERFIL DO ROTEADOR KNN VERIFICADO (ms)"), 1
+        )
+
     def test_copy_debug_appends_multilight_section_to_existing_report(self):
         panel = self._panel()
 
