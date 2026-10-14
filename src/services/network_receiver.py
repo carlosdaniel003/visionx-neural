@@ -36,6 +36,12 @@ class NetworkReceiver(QThread):
     SAME_FRAME_P95_DELTA = 4.5
     SAME_FRAME_CHANGED_RATIO = 0.004
     STABLE_REQUIRED_FRAMES = 2
+    # Quando o XP transmite continuamente, select() pode ficar sempre
+    # pronto e impedir INDEFINIDAMENTE a entrega de um par ja estavel.
+    # Depois de uma sequencia mais forte/longa, limitar o coalescing sem
+    # dispensar o contrato original de 2 frames consecutivos.
+    BACKLOG_RELEASE_MIN_STABLE_FRAMES = 4
+    BACKLOG_RELEASE_MIN_STABLE_SECONDS = 0.65
     # Pequena janela de estabilizacao apos mudar a luz no XP. A recepcao
     # auxiliar exige duas imagens consecutivas estaveis antes da entrega.
     AUXILIARY_LIGHT_SETTLE_SECONDS = 0.35
@@ -72,6 +78,7 @@ class NetworkReceiver(QThread):
         self._candidate_received_at = 0.0
         self._candidate_first_stable_at = 0.0
         self._candidate_previous_received_at = 0.0
+        self._candidate_socket_backlog_deferrals = 0
         self.last_delivered_timing = {}
         self.last_auxiliary_timing = {}
         self._reserved_signature: np.ndarray | None = None
@@ -174,6 +181,7 @@ class NetworkReceiver(QThread):
         self._candidate_stable_frames = 0
         self._candidate_previous_received_at = 0.0
         self._candidate_last_pair_gap_ms = None
+        self._candidate_socket_backlog_deferrals = 0
 
     def release_image_gate(self) -> None:
         """Libera a procura pela próxima anomalia válida.
@@ -321,6 +329,31 @@ class NetworkReceiver(QThread):
                 else time.perf_counter()
             )
             return int(self._candidate_stable_frames)
+
+    def _defer_candidate_for_pending_socket(
+        self, *, pending: bool, received_at: float,
+    ) -> bool:
+        """Não adiar indefinidamente um candidato estável sob stream XP.
+
+        Continuamos privilegiando o frame mais novo enquanto a sequência
+        ainda é curta. Com 4+ quadros consecutivos da MESMA imagem e >=650 ms,
+        uma fila sempre ocupada deixa de bloquear a entrega. Uma mudança de
+        assinatura reinicia a contagem e o relógio automaticamente.
+        """
+        if not pending:
+            return False
+        with self._state_lock:
+            count = self._candidate_stable_frames
+            stable_for = max(
+                0.0, float(received_at) - self._candidate_first_stable_at
+            )
+            if (
+                count >= self.BACKLOG_RELEASE_MIN_STABLE_FRAMES
+                and stable_for >= self.BACKLOG_RELEASE_MIN_STABLE_SECONDS
+            ):
+                return False
+            self._candidate_socket_backlog_deferrals += 1
+            return True
 
     def _candidate_snapshot(self):
         with self._state_lock:
@@ -573,9 +606,13 @@ class NetworkReceiver(QThread):
                     conexoes_esperando, _, _ = select.select(
                         [servidor], [], [], 0.0
                     )
-                    if conexoes_esperando:
+                    if self._defer_candidate_for_pending_socket(
+                        pending=bool(conexoes_esperando),
+                        received_at=payload_received_at,
+                    ):
                         self.log_updated.emit(
-                            "Frame mais recente aguardando; candidato anterior substituível."
+                            "Frame mais recente aguardando; coalescing XP "
+                            "limitado por estabilidade reforcada."
                         )
                         continue
 
@@ -590,6 +627,7 @@ class NetworkReceiver(QThread):
                         first_stable_at = self._candidate_first_stable_at
                         stable_count_confirmed = self._candidate_stable_frames
                         last_pair_gap_ms = self._candidate_last_pair_gap_ms
+                        backlog_deferrals = self._candidate_socket_backlog_deferrals
                     # Reserva atomicamente antes de emitir o sinal Qt.
                     if not self._image_gate.try_reserve():
                         self._log_ignored_image(already_counted=True)
@@ -615,6 +653,10 @@ class NetworkReceiver(QThread):
                         ) * 1000.0, 2),
                         "last_stable_pair_gap_ms": last_pair_gap_ms,
                         "stable_frame_count": stable_count_confirmed,
+                        "backlog_deferrals": backlog_deferrals,
+                        "backlog_release_with_pending": bool(
+                            conexoes_esperando
+                        ),
                         "payload_to_dispatch_ms": round(max(
                             0.0, ready_at - candidate_received_at
                         ) * 1000.0, 2),
