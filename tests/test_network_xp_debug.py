@@ -1315,6 +1315,37 @@ class AdhesiveMultiLightDebugTests(unittest.TestCase):
         self.assertIn('"shape": [', report)
         self.assertNotIn("0.6000000238418579, 0.6000000238418579", report)
 
+    def test_cnn_internal_phases_are_visible_for_correct_lighting_only(self):
+        panel = self._panel("cnn-internal-timing")
+        panel.adhesive_multilight_last_category = "FALTANDO"
+        side = panel.adhesive_multilight_last_analyses["SIDE"]
+        side["detail"]["cnn_v2_memory_lookup_ms"] = 1200.0
+        side["detail"]["cnn_v2_route_total_ms"] = 3400.0
+        side["detail"]["cnn_v2_performance"] = {
+            "schema": "visionx.faltando_cnn_v2_performance.v1",
+            "lighting_mode": "SIDE",
+            "status": "INFERENCE_OK",
+            "cache_hit": False,
+            "checkpoint_loaded": True,
+            "total_ms": 2200.0,
+            "stages_ms": {
+                "fingerprints_ms": 30.0,
+                "input_prepare_ms": 100.0,
+                "torch_forward_ms": 1700.0,
+            },
+            "checkpoint_load_ms": {"checkpoint_total_ms": 240.0},
+            "torch_num_threads": 8,
+            "torch_num_interop_threads": 4,
+        }
+        report = format_multilight_debug_report(panel)
+        self.assertIn("CNN consulta memória persistente: 1200.0 ms", report)
+        self.assertIn("CNN rota completa (memória + inferência): 3400.0 ms", report)
+        self.assertIn("PERFIL INTERNO CNN FALTANDO V2", report)
+        self.assertIn("Execucao PyTorch (forward + score): 1700.0 ms", report)
+        self.assertIn("Checkpoint carregado nesta chamada: True", report)
+        self.assertIn("Threads PyTorch CPU: 8 | interop: 4", report)
+        self.assertEqual(report.count("PERFIL INTERNO CNN FALTANDO V2"), 1)
+
     def test_copy_debug_appends_multilight_section_to_existing_report(self):
         panel = self._panel()
 
