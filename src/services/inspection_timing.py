@@ -33,6 +33,15 @@ def _state(panel):
     return value if isinstance(value, dict) else None
 
 
+def _archive_activity():
+    """Somente snapshot não bloqueante do estado de varredura da thread KNN."""
+    try:
+        from src.services.knn_archive_auto_memory import archive_auto_memory_activity
+        return archive_auto_memory_activity()
+    except Exception:
+        return None
+
+
 def begin_cycle(
     panel, event_id, mode, transport=None, fast_ack=None,
     previous_gate_release_at=None,
@@ -60,6 +69,9 @@ def note_frame(panel, light, transport=None):
         return
     data = transport if isinstance(transport, dict) else {}
     slot = state["lights"][light]
+    activity = _archive_activity()
+    if isinstance(activity, dict):
+        slot["archive_worker"] = {"at_frame": activity}
     slot["network"] = {
         key: data.get(key)
         for key in (*NETWORK_STEPS, *NETWORK_COUNTS)
@@ -100,7 +112,18 @@ def note_steps(panel, light, **durations):
     state = _state(panel)
     if state is None or light not in LIGHTS:
         return
-    slot = state["lights"][light]["steps"]
+    light_slot = state["lights"][light]
+    activity = _archive_activity()
+    if isinstance(activity, dict):
+        worker = light_slot.setdefault("archive_worker", {})
+        worker["after_step"] = activity
+        start = worker.get("at_frame")
+        if isinstance(start, dict):
+            a = start.get("busy_total_ms")
+            b = activity.get("busy_total_ms")
+            if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+                worker["busy_overlap_ms"] = round(max(0.0, b - a), 2)
+    slot = light_slot["steps"]
     for key, value in durations.items():
         if key in STEPS and isinstance(value, (float, int)):
             slot[key] = (
@@ -151,6 +174,10 @@ def snapshot(panel, event_id):
         command = slot["command"]
         lights[light] = {
             "network": dict(slot["network"]),
+            "archive_worker": {
+                key: dict(value) if isinstance(value, dict) else value
+                for key, value in slot.get("archive_worker", {}).items()
+            },
             "steps": dict(slot["steps"]),
             "ocr_profile": {
                 **slot["ocr_profile"],
