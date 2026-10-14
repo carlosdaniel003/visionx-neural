@@ -81,6 +81,91 @@ class ScreenMonitorOCRTimingTests(unittest.TestCase):
         self.assertEqual(profile["call_count"], 0)
 
 
+class ExternalCropLatencyTests(unittest.TestCase):
+    def test_side_crop_io_profile_separates_bar_crop_and_png_times(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        monitor = screen_monitor.ScreenMonitor()
+        image = np.zeros((840, 1165, 3), dtype=np.uint8)
+        small = np.ones((30, 40, 3), dtype=np.uint8)
+        blue, red = (200, 400, 220, 15), (700, 400, 200, 15)
+
+        def fake_crop(frame, bar, height, label=""):
+            monitor._write_debug_crop(
+                screen_monitor.DEBUG_DIR / (label + "_test.png"), small
+            )
+            return small.copy()
+
+        info = {"board": "B1", "parts": "R1", "value": "1 <= 2 <= 3"}
+        with TemporaryDirectory() as tmp, patch.object(
+            screen_monitor, "DEBUG_DIR", Path(tmp)
+        ), patch.object(
+            monitor, "_find_color_bar", return_value=blue
+        ), patch.object(
+            monitor, "_find_sibling_bar", return_value=red
+        ), patch.object(
+            monitor, "_extract_photo", side_effect=fake_crop
+        ), patch.object(
+            monitor, "_extract_text_info", return_value=info
+        ), patch.object(
+            screen_monitor.cv2, "imwrite", return_value=True
+        ) as writer:
+            monitor.process_external_image(image)
+            side = dict(monitor.last_external_timing)
+            self.assertEqual(side["debug_png_write_count"], 2)
+            self.assertGreaterEqual(side["debug_png_write_ms"], 0)
+            self.assertGreaterEqual(side["bars_detect_ms"], 0)
+            self.assertGreaterEqual(side["sample_crop_ms"], 0)
+            self.assertGreaterEqual(side["test_crop_ms"], 0)
+            self.assertGreaterEqual(side["layout_crop_ms"], 0)
+            self.assertEqual(writer.call_count, 2)
+            self.assertIsNone(monitor._external_crop_io_profile)
+            self.assertNotIn("B1", str(side))
+
+            # Sombra preserva a politica existente: nenhum PNG gravado.
+            monitor._shadow_fast = True
+            monitor.process_external_image(image)
+            self.assertEqual(
+                monitor.last_external_timing["debug_png_write_count"], 0
+            )
+            self.assertEqual(
+                monitor.last_external_timing["debug_png_write_ms"], 0.0
+            )
+            self.assertEqual(writer.call_count, 2)
+
+    def test_failed_png_write_does_not_leak_crop_profiler(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        monitor = screen_monitor.ScreenMonitor()
+        small = np.ones((30, 40, 3), dtype=np.uint8)
+        blue, red = (200, 400, 220, 15), (700, 400, 200, 15)
+
+        def broken_crop(frame, bar, height, label=""):
+            monitor._write_debug_crop(
+                screen_monitor.DEBUG_DIR / "broken.png", small
+            )
+            raise RuntimeError("Falha no recorte")
+
+        with TemporaryDirectory() as tmp, patch.object(
+            screen_monitor, "DEBUG_DIR", Path(tmp)
+        ), patch.object(
+            monitor, "_find_color_bar", return_value=blue
+        ), patch.object(
+            monitor, "_find_sibling_bar", return_value=red
+        ), patch.object(
+            monitor, "_extract_photo", side_effect=broken_crop
+        ), patch.object(
+            screen_monitor.cv2, "imwrite", side_effect=OSError("sem disco")
+        ):
+            with self.assertRaises(OSError):
+                monitor.process_external_image(
+                    np.zeros((840, 1165, 3), dtype=np.uint8)
+                )
+        self.assertIsNone(monitor._external_crop_io_profile)
+
+
 class ReceiverStabilityTimingTests(unittest.TestCase):
     def setUp(self):
         from src.services.network_receiver import NetworkReceiver
