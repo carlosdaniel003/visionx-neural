@@ -260,6 +260,7 @@ class FaltandoCNNLive:
         ):
             return _fail_review("INVALID_PAIR", "par de gabarito/teste inválido", light)
         profile = InferencePhaseProfile(light)
+        load_was_attempted = False
         try:
             # O primeiro resultado não supervisionado pode ser reutilizado
             # para inputs PIXEL-IDENTICOS na mesma sessão, sem aprender seu
@@ -298,6 +299,7 @@ class FaltandoCNNLive:
                 answer["detail"]["cnn_v2_performance"] = profile.snapshot()
                 return answer
             acquire_started_at = time.perf_counter()
+            load_was_attempted = True
             model = self._load()
             profile.record("model_acquire_ms", acquire_started_at)
             profile.record_checkpoint(self._last_load_profile)
@@ -335,6 +337,11 @@ class FaltandoCNNLive:
                 raise ValueError("CNN emitiu score não finito")
         except Exception as exc:
             # Falhas inesperadas do PyTorch/OpenCV também são revisão.
+            # Se a falha aconteceu no checkpoint, manter as fases
+            # já medidas em vez de ocultar o custo do erro.
+            if load_was_attempted:
+                profile.record_checkpoint(self._last_load_profile)
+                profile.checkpoint_loaded = bool(self._last_load_did_reload)
             review = _fail_review(type(exc).__name__, str(exc), light)
             review["detail"]["cnn_v2_performance"] = profile.snapshot(
                 status=type(exc).__name__
