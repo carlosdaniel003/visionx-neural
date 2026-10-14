@@ -214,6 +214,32 @@ def format_report(data):
         lines.append("Espera apos apresentacao ate decisao automatica: {} ms".format(
             _show(data["production_post_presentation_decision_ms"])
         ))
+    candidates = []
+    for light in LIGHTS:
+        entry = data.get("lights", {}).get(light, {})
+        if not isinstance(entry, dict):
+            continue
+        for group, keys in (
+            ("network", ("tcp_payload_ms", "decode_ms", "dispatch_to_ui_ms")),
+            ("steps", ("validation_ms", "geometry_ms", "ocr_ms",
+                       "inference_ms", "preview_ms", "render_ms")),
+        ):
+            values = entry.get(group, {})
+            for key in keys:
+                number = values.get(key)
+                if isinstance(number, (float, int)) and number > 0:
+                    candidates.append((float(number), "{}: {}".format(
+                        light, names[key])))
+        command_wait = entry.get("command", {}).get("to_ready_ms")
+        if isinstance(command_wait, (float, int)) and command_wait > 0:
+            candidates.append((float(command_wait), light + ": comando ate frame"))
+    presentation = data.get("production_presentation_ms")
+    if isinstance(presentation, (float, int)) and presentation > 0:
+        candidates.append((float(presentation), "Producao: apresentacao"))
+    if candidates:
+        lines.extend(["", "MAIORES TEMPOS OBSERVADOS (INDICATIVOS)"])
+        for duration, label in sorted(candidates, reverse=True)[:5]:
+            lines.append("- {}: {} ms".format(label, round(duration, 2)))
     lines.extend([
         "",
         "NOTAS DE MEDICAO",
