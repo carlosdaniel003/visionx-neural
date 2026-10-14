@@ -326,6 +326,75 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
             result["detail"]["verified_memory_timing"]["index_reused"]
         )
 
+    def test_archive_only_refresh_preserves_legacy_index_and_verified_label(self):
+        """O watcher troca duas listas, mas não mudou nenhum par legado."""
+        system = self.create_router()
+        knn = system.experts["knn"]
+        legacy = self.make_record("NG")
+        knn.signatures_ng = [legacy]
+        self.assertEqual(system.prepare_verified_memory_index()["state"], "ready")
+        original = self.inspect(system)
+        self.assertEqual(original["detail"]["recognition_route"], "KNOWN_KNN")
+        initial = original["detail"]["verified_memory_timing"]
+        self.assertTrue(initial["index_reused"])
+        self.assertEqual(initial["legacy_index_record_count"], 1)
+
+        # Simula múltiplos lotes append-only do arquivo durável:
+        # refresh_archive_memory() reconstrói listas, retendo os mesmos
+        # objetos legados e incluindo registros archive_persistent novos.
+        for count in (13, 28, 47):
+            durable = [
+                {"archive_persistent": True, "archive_record_id": str(i)}
+                for i in range(count)
+            ]
+            knn.signatures_ok = list(durable)
+            knn.signatures_ng = [legacy]
+            result = self.inspect(system)
+            profile = result["detail"]["verified_memory_timing"]
+            self.assertEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+            self.assertTrue(profile["index_reused"])
+            self.assertEqual(profile["index_build_ms"], 0)
+            self.assertEqual(profile["legacy_index_record_count"], 1)
+            self.assertEqual(profile["archive_persistent_record_count"], count)
+            self.assertEqual(profile["record_count"], count + 1)
+            self.assertEqual(profile["warmup"]["state"], "ready")
+
+    def test_archive_refresh_then_legacy_change_forces_fresh_verification(self):
+        """Atualizações reais do legado continuam exigindo novo índice."""
+        system = self.create_router()
+        knn = system.experts["knn"]
+        legacy = self.make_record("NG")
+        knn.signatures_ng = [legacy]
+        system.prepare_verified_memory_index()
+        self.assertEqual(self.inspect(system)["detail"]["recognition_route"], "KNOWN_KNN")
+
+        knn.signatures_ok = [
+            {"archive_persistent": True, "archive_record_id": "added"}
+        ]
+        stable = self.inspect(system)["detail"]["verified_memory_timing"]
+        self.assertTrue(stable["index_reused"])
+
+        # Troca de objeto legado na mesma posição/quantidade é alteração.
+        another = self.make_record("OK")
+        knn.signatures_ng = [another]
+        changed = self.inspect(system)
+        self.assertEqual(changed["verdict"], "FALHA FALSA")
+        self.assertEqual(changed["detail"]["recognition_route"], "KNOWN_KNN")
+        profile = changed["detail"]["verified_memory_timing"]
+        self.assertFalse(profile["index_reused"])
+        self.assertEqual(profile["index_rebuild_reason"], "legacy_records_changed")
+
+        system.reload_memory()
+        invalidated = system._get_verified_memory_index()._warmup_status
+        self.assertEqual(invalidated["state"], "invalidated")
+        self.assertEqual(invalidated["reason"], "orchestrator_reload_memory")
+        post_reload = self.inspect(system)["detail"]["verified_memory_timing"]
+        self.assertFalse(post_reload["index_reused"])
+        self.assertEqual(
+            post_reload["index_rebuild_reason"],
+            "not_initialized_or_explicitly_invalidated",
+        )
+
     def test_first_verified_lookup_builds_index_then_reuses_it(self):
         system = self.create_router()
         system.experts["knn"].signatures_ok.append(self.make_record("OK"))
