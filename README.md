@@ -1,3 +1,7 @@
+## 14/10/2026 — Benchmark OCR offline sem alterar produção (PR #19)
+
+O novo comando `python -X utf8 -m src.services.aoi_ocr_benchmark --images "public/debug_ocr/frame_completo.png" --repeats 3 --output "reports/startup_regression/ocr_benchmark/ensaio_01.json"` testa o Tesseract original contra escalas 2/3/4/5 e pequenos recortes **usando as mesmas capturas AOI integrais**. Registra tempos, SHA-256 dos frames e divergências por `Board`, `Parts`, `Value` e categoria, chamando o parser operacional real. Permite manifesto JSON com valores conferidos pelo operador para comparação; igualdade com o controle OCR pode reproduzir erros antigos e não prova identidade correta. Recusa baseline instável entre rodadas. **Nenhum candidato é ativado**, nem muda a operação XP/0/1/produção/KNN/CNN. Rodar fora da inspeção, em período ocioso, e auditar ambiguidades como `I/1`. Instruções e manifesto: `docs/AOI_OCR_BENCHMARK.md`.
+
 ## 14/10/2026 — Hipótese de roteamento por categoria, SOMENTE SIMULAÇÃO
 
 - A auditoria do candidato `0,50` detectou 5 NG previamente liberados que passam a 3 NG conclusivos + 2 revisões, porém criou 7 falsos NG e 2 revisões em exemplos OK DESLOCADO. Todos os problemas novos estão em `DESLOCADO`; não houve outra regressão indicada pelas transições.
