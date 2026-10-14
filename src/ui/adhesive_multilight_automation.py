@@ -18,6 +18,9 @@ LEFT=TOP, DOWN=SIDE, RIGHT=MID.
 
 from __future__ import annotations
 
+import time
+
+from src.services.inspection_timing import note_command
 from PyQt6.QtCore import QObject, QTimer
 
 
@@ -87,7 +90,11 @@ class AdhesiveMultiLightAutomation(QObject):
             )
             return False
 
-        if not bool(sender(command)):
+        started_at = time.perf_counter()
+        sent = bool(sender(command))
+        finished_at = time.perf_counter()
+        note_command(self.panel, normalized, started_at, finished_at, sent)
+        if not sent:
             return False
 
         self._set_visual_lighting(normalized)
