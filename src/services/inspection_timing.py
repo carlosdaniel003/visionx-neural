@@ -28,7 +28,10 @@ def _state(panel):
     return value if isinstance(value, dict) else None
 
 
-def begin_cycle(panel, event_id, mode, transport=None, fast_ack=None):
+def begin_cycle(
+    panel, event_id, mode, transport=None, fast_ack=None,
+    previous_gate_release_at=None,
+):
     """Abre registro isolado pela identidade da primeira imagem SIDE."""
     transport = transport if isinstance(transport, dict) else {}
     started = float(transport.get("payload_at") or 0.0)
@@ -38,6 +41,7 @@ def begin_cycle(panel, event_id, mode, transport=None, fast_ack=None):
         "start_at": started if started > 0 else time.perf_counter(),
         "finished_at": None,
         "fast_ack": fast_ack if fast_ack in (True, False) else None,
+        "release_to_side_ms": _ms(previous_gate_release_at, started),
         "lights": {light: {"steps": {}, "network": {}, "command": {}}
                    for light in LIGHTS},
         "presentation": {},
@@ -145,6 +149,7 @@ def snapshot(panel, event_id):
         "event_id": state["event_id"],
         "mode": state["mode"],
         "xp_fast_ack": state["fast_ack"],
+        "previous_gate_release_to_side_ms": state["release_to_side_ms"],
         "cycle_side_to_result_ms": _ms(
             state["start_at"], state["finished_at"]
         ),
@@ -168,6 +173,9 @@ def format_report(data):
              ),
              "XP captura rapida confirmada (ACK): {}".format(
                  _show(data.get("xp_fast_ack"))
+             ),
+             "Gate liberado -> proxima SIDE estavel: {} ms".format(
+                 _show(data.get("previous_gate_release_to_side_ms"))
              )]
     names = {
         "tcp_payload_ms": "Transferencia do payload TCP",
@@ -233,6 +241,9 @@ def format_report(data):
         command_wait = entry.get("command", {}).get("to_ready_ms")
         if isinstance(command_wait, (float, int)) and command_wait > 0:
             candidates.append((float(command_wait), light + ": comando ate frame"))
+    prev_gap = data.get("previous_gate_release_to_side_ms")
+    if isinstance(prev_gap, (float, int)) and prev_gap > 0:
+        candidates.append((float(prev_gap), "Entre pecas: gate ate proxima SIDE"))
     presentation = data.get("production_presentation_ms")
     if isinstance(presentation, (float, int)) and presentation > 0:
         candidates.append((float(presentation), "Producao: apresentacao"))
