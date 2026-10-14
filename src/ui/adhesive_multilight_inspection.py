@@ -856,13 +856,13 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 if not stored:
                     return False
 
-                # Em Sombra TOP é recebido ANTES da análise. Solicitar
-                # MID já neste momento sobrepõe a aquisição pela rede ao
-                # cálculo de TOP (sem emitir tecla 0/1).
+                # Nos três modos, a imagem TOP já está recortada e guardada.
+                # Solicitar MID agora permite que a aquisição física se sobreponha
+                # ao cálculo de TOP. A análise/fusão final permanece obrigatória.
                 early_advanced = False
-                if shadow and aux_mode == "TOP":
+                if aux_mode == "TOP":
                     automation = getattr(self, "adhesive_multilight_automation", None)
-                    advance = getattr(automation, "shadow_top_captured", None)
+                    advance = getattr(automation, "top_captured", None)
                     if callable(advance):
                         early_advanced = bool(advance())
 
