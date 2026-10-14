@@ -1,3 +1,15 @@
+## 14/10/2026 — Diagnóstico de latência XP por backlog contínuo (PR #22)
+
+Depois de corrigir o índice KNN no PR #21, o operador mediu sucessivamente **5,22 s**, cerca de **6 s** e **20,02 s** por ciclo FALTANDO (Modo Teste). O terceiro debug confirmou índice KNN SIDE/TOP/MID reconstruído em apenas **5,14/1,52/2,93 ms**, mas OCR SIDE com **quatro subprocessos** Tesseract (total **4.903,47 ms**, `Parts` com recuperação `directed_candidates_invalid`). O log também registrou **19.540,84 ms do gate anterior à SIDE** e **31 frames SIDE com a mesma assinatura ao longo de 18.789,38 ms**; o intervalo entre os *últimos* dois frames foi só **200,23 ms**. A etapa `stability_ms` mede o intervalo completo desde o primeiro frame daquela sequência, incluindo espera por coalescing, e não significa que o teste de dois frames tenha exigido 18 s.
+
+O receptor sempre verificava `select.select(..., timeout=0)` e **adiava indefinidamente** uma imagem já estável enquanto o XP mantivesse outra conexão na fila. Sob fluxo contínuo, a condição `pending` pode nunca zerar.
+
+A correção mantém: `STABLE_REQUIRED_FRAMES=2`, assinatura visual e limiares anteriores, reinício da contagem ao mudar imagem, verificação de imagem central/duplicata, reserva atômica, bloqueio do gate e 350 ms de *settle* TOP/MID. A fila ainda tem prioridade no início; depois de **4+ frames visualmente iguais** por pelo menos **650 ms**, a SIDE estável pode seguir mesmo com novas conexões aguardando. Isso impede starvation sob stream constante sem aceitar dois frames divergentes. O debug registra `backlog_deferrals`, `backlog_release_with_pending` e mantém `stable_frame_count` para validar o efeito.
+
+**Segurança/limites:** um socket pendente ainda pode conter um frame mais novo que o último recebido; a entrega após estabilidade reforçada é política temporal, não prova absoluta de atualidade. A detecção de epicentro e regras de julgamento permanecem, mas a alteração de transporte requer validação com o XP real e diferentes ritmos/peças antes da liberação em Produção. Não altera OCR, categoria, 0/1, checkpoint CNN, índices KNN ou arquivo persistente.
+
+Para confirmar, enviar um novo debug após integração: comparar `previous_gate_release_to_side_ms`, `stability_ms`, `stable_frame_count`, `backlog_deferrals`, `backlog_release_with_pending`, OCR subprocessos e `cycle_side_to_result_ms`. Medir separadamente espera entre peças e duração SIDE→resultado. A segunda frente de otimização será a recuperação de `Parts`, **sem** descartar identificadores ambíguos nem suavizar o parser de produção sem referência humana.
+
 ## 14/10/2026 — Índice KNN com atualização persistente e consulta direcionada (PR #21)
 
 - **Diagnóstico real:** ciclo FALTANDO em Modo Teste levou 81,246 s, após 5,438 s na medição anterior. Reconstrução de índice KNN em SIDE **20.177,83 ms**, TOP **27.244,66 ms**, e fila Qt MID **14.535,56 ms**. O OCR SIDE foi 2.066 ms e não explica a regressão. Checkpoint CNN original verificado, com `INFERENCE_OK` em SIDE/TOP/MID.
