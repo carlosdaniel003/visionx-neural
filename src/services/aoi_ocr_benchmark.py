@@ -205,6 +205,7 @@ def compare_variants(
     by_variant = {v.name: {"ms": [], "different": set(), "wrong": set()}
                   for v in VARIANTS}
     human_count = 0
+    unsupported_category_cases = set()
     for file_index, (path, expected) in enumerate(sources):
         raw = path.read_bytes()
         frame = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -220,12 +221,24 @@ def compare_variants(
             baseline = inspect_variant(
                 monitor, frame, *bars, VARIANTS[0], module
             )
-            if any(not str(baseline["fields"].get(k, "")).strip()
-                   or baseline["fields"].get(k) == "Unknown" for k in FIELDS):
+            # Uma categoria fora do escopo operacional (ex.: Little Solder)
+            # não significa que o OCR de Board/Parts/Value falhou. Permitir
+            # somente seu benchmark OFFLINE, sem tratá-la como elegível.
+            # Campos textuais ausentes continuam bloqueando a comparação.
+            if any(
+                not isinstance(baseline["fields"].get(k), str)
+                or not baseline["fields"][k].strip()
+                for k in FIELDS
+            ) or any(
+                baseline["fields"].get(k) == "Unknown"
+                for k in ("board", "parts", "value")
+            ):
                 raise ValueError(
                     "Baseline tem campo OCR vazio/desconhecido; recusar comparação: "
                     + str(path)
                 )
+            if baseline["fields"]["category"] == "Unknown":
+                unsupported_category_cases.add(file_index)
             if baseline_fields is None:
                 baseline_fields = dict(baseline["fields"])
             elif baseline["fields"] != baseline_fields:
@@ -260,6 +273,9 @@ def compare_variants(
             "image": str(path),
             "sha256": sha256(raw).hexdigest(),
             "manifest_expected_supplied": expected is not None,
+            "baseline_category_supported": (
+                baseline_fields["category"] != "Unknown"
+            ),
             "expected": expected,
             "measurements": runs,
         })
@@ -270,6 +286,7 @@ def compare_variants(
     baseline_human_clean = (
         human_count == len(cases)
         and not by_variant["baseline_original"]["wrong"]
+        and not unsupported_category_cases
     )
     for variant in VARIANTS:
         stat = by_variant[variant.name]
@@ -284,6 +301,7 @@ def compare_variants(
             "mismatch_with_human_labels_cases": len(stat["wrong"]),
             "same_fields_as_baseline": not stat["different"],
             "human_labels_complete": human_count == len(cases),
+            "unsupported_baseline_category_cases": len(unsupported_category_cases),
             "manifest_reference_agreement": (
                 baseline_human_clean and not stat["wrong"]
             ),
@@ -303,10 +321,13 @@ def compare_variants(
             "Igualdade com OCR antigo NAO prova acerto; expected no manifesto "
             "e fornecido pelo operador, sem verificação automática de autoria. "
             "Conferir manualmente I/1, O/0, intervalos e categoria. "
+            "Categorias Unknown sao permitidas somente para benchmark; "
+            "sao fora do escopo operacional e nao contam como aprovadas. "
             "Mesmo sem divergências, nenhuma variante é ativada."
         ),
         "case_count": len(cases),
         "manifest_expected_count": human_count,
+        "unsupported_baseline_category_cases": len(unsupported_category_cases),
         "repeats": repeats,
         "summary": summary,
         "cases": cases,
@@ -335,6 +356,13 @@ def main(argv=None) -> int:
     print("Casos: {} | referencias informadas: {} | rounds: {}".format(
         data["case_count"], data["manifest_expected_count"], data["repeats"]
     ))
+    if data["unsupported_baseline_category_cases"]:
+        print(
+            "AVISO: {} imagem(ns) com categoria fora do escopo operacional "
+            "(Unknown). Benchmark diagnóstico; nao validar para Produção.".format(
+                data["unsupported_baseline_category_cases"]
+            )
+        )
     for name, value in data["summary"].items():
         print("{}: mediana {} ms; diferencas {}; ganho {}%".format(
             name, value["median_ocr_ms"],
