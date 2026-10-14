@@ -14,6 +14,8 @@ on:
       - "src/ui/hud_window.py"
       - "src/ui/calibration_window.py"
       - "src/ui/network_xp_debug.py"
+      - "src/core/neural/faltando_inference_telemetry.py"
+      - "src/core/neural/faltando_live.py"
       - "src/core/multilight_fusion.py"
       - "src/core/adhesive_multilight_fusion.py"
       - "src/core/adhesive_multilight_analysis.py"
@@ -62,6 +64,14 @@ on:
       - "tests/test_image_cycle_gate.py"
       - "tests/test_local_capture_network_takeover.py"
       - ".github/workflows/network-xp-debug-tests.yml"
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/ui/network_xp_debug.py"
+      - "src/core/neural/faltando_inference_telemetry.py"
+      - "src/core/neural/faltando_live.py"
+      - "tests/test_network_xp_debug.py"
+      - ".github/workflows/network-xp-debug-tests.yml"
   workflow_dispatch:
 
 jobs:
@@ -86,7 +96,7 @@ jobs:
       - name: Compile multilight modules
         shell: pwsh
         run: |
-          python -m py_compile src/core/multilight_fusion.py src/core/adhesive_multilight_fusion.py src/core/adhesive_multilight_analysis.py src/ui/adhesive_multilight_automation.py src/ui/adhesive_multilight_inspection.py src/ui/adhesive_multilight_analysis.py src/services/image_archive_candidates.py
+          python -m py_compile src/core/neural/faltando_inference_telemetry.py src/core/multilight_fusion.py src/core/adhesive_multilight_fusion.py src/core/adhesive_multilight_analysis.py src/ui/adhesive_multilight_automation.py src/ui/adhesive_multilight_inspection.py src/ui/adhesive_multilight_analysis.py src/services/image_archive_candidates.py
 
       - name: Run XP intake and regression tests
         shell: pwsh
