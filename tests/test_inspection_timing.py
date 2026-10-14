@@ -121,6 +121,33 @@ class InspectionTimingTests(unittest.TestCase):
         begin_cycle(panel, "new", "Modo Teste")
         self.assertEqual(snapshot(panel, "new")["lights"]["SIDE"]["network"], {})
 
+    def test_crop_io_phase_breakdown_is_reported_without_double_counting(self):
+        panel = SimpleNamespace()
+        begin_cycle(panel, "crop-1", "Modo Teste")
+        monitor = SimpleNamespace(last_external_timing={
+            "layout_crop_ms": 2482.68,
+            "bars_detect_ms": 61.0,
+            "sample_crop_ms": 1340.0,
+            "test_crop_ms": 1081.68,
+            "debug_png_write_count": 12,
+            "debug_png_write_ms": 1750.0,
+            "ocr_ms": 4422.25,
+            "extraction_ms": 6904.93,
+        })
+        note_extraction(panel, "SIDE", monitor)
+        data = snapshot(panel, "crop-1")["lights"]["SIDE"]["steps"]
+        self.assertEqual(data["debug_png_write_count"], 12)
+        self.assertEqual(data["debug_png_write_ms"], 1750.0)
+        self.assertEqual(data["layout_crop_ms"], 2482.68)
+        report = "\n".join(format_report(snapshot(panel, "crop-1")))
+        self.assertIn("PNGs de debug gravados: 12", report)
+        self.assertIn("Gravacao de PNGs de debug", report)
+        self.assertIn("Copia inicial / deteccao de barras", report)
+        begin_cycle(panel, "crop-2", "Modo Teste")
+        self.assertEqual(
+            snapshot(panel, "crop-2")["lights"]["SIDE"]["steps"], {}
+        )
+
     def test_different_event_is_not_allowed_to_inherit_old_timings(self):
         panel = SimpleNamespace()
         begin_cycle(panel, "one", "Modo Teste")
