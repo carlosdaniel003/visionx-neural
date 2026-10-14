@@ -121,6 +121,48 @@ class InspectionTimingTests(unittest.TestCase):
         begin_cycle(panel, "new", "Modo Teste")
         self.assertEqual(snapshot(panel, "new")["lights"]["SIDE"]["network"], {})
 
+    def test_archive_worker_overlap_is_per_light_and_non_authoritative(self):
+        from unittest.mock import patch
+        states = [
+            {
+                "running": True, "scan_active": True,
+                "phase": "hashing_png", "busy_total_ms": 200.0,
+                "scan_count": 10, "last_scan_ms": 36.0,
+                "imports_this_session": 100,
+            },
+            {
+                "running": True, "scan_active": False,
+                "phase": "idle", "busy_total_ms": 315.0,
+                "scan_count": 11, "last_scan_ms": 115.0,
+                "imports_this_session": 101,
+            },
+        ]
+        panel = SimpleNamespace()
+        with patch(
+            "src.services.inspection_timing._archive_activity",
+            side_effect=states,
+        ):
+            begin_cycle(panel, "worker-overlap", "Modo Teste")
+            note_steps(panel, "SIDE", inference_ms=66)
+        data = snapshot(panel, "worker-overlap")
+        worker = data["lights"]["SIDE"]["archive_worker"]
+        self.assertEqual(worker["busy_overlap_ms"], 115.0)
+        self.assertEqual(worker["at_frame"]["phase"], "hashing_png")
+        self.assertEqual(worker["after_step"]["phase"], "idle")
+        self.assertEqual(data["lights"]["SIDE"]["steps"]["inference_ms"], 66)
+        self.assertEqual(data["lights"]["TOP"]["archive_worker"], {})
+        report = "\n".join(format_report(data))
+        self.assertIn(
+            "Observador KNN: atividade simultanea estimada: 115.0 ms",
+            report,
+        )
+        self.assertIn("varreduras no periodo: 1", report)
+        begin_cycle(panel, "worker-next", "Modo Teste")
+        self.assertEqual(
+            snapshot(panel, "worker-next")["lights"]["SIDE"]["archive_worker"],
+            {},
+        )
+
     def test_crop_io_phase_breakdown_is_reported_without_double_counting(self):
         panel = SimpleNamespace()
         begin_cycle(panel, "crop-1", "Modo Teste")
