@@ -98,6 +98,54 @@ class OCRBenchmarkTests(unittest.TestCase):
         self.assertFalse(candidate["manifest_reference_agreement"])
         self.assertFalse(candidate["eligible_for_automatic_activation"])
 
+    def test_little_solder_unknown_category_is_measured_not_approved(self):
+        # Frame real public/debug_ocr/frame_completo.png contém Little Solder:
+        # OCR reconhece Board/Parts/Value, mas categoria não é operacional.
+        text = (
+            "Board P24-03804 (PRINCIPAL) L05\\n"
+            "Parts JF271 Block 1\\n"
+            "Value 40 <= 25.602 <= 98 Little Solder"
+        ).replace("\\\\n", "\\n")
+        self.fake.image_to_string = lambda binary, config="": text
+        report = self.run_benchmark([(self.path, None)], repeats=3)
+        self.assertEqual(report["case_count"], 1)
+        self.assertEqual(report["unsupported_baseline_category_cases"], 1)
+        case = report["cases"][0]
+        self.assertFalse(case["baseline_category_supported"])
+        control = case["measurements"][0]["fields"]
+        self.assertEqual(control["board"], "P24-03804 (PRINCIPAL) L05")
+        self.assertEqual(control["parts"], "JF271")
+        self.assertEqual(
+            control["value"], "40 <= 25.602 <= 98 Little Solder"
+        )
+        self.assertEqual(control["category"], "Unknown")
+        for item in report["summary"].values():
+            self.assertEqual(item["unsupported_baseline_category_cases"], 1)
+            self.assertFalse(item["manifest_reference_agreement"])
+            self.assertFalse(item["eligible_for_automatic_activation"])
+
+    def test_unknown_category_cannot_be_human_approved_by_manifest(self):
+        text = (
+            "Board P24-03804 (PRINCIPAL) L05\\n"
+            "Parts JF271 Block 1\\n"
+            "Value 40 <= 25.602 <= 98 Little Solder"
+        ).replace("\\\\n", "\\n")
+        self.fake.image_to_string = lambda binary, config="": text
+        expected = {
+            "board": "P24-03804 (PRINCIPAL) L05",
+            "parts": "JF271",
+            "value": "40 <= 25.602 <= 98 Little Solder",
+            "category": "Unknown",
+        }
+        report = self.run_benchmark([(self.path, expected)], repeats=1)
+        self.assertEqual(
+            report["summary"]["baseline_original"]["mismatch_with_human_labels_cases"],
+            0,
+        )
+        self.assertFalse(
+            report["summary"]["baseline_original"]["manifest_reference_agreement"]
+        )
+
     def test_reference_disagrees_with_original_and_does_not_approve_variant(self):
         expected = dict(EXPECTED, parts="R175")
         report = self.run_benchmark([(self.path, expected)], repeats=1)
