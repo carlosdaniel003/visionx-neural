@@ -1,3 +1,18 @@
+## 14/10/2026 — Perfil de recortes SIDE e gravações PNG (PR #23)
+
+Sexta inspeção FALTANDO em Modo Teste: **13,743 s** SIDE→resultado e **2,176 s** gate→próxima SIDE (ante 20,018 s e 19,541 s na terceira). O PR #22 mostrou funcionamento: **4 frames SIDE estáveis**, 2 adiamentos de socket, `backlog_release_with_pending=true`. A correção do índice KNN também segue ativa (reconstrução direcionada na faixa de milissegundos, mesmo com `orchestrator_reload_memory`).
+
+O novo gargalo de SIDE foi **6.904,93 ms** de extração: **4.422,25 ms** OCR (4 chamadas Tesseract, `directed_candidates_invalid`) e **2.482,68 ms** localização e recortes. O método `_extract_photo` grava diversos arquivos de debug PNG no modo Teste, mas o perfil antigo não permitia distinguir custo de processamento de custo de escrita no disco.
+
+Este PR **somente acrescenta telemetria passiva** para capturas externas:
+- `bars_detect_ms`: cópia inicial/máscaras/detecção de barras;
+- `sample_crop_ms`: recorte gabarito azul, incluindo os PNGs de debug gerados nele;
+- `test_crop_ms`: recorte teste vermelho, incluindo os PNGs de debug gerados nele;
+- `debug_png_write_ms` e `debug_png_write_count`: soma das durações e número de tentativas de gravação PNG, **subetapas sobrepostas**, não somar a `layout_crop_ms`.
+- Continua registrando `layout_crop_ms`, `ocr_ms` e `extraction_ms` sem alteração no contrato. Inclui dados no debug multilight e mantém isolamento entre capturas.
+
+**Nenhum PNG deixa de ser escrito**, nenhum processamento passa a rodar em paralelo, nenhuma imagem é modificada, e OCR/CNN/KNN, comunicação XP, estabilidade de frames e decisões 0/1 permanecem exatamente iguais. A próxima medição em Modo Teste distinguirá custo do disco de custo de processamento, antes de propor otimização que afete evidências industriais. É importante **não concluir** que os 2,48 s foram causados pelas gravações sem medir `debug_png_write_ms`.
+
 ## 14/10/2026 — Diagnóstico de latência XP por backlog contínuo (PR #22)
 
 Depois de corrigir o índice KNN no PR #21, o operador mediu sucessivamente **5,22 s**, cerca de **6 s** e **20,02 s** por ciclo FALTANDO (Modo Teste). O terceiro debug confirmou índice KNN SIDE/TOP/MID reconstruído em apenas **5,14/1,52/2,93 ms**, mas OCR SIDE com **quatro subprocessos** Tesseract (total **4.903,47 ms**, `Parts` com recuperação `directed_candidates_invalid`). O log também registrou **19.540,84 ms do gate anterior à SIDE** e **31 frames SIDE com a mesma assinatura ao longo de 18.789,38 ms**; o intervalo entre os *últimos* dois frames foi só **200,23 ms**. A etapa `stability_ms` mede o intervalo completo desde o primeiro frame daquela sequência, incluindo espera por coalescing, e não significa que o teste de dois frames tenha exigido 18 s.
