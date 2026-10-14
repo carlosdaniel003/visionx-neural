@@ -261,6 +261,71 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
         system.reload_memory()
         self.assertEqual(self.inspect(system)["detail"]["recognition_route"], "KNOWN_KNN")
 
+    def test_first_verified_lookup_builds_index_then_reuses_it(self):
+        system = self.create_router()
+        system.experts["knn"].signatures_ok.append(self.make_record("OK"))
+        first = self.inspect(system)
+        second = self.inspect(system)
+        self.assertEqual(first["verdict"], second["verdict"])
+        self.assertEqual(first["detail"]["recognition_route"], "KNOWN_KNN")
+        first_profile = first["detail"]["verified_memory_timing"]
+        second_profile = second["detail"]["verified_memory_timing"]
+        self.assertEqual(first_profile["schema"], "visionx.verified_knn_lookup_timing.v1")
+        self.assertEqual(first_profile["status"], "KNOWN")
+        self.assertFalse(first_profile["index_reused"])
+        self.assertGreaterEqual(first_profile["index_build_ms"], 0)
+        self.assertEqual(first_profile["record_count"], 1)
+        self.assertTrue(second_profile["index_reused"])
+        self.assertEqual(second_profile["index_build_ms"], 0.0)
+        self.assertIn("archive_lookup_ms", second_profile)
+        self.assertIn("fingerprints_ms", second_profile)
+        self.assertIn("records_snapshot_ms", second_profile)
+        self.assertGreaterEqual(second_profile["total_ms"], 0)
+        self.assertEqual(system.specialist_calls, [])
+
+    def test_index_profile_invalidated_by_reload_and_new_record(self):
+        system = self.create_router()
+        initial = self.inspect(system)["detail"]["verified_memory_timing"]
+        self.assertFalse(initial["index_reused"])
+        self.assertTrue(
+            self.inspect(system)["detail"]["verified_memory_timing"]["index_reused"]
+        )
+        system.experts["knn"].signatures_ng.append(self.make_record("NG"))
+        system.reload_memory()
+        refreshed = self.inspect(system)
+        self.assertEqual(refreshed["detail"]["recognition_route"], "KNOWN_KNN")
+        self.assertFalse(refreshed["detail"]["verified_memory_timing"]["index_reused"])
+
+    def test_verified_memory_profile_on_conflict_and_fail_closed(self):
+        system = self.create_router()
+        system.experts["knn"].signatures_ok.append(self.make_record("OK"))
+        system.experts["knn"].signatures_ng.append(self.make_record("NG"))
+        conflict = self.inspect(system)
+        self.assertEqual(conflict["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertEqual(
+            conflict["detail"]["verified_memory_timing"]["status"], "CONFLICT"
+        )
+
+        class CorruptStore:
+            def lookup(self, *args):
+                raise ValueError("Snapshot adulterado")
+
+        class OtherSystem(FakeOrchestrator):
+            pass
+
+        install_memory_first_router(
+            OtherSystem, memory=VerifiedKNNMemory(archive_store=CorruptStore())
+        )
+        result = self.inspect(OtherSystem())
+        self.assertEqual(result["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertFalse(production_decision_policy(result)["auto_allowed"])
+        self.assertEqual(
+            result["detail"]["verified_memory_timing"]["status"], "UNAVAILABLE"
+        )
+        self.assertIn(
+            "archive_lookup_ms", result["detail"]["verified_memory_timing"]
+        )
+
     def test_unavailable_image_cannot_auto_ok_or_use_specialists(self):
         system = self.create_router()
         bad = np.zeros((0, 1, 3), dtype=np.uint8)
