@@ -23,6 +23,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2, LIGHTS, MODEL_SCHEMA_V2
+from src.core.neural.faltando_checkpoint_contract import POINTER_SCHEMA
 from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.core.neural.faltando_live import (
     PINNED_CHECKPOINT_SHA256, PINNED_RELATIVE_CHECKPOINT,
@@ -34,7 +35,6 @@ from src.scripts.train_faltando_cnn_v2 import (
 from src.services.neural_online_learning import ONLINE_SCHEMA, _known_human_source
 
 ONLINE_MODEL_SCHEMA = "visionx.specialist_online_model.v1"
-POINTER_SCHEMA = "visionx.specialist_active_pointer.v1"
 
 
 def _safe_path(parent: Path, filename: str) -> Path:
