@@ -1,3 +1,16 @@
+## 14/10/2026 — Terceiro ensaio pós-PR #23: lentidão intermitente de MID e observador do acervo
+
+No terceiro ensaio em **Modo Teste** (evento `ff9346b04cc94043921989cfe8cc134d`) o ciclo SIDE→resultado durou **13.920,15 ms**. Gate anterior→SIDE **611,82 ms**, apenas 2 frames estáveis sem backlog; OCR SIDE **1.143,78 ms** com uma chamada e `Parts=D10~5` reconhecido na leitura geral; recortes SIDE 249,85 ms. O principal pico foi em **MID**: recortes **1.986,49 ms**, PNGs de debug **761,74 ms** de 10 imagens, geometria **1.357,12 ms**, inferência dos especialistas **2.272,48 ms** e renderização **1.014,06 ms**. A CNN pré-carregada em MID consumiu **1.647,21 ms**, com 783,44 ms preparando tensores e 860,52 ms no forward, contra 62,12 ms SIDE e 72,11 ms TOP (10 threads PyTorch). Essas fases incluem sobreposições; não somá-las ao total.
+
+O observador de memória `KNNArchiveAutoMemory` varre diretórios em thread paralela a cada 1 s, valida arquivos, calcula SHA-256, extrai dados de PNGs e por vezes atualiza `memory.json`. Pode competir com processamento MID, mas **não há prova de coincidência no log existente**. Este PR adiciona apenas telemetria passiva de observabilidade, sem criar nenhuma espera:
+
+- A thread do acervo expõe `scan_active`, `phase` (enumeração/hash/extração/persistência/refresh), `busy_total_ms` acumulado, `scan_count`, `last_scan_ms` e `imports_this_session`, sem gravar nomes de peças ou caminhos.
+- O perfil SIDE/TOP/MID captura o estado no recebimento do frame e após os passos da análise, reportando `busy_overlap_ms`: **sobreposição temporal de atividade do worker**, não tempo de CPU nem afirmação causal.
+- Instrumentação com travas curtas, nenhum scan adicional, sem novas leituras ou escritas em disco e nenhum subprocesso OCR novo.
+- A distinção entre apresentação visual do veredito e emissão automática continua importante: este caso teve SIDE e TOP NG, MID OK, consenso `REVIEW` e `cnn_v2_supervised_auto_eligible=false`. O controlador de Produção exige intervenção humana; isso é independente do tempo.
+
+**Fora do escopo:** mudar número de threads PyTorch, pausar a sincronização, mudar decisão de defeito, silenciar PNGs, modificar regras do OCR, memória persistida, classificação CNN/KNN ou comandos XP. Próxima medição em Modo Teste deve enviar o debug do terceiro ciclo ou posterior, procurando `Observador KNN: atividade simultanea estimada` na MID para testar a hipótese de contenção de recursos. O resultado não será garantia de redução de latência.
+
 ## 14/10/2026 — Perfil de recortes SIDE e gravações PNG (PR #23)
 
 Sexta inspeção FALTANDO em Modo Teste: **13,743 s** SIDE→resultado e **2,176 s** gate→próxima SIDE (ante 20,018 s e 19,541 s na terceira). O PR #22 mostrou funcionamento: **4 frames SIDE estáveis**, 2 adiamentos de socket, `backlog_release_with_pending=true`. A correção do índice KNN também segue ativa (reconstrução direcionada na faixa de milissegundos, mesmo com `orchestrator_reload_memory`).
