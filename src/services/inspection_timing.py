@@ -10,7 +10,9 @@ import time
 
 
 LIGHTS = ("SIDE", "TOP", "MID")
-STEPS = ("layout_crop_ms", "ocr_ms", "extraction_ms", "validation_ms", "geometry_ms",
+STEPS = ("layout_crop_ms", "bars_detect_ms", "sample_crop_ms",
+         "test_crop_ms", "debug_png_write_ms", "debug_png_write_count",
+         "ocr_ms", "extraction_ms", "validation_ms", "geometry_ms",
          "preview_ms", "inference_ms", "render_ms", "processing_ms")
 NETWORK_STEPS = ("tcp_payload_ms", "decode_ms", "stability_ms",
                  "last_stable_pair_gap_ms", "configured_settle_ms",
@@ -101,7 +103,10 @@ def note_steps(panel, light, **durations):
     slot = state["lights"][light]["steps"]
     for key, value in durations.items():
         if key in STEPS and isinstance(value, (float, int)):
-            slot[key] = round(max(0.0, float(value)), 2)
+            slot[key] = (
+                max(0, int(value)) if key == "debug_png_write_count"
+                else round(max(0.0, float(value)), 2)
+            )
 
 
 def note_extraction(panel, light, monitor):
@@ -208,6 +213,11 @@ def format_report(data):
         "payload_to_dispatch_ms": "Recebimento ate despacho",
         "dispatch_to_ui_ms": "Fila Qt: despacho ate UI",
         "layout_crop_ms": "Localizacao AOI / recortes",
+        "bars_detect_ms": "Copia inicial / deteccao de barras",
+        "sample_crop_ms": "Recorte gabarito azul (inclui PNGs debug)",
+        "test_crop_ms": "Recorte teste vermelho (inclui PNGs debug)",
+        "debug_png_write_ms": "Gravacao de PNGs de debug (dentro dos recortes)",
+        "debug_png_write_count": "PNGs de debug gravados",
         "ocr_ms": "OCR",
         "extraction_ms": "Extracao total (inclui OCR)",
         "validation_ms": "Validacao de entrada AOI",
@@ -237,7 +247,10 @@ def format_report(data):
             group = item.get(group_name, {})
             for key in (NETWORK_STEPS if group_name == "network" else STEPS):
                 if key in group:
-                    lines.append("{}: {} ms".format(names[key], _show(group[key])))
+                    lines.append("{}: {}{}".format(
+                        names[key], _show(group[key]),
+                        "" if key == "debug_png_write_count" else " ms",
+                    ))
             if group_name == "network":
                 if "stable_frame_count" in group:
                     lines.append(
