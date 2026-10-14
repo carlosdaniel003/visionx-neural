@@ -305,7 +305,7 @@ class FaltandoCNNLive:
             profile.record_checkpoint(self._last_load_profile)
             profile.checkpoint_loaded = bool(self._last_load_did_reload)
             import torch
-            from src.scripts.train_faltando_cnn_v2 import (
+            from src.core.neural.faltando_preprocessing import (
                 _focus_crop, _letterbox_rgb,
             )
             prepare_started_at = time.perf_counter()
