@@ -261,6 +261,71 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
         system.reload_memory()
         self.assertEqual(self.inspect(system)["detail"]["recognition_route"], "KNOWN_KNN")
 
+    def test_knn_warmup_builds_index_before_first_image(self):
+        system = self.create_router()
+        system.experts["knn"].signatures_ng.append(self.make_record("NG"))
+        index = system._get_verified_memory_index()
+        status = system.prepare_verified_memory_index()
+        self.assertEqual(status["state"], "ready")
+        self.assertEqual(status["record_count"], 1)
+        result = self.inspect(system)
+        self.assertEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+        profile = result["detail"]["verified_memory_timing"]
+        self.assertTrue(profile["index_reused"])
+        self.assertEqual(profile["index_build_ms"], 0)
+        self.assertEqual(profile["warmup"]["state"], "ready")
+        self.assertIs(index, system._get_verified_memory_index())
+
+    def test_knn_warmup_waits_for_complete_index_before_inspection(self):
+        from threading import Event, Thread
+        from unittest.mock import patch
+
+        system = self.create_router()
+        system.experts["knn"].signatures_ng.append(self.make_record("NG"))
+        index = system._get_verified_memory_index()
+        original_entry = index._entry
+        entered, release = Event(), Event()
+        results = []
+
+        def held_entry(item):
+            entered.set()
+            self.assertTrue(release.wait(8))
+            return original_entry(item)
+
+        with patch.object(index, "_entry", side_effect=held_entry):
+            warm = Thread(target=system.prepare_verified_memory_index)
+            warm.start()
+            self.assertTrue(entered.wait(8))
+            inspect = Thread(target=lambda: results.append(self.inspect(system)))
+            inspect.start()
+            release.set()
+            warm.join(8)
+            inspect.join(8)
+        self.assertFalse(warm.is_alive())
+        self.assertFalse(inspect.is_alive())
+        self.assertEqual(results[0]["verdict"], "DEFEITO REAL")
+        self.assertEqual(results[0]["detail"]["recognition_route"], "KNOWN_KNN")
+        self.assertTrue(
+            results[0]["detail"]["verified_memory_timing"]["index_reused"]
+        )
+
+    def test_knn_warmup_invalidation_still_forces_rebuild(self):
+        system = self.create_router()
+        knn = system.experts["knn"]
+        knn.signatures_ng.append(self.make_record("NG"))
+        self.assertEqual(system.prepare_verified_memory_index()["state"], "ready")
+        self.assertEqual(
+            self.inspect(system)["detail"]["recognition_route"], "KNOWN_KNN"
+        )
+        system.reload_memory()
+        index = system._get_verified_memory_index()
+        self.assertEqual(index._warmup_status["state"], "invalidated")
+        result = self.inspect(system)
+        self.assertEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+        self.assertFalse(
+            result["detail"]["verified_memory_timing"]["index_reused"]
+        )
+
     def test_first_verified_lookup_builds_index_then_reuses_it(self):
         system = self.create_router()
         system.experts["knn"].signatures_ok.append(self.make_record("OK"))
