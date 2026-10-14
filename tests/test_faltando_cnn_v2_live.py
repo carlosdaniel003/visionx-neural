@@ -114,6 +114,89 @@ class ModelTests(unittest.TestCase):
         }, self.checkpoint)
         self.hash = sha256(self.checkpoint.read_bytes()).hexdigest()
 
+    def test_warmup_preloads_exact_checkpoint_and_preserves_scores(self):
+        from unittest.mock import patch
+        clf = FaltandoCNNLive(self.checkpoint, self.hash)
+        r, t = pair()
+        state = clf.warmup()
+        self.assertEqual(state["state"], "ready")
+        self.assertEqual(state["checkpoint_sha256"], self.hash)
+        self.assertIsNotNone(clf._model)
+        with patch("src.core.neural.faltando_live.REVIEW_LOW_NG", 0.0), \\
+             patch("src.core.neural.faltando_live.REVIEW_HIGH_NG", 0.0):
+            prepared = clf.inspect(r, t, "SIDE")
+            regular = FaltandoCNNLive(self.checkpoint, self.hash).inspect(
+                r, t, "SIDE"
+            )
+        self.assertEqual(prepared["verdict"], regular["verdict"])
+        self.assertEqual(
+            prepared["detail"]["cnn_v2_ng_score_uncalibrated"],
+            regular["detail"]["cnn_v2_ng_score_uncalibrated"],
+        )
+        self.assertEqual(prepared["detail"]["cnn_v2_warmup"]["state"], "ready")
+        self.assertFalse(
+            prepared["detail"]["cnn_v2_performance"]["checkpoint_loaded"]
+        )
+        self.assertNotIn(
+            "checkpoint_hash_ms",
+            prepared["detail"]["cnn_v2_performance"]["checkpoint_load_ms"],
+        )
+
+    def test_warmup_corruption_and_later_file_change_force_review(self):
+        r, t = pair()
+        bad = FaltandoCNNLive(self.checkpoint, "0" * 64)
+        self.assertEqual(bad.warmup()["state"], "failed")
+        rejected = bad.inspect(r, t, "SIDE")
+        self.assertEqual(rejected["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertTrue(rejected["production_review_required"])
+        self.assertEqual(rejected["detail"]["cnn_v2_warmup"]["state"], "failed")
+
+        clf = FaltandoCNNLive(self.checkpoint, self.hash)
+        self.assertEqual(clf.warmup()["state"], "ready")
+        self.checkpoint.write_bytes(self.checkpoint.read_bytes() + b"tampered")
+        rejected_after = clf.inspect(r, t, "SIDE")
+        self.assertEqual(rejected_after["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertTrue(rejected_after["production_review_required"])
+        self.assertEqual(
+            rejected_after["detail"]["cnn_v2_warmup"]["state"], "invalidated"
+        )
+
+    def test_concurrent_warmup_and_first_side_never_load_twice(self):
+        from threading import Event, Thread
+        from unittest.mock import patch
+
+        clf = FaltandoCNNLive(self.checkpoint, self.hash)
+        started, release = Event(), Event()
+        original_load = clf._load
+        loaded = []
+        results = []
+
+        def slow_load():
+            loaded.append(1)
+            started.set()
+            self.assertTrue(release.wait(8))
+            return original_load()
+
+        with patch.object(clf, "_load", side_effect=slow_load):
+            worker = Thread(target=clf.warmup)
+            worker.start()
+            self.assertTrue(started.wait(8))
+            inspector = Thread(
+                target=lambda: results.append(clf.inspect(*pair(), "SIDE"))
+            )
+            inspector.start()
+            release.set()
+            worker.join(8)
+            inspector.join(8)
+        self.assertFalse(worker.is_alive())
+        self.assertFalse(inspector.is_alive())
+        self.assertEqual(len(loaded), 2)  # consulta leve a _load usa modelo em RAM
+        self.assertEqual(results[0]["detail"]["cnn_v2_status"], "INFERENCE_OK")
+        self.assertEqual(results[0]["detail"]["cnn_v2_warmup"]["state"], "ready")
+        self.assertFalse(
+            results[0]["detail"]["cnn_v2_performance"]["checkpoint_loaded"]
+        )
+
     def test_valid_checkpoint_runs_real_inference_and_never_calls_knn(self):
         clf = FaltandoCNNLive(self.checkpoint, self.hash)
         r, t = pair()
