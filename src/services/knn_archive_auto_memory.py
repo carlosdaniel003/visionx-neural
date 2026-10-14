@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from hashlib import sha256
 import logging
+import os
+import sys
 from pathlib import Path
 from threading import Event, Lock, Thread
 import time
@@ -33,6 +35,37 @@ LOG = logging.getLogger(__name__)
 LABEL_DIRS = (("OK", "ok_archive"), ("NG", "ng_archive"))
 _active_lock = Lock()
 _active_monitor = None
+
+
+def _set_background_thread_mode(enable: bool) -> bool:
+    """Prioriza captura/UI ao reduzir CPU/I/O/memória SOMENTE do watcher.
+
+    THREAD_MODE_BACKGROUND_BEGIN/END (Win32) só pode ser aplicado na
+    própria thread. O modo de prioridade do processo ODIN nunca muda.
+    Não requer privilégios administrativos. Falha ou outro SO: modo normal.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        current_thread = kernel32.GetCurrentThread
+        current_thread.restype = ctypes.c_void_p
+        set_priority = kernel32.SetThreadPriority
+        set_priority.argtypes = (ctypes.c_void_p, ctypes.c_int)
+        set_priority.restype = ctypes.c_int
+        mode = 0x00010000 if enable else 0x00020000
+        succeeded = bool(set_priority(current_thread(), mode))
+        if not succeeded:
+            LOG.warning(
+                "Prioridade KNN de background nao aplicada (enable=%s; winerr=%s)",
+                enable, ctypes.get_last_error(),
+            )
+        return succeeded
+    except (OSError, AttributeError, TypeError, ValueError) as exc:
+        LOG.warning("KNN mantem prioridade normal: %s", exc)
+        return False
 
 
 def _extract_entry(root: Path, path: Path, label: str, *,
@@ -106,6 +139,7 @@ class KNNArchiveAutoMemory:
         self._worker_scan_count = 0
         self._worker_last_scan_ms = None
         self._worker_phase = "idle"
+        self._worker_background_mode = False
 
     def _set_worker_phase(self, phase: str) -> None:
         with self._lock:
@@ -130,6 +164,7 @@ class KNNArchiveAutoMemory:
                 "scan_count": self._worker_scan_count,
                 "last_scan_ms": self._worker_last_scan_ms,
                 "imports_this_session": self._total_added,
+                "background_priority_applied": self._worker_background_mode,
             }
 
     def _ensure_extractor(self):
@@ -139,24 +174,50 @@ class KNNArchiveAutoMemory:
         return self._extractor
 
     def _list_files(self) -> list[tuple[Path, str]]:
+        """Enumera só arquivos regulares sem resolver milhares de caminhos.
+
+        scandir reutiliza metadados do sistema de arquivos e evita o custo
+        de Path.rglob + is_file + resolve por PNG (especialmente no Windows).
+        Diretórios/arquivos simbólicos nunca são seguidos. Cada caminho
+        provém exclusivamente de entradas dentro da raiz selecionada; não
+        pode conter '../' injetado. A validação forte do PNG continua em
+        _inspect_png e _archive_image antes de persistir qualquer registro.
+        A ordem final é idêntica à enumeração anterior.
+        """
         paths = []
         for label, dirname in LABEL_DIRS:
             archive = self.root / "public" / dirname
             if not archive.is_dir():
                 LOG.error("Arquivo KNN ausente: %s", archive)
                 continue
-            for path in archive.rglob("*"):
-                if not path.is_file() or path.suffix.lower() != ".png":
-                    continue
-                if path.is_symlink():
-                    LOG.warning("KNN ignora link simbólico: %s", path)
-                    continue
+            stack = [archive]
+            while stack:
+                directory = stack.pop()
                 try:
-                    if archive.resolve() not in path.resolve().parents:
-                        continue
-                except OSError:
-                    continue
-                paths.append((path, label))
+                    with os.scandir(directory) as entries:
+                        for item in entries:
+                            try:
+                                if item.is_symlink():
+                                    LOG.warning(
+                                        "KNN ignora link simbólico: %s", item.path
+                                    )
+                                    continue
+                                if item.is_dir(follow_symlinks=False):
+                                    stack.append(Path(item.path))
+                                elif (
+                                    item.name.lower().endswith(".png")
+                                    and item.is_file(follow_symlinks=False)
+                                ):
+                                    paths.append((Path(item.path), label))
+                            except OSError as exc:
+                                LOG.warning(
+                                    "KNN nao conseguiu consultar entrada %s: %s",
+                                    item.path, exc,
+                                )
+                except OSError as exc:
+                    LOG.warning(
+                        "KNN nao conseguiu enumerar pasta %s: %s", directory, exc
+                    )
         return sorted(paths, key=lambda p: str(p[0]).casefold())
 
     def status(self) -> dict:
@@ -318,28 +379,39 @@ class KNNArchiveAutoMemory:
 
     def _run(self):
         LOG.info("KNN sincronização automática de arquivos OK/NG iniciada")
-        while not self._stop.is_set():
-            started = time.monotonic()
-            with self._lock:
-                self._worker_scan_active = True
-                self._worker_scan_started = started
-                self._worker_phase = "reading_snapshot"
-            try:
-                self.scan_once()
-            except Exception:
-                LOG.exception("KNN observador: erro; retentativa na próxima passagem")
-            finally:
-                finished = time.monotonic()
+        background = _set_background_thread_mode(True)
+        with self._lock:
+            self._worker_background_mode = background
+        try:
+            while not self._stop.is_set():
+                started = time.monotonic()
                 with self._lock:
-                    elapsed = max(0.0, finished - started)
-                    self._worker_busy_total_s += elapsed
-                    self._worker_last_scan_ms = round(elapsed * 1000.0, 2)
-                    self._worker_scan_count += 1
-                    self._worker_scan_active = False
-                    self._worker_scan_started = 0.0
-                    self._worker_phase = "idle"
-            self._wake.wait(self.poll_interval)
-            self._wake.clear()
+                    self._worker_scan_active = True
+                    self._worker_scan_started = started
+                    self._worker_phase = "reading_snapshot"
+                try:
+                    self.scan_once()
+                except Exception:
+                    LOG.exception(
+                        "KNN observador: erro; retentativa na próxima passagem"
+                    )
+                finally:
+                    finished = time.monotonic()
+                    with self._lock:
+                        elapsed = max(0.0, finished - started)
+                        self._worker_busy_total_s += elapsed
+                        self._worker_last_scan_ms = round(elapsed * 1000.0, 2)
+                        self._worker_scan_count += 1
+                        self._worker_scan_active = False
+                        self._worker_scan_started = 0.0
+                        self._worker_phase = "idle"
+                self._wake.wait(self.poll_interval)
+                self._wake.clear()
+        finally:
+            if background:
+                _set_background_thread_mode(False)
+            with self._lock:
+                self._worker_background_mode = False
 
     def start(self):
         if self._thread is not None and self._thread.is_alive():
