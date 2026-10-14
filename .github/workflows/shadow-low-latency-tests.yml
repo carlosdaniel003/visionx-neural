@@ -13,6 +13,7 @@ on:
       - "src/ui/network_xp_debug.py"
       - "src/ui/production_autonomy_controller.py"
       - "src/ui/network_aoi_intake_filter.py"
+      - "src/ui/network_image_cycle_gate.py"
       - "src/services/anomaly_learning.py"
       - "src/services/decision_persistence.py"
       - "tests/test_shadow_fast_capture.py"
