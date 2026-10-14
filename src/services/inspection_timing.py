@@ -303,6 +303,29 @@ def format_report(data):
                             _show(group["backlog_release_with_pending"])
                         )
                     )
+        worker = item.get("archive_worker", {})
+        if isinstance(worker, dict) and worker:
+            at_frame = worker.get("at_frame", {})
+            after = worker.get("after_step", {})
+            if isinstance(at_frame, dict) and isinstance(after, dict):
+                lines.append(
+                    "Observador KNN: atividade simultanea estimada: {} ms "
+                    "(tempo de parede, nao CPU)".format(
+                        _show(worker.get("busy_overlap_ms"))
+                    )
+                )
+                lines.append(
+                    "Observador KNN no frame: {} | ao fim: {} | "
+                    "varreduras no periodo: {}".format(
+                        at_frame.get("phase", "-"),
+                        after.get("phase", "-"),
+                        max(
+                            0,
+                            int(after.get("scan_count", 0))
+                            - int(at_frame.get("scan_count", 0)),
+                        ),
+                    )
+                )
         ocr_profile = item.get("ocr_profile", {})
         if isinstance(ocr_profile, dict) and ocr_profile:
             lines.extend([
