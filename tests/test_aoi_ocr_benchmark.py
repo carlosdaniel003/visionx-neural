@@ -73,14 +73,14 @@ class OCRBenchmarkTests(unittest.TestCase):
     def test_control_uses_original_ocr_and_fast_candidate_cannot_be_promoted(self):
         result = self.run_benchmark([(self.path, EXPECTED)])
         self.assertEqual(result["case_count"], 1)
-        self.assertEqual(result["human_label_count"], 1)
+        self.assertEqual(result["manifest_expected_count"], 1)
         control = result["summary"]["baseline_original"]
         self.assertEqual(control["mismatch_with_human_labels_cases"], 0)
-        self.assertTrue(control["human_reference_agreement"])
+        self.assertTrue(control["manifest_reference_agreement"])
         optimized = result["summary"]["scale_2"]
         self.assertEqual(optimized["different_from_baseline_cases"], 1)
         self.assertEqual(optimized["mismatch_with_human_labels_cases"], 1)
-        self.assertFalse(optimized["human_reference_agreement"])
+        self.assertFalse(optimized["manifest_reference_agreement"])
         self.assertFalse(optimized["eligible_for_automatic_activation"])
         self.assertEqual(
             result["cases"][0]["measurements"][0]["fields"], EXPECTED
@@ -92,10 +92,10 @@ class OCRBenchmarkTests(unittest.TestCase):
 
     def test_without_human_labels_matching_baseline_is_not_human_approval(self):
         result = self.run_benchmark([(self.path, None)], repeats=1)
-        self.assertEqual(result["human_label_count"], 0)
+        self.assertEqual(result["manifest_expected_count"], 0)
         candidate = result["summary"]["scale_3"]
         self.assertTrue(candidate["same_fields_as_baseline"])
-        self.assertFalse(candidate["human_reference_agreement"])
+        self.assertFalse(candidate["manifest_reference_agreement"])
         self.assertFalse(candidate["eligible_for_automatic_activation"])
 
     def test_scale_three_pixel_pipeline_matches_original_production(self):
@@ -152,6 +152,52 @@ class OCRBenchmarkTests(unittest.TestCase):
             benchmark._image_paths(SimpleNamespace(
                 manifest=None, images=[str(self.path), str(self.path)],
             ))
+
+    def test_control_that_changes_across_repeats_is_not_trusted(self):
+        class Flaky(FakeOCR):
+            def __init__(self):
+                super().__init__()
+                self.large_calls = 0
+
+            def image_to_string(self, binary, config=""):
+                if binary.shape[0] >= 500:
+                    self.large_calls += 1
+                    return GOOD if self.large_calls <= 2 else BAD
+                return BAD
+
+        fake = Flaky()
+        # Duas medições de controle distintas devem reprovar a experiência,
+        # não fabricar equivalência entre variantes.
+        with patch.object(screen_monitor, "HAS_TESSERACT", True), patch.object(
+            screen_monitor, "pytesseract", fake
+        ):
+            with self.assertRaisesRegex(ValueError, "instável"):
+                benchmark.compare_variants(
+                    [(self.path, None)], 3,
+                    monitor_factory=self.monitor_factory,
+                    tesseract_module=fake,
+                )
+
+    def test_cli_never_overwrites_previous_report(self):
+        output = self.root / "result.json"
+        args = [
+            "--images", str(self.path), "--repeats", "1",
+            "--output", str(output),
+        ]
+        with patch.object(screen_monitor, "HAS_TESSERACT", True), patch.object(
+            screen_monitor, "pytesseract", self.fake
+        ), patch.object(benchmark, "locate_bars", return_value=(
+            (120, 220, 240, 14), (510, 220, 240, 14),
+        )), patch.object(
+            benchmark, "compare_variants",
+            wraps=lambda sources, repeats: self.run_benchmark(sources, repeats),
+        ):
+            self.assertEqual(benchmark.main(args), 0)
+            first = output.read_bytes()
+            with self.assertRaises(FileExistsError):
+                benchmark.main(args)
+        self.assertEqual(output.read_bytes(), first)
+        self.assertTrue(self.path.is_file())
 
     def test_invalid_original_ocr_never_passes_by_vacuous_equality(self):
         blank = FakeOCR()
