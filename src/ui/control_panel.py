@@ -147,6 +147,21 @@ class ControlPanel(QWidget):
             uses_fast_xp_capture(self.combo_mode.currentText())
         )
 
+    def _report_xp_capture_rate(self, ip: str, fast_active: bool) -> None:
+        """Relata apenas mudanças do ACK de captura rápida por estação XP."""
+        state = (str(ip), bool(fast_active))
+        if getattr(self, "_xp_capture_rate_notice", None) == state:
+            return
+        self._xp_capture_rate_notice = state
+        notifier = getattr(self, "update_network_status", None)
+        if callable(notifier):
+            notifier(
+                "XP confirmou captura rápida (intervalo de 0,18 s)."
+                if fast_active
+                else "XP não confirmou a captura rápida (sem ACK). "
+                     "A pausa pode continuar em 3 s; verifique o agente instalado."
+            )
+
     def _send_xp_shadow_control(self, enabled: bool, *, force: bool = False) -> bool:
         """Solicita pausa reduzida ao agente XP nos tres modos.
 
@@ -174,11 +189,17 @@ class ControlPanel(QWidget):
                 response = connection.recv(32).strip()
             if response == expected:
                 self._xp_shadow_last_ack = target
+                if enabled:
+                    ControlPanel._report_xp_capture_rate(self, ip, True)
                 return True
             self._xp_shadow_last_ack = None
+            if enabled:
+                ControlPanel._report_xp_capture_rate(self, ip, False)
             return False
         except (OSError, TimeoutError):
             self._xp_shadow_last_ack = None
+            if enabled:
+                ControlPanel._report_xp_capture_rate(self, ip, False)
             return False
 
     def _on_xp_mode_changed(self, mode: str) -> None:
