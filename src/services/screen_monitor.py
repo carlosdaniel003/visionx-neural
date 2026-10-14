@@ -77,12 +77,24 @@ class ScreenMonitor(QThread):
         self._shadow_fast = False
         self._shadow_auxiliary_info = None
         self.last_ocr_profile = {}
+        # Apenas telemetria do recorte externo atual; nunca armazena pixels,
+        # nomes de arquivos nem campos OCR.
+        self._external_crop_io_profile = None
 
     def _write_debug_crop(self, path, image) -> None:
         if self._replay_no_debug or self._shadow_fast:
             return
-        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(path), image)
+        profiling = self._external_crop_io_profile
+        started_at = time.perf_counter() if profiling is not None else None
+        try:
+            DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(path), image)
+        finally:
+            if profiling is not None:
+                profiling["debug_png_write_count"] += 1
+                profiling["debug_png_write_ms"] += round(
+                    (time.perf_counter() - started_at) * 1000.0, 3
+                )
 
     # =================================================================
     # DETECÇÃO DE BARRAS
@@ -549,9 +561,24 @@ class ScreenMonitor(QThread):
               f"Verm({red_bar[0]},{red_bar[1]} "
               f"w={red_bar[2]} h={red_bar[3]})")
 
-        # Recorta
-        crop_sample = self._extract_photo(frame_bgr, blue_bar, max_photo_height, "AZUL_REDE")
-        crop_ng = self._extract_photo(frame_bgr, red_bar, max_photo_height, "VERM_REDE")
+        # Perfilar CPU/crop e I/O de imagens de debug separadamente.
+        # Não muda geração, nome nem sincronização dos PNGs existentes.
+        bars_finished_at = time.perf_counter()
+        io_profile = {"debug_png_write_count": 0, "debug_png_write_ms": 0.0}
+        self._external_crop_io_profile = io_profile
+        sample_finished_at = bars_finished_at
+        crop_ng_finished_at = bars_finished_at
+        try:
+            crop_sample = self._extract_photo(
+                frame_bgr, blue_bar, max_photo_height, "AZUL_REDE"
+            )
+            sample_finished_at = time.perf_counter()
+            crop_ng = self._extract_photo(
+                frame_bgr, red_bar, max_photo_height, "VERM_REDE"
+            )
+            crop_ng_finished_at = time.perf_counter()
+        finally:
+            self._external_crop_io_profile = None
 
         # Extrai info e Emite
         if crop_sample.size > 0 and crop_ng.size > 0:
@@ -560,6 +587,19 @@ class ScreenMonitor(QThread):
             ocr_finished_at = time.perf_counter()
             self.last_external_timing = {
                 "ocr_profile": dict(self.last_ocr_profile),
+                "bars_detect_ms": round(
+                    (bars_finished_at - extraction_started_at) * 1000, 2
+                ),
+                "sample_crop_ms": round(
+                    (sample_finished_at - bars_finished_at) * 1000, 2
+                ),
+                "test_crop_ms": round(
+                    (crop_ng_finished_at - sample_finished_at) * 1000, 2
+                ),
+                "debug_png_write_count": io_profile["debug_png_write_count"],
+                "debug_png_write_ms": round(
+                    io_profile["debug_png_write_ms"], 2
+                ),
                 "layout_crop_ms": round(
                     (layout_finished_at - extraction_started_at) * 1000, 2
                 ),
