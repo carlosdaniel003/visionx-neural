@@ -70,7 +70,9 @@ class NetworkReceiver(QThread):
         self._candidate_ip = ""
         self._candidate_stable_frames = 0
         self._candidate_received_at = 0.0
-        self._candidate_received_at = 0.0
+        self._candidate_first_stable_at = 0.0
+        self.last_delivered_timing = {}
+        self.last_auxiliary_timing = {}
         self._reserved_signature: np.ndarray | None = None
 
         # Instante monotônico em que o payload COMPLETO do frame finalmente
@@ -86,6 +88,7 @@ class NetworkReceiver(QThread):
         self._aux_not_before = 0.0
         self._aux_signature = None
         self._aux_stable_frames = 0
+        self._aux_first_stable_at = 0.0
         self._aux_dispatched = False
 
     def lock_image_gate(self) -> None:
@@ -101,6 +104,7 @@ class NetworkReceiver(QThread):
                 self._aux_not_before = 0.0
                 self._aux_signature = None
                 self._aux_stable_frames = 0
+                self._aux_first_stable_at = 0.0
                 self._aux_dispatched = False
 
     def arm_auxiliary_capture(self, lighting: str) -> bool:
@@ -117,6 +121,7 @@ class NetworkReceiver(QThread):
             )
             self._aux_signature = None
             self._aux_stable_frames = 0
+            self._aux_first_stable_at = 0.0
             self._aux_dispatched = False
             return True
 
@@ -134,6 +139,7 @@ class NetworkReceiver(QThread):
             else:
                 self._aux_signature = signature
                 self._aux_stable_frames = 1
+                self._aux_first_stable_at = float(at)
             if self._aux_stable_frames < self.STABLE_REQUIRED_FRAMES:
                 return False
             self._aux_dispatched = True
@@ -272,6 +278,10 @@ class NetworkReceiver(QThread):
                 self._candidate_stable_frames += 1
             else:
                 self._candidate_stable_frames = 1
+                self._candidate_first_stable_at = float(
+                    received_at if received_at is not None
+                    else time.perf_counter()
+                )
 
             self._candidate_signature = signature.copy()
             self._candidate_image = image.copy()
@@ -439,6 +449,7 @@ class NetworkReceiver(QThread):
                     self.log_updated.emit(
                         f"Recebendo {tamanho_total / 1024:.0f} KB do XP ({ip_origem})..."
                     )
+                    payload_started_at = time.perf_counter()
                     buffer = self._receive_payload(conexao, tamanho_total)
                     conexao.close()
 
@@ -457,12 +468,19 @@ class NetworkReceiver(QThread):
                     nparr = np.frombuffer(dados_originais, np.uint8)
                     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
+                    decoded_at = time.perf_counter()
                     if img is None:
                         self.log_updated.emit(
                             "Erro ao decodificar a imagem da rede."
                         )
                         continue
 
+                    packet_ms = round(
+                        (payload_received_at - payload_started_at) * 1000.0, 2
+                    )
+                    decode_ms = round(
+                        (decoded_at - payload_received_at) * 1000.0, 2
+                    )
                     if auxiliary_delivery:
                         if not self._auxiliary_frame_ready(
                             img, at=payload_received_at
@@ -471,6 +489,20 @@ class NetworkReceiver(QThread):
                         self.last_auxiliary_image_received_at = (
                             payload_received_at
                         )
+                        ready_at = time.perf_counter()
+                        self.last_auxiliary_timing = {
+                            "payload_at": payload_received_at,
+                            "ready_at": ready_at,
+                            "tcp_payload_ms": packet_ms,
+                            "decode_ms": decode_ms,
+                            "stability_ms": round(max(
+                                0.0, payload_received_at
+                                - self._aux_first_stable_at
+                            ) * 1000.0, 2),
+                            "payload_to_dispatch_ms": round(
+                                (ready_at - payload_received_at) * 1000.0, 2
+                            ),
+                        }
                         self.log_updated.emit(
                             "Frame auxiliar multilight recebido para a peça ativa."
                         )
@@ -520,6 +552,7 @@ class NetworkReceiver(QThread):
                             self._candidate_received_at or 0.0
                         )
 
+                    first_stable_at = self._candidate_first_stable_at
                     # Reserva atomicamente antes de emitir o sinal Qt.
                     if not self._image_gate.try_reserve():
                         self._log_ignored_image(already_counted=True)
@@ -534,6 +567,19 @@ class NetworkReceiver(QThread):
                         if candidate_received_at > 0.0
                         else time.perf_counter()
                     )
+                    ready_at = time.perf_counter()
+                    self.last_delivered_timing = {
+                        "payload_at": candidate_received_at,
+                        "ready_at": ready_at,
+                        "tcp_payload_ms": packet_ms,
+                        "decode_ms": decode_ms,
+                        "stability_ms": round(max(
+                            0.0, candidate_received_at - first_stable_at
+                        ) * 1000.0, 2),
+                        "payload_to_dispatch_ms": round(max(
+                            0.0, ready_at - candidate_received_at
+                        ) * 1000.0, 2),
+                    }
                     self.log_updated.emit(
                         "Frame estável encaminhado para validação do epicentro."
                     )
