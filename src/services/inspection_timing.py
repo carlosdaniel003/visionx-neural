@@ -100,6 +100,14 @@ def note_extraction(panel, light, monitor):
     timing = getattr(monitor, "last_external_timing", None)
     if isinstance(timing, dict):
         note_steps(panel, light, **timing)
+        state = _state(panel)
+        profile = timing.get("ocr_profile")
+        if state is not None and light in LIGHTS and isinstance(profile, dict):
+            state["lights"][light]["ocr_profile"] = {
+                **profile,
+                "calls": [dict(item) for item in profile.get("calls", [])
+                          if isinstance(item, dict)],
+            }
 
 
 def finish_cycle(panel, when=None):
@@ -131,6 +139,12 @@ def snapshot(panel, event_id):
         lights[light] = {
             "network": dict(slot["network"]),
             "steps": dict(slot["steps"]),
+            "ocr_profile": {
+                **slot["ocr_profile"],
+                "calls": [dict(item) for item in
+                          slot["ocr_profile"].get("calls", [])
+                          if isinstance(item, dict)],
+            } if isinstance(slot.get("ocr_profile"), dict) else {},
             "command": {
                 key: command[key]
                 for key in ("send_ms", "to_payload_ms", "to_ready_ms", "success")
@@ -214,6 +228,32 @@ def format_report(data):
             for key in (NETWORK_STEPS if group_name == "network" else STEPS):
                 if key in group:
                     lines.append("{}: {} ms".format(names[key], _show(group[key])))
+        ocr_profile = item.get("ocr_profile", {})
+        if isinstance(ocr_profile, dict) and ocr_profile:
+            lines.extend([
+                "OCR fase/rota: {}".format(ocr_profile.get("route", "-")),
+                "OCR recuperacao Parts: {}".format(
+                    ocr_profile.get("parts_reason", "-")
+                ),
+                "OCR releitura zona vermelha: {}".format(
+                    ocr_profile.get("general_retry", False)
+                ),
+                "OCR subprocessos Tesseract: {}".format(
+                    ocr_profile.get("call_count", "-")
+                ),
+                "OCR soma das chamadas Tesseract: {} ms".format(
+                    _show(ocr_profile.get("tesseract_calls_ms"))
+                ),
+            ])
+            for call in ocr_profile.get("calls", ()):
+                if isinstance(call, dict):
+                    lines.append(
+                        "  Tesseract {}: {} ms | {}".format(
+                            call.get("phase", "-"),
+                            _show(call.get("ms")),
+                            call.get("status", "-"),
+                        )
+                    )
     if data.get("production_presentation_ms") is not None:
         lines.append("Apresentacao da Producao apos resultado: {} ms".format(
             _show(data["production_presentation_ms"])
