@@ -11,6 +11,10 @@ from typing import Any
 
 import numpy as np
 
+from src.services.inspection_timing import (
+    format_report as format_inspection_timing_report,
+    snapshot as inspection_timing_snapshot,
+)
 from src.services.capture_evidence import (
     capture_debug_event_id,
     capture_debug_record,
@@ -277,6 +281,10 @@ def format_network_debug_report(record: dict | None) -> str:
                 f"Motivo da busca: {route.get('reason') or '-'}",
                 "Match não encontrado não significa similaridade 0%.",
             ])
+
+    timing = data.get("inspection_timing")
+    if isinstance(timing, dict) and timing:
+        lines.extend(format_inspection_timing_report(timing))
 
     if hints:
         lines.extend(["", "INDÍCIOS DIAGNÓSTICOS", "-" * 72])
@@ -631,6 +639,15 @@ def copy_network_debug_to_clipboard(panel) -> bool:
 
     from PyQt6.QtWidgets import QApplication
 
+    # Sempre anexar o perfil da MESMA peça da evidência atual; nunca
+    # reaproveitar tempos de uma peça anterior ou da captura local MSS.
+    if str(record.get("source", "")).lower() == "windows_xp":
+        timing = inspection_timing_snapshot(
+            panel, str(record.get("event_id", "") or "")
+        )
+        if timing:
+            record = dict(record)
+            record["inspection_timing"] = timing
     report = format_network_debug_report(record)
     multilight_report = format_multilight_debug_report(panel)
     if multilight_report:
