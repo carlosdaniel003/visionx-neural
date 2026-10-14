@@ -95,6 +95,7 @@ class FaltandoCNNLive:
         self._inference_cache = OrderedDict()
         self._checkpoint_stat = None
         self._last_load_profile: dict[str, float] = {}
+        self._last_load_did_reload = False
         self._error: tuple[str, str] | None = None
         self._online_pointer_seen = False
         self._online_root = (
@@ -140,11 +141,13 @@ class FaltandoCNNLive:
         # A medição de um carregamento nunca pode ser reaproveitada
         # por engano quando o modelo já se encontra na RAM.
         self._last_load_profile = {}
+        self._last_load_did_reload = False
         self._refresh_live_pointer()
         if self._model is not None:
             return self._model
         if self._error is not None:
             raise ValueError(self._error[1])
+        self._last_load_did_reload = True
         try:
             import torch
             from src.core.neural.faltando_cnn_v2 import (
@@ -298,6 +301,7 @@ class FaltandoCNNLive:
             model = self._load()
             profile.record("model_acquire_ms", acquire_started_at)
             profile.record_checkpoint(self._last_load_profile)
+            profile.checkpoint_loaded = bool(self._last_load_did_reload)
             import torch
             from src.scripts.train_faltando_cnn_v2 import (
                 _focus_crop, _letterbox_rgb,
@@ -429,17 +433,31 @@ def install_faltando_cnn_live(orchestrator_cls, *, predictor=None) -> None:
         # Mesma experiência durável que a KNN: não exige que o
         # retreinamento pesado da CNN já tenha terminado para reconhecer
         # um par idêntico confirmado pelo operador na mesma sessão.
+        route_started_at = time.perf_counter()
+        memory_lookup_ms = None
         memory_lookup = getattr(engine, "recognize_confirmed", None)
         if callable(memory_lookup):
+            memory_started_at = time.perf_counter()
             recalled = memory_lookup(
                 full_gab, full_test, info.get("category", ""),
                 info.get("lighting_mode") or "SIDE",
             )
+            memory_lookup_ms = elapsed_ms(memory_started_at)
             if recalled is not None:
+                if isinstance(recalled, dict):
+                    detail = recalled.setdefault("detail", {})
+                    detail["cnn_v2_memory_lookup_ms"] = memory_lookup_ms
+                    detail["cnn_v2_route_total_ms"] = elapsed_ms(route_started_at)
                 return recalled
-        return engine.inspect(
+        result = engine.inspect(
             full_gab, full_test, info.get("lighting_mode") or "SIDE"
         )
+        if isinstance(result, dict):
+            detail = result.setdefault("detail", {})
+            if memory_lookup_ms is not None:
+                detail["cnn_v2_memory_lookup_ms"] = memory_lookup_ms
+            detail["cnn_v2_route_total_ms"] = elapsed_ms(route_started_at)
+        return result
 
     orchestrator_cls.inspect = inspect
     orchestrator_cls._faltando_cnn_live_installed = True
