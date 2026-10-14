@@ -25,6 +25,7 @@ class InferencePhaseProfile:
         self.stages: dict[str, float] = {}
         self.checkpoint: dict[str, float] = {}
         self.cache_hit = False
+        self.checkpoint_loaded = False
         self.torch_threads: int | None = None
         self.torch_interop_threads: int | None = None
 
@@ -45,6 +46,7 @@ class InferencePhaseProfile:
             "lighting_mode": self.light,
             "status": str(status),
             "cache_hit": bool(self.cache_hit),
+            "checkpoint_loaded": bool(self.checkpoint_loaded),
             "total_ms": elapsed_ms(self._started),
             "stages_ms": dict(self.stages),
             "checkpoint_load_ms": dict(self.checkpoint),
@@ -66,6 +68,9 @@ def format_inference_profile(data: dict | None) -> list[str]:
     lines = [
         "PERFIL INTERNO CNN FALTANDO V2 (ms)",
         "Cache de inferencia da sessao: {}".format(data.get("cache_hit", "-")),
+        "Checkpoint carregado nesta chamada: {}".format(
+            data.get("checkpoint_loaded", "-")
+        ),
         "Estado: {}".format(data.get("status", "-")),
         "Total desta chamada: {} ms".format(data.get("total_ms", "-")),
         "Threads PyTorch CPU: {} | interop: {}".format(
