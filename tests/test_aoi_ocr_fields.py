@@ -2,6 +2,8 @@ import unittest
 
 import numpy as np
 
+from src.services.aoi_ocr_timing import AOIOCRTiming
+
 from src.services.aoi_ocr_fields import (
     looks_like_component_reference,
     normalize_board_ocr,
@@ -127,6 +129,48 @@ class AOIPartsDirectedOCRTests(unittest.TestCase):
         fake = _NoPartsAnchorTesseract()
         recovered = recover_parts_from_text_zone(image, "RI~5", fake)
         self.assertEqual(recovered, "RI~5")
+
+    def test_directed_ocr_timing_has_three_calls_without_changing_label(self):
+        image = np.full((100, 320, 3), 220, dtype=np.uint8)
+        fake = _FakeTesseract()
+        timing = AOIOCRTiming()
+        actual = recover_parts_from_text_zone(
+            image, "[RI~5", fake, timing=timing
+        )
+        reference = recover_parts_from_text_zone(
+            image, "[RI~5", _FakeTesseract()
+        )
+        self.assertEqual(actual, reference)
+        self.assertEqual(actual, "R3~5")
+        profile = timing.snapshot()
+        self.assertEqual(profile["parts_reason"], "directed_candidate_valid")
+        self.assertEqual(
+            [row["phase"] for row in profile["calls"]],
+            ["parts_anchor_data", "parts_full", "parts_numeric"],
+        )
+        self.assertEqual(profile["call_count"], 3)
+        self.assertGreaterEqual(profile["tesseract_calls_ms"], 0)
+
+    def test_valid_component_timing_skips_every_tesseract_subprocess(self):
+        timing = AOIOCRTiming()
+        result = recover_parts_from_text_zone(
+            np.ones((100, 320, 3), dtype=np.uint8),
+            "R3~5", _FakeTesseract(), timing=timing,
+        )
+        self.assertEqual(result, "R3~5")
+        self.assertEqual(timing.snapshot()["call_count"], 0)
+        self.assertEqual(
+            timing.snapshot()["parts_reason"], "valid_general_reference"
+        )
+
+    def test_failing_tesseract_phase_is_profiled_then_propagated(self):
+        timing = AOIOCRTiming()
+        with self.assertRaises(ValueError):
+            timing.call("general_blue", lambda: (_ for _ in ()).throw(
+                ValueError("tesseract falhou")
+            ))
+        self.assertEqual(timing.snapshot()["call_count"], 1)
+        self.assertEqual(timing.snapshot()["calls"][0]["status"], "error")
 
     def test_valid_parts_skips_extra_tesseract_calls(self):
         image = np.full((100, 320, 3), 220, dtype=np.uint8)

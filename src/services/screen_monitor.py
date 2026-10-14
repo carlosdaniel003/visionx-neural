@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 from src.config.settings import settings
+from src.services.aoi_ocr_timing import AOIOCRTiming
 from src.services.aoi_ocr_fields import (
     normalize_board_ocr,
     normalize_value_ocr,
@@ -75,6 +76,7 @@ class ScreenMonitor(QThread):
         # transitoria abaixo evita OCR repetido em TOP/MID da MESMA peca.
         self._shadow_fast = False
         self._shadow_auxiliary_info = None
+        self.last_ocr_profile = {}
 
     def _write_debug_crop(self, path, image) -> None:
         if self._replay_no_debug or self._shadow_fast:
@@ -373,7 +375,9 @@ class ScreenMonitor(QThread):
     # OCR
     # =================================================================
 
-    def _ocr_fast(self, image: np.ndarray) -> str:
+    def _ocr_fast(
+        self, image: np.ndarray, *, timing=None, phase="general_blue",
+    ) -> str:
         if not HAS_TESSERACT or image is None or image.size == 0:
             return ""
         try:
@@ -384,19 +388,41 @@ class ScreenMonitor(QThread):
                                    interpolation=cv2.INTER_CUBIC)
             _, binary = cv2.threshold(gray_big, 0, 255,
                                        cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            return pytesseract.image_to_string(
-                binary, config='--psm 6 --oem 3').strip()
+            read = pytesseract.image_to_string
+            raw = (
+                read(binary, config='--psm 6 --oem 3')
+                if timing is None else timing.call(
+                    phase, read, binary, config='--psm 6 --oem 3'
+                )
+            )
+            return raw.strip()
         except Exception:
             return ""
 
     def _extract_text_info(self, frame_bgr, blue_bar, red_bar) -> dict:
+        timing = AOIOCRTiming()
+        try:
+            return self._extract_text_info_timed(
+                frame_bgr, blue_bar, red_bar, timing
+            )
+        finally:
+            # Perfis não são herdados entre capturas; não registrar conteúdo
+            # reconhecido nem dados de imagem na telemetria.
+            self.last_ocr_profile = timing.snapshot()
+
+    def _extract_text_info_timed(
+        self, frame_bgr, blue_bar, red_bar, timing: AOIOCRTiming,
+    ) -> dict:
         # Reutilizar o OCR da SIDE exclusivamente para TOP/MID da mesma peça;
         # categorias, identificação e valor são os mesmos nas três luzes.
         aux = getattr(self, "_shadow_auxiliary_info", None)
         if isinstance(aux, dict) and aux:
+            timing.route = "auxiliary_reuse"
+            timing.parts_reason = "side_reused"
             return dict(aux)
         info = {"board": "", "parts": "", "value": "", "raw_text": ""}
         if not HAS_TESSERACT:
+            timing.route = "tesseract_unavailable"
             info["raw_text"] = "[OCR não disponível]"
             return info
 
@@ -411,7 +437,10 @@ class ScreenMonitor(QThread):
         x1t = max(0, bx - expand_x)
         x2t = min(frame_w, bx + bw + expand_x)
         text_zone = frame_bgr[above_y1:above_y2, x1t:x2t].copy()
-        raw = self._ocr_fast(text_zone)
+        timing.route = "general_blue"
+        raw = self._ocr_fast(
+            text_zone, timing=timing, phase="general_blue"
+        )
 
         if not raw:
             bx2, by2, bw2, bh2 = red_bar
@@ -421,7 +450,11 @@ class ScreenMonitor(QThread):
             x2r = min(frame_w, bx2 + bw2 + expand_x)
             if above_y2_r > above_y1_r + 5:
                 text_zone_r = frame_bgr[above_y1_r:above_y2_r, x1r:x2r].copy()
-                raw = self._ocr_fast(text_zone_r)
+                timing.general_retry = True
+                timing.route = "general_red_retry"
+                raw = self._ocr_fast(
+                    text_zone_r, timing=timing, phase="general_red_retry"
+                )
                 if raw:
                     # A releitura dirigida de Parts deve usar a mesma região
                     # que efetivamente produziu o texto bruto selecionado.
@@ -459,6 +492,7 @@ class ScreenMonitor(QThread):
             text_zone,
             info["parts"],
             pytesseract,
+            timing=timing,
         )
         info["value"] = normalize_value_ocr(info["value"])
 
@@ -525,6 +559,7 @@ class ScreenMonitor(QThread):
             aoi_info = self._extract_text_info(frame_bgr, blue_bar, red_bar)
             ocr_finished_at = time.perf_counter()
             self.last_external_timing = {
+                "ocr_profile": dict(self.last_ocr_profile),
                 "layout_crop_ms": round(
                     (layout_finished_at - extraction_started_at) * 1000, 2
                 ),

@@ -13,7 +13,9 @@ LIGHTS = ("SIDE", "TOP", "MID")
 STEPS = ("layout_crop_ms", "ocr_ms", "extraction_ms", "validation_ms", "geometry_ms",
          "preview_ms", "inference_ms", "render_ms", "processing_ms")
 NETWORK_STEPS = ("tcp_payload_ms", "decode_ms", "stability_ms",
+                 "last_stable_pair_gap_ms", "configured_settle_ms",
                  "payload_to_dispatch_ms", "dispatch_to_ui_ms")
+NETWORK_COUNTS = ("stable_frame_count", "pre_settle_frames")
 
 
 def _ms(start, end):
@@ -57,7 +59,7 @@ def note_frame(panel, light, transport=None):
     slot = state["lights"][light]
     slot["network"] = {
         key: data.get(key)
-        for key in NETWORK_STEPS
+        for key in (*NETWORK_STEPS, *NETWORK_COUNTS)
         if isinstance(data.get(key), (float, int))
     }
     payload = data.get("payload_at")
@@ -100,6 +102,14 @@ def note_extraction(panel, light, monitor):
     timing = getattr(monitor, "last_external_timing", None)
     if isinstance(timing, dict):
         note_steps(panel, light, **timing)
+        state = _state(panel)
+        profile = timing.get("ocr_profile")
+        if state is not None and light in LIGHTS and isinstance(profile, dict):
+            state["lights"][light]["ocr_profile"] = {
+                **profile,
+                "calls": [dict(item) for item in profile.get("calls", [])
+                          if isinstance(item, dict)],
+            }
 
 
 def finish_cycle(panel, when=None):
@@ -131,6 +141,12 @@ def snapshot(panel, event_id):
         lights[light] = {
             "network": dict(slot["network"]),
             "steps": dict(slot["steps"]),
+            "ocr_profile": {
+                **slot["ocr_profile"],
+                "calls": [dict(item) for item in
+                          slot["ocr_profile"].get("calls", [])
+                          if isinstance(item, dict)],
+            } if isinstance(slot.get("ocr_profile"), dict) else {},
             "command": {
                 key: command[key]
                 for key in ("send_ms", "to_payload_ms", "to_ready_ms", "success")
@@ -181,6 +197,8 @@ def format_report(data):
         "tcp_payload_ms": "Transferencia do payload TCP",
         "decode_ms": "Descompressao/decode",
         "stability_ms": "Aguardando estabilidade de frames",
+        "last_stable_pair_gap_ms": "Intervalo do ultimo par estavel",
+        "configured_settle_ms": "Janela minima apos comando de luz",
         "payload_to_dispatch_ms": "Recebimento ate despacho",
         "dispatch_to_ui_ms": "Fila Qt: despacho ate UI",
         "layout_crop_ms": "Localizacao AOI / recortes",
@@ -214,6 +232,45 @@ def format_report(data):
             for key in (NETWORK_STEPS if group_name == "network" else STEPS):
                 if key in group:
                     lines.append("{}: {} ms".format(names[key], _show(group[key])))
+            if group_name == "network":
+                if "stable_frame_count" in group:
+                    lines.append(
+                        "Frames consecutivos estaveis confirmados: {}".format(
+                            _show(group["stable_frame_count"])
+                        )
+                    )
+                if "pre_settle_frames" in group:
+                    lines.append(
+                        "Frames antes da janela de troca de luz: {}".format(
+                            _show(group["pre_settle_frames"])
+                        )
+                    )
+        ocr_profile = item.get("ocr_profile", {})
+        if isinstance(ocr_profile, dict) and ocr_profile:
+            lines.extend([
+                "OCR fase/rota: {}".format(ocr_profile.get("route", "-")),
+                "OCR recuperacao Parts: {}".format(
+                    ocr_profile.get("parts_reason", "-")
+                ),
+                "OCR releitura zona vermelha: {}".format(
+                    ocr_profile.get("general_retry", False)
+                ),
+                "OCR subprocessos Tesseract: {}".format(
+                    ocr_profile.get("call_count", "-")
+                ),
+                "OCR soma das chamadas Tesseract: {} ms".format(
+                    _show(ocr_profile.get("tesseract_calls_ms"))
+                ),
+            ])
+            for call in ocr_profile.get("calls", ()):
+                if isinstance(call, dict):
+                    lines.append(
+                        "  Tesseract {}: {} ms | {}".format(
+                            call.get("phase", "-"),
+                            _show(call.get("ms")),
+                            call.get("status", "-"),
+                        )
+                    )
     if data.get("production_presentation_ms") is not None:
         lines.append("Apresentacao da Producao apos resultado: {} ms".format(
             _show(data["production_presentation_ms"])

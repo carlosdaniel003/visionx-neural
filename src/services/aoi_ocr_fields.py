@@ -157,17 +157,24 @@ def _field_token_matches(token: str, target: str) -> bool:
     ).ratio() >= 0.72
 
 
-def _find_field_crop(text_zone, field_name: str, pytesseract_module):
+def _find_field_crop(text_zone, field_name: str, pytesseract_module, timing=None):
     binary = _prepare_binary(text_zone, scale=3)
     if binary is None:
         return None
 
     try:
-        data = pytesseract_module.image_to_data(
-            binary,
-            config="--psm 6 --oem 3",
-            output_type=pytesseract_module.Output.DICT,
-        )
+        read = pytesseract_module.image_to_data
+        if timing is None:
+            data = read(
+                binary, config="--psm 6 --oem 3",
+                output_type=pytesseract_module.Output.DICT,
+            )
+        else:
+            data = timing.call(
+                "parts_anchor_data", read, binary,
+                config="--psm 6 --oem 3",
+                output_type=pytesseract_module.Output.DICT,
+            )
     except Exception:
         return None
 
@@ -263,26 +270,38 @@ def recover_parts_from_text_zone(
     text_zone,
     parsed_value: str,
     pytesseract_module,
+    *,
+    timing=None,
 ) -> str:
     """Relê Parts quando a leitura geral não obedece à sintaxe de componente."""
     fallback = normalize_parts_ocr(parsed_value)
     if looks_like_component_reference(fallback):
+        if timing is not None:
+            timing.parts_reason = "valid_general_reference"
         return fallback
 
-    crop = _find_field_crop(text_zone, "Parts", pytesseract_module)
+    if timing is not None:
+        timing.parts_reason = "ambiguous_general_reference"
+    crop = _find_field_crop(
+        text_zone, "Parts", pytesseract_module, timing=timing
+    )
     if crop is None or crop.size == 0:
+        if timing is not None:
+            timing.parts_reason = "parts_anchor_not_found"
         return _recover_ambiguous_diode_range(fallback)
 
     candidates = []
     try:
-        full = pytesseract_module.image_to_string(
-            crop,
-            config=(
-                "--psm 7 --oem 3 "
-                "-c tessedit_char_whitelist="
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-                "0123456789~-_/"
-            ),
+        config = (
+            "--psm 7 --oem 3 "
+            "-c tessedit_char_whitelist="
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+            "0123456789~-_/"
+        )
+        read = pytesseract_module.image_to_string
+        full = (
+            read(crop, config=config) if timing is None
+            else timing.call("parts_full", read, crop, config=config)
         ).strip()
         if full:
             candidates.append(normalize_parts_ocr(full))
@@ -291,12 +310,14 @@ def recover_parts_from_text_zone(
 
     numeric = ""
     try:
-        numeric = pytesseract_module.image_to_string(
-            crop,
-            config=(
-                "--psm 7 --oem 3 "
-                "-c tessedit_char_whitelist=0123456789~-"
-            ),
+        config = (
+            "--psm 7 --oem 3 "
+            "-c tessedit_char_whitelist=0123456789~-"
+        )
+        read = pytesseract_module.image_to_string
+        numeric = (
+            read(crop, config=config) if timing is None
+            else timing.call("parts_numeric", read, crop, config=config)
         ).strip()
         numeric = re.sub(r"[^0-9~-]", "", numeric)
     except Exception:
@@ -317,8 +338,12 @@ def recover_parts_from_text_zone(
         if looks_like_component_reference(candidate)
     ]
     if valid:
+        if timing is not None:
+            timing.parts_reason = "directed_candidate_valid"
         return min(valid, key=lambda item: (len(item), item))
 
+    if timing is not None:
+        timing.parts_reason = "directed_candidates_invalid"
     return _recover_ambiguous_diode_range(fallback)
 
 

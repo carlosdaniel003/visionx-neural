@@ -91,6 +91,56 @@ class InspectionTimingTests(unittest.TestCase):
         )
         self.assertFalse(result["lights"]["TOP"]["command"]["success"])
 
+    def test_ocr_profile_and_xp_frame_diagnostics_are_isolated_per_event(self):
+        panel = SimpleNamespace()
+        begin_cycle(
+            panel, "event-one", "Modo Teste",
+            transport={
+                "payload_at": 100.0, "ready_at": 100.01,
+                "stability_ms": 420.0,
+                "last_stable_pair_gap_ms": 420.0,
+                "stable_frame_count": 2,
+            },
+        )
+        monitor = SimpleNamespace(last_external_timing={
+            "ocr_ms": 750.0,
+            "ocr_profile": {
+                "schema": "visionx.aoi_ocr_phases.v1",
+                "route": "general_blue",
+                "parts_reason": "valid_general_reference",
+                "general_retry": False,
+                "call_count": 1,
+                "tesseract_calls_ms": 600.0,
+                "calls": [{"phase": "general_blue", "ms": 600.0, "status": "ok"}],
+            },
+        })
+        note_extraction(panel, "SIDE", monitor)
+        note_frame(panel, "TOP", {
+            "stability_ms": 390.0,
+            "last_stable_pair_gap_ms": 390.0,
+            "stable_frame_count": 2,
+            "pre_settle_frames": 3,
+            "configured_settle_ms": 350.0,
+        })
+        report = snapshot(panel, "event-one")
+        self.assertEqual(
+            report["lights"]["SIDE"]["ocr_profile"]["call_count"], 1
+        )
+        self.assertEqual(
+            report["lights"]["TOP"]["network"]["pre_settle_frames"], 3
+        )
+        display = "\n".join(format_report(report))
+        self.assertIn("OCR subprocessos Tesseract: 1", display)
+        self.assertIn("Tesseract general_blue: 600.0 ms", display)
+        self.assertIn("Frames consecutivos estaveis confirmados: 2", display)
+        self.assertIn("Frames antes da janela de troca de luz: 3", display)
+
+        # O próximo evento não herda OCR nem temporização da peça anterior.
+        begin_cycle(panel, "event-two", "Modo Teste")
+        other = snapshot(panel, "event-two")
+        self.assertEqual(other["lights"]["SIDE"]["ocr_profile"], {})
+        self.assertEqual(other["lights"]["TOP"]["network"], {})
+
     def test_extraction_is_collected_before_inference_without_repeating_ocr(self):
         panel = SimpleNamespace()
         begin_cycle(panel, "event", "Modo Sombra")
