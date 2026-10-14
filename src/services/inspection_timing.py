@@ -15,7 +15,8 @@ STEPS = ("layout_crop_ms", "ocr_ms", "extraction_ms", "validation_ms", "geometry
 NETWORK_STEPS = ("tcp_payload_ms", "decode_ms", "stability_ms",
                  "last_stable_pair_gap_ms", "configured_settle_ms",
                  "payload_to_dispatch_ms", "dispatch_to_ui_ms")
-NETWORK_COUNTS = ("stable_frame_count", "pre_settle_frames")
+NETWORK_COUNTS = ("stable_frame_count", "pre_settle_frames", "backlog_deferrals")
+NETWORK_FLAGS = ("backlog_release_with_pending",)
 
 
 def _ms(start, end):
@@ -62,6 +63,11 @@ def note_frame(panel, light, transport=None):
         for key in (*NETWORK_STEPS, *NETWORK_COUNTS)
         if isinstance(data.get(key), (float, int))
     }
+    slot["network"].update({
+        key: data[key]
+        for key in NETWORK_FLAGS
+        if isinstance(data.get(key), bool)
+    })
     payload = data.get("payload_at")
     ready = data.get("ready_at")
     if isinstance(payload, (float, int)) and payload > 0:
@@ -243,6 +249,18 @@ def format_report(data):
                     lines.append(
                         "Frames antes da janela de troca de luz: {}".format(
                             _show(group["pre_settle_frames"])
+                        )
+                    )
+                if "backlog_deferrals" in group:
+                    lines.append(
+                        "Frames adiados por conexoes XP pendentes: {}".format(
+                            _show(group["backlog_deferrals"])
+                        )
+                    )
+                if "backlog_release_with_pending" in group:
+                    lines.append(
+                        "Entrega XP com fila ainda ocupada apos estabilidade reforcada: {}".format(
+                            _show(group["backlog_release_with_pending"])
                         )
                     )
         ocr_profile = item.get("ocr_profile", {})
