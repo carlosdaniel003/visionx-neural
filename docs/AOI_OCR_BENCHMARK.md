@@ -20,7 +20,9 @@ git pull origin central
 python -X utf8 -m src.services.aoi_ocr_benchmark --images "public/debug_ocr/frame_completo.png" --repeats 3 --output "reports/startup_regression/ocr_benchmark/ensaio_01.json"
 ```
 
-Esse exemplo só vale se o arquivo local de imagem integral existir. É possível fornecer também um diretório de capturas AOI PNG/JPG/BMP (`--images "C:\\AOI\\capturas"`). As imagens jamais são modificadas. O programa falha se não encontrar barras, faltar Tesseract, imagem inválida, controle com campo vazio/desconhecido ou se o relatório já existir.
+Esse exemplo só vale se o arquivo local de imagem integral existir. É possível fornecer também um diretório de capturas AOI PNG/JPG/BMP (`--images "C:\\AOI\\capturas"`). As imagens jamais são modificadas. O programa falha se não encontrar barras, faltar Tesseract, imagem inválida, controle com **Board/Parts/Value vazios ou desconhecidos** ou se o relatório já existir.
+
+**Categorias externas ao escopo:** o arquivo de exemplo pode apresentar `Value: 40 <= 25.602 <= 98 Little Solder`, enquanto o ODIN só possui roteamento operacional para categorias oficiais como FALTANDO, DESLOCADO etc. Nesse caso, `normalize_aoi_text` retorna `category: Unknown`. O benchmark **não deve rejeitar a captura quando Board, Parts e Value foram lidos**: executa apenas a comparação de desempenho e informa `unsupported_baseline_category_cases`, `baseline_category_supported=false` e aviso em console. Esses casos **não contam como equivalência aprovada de categoria**, mesmo que o manifesto contenha `Unknown`, e nenhuma variante é ativada. A normalização operacional de categorias e decisões XP continua inalterada.
 
 **A equivalência com o controle NÃO comprova correção:** o controle pode ler `RI75` em vez de `R175`, por exemplo. É preciso comparação com referência humana conferida, não apenas OCR anterior.
 
