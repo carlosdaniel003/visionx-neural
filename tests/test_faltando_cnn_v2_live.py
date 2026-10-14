@@ -294,13 +294,36 @@ class ModelTests(unittest.TestCase):
         # treinamento dentro da consulta do checkpoint ativo.
         with patch.dict(
             "sys.modules",
-            {"src.scripts.train_faltando_cnn_v2_online": None},
+            {
+                "src.scripts.train_faltando_cnn_v2_online": None,
+                "src.scripts.train_faltando_cnn_v2": None,
+            },
         ):
             clf._refresh_live_pointer()
             self.assertEqual(
                 clf.inspect(*pair(), "SIDE")["detail"]["cnn_v2_status"],
                 "INFERENCE_OK",
             )
+
+    def test_shared_dualscale_preprocessing_matches_trainer_contract(self):
+        from src.core.neural.faltando_preprocessing import (
+            _focus_crop, _letterbox_rgb,
+        )
+        from src.scripts.train_faltando_cnn_v2 import (
+            _focus_crop as train_focus_crop,
+            _letterbox_rgb as train_letterbox_rgb,
+        )
+
+        self.assertIs(_focus_crop, train_focus_crop)
+        self.assertIs(_letterbox_rgb, train_letterbox_rgb)
+        frame, _ = pair()
+        crop = _focus_crop(frame, 0.70)
+        self.assertTrue(np.array_equal(crop, train_focus_crop(frame, 0.70)))
+        self.assertTrue(torch.equal(
+            _letterbox_rgb(frame, 64),
+            train_letterbox_rgb(frame, 64),
+        ))
+        self.assertEqual(_letterbox_rgb(frame, 64).shape, (3, 64, 64))
 
     def test_pointer_schema_is_shared_with_online_trainer(self):
         from src.core.neural.faltando_checkpoint_contract import POINTER_SCHEMA
