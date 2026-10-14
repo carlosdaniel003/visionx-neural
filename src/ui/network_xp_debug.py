@@ -505,18 +505,20 @@ def format_multilight_debug_report(panel) -> str:
                 f"CNN rota completa (memória + inferência): {detail.get('cnn_v2_route_total_ms', '-')} ms",
                 f"Motivo local: {analysis.get('reason', '-')}",
                 "Elegível para resultado final multilight: False",
-                "Detalhes técnicos compactos (JSON):",
-                json.dumps(
-                    _compact_debug_value(analysis),
-                    indent=2,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                ),
             ]
         )
         profile = detail.get("cnn_v2_performance")
         if isinstance(profile, dict) and profile:
             lines.extend([""] + format_inference_profile(profile))
+        lines.extend([
+            "Detalhes técnicos compactos (JSON):",
+            json.dumps(
+                _compact_debug_value(analysis),
+                indent=2,
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        ])
 
     return "\n".join(lines)
 
