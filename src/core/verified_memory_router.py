@@ -67,12 +67,15 @@ class VerifiedKNNMemory:
         self.error = ""
         self._warmup_status = {"state": "not_started", "duration_ms": None}
 
-    def invalidate(self) -> None:
+    def invalidate(self, *, reason: str = "explicit_reload") -> None:
         with self._lock:
             self._index = None
             self._record_identity = None
             self.error = ""
-            self._warmup_status = {"state": "invalidated", "duration_ms": None}
+            self._warmup_status = {
+                "state": "invalidated", "duration_ms": None,
+                "reason": str(reason),
+            }
 
     @staticmethod
     def _key(info: dict, reference_hash: str, test_hash: str) -> tuple | None:
@@ -148,30 +151,47 @@ class VerifiedKNNMemory:
 
     @staticmethod
     def _snapshot_records(knn, profile: dict) -> tuple[list[dict], tuple]:
-        """Snapshot equivalente ao lookup legado, sob o lock do especialista."""
+        """Congela somente o LEGADO que o índice verifica por JSON + PNG.
+
+        O snapshot persistente é sempre consultado separadamente por
+        archive_store.lookup(), com validação de integridade. O watcher
+        substitui as listas completas a cada importação durável: usar o id()
+        das listas invalida inutilmente o índice legado e custa dezenas
+        de segundos de I/O sob carga. Identificar por objetos LEGADOS
+        preserva o índice até mudança real desses registros ou invalidate().
+        """
         started_at = time.perf_counter()
         lock = getattr(knn, "_memory_lock", None)
+
+        def collect():
+            all_records = (
+                list(getattr(knn, "signatures_ok", ()) or ())
+                + list(getattr(knn, "signatures_ng", ()) or ())
+            )
+            legacy = [
+                record for record in all_records
+                if not (isinstance(record, dict)
+                        and record.get("archive_persistent"))
+            ]
+            # Alterações de quantidade, substituições, inclusão ou exclusão
+            # de objetos legados forçam revalidação integral. Mutação interna
+            # é tratada por reload_memory -> invalidate() explícito.
+            identity = (id(knn), tuple(id(record) for record in legacy))
+            return all_records, legacy, identity
+
         if lock is not None:
             with lock:
-                records = list(getattr(knn, "signatures_ok", ()) or ()) + list(
-                    getattr(knn, "signatures_ng", ()) or ()
-                )
-                identity = (
-                    id(knn), id(getattr(knn, "signatures_ok", None)),
-                    id(getattr(knn, "signatures_ng", None)), len(records),
-                )
+                all_records, records, identity = collect()
         else:
-            records = list(getattr(knn, "signatures_ok", ()) or ()) + list(
-                getattr(knn, "signatures_ng", ()) or ()
-            )
-            identity = (
-                id(knn), id(getattr(knn, "signatures_ok", None)),
-                id(getattr(knn, "signatures_ng", None)), len(records),
-            )
+            all_records, records, identity = collect()
         profile["records_snapshot_ms"] = round(
             (time.perf_counter() - started_at) * 1000.0, 2
         )
-        profile["record_count"] = len(records)
+        profile["record_count"] = len(all_records)
+        profile["legacy_index_record_count"] = len(records)
+        profile["archive_persistent_record_count"] = (
+            len(all_records) - len(records)
+        )
         return records, identity
 
     def _ensure_index(
@@ -183,6 +203,10 @@ class VerifiedKNNMemory:
             reused = self._index is not None and identity == self._record_identity
             profile["index_reused"] = reused
             if not reused:
+                profile["index_rebuild_reason"] = (
+                    "not_initialized_or_explicitly_invalidated"
+                    if self._index is None else "legacy_records_changed"
+                )
                 build_started_at = time.perf_counter()
                 built = defaultdict(list)
                 for record in records:
@@ -537,7 +561,7 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
         outcome = original_reload(self, *args, **kwargs)
         cached = getattr(self, "_memory_first_index", None)
         if cached is not None:
-            cached.invalidate()
+            cached.invalidate(reason="orchestrator_reload_memory")
         return outcome
 
     orchestrator_cls.inspect = inspect
