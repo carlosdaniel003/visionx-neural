@@ -214,6 +214,7 @@ def compare_variants(
         bars = locate_bars(monitor, frame)
         human_count += expected is not None
         runs = []
+        baseline_fields = None
         for repetition in range(repeats):
             # Controle real SEM patch, sempre antes de comparar os candidatos.
             baseline = inspect_variant(
@@ -223,6 +224,13 @@ def compare_variants(
                    or baseline["fields"].get(k) == "Unknown" for k in FIELDS):
                 raise ValueError(
                     "Baseline tem campo OCR vazio/desconhecido; recusar comparação: "
+                    + str(path)
+                )
+            if baseline_fields is None:
+                baseline_fields = dict(baseline["fields"])
+            elif baseline["fields"] != baseline_fields:
+                raise ValueError(
+                    "Baseline OCR instável entre repetições; não comparar: "
                     + str(path)
                 )
             runs.append({"variant": VARIANTS[0].name, **baseline})
@@ -251,7 +259,7 @@ def compare_variants(
         cases.append({
             "image": str(path),
             "sha256": sha256(raw).hexdigest(),
-            "expected_human_verified": expected is not None,
+            "manifest_expected_supplied": expected is not None,
             "expected": expected,
             "measurements": runs,
         })
@@ -276,9 +284,14 @@ def compare_variants(
             "mismatch_with_human_labels_cases": len(stat["wrong"]),
             "same_fields_as_baseline": not stat["different"],
             "human_labels_complete": human_count == len(cases),
-            "human_reference_agreement": (
+            "manifest_reference_agreement": (
                 baseline_human_clean and not stat["wrong"]
             ),
+            "variant_configuration": {
+                "scale": variant.scale,
+                "trim_top": variant.trim_top,
+                "trim_sides": variant.trim_sides,
+            },
             "eligible_for_automatic_activation": False,
         }
     return {
@@ -287,12 +300,13 @@ def compare_variants(
         "no_production_change": True,
         "auto_promotion": False,
         "reference_note": (
-            "Igualdade com OCR antigo NAO prova acerto; a referência humana "
-            "deve validar inclusive I/1, O/0, intervalos e categoria. "
+            "Igualdade com OCR antigo NAO prova acerto; expected no manifesto "
+            "e fornecido pelo operador, sem verificação automática de autoria. "
+            "Conferir manualmente I/1, O/0, intervalos e categoria. "
             "Mesmo sem divergências, nenhuma variante é ativada."
         ),
         "case_count": len(cases),
-        "human_label_count": human_count,
+        "manifest_expected_count": human_count,
         "repeats": repeats,
         "summary": summary,
         "cases": cases,
@@ -318,8 +332,8 @@ def main(argv=None) -> int:
         json.dump(data, stream, indent=2, ensure_ascii=False)
         stream.write("\n")
     print("OCR benchmark finalizado (somente leitura).")
-    print("Casos: {} | verdades humanas: {} | rounds: {}".format(
-        data["case_count"], data["human_label_count"], data["repeats"]
+    print("Casos: {} | referencias informadas: {} | rounds: {}".format(
+        data["case_count"], data["manifest_expected_count"], data["repeats"]
     ))
     for name, value in data["summary"].items():
         print("{}: mediana {} ms; diferencas {}; ganho {}%".format(
