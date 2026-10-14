@@ -68,6 +68,59 @@ class InspectionTimingTests(unittest.TestCase):
         self.assertIn("PERFIL DE TEMPO POR ETAPA", complete_debug)
         self.assertIn('"cycle_side_to_result_ms": 3500.0', complete_debug)
 
+    def test_receiver_backlog_release_after_reinforced_stability(self):
+        # Este teste roda no CI de telemetria XP em pull_request.
+        import numpy as np
+        from src.services.network_receiver import NetworkReceiver
+
+        receiver = NetworkReceiver(port=0)
+        image = np.zeros((240, 320, 3), dtype=np.uint8)
+        signature = receiver._frame_signature(image)
+        for i in range(5):
+            at = 100.0 + i * 0.18
+            receiver._stage_latest_candidate(
+                image, signature, "192.168.0.1", received_at=at,
+            )
+            defer = receiver._defer_candidate_for_pending_socket(
+                pending=True, received_at=at,
+            )
+            if i < 4:
+                self.assertTrue(defer)
+            else:
+                self.assertFalse(defer)
+        self.assertGreaterEqual(receiver._candidate_stable_frames, 5)
+        self.assertIsNotNone(receiver._candidate_snapshot())
+        changed = image.copy()
+        changed[70:140, 90:160] = 255
+        changed_sig = receiver._frame_signature(changed)
+        self.assertEqual(receiver._stage_latest_candidate(
+            changed, changed_sig, "192.168.0.1", received_at=101.0,
+        ), 1)
+        self.assertIsNone(receiver._candidate_snapshot())
+
+    def test_stream_backlog_telemetry_keeps_count_and_boolean_separate(self):
+        panel = SimpleNamespace()
+        begin_cycle(panel, "backlog-7", "Modo Teste", transport={
+            "stable_frame_count": 5,
+            "stability_ms": 720.0,
+            "last_stable_pair_gap_ms": 180.0,
+            "backlog_deferrals": 3,
+            "backlog_release_with_pending": True,
+        })
+        report = snapshot(panel, "backlog-7")
+        network = report["lights"]["SIDE"]["network"]
+        self.assertEqual(network["stable_frame_count"], 5)
+        self.assertEqual(network["backlog_deferrals"], 3)
+        self.assertIs(network["backlog_release_with_pending"], True)
+        lines = "\\n".join(format_report(report))
+        self.assertIn("Frames adiados por conexoes XP pendentes: 3", lines)
+        self.assertIn(
+            "Entrega XP com fila ainda ocupada apos estabilidade reforcada: True",
+            lines,
+        )
+        begin_cycle(panel, "new", "Modo Teste")
+        self.assertEqual(snapshot(panel, "new")["lights"]["SIDE"]["network"], {})
+
     def test_different_event_is_not_allowed_to_inherit_old_timings(self):
         panel = SimpleNamespace()
         begin_cycle(panel, "one", "Modo Teste")
