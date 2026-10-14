@@ -68,6 +68,29 @@ class InspectionTimingTests(unittest.TestCase):
         self.assertIn("PERFIL DE TEMPO POR ETAPA", complete_debug)
         self.assertIn('"cycle_side_to_result_ms": 3500.0', complete_debug)
 
+    def test_stream_backlog_telemetry_keeps_count_and_boolean_separate(self):
+        panel = SimpleNamespace()
+        begin_cycle(panel, "backlog-7", "Modo Teste", transport={
+            "stable_frame_count": 5,
+            "stability_ms": 720.0,
+            "last_stable_pair_gap_ms": 180.0,
+            "backlog_deferrals": 3,
+            "backlog_release_with_pending": True,
+        })
+        report = snapshot(panel, "backlog-7")
+        network = report["lights"]["SIDE"]["network"]
+        self.assertEqual(network["stable_frame_count"], 5)
+        self.assertEqual(network["backlog_deferrals"], 3)
+        self.assertIs(network["backlog_release_with_pending"], True)
+        lines = "\\n".join(format_report(report))
+        self.assertIn("Frames adiados por conexoes XP pendentes: 3", lines)
+        self.assertIn(
+            "Entrega XP com fila ainda ocupada apos estabilidade reforcada: True",
+            lines,
+        )
+        begin_cycle(panel, "new", "Modo Teste")
+        self.assertEqual(snapshot(panel, "new")["lights"]["SIDE"]["network"], {})
+
     def test_different_event_is_not_allowed_to_inherit_old_timings(self):
         panel = SimpleNamespace()
         begin_cycle(panel, "one", "Modo Teste")
