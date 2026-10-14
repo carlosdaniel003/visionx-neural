@@ -11,6 +11,9 @@ from typing import Any
 
 import numpy as np
 
+from src.core.neural.faltando_inference_telemetry import (
+    format_inference_profile,
+)
 from src.services.inspection_timing import (
     format_report as format_inspection_timing_report,
     snapshot as inspection_timing_snapshot,
@@ -498,17 +501,24 @@ def format_multilight_debug_report(panel) -> str:
                 f"CNN checkpoint verificado: {detail.get('cnn_v2_checkpoint_verified', '-')}",
                 f"CNN checkpoint SHA-256: {detail.get('cnn_v2_checkpoint_sha256', '-')}",
                 f"CNN score NG (não calibrado): {detail.get('cnn_v2_ng_score_uncalibrated', 'N/D')}",
+                f"CNN consulta memória persistente: {detail.get('cnn_v2_memory_lookup_ms', '-')} ms",
+                f"CNN rota completa (memória + inferência): {detail.get('cnn_v2_route_total_ms', '-')} ms",
                 f"Motivo local: {analysis.get('reason', '-')}",
                 "Elegível para resultado final multilight: False",
-                "Detalhes técnicos compactos (JSON):",
-                json.dumps(
-                    _compact_debug_value(analysis),
-                    indent=2,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                ),
             ]
         )
+        profile = detail.get("cnn_v2_performance")
+        if isinstance(profile, dict) and profile:
+            lines.extend([""] + format_inference_profile(profile))
+        lines.extend([
+            "Detalhes técnicos compactos (JSON):",
+            json.dumps(
+                _compact_debug_value(analysis),
+                indent=2,
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        ])
 
     return "\n".join(lines)
 

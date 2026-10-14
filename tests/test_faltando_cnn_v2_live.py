@@ -178,6 +178,96 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(first["verdict"], second["verdict"])
         self.assertFalse(second["detail"]["cnn_v2_session_cache_is_training"])
 
+    def test_internal_profile_separates_checkpoint_preprocess_forward_and_cache(self):
+        from unittest.mock import patch
+
+        clf = FaltandoCNNLive(self.checkpoint, self.hash)
+        r, t = pair()
+        # Pesos aleatorios podem produzir REVISAO, que corretamente nao
+        # entra no cache. Fixar somente a faixa de revisao neste teste
+        # para exercitar a politica real de reutilizacao de pares exatos.
+        from unittest.mock import patch
+        with patch("src.core.neural.faltando_live.REVIEW_LOW_NG", 0.0), \
+             patch("src.core.neural.faltando_live.REVIEW_HIGH_NG", 0.0):
+            first = clf.inspect(r, t, "SIDE")
+            self.assertEqual(first["detail"]["cnn_v2_status"], "INFERENCE_OK")
+            first_profile = first["detail"]["cnn_v2_performance"]
+            self.assertFalse(first_profile["cache_hit"])
+            self.assertTrue(first_profile["checkpoint_loaded"])
+            self.assertIn("checkpoint_hash_ms", first_profile["checkpoint_load_ms"])
+            self.assertIn("checkpoint_deserialize_ms", first_profile["checkpoint_load_ms"])
+            self.assertIn("model_construct_ms", first_profile["checkpoint_load_ms"])
+            self.assertIn("fingerprints_ms", first_profile["stages_ms"])
+            self.assertIn("input_prepare_ms", first_profile["stages_ms"])
+            self.assertIn("torch_forward_ms", first_profile["stages_ms"])
+            self.assertGreaterEqual(first_profile["total_ms"], 0)
+            self.assertGreaterEqual(first_profile["torch_num_threads"], 1)
+
+            second = clf.inspect(r, t, "SIDE")
+            second_profile = second["detail"]["cnn_v2_performance"]
+            self.assertTrue(second_profile["cache_hit"])
+            self.assertEqual(second_profile["checkpoint_load_ms"], {})
+            self.assertNotIn("torch_forward_ms", second_profile["stages_ms"])
+            self.assertFalse(second_profile["checkpoint_loaded"])
+            self.assertEqual(
+                first["detail"]["cnn_v2_ng_score_uncalibrated"],
+                second["detail"]["cnn_v2_ng_score_uncalibrated"],
+            )
+            self.assertFalse(
+                first["detail"]["cnn_v2_performance"]["cache_hit"]
+            )
+            other = clf.inspect(r, t, "TOP")
+            other_profile = other["detail"]["cnn_v2_performance"]
+            self.assertFalse(other_profile["cache_hit"])
+            self.assertFalse(other_profile["checkpoint_loaded"])
+            self.assertIn("torch_forward_ms", other_profile["stages_ms"])
+            self.assertIn("model_acquire_ms", other_profile["stages_ms"])
+
+    def test_profile_failure_preserves_required_review(self):
+        clf = FaltandoCNNLive(self.checkpoint, "0" * 64)
+        r, t = pair()
+        result = clf.inspect(r, t, "SIDE")
+        self.assertEqual(result["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertTrue(result["production_review_required"])
+        self.assertFalse(result["detail"]["cnn_v2_checkpoint_verified"])
+        perf = result["detail"]["cnn_v2_performance"]
+        self.assertEqual(perf["status"], "ValueError")
+        self.assertIn("checkpoint_hash_ms", perf["checkpoint_load_ms"])
+        self.assertNotIn("torch_forward_ms", perf["stages_ms"])
+
+    def test_wrapper_profiles_persistent_memory_lookup_before_cnn(self):
+        class MemoryPredictor:
+            def __init__(self):
+                self.calls = 0
+
+            def recognize_confirmed(self, *args):
+                return None
+
+            def inspect(self, reference, test, mode):
+                self.calls += 1
+                return {
+                    "verdict": "FALHA FALSA",
+                    "active_engines": ["faltando_cnn_v2.py"],
+                    "detail": {},
+                }
+
+        class Orchestrator(FakeOrchestrator):
+            pass
+
+        fake = MemoryPredictor()
+        install_faltando_cnn_live(Orchestrator, predictor=fake)
+        r, t = pair()
+        result = Orchestrator().inspect(
+            r, t, [], {"category": "FALTANDO", "lighting_mode": "SIDE"}, {}, []
+        )
+        self.assertEqual(fake.calls, 1)
+        self.assertIn("cnn_v2_memory_lookup_ms", result["detail"])
+        self.assertIn("cnn_v2_route_total_ms", result["detail"])
+        self.assertGreaterEqual(
+            result["detail"]["cnn_v2_route_total_ms"],
+            result["detail"]["cnn_v2_memory_lookup_ms"],
+        )
+
     def test_unexpected_model_exception_forces_review(self):
         class BrokenModel:
             def __call__(self, *inputs):

@@ -5,9 +5,17 @@ on:
     branches: [central]
     paths:
       - "src/core/neural/faltando_live.py"
+      - "src/core/neural/faltando_inference_telemetry.py"
       - "src/ui/production_confidence_gate.py"
       - "src/ui/control_panel.py"
       - "main.py"
+      - "tests/test_faltando_cnn_v2_live.py"
+      - ".github/workflows/faltando-cnn-v2-live-tests.yml"
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/core/neural/faltando_live.py"
+      - "src/core/neural/faltando_inference_telemetry.py"
       - "tests/test_faltando_cnn_v2_live.py"
       - ".github/workflows/faltando-cnn-v2-live-tests.yml"
   workflow_dispatch:
@@ -27,7 +35,7 @@ jobs:
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
           python -m pip install numpy opencv-python-headless scipy scikit-image
       - name: Compile code
-        run: python -m py_compile src/core/neural/faltando_live.py src/ui/production_confidence_gate.py src/ui/control_panel.py main.py tests/test_faltando_cnn_v2_live.py
+        run: python -m py_compile src/core/neural/faltando_live.py src/core/neural/faltando_inference_telemetry.py src/ui/production_confidence_gate.py src/ui/control_panel.py main.py tests/test_faltando_cnn_v2_live.py
       - name: Test CNN v2 FALTANDO bypass, missing weights and Production gate
         run: python -m unittest tests.test_faltando_cnn_v2_live -v
       - name: Check existing production decision policy regression

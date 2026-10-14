@@ -13,11 +13,15 @@ from collections import OrderedDict
 from copy import deepcopy
 import json
 import math
+import time
 from pathlib import Path
 
 import numpy as np
 
 from src.core.neural.faltando_category_scope import uses_faltando_v2
+from src.core.neural.faltando_inference_telemetry import (
+    InferencePhaseProfile, elapsed_ms,
+)
 from src.services.image_archive_dedup import image_fingerprint
 
 LIGHTS = ("SIDE", "TOP", "MID")
@@ -90,6 +94,8 @@ class FaltandoCNNLive:
         self._metadata = {}
         self._inference_cache = OrderedDict()
         self._checkpoint_stat = None
+        self._last_load_profile: dict[str, float] = {}
+        self._last_load_did_reload = False
         self._error: tuple[str, str] | None = None
         self._online_pointer_seen = False
         self._online_root = (
@@ -131,11 +137,17 @@ class FaltandoCNNLive:
             self._error = None
 
     def _load(self):
+        load_started_at = time.perf_counter()
+        # A medição de um carregamento nunca pode ser reaproveitada
+        # por engano quando o modelo já se encontra na RAM.
+        self._last_load_profile = {}
+        self._last_load_did_reload = False
         self._refresh_live_pointer()
         if self._model is not None:
             return self._model
         if self._error is not None:
             raise ValueError(self._error[1])
+        self._last_load_did_reload = True
         try:
             import torch
             from src.core.neural.faltando_cnn_v2 import (
@@ -143,9 +155,18 @@ class FaltandoCNNLive:
             )
             if not self.path.is_file() or self.path.is_symlink():
                 raise FileNotFoundError("checkpoint treinado ausente na estação")
-            if sha256(self.path.read_bytes()).hexdigest() != self.expected_sha256:
+            hash_started_at = time.perf_counter()
+            digest = sha256(self.path.read_bytes()).hexdigest()
+            self._last_load_profile["checkpoint_hash_ms"] = elapsed_ms(
+                hash_started_at
+            )
+            if digest != self.expected_sha256:
                 raise ValueError("hash do checkpoint não corresponde ao modelo aprovado no replay")
+            deserialize_started_at = time.perf_counter()
             state = torch.load(self.path, map_location="cpu", weights_only=True)
+            self._last_load_profile["checkpoint_deserialize_ms"] = elapsed_ms(
+                deserialize_started_at
+            )
             if (
                 not isinstance(state, dict)
                 or state.get("schema") != MODEL_SCHEMA_V2
@@ -160,9 +181,13 @@ class FaltandoCNNLive:
                 or not .5 <= state["focus_fraction"] <= .90
             ):
                 raise ValueError("metadados do checkpoint v2 incompatíveis")
+            construct_started_at = time.perf_counter()
             model = FaltandoCNNV2()
             model.load_state_dict(state["state_dict"], strict=True)
             model.eval()
+            self._last_load_profile["model_construct_ms"] = elapsed_ms(
+                construct_started_at
+            )
             self._metadata = {
                 "image_size": state["image_size"],
                 "focus_fraction": float(state["focus_fraction"]),
@@ -178,6 +203,10 @@ class FaltandoCNNLive:
             # deve resultar em revisão, não permitir ausência de decisão.
             self._error = (type(exc).__name__, str(exc))
             raise
+        finally:
+            self._last_load_profile["checkpoint_total_ms"] = elapsed_ms(
+                load_started_at
+            )
 
     def recognize_confirmed(self, reference, test, category: str,
                             mode: str) -> dict | None:
@@ -230,36 +259,56 @@ class FaltandoCNNLive:
             or min(test.shape[:2]) < 12
         ):
             return _fail_review("INVALID_PAIR", "par de gabarito/teste inválido", light)
+        profile = InferencePhaseProfile(light)
+        load_was_attempted = False
         try:
             # O primeiro resultado não supervisionado pode ser reutilizado
             # para inputs PIXEL-IDENTICOS na mesma sessão, sem aprender seu
             # rótulo como verdade nem afrouxar o gate de Produção.
             # Novo checkpoint invalida todas as inferências guardadas.
+            pointer_started_at = time.perf_counter()
             self._refresh_live_pointer()
+            profile.record("live_pointer_ms", pointer_started_at)
+            stat_started_at = time.perf_counter()
             stamp = self.path.stat()
             current_stat = (stamp.st_mtime_ns, stamp.st_size)
+            profile.record("checkpoint_stat_ms", stat_started_at)
             if (self._checkpoint_stat is not None
                     and self._checkpoint_stat != current_stat):
                 self._model = None
                 self._error = None
                 self._metadata = {}
                 self._inference_cache.clear()
+            fingerprint_started_at = time.perf_counter()
             cache_key = (
                 self.expected_sha256, light,
                 image_fingerprint(reference), image_fingerprint(test),
             )
+            profile.record("fingerprints_ms", fingerprint_started_at)
+            lookup_started_at = time.perf_counter()
             cached = self._inference_cache.get(cache_key)
+            profile.record("cache_lookup_ms", lookup_started_at)
             if cached is not None:
                 self._inference_cache.move_to_end(cache_key)
                 answer = deepcopy(cached)
                 answer["detail"]["cnn_v2_session_inference_cache"] = True
                 answer["detail"]["cnn_v2_session_cache_is_training"] = False
+                profile.cache_hit = True
+                # A resposta armazenada NÃO contém o perfil da chamada
+                # anterior: o tempo mostrado é sempre deste acesso.
+                answer["detail"]["cnn_v2_performance"] = profile.snapshot()
                 return answer
+            acquire_started_at = time.perf_counter()
+            load_was_attempted = True
             model = self._load()
+            profile.record("model_acquire_ms", acquire_started_at)
+            profile.record_checkpoint(self._last_load_profile)
+            profile.checkpoint_loaded = bool(self._last_load_did_reload)
             import torch
             from src.scripts.train_faltando_cnn_v2 import (
                 _focus_crop, _letterbox_rgb,
             )
+            prepare_started_at = time.perf_counter()
             size, fraction = (
                 self._metadata["image_size"],
                 self._metadata["focus_fraction"],
@@ -276,14 +325,28 @@ class FaltandoCNNLive:
             )
             mask = torch.zeros((1, 3), dtype=torch.float32)
             mask[0, offset] = 1.0
+            profile.record("input_prepare_ms", prepare_started_at)
+            forward_started_at = time.perf_counter()
             with torch.inference_mode():
                 score_logit, per_light = model(*inputs, mask)
                 ng_score = float(torch.sigmoid(score_logit)[0].item())
+            profile.record("torch_forward_ms", forward_started_at)
+            profile.torch_threads = torch.get_num_threads()
+            profile.torch_interop_threads = torch.get_num_interop_threads()
             if not math.isfinite(ng_score):
                 raise ValueError("CNN emitiu score não finito")
         except Exception as exc:
             # Falhas inesperadas do PyTorch/OpenCV também são revisão.
-            return _fail_review(type(exc).__name__, str(exc), light)
+            # Se a falha aconteceu no checkpoint, manter as fases
+            # já medidas em vez de ocultar o custo do erro.
+            if load_was_attempted:
+                profile.record_checkpoint(self._last_load_profile)
+                profile.checkpoint_loaded = bool(self._last_load_did_reload)
+            review = _fail_review(type(exc).__name__, str(exc), light)
+            review["detail"]["cnn_v2_performance"] = profile.snapshot(
+                status=type(exc).__name__
+            )
+            return review
 
         is_defect = ng_score >= .5
         review = REVIEW_LOW_NG < ng_score < REVIEW_HIGH_NG
@@ -340,10 +403,15 @@ class FaltandoCNNLive:
             },
         }
         if not review:
+            store_started_at = time.perf_counter()
+            # Nunca colocar a telemetria no cache. Os resultados originais
+            # permanecem estáveis, enquanto o perfil reflete a chamada atual.
             self._inference_cache[cache_key] = deepcopy(response)
             self._inference_cache.move_to_end(cache_key)
             if len(self._inference_cache) > 64:
                 self._inference_cache.popitem(last=False)
+            profile.record("cache_store_ms", store_started_at)
+        response["detail"]["cnn_v2_performance"] = profile.snapshot()
         return response
 
 
@@ -372,17 +440,31 @@ def install_faltando_cnn_live(orchestrator_cls, *, predictor=None) -> None:
         # Mesma experiência durável que a KNN: não exige que o
         # retreinamento pesado da CNN já tenha terminado para reconhecer
         # um par idêntico confirmado pelo operador na mesma sessão.
+        route_started_at = time.perf_counter()
+        memory_lookup_ms = None
         memory_lookup = getattr(engine, "recognize_confirmed", None)
         if callable(memory_lookup):
+            memory_started_at = time.perf_counter()
             recalled = memory_lookup(
                 full_gab, full_test, info.get("category", ""),
                 info.get("lighting_mode") or "SIDE",
             )
+            memory_lookup_ms = elapsed_ms(memory_started_at)
             if recalled is not None:
+                if isinstance(recalled, dict):
+                    detail = recalled.setdefault("detail", {})
+                    detail["cnn_v2_memory_lookup_ms"] = memory_lookup_ms
+                    detail["cnn_v2_route_total_ms"] = elapsed_ms(route_started_at)
                 return recalled
-        return engine.inspect(
+        result = engine.inspect(
             full_gab, full_test, info.get("lighting_mode") or "SIDE"
         )
+        if isinstance(result, dict):
+            detail = result.setdefault("detail", {})
+            if memory_lookup_ms is not None:
+                detail["cnn_v2_memory_lookup_ms"] = memory_lookup_ms
+            detail["cnn_v2_route_total_ms"] = elapsed_ms(route_started_at)
+        return result
 
     orchestrator_cls.inspect = inspect
     orchestrator_cls._faltando_cnn_live_installed = True
