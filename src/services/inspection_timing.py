@@ -202,7 +202,7 @@ def format_report(data):
     names = {
         "tcp_payload_ms": "Transferencia do payload TCP",
         "decode_ms": "Descompressao/decode",
-        "stability_ms": "Aguardando estabilidade de frames",
+        "stability_ms": "Intervalo de estabilidade/coalescing de frames",
         "last_stable_pair_gap_ms": "Intervalo do ultimo par estavel",
         "configured_settle_ms": "Janela minima apos comando de luz",
         "payload_to_dispatch_ms": "Recebimento ate despacho",
