@@ -101,7 +101,7 @@ class OCRBenchmarkTests(unittest.TestCase):
     def test_little_solder_unknown_category_is_measured_not_approved(self):
         # Frame real public/debug_ocr/frame_completo.png contém Little Solder:
         # OCR reconhece Board/Parts/Value, mas categoria não é operacional.
-        text = "\\n".join((
+        text = chr(10).join((
             "Board P24-03804 (PRINCIPAL) L05",
             "Parts JF271 Block 1",
             "Value 40 <= 25.602 <= 98 Little Solder",
@@ -125,7 +125,7 @@ class OCRBenchmarkTests(unittest.TestCase):
             self.assertFalse(item["eligible_for_automatic_activation"])
 
     def test_unknown_category_cannot_be_human_approved_by_manifest(self):
-        text = "\\n".join((
+        text = chr(10).join((
             "Board P24-03804 (PRINCIPAL) L05",
             "Parts JF271 Block 1",
             "Value 40 <= 25.602 <= 98 Little Solder",
