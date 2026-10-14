@@ -15,6 +15,7 @@ import json
 import math
 import time
 from pathlib import Path
+from threading import RLock
 
 import numpy as np
 
@@ -92,6 +93,8 @@ class FaltandoCNNLive:
         )
         self.expected_sha256 = expected_sha256
         self._model = None
+        self._lock = RLock()
+        self._warmup_status = {"state": "not_started", "duration_ms": None}
         self._metadata = {}
         self._inference_cache = OrderedDict()
         self._checkpoint_stat = None
@@ -133,6 +136,7 @@ class FaltandoCNNLive:
             self._model = None
             self._metadata = {}
             self._checkpoint_stat = None
+            self._warmup_status = {"state": "invalidated", "duration_ms": None}
             self._inference_cache.clear()
             self._error = None
 
@@ -208,6 +212,41 @@ class FaltandoCNNLive:
                 load_started_at
             )
 
+    def warmup(self) -> dict:
+        """Validar e carregar pesos em worker sem gerar scores ou decisões."""
+        started_at = time.perf_counter()
+        with self._lock:
+            self._warmup_status = {"state": "running", "duration_ms": None}
+            try:
+                # _load() verifica ponteiro, hash SHA256 e metadados,
+                # exatamente como a primeira inspeção.
+                self._refresh_live_pointer()
+                stamp = self.path.stat()
+                current_stat = (stamp.st_mtime_ns, stamp.st_size)
+                if (self._checkpoint_stat is not None
+                        and self._checkpoint_stat != current_stat):
+                    self._model = None
+                    self._error = None
+                    self._metadata = {}
+                    self._inference_cache.clear()
+                self._load()
+                state = {
+                    "state": "ready",
+                    "duration_ms": elapsed_ms(started_at),
+                    "checkpoint_sha256": self.expected_sha256,
+                    "checkpoint_stat": list(self._checkpoint_stat),
+                }
+            except Exception as exc:
+                # Falha NÃO vira sucesso. O inspect tradicional permanece
+                # responsável por retornar REVISÃO OBRIGATÓRIA.
+                state = {
+                    "state": "failed",
+                    "duration_ms": elapsed_ms(started_at),
+                    "error": type(exc).__name__,
+                }
+            self._warmup_status = dict(state)
+            return dict(state)
+
     def recognize_confirmed(self, reference, test, category: str,
                             mode: str) -> dict | None:
         """Experiência visual durável, separada dos pesos CNN V2.
@@ -245,6 +284,26 @@ class FaltandoCNNLive:
         return decision
 
     def inspect(self, reference: np.ndarray, test: np.ndarray, mode: str) -> dict:
+        # O mesmo lock protege a preparação e o caminho normal. A primeira
+        # SIDE nunca vê modelo pela metade nem usa pesos sem validação.
+        with self._lock:
+            result = self._inspect_locked(reference, test, mode)
+            if isinstance(result, dict):
+                detail = result.setdefault("detail", {})
+                if isinstance(detail, dict):
+                    warmup = dict(self._warmup_status)
+                    if warmup.get("state") == "ready" and (
+                        warmup.get("checkpoint_sha256") != self.expected_sha256
+                        or warmup.get("checkpoint_stat") != list(
+                            self._checkpoint_stat or ()
+                        )
+                    ):
+                        warmup = {"state": "invalidated", "duration_ms": None}
+                        self._warmup_status = dict(warmup)
+                    detail["cnn_v2_warmup"] = warmup
+            return result
+
+    def _inspect_locked(self, reference: np.ndarray, test: np.ndarray, mode: str) -> dict:
         light = str(mode or "SIDE").strip().upper()
         if light not in LIGHTS:
             return _fail_review("INVALID_LIGHT", "iluminação fora de SIDE/TOP/MID", light)
@@ -279,6 +338,9 @@ class FaltandoCNNLive:
                 self._error = None
                 self._metadata = {}
                 self._inference_cache.clear()
+                self._warmup_status = {
+                    "state": "invalidated", "duration_ms": None
+                }
             fingerprint_started_at = time.perf_counter()
             cache_key = (
                 self.expected_sha256, light,
@@ -466,7 +528,14 @@ def install_faltando_cnn_live(orchestrator_cls, *, predictor=None) -> None:
             detail["cnn_v2_route_total_ms"] = elapsed_ms(route_started_at)
         return result
 
+    def prepare_faltando_cnn(self):
+        warmup = getattr(engine, "warmup", None)
+        if callable(warmup):
+            return warmup()
+        return {"state": "unsupported"}
+
     orchestrator_cls.inspect = inspect
+    orchestrator_cls.prepare_faltando_cnn = prepare_faltando_cnn
     orchestrator_cls._faltando_cnn_live_installed = True
 
 
