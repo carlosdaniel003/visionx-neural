@@ -92,6 +92,17 @@ class TriageTests(unittest.TestCase):
         self.assertEqual(set(result["changes_by_category"]), {"FALTANDO", "DESLOCADO"})
         self.assertFalse(result["regression_checks"]["no_new_ok_false_ng"])
         self.assertFalse(result["regression_checks"]["no_new_review_for_previously_passed"])
+        simulated = result["category_routing_counterfactual"]
+        self.assertEqual(simulated["mode"], "COUNTERFACTUAL_ONLY_NO_INFERENCE")
+        self.assertEqual(simulated["candidate_categories"], ["FALTANDO", "INVERTIDO"])
+        self.assertEqual(simulated["projected_counts"]["passed"], 208)
+        self.assertEqual(simulated["projected_counts"]["incorrect"], 0)
+        self.assertEqual(simulated["projected_counts"]["review"], 3)
+        self.assertEqual(simulated["projected_counts"]["ng_as_ok"], 0)
+        self.assertEqual(simulated["projected_counts"]["ok_as_ng"], 0)
+        self.assertFalse(simulated["operationally_evaluated"])
+        self.assertFalse(simulated["routing_deployed"])
+        self.assertTrue(simulated["requires_category_ocr_and_routing_validation"])
         self.assertFalse(result["independent_holdout_evaluated"])
         self.assertFalse(result["training_uses_archive_labels"])
         for row in result["required_human_review"]:

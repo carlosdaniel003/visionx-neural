@@ -39,6 +39,72 @@ def _counts(model: dict) -> dict:
     return {k: model[k] for k in keys}
 
 
+def simulate_category_route(
+    report: dict, *, candidate_categories=frozenset(("FALTANDO", "INVERTIDO"))
+) -> dict:
+    """Contrafactual: troca somente as classificações dessas categorias.
+
+    Os estados de TODAS as imagens vêm da linha-base, somando somente
+    transições reais das categorias atribuídas à CNN candidata. Não usa
+    scores para inventar outro limiar e NÃO modifica o roteador do ODIN.
+    """
+    comparison = report["comparison"]
+    baseline = _counts(comparison["baseline"])
+    projected = dict(baseline)
+    touched = 0
+    mapping = {
+        "PASSOU": "passed",
+        "ERRO_CLASSIFICACAO": "incorrect",
+        "REVISAO": "review",
+    }
+    for item in comparison["case_changes"]:
+        if item["category"] not in candidate_categories:
+            continue
+        old, new = item["baseline_status"], item["candidate_status"]
+        if old not in mapping or new not in mapping:
+            raise ValueError("Roteamento não admite estado de avaliação inválido")
+        projected[mapping[old]] -= 1
+        projected[mapping[new]] += 1
+        label = item["expected_label"]
+        if label == "OK":
+            projected["ok_as_ng"] += (
+                int(new == "ERRO_CLASSIFICACAO") -
+                int(old == "ERRO_CLASSIFICACAO")
+            )
+        elif label == "NG":
+            projected["ng_as_ok"] += (
+                int(new == "ERRO_CLASSIFICACAO") -
+                int(old == "ERRO_CLASSIFICACAO")
+            )
+        else:
+            raise ValueError("Rótulo de simulação inválido")
+        touched += 1
+    if (min(projected.values()) < 0
+            or projected["passed"] + projected["incorrect"] + projected["review"]
+            + projected["invalid"] + projected["no_coverage"] +
+            projected["not_evaluated"] != projected["eligible"]):
+        raise ValueError("Contagens da simulação por categoria inconsistentes")
+    return {
+        "mode": "COUNTERFACTUAL_ONLY_NO_INFERENCE",
+        "candidate_categories": sorted(candidate_categories),
+        "all_other_categories": "BASELINE",
+        "changed_cases_from_candidate_categories": touched,
+        "projected_counts": projected,
+        "no_conclusive_false_ok_on_ng_archive": projected["ng_as_ok"] == 0,
+        "no_conclusive_false_ng_on_ok_archive": projected["ok_as_ng"] == 0,
+        "operationally_evaluated": False,
+        "routing_deployed": False,
+        "production_approved": False,
+        "requires_category_ocr_and_routing_validation": True,
+        "requires_untouched_piece_holdout": True,
+        "note": (
+            "Resultado calculado de transições por categoria no MESMO acervo; "
+            "não valida roteamento real, OCR, desempenho em peças novas nem "
+            "libera checkpoint."
+        ),
+    }
+
+
 def triage_comparison(report: dict) -> dict:
     """Retorna diagnósticos sem confiar em status de aprovação de treino."""
     if (not isinstance(report, dict)
@@ -161,6 +227,7 @@ def triage_comparison(report: dict) -> dict:
         "changes_by_category": {
             cat: dict(counts) for cat, counts in sorted(by_category.items())
         },
+        "category_routing_counterfactual": simulate_category_route(report),
         "required_human_review": queue,
         "required_human_review_count": len(queue),
         "regression_checks": checks,

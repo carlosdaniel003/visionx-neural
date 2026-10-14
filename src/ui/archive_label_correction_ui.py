@@ -170,7 +170,17 @@ class ArchiveLabelCorrectionDialog(QDialog):
             lines.append(f"{category}: " + ", ".join(
                 f"{key}={count}" for key, count in sorted(transitions.items())
             ))
+        theoretical = report["category_routing_counterfactual"]
+        projected = theoretical["projected_counts"]
         lines += [
+            "",
+            "HIPÓTESE OFFLINE — sem alterar roteamento:",
+            "FALTANDO/INVERTIDO: candidato 0,50.",
+            "DESLOCADO/EMBORCADO: checkpoint original.",
+            f"Projeção no mesmo acervo: {projected['passed']} acertos, "
+            f"{projected['incorrect']} erros, {projected['review']} revisões.",
+            "É só uma projeção dos relatórios. Falta testar o OCR, "
+            "o roteamento real e peças inéditas.",
             "", "Nenhuma imagem entrou no treinamento.",
             "Confirme os rótulos OK DESLOCADO e os IDs físicos antes de",
             "considerar uma recuperação com exemplos difíceis.",
