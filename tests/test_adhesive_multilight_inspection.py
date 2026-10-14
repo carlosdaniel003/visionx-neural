@@ -250,6 +250,8 @@ class AdhesiveSourceContractTests(unittest.TestCase):
             encoding="utf-8",
         ).read()
 
+        store_index = source.index("stored = _store_view(")
+        prefetch_index = source.index("early_advanced = False")
         analyze_index = source.index("lighting_analysis = analyze_lighting(")
         render_index = source.index(
             "analysis_view.set_analysis(\n"
@@ -257,8 +259,14 @@ class AdhesiveSourceContractTests(unittest.TestCase):
         )
         advance_index = source.index("frame_stored(aux_mode)")
 
+        # TOP válida precede o pedido antecipado de MID, sem dispensar a
+        # análise e a renderização antes do fechamento do ciclo.
+        self.assertLess(store_index, prefetch_index)
+        self.assertLess(prefetch_index, analyze_index)
         self.assertLess(analyze_index, render_index)
         self.assertLess(render_index, advance_index)
+        self.assertIn('if aux_mode == "TOP":', source)
+        self.assertIn('getattr(automation, "top_captured", None)', source)
         self.assertIn("adhesive_multilight_analyses", source)
         self.assertIn(
             "getattr(self, \"current_aoi_info\", None)",
