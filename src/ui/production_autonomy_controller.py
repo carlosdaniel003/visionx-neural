@@ -604,6 +604,7 @@ class ProductionAutonomyController(QObject):
             return
 
         self.state = "emitting_auto_decision"
+        presentation_mark(self.panel, "decision")
         self.panel.last_decision_command_success = None
         try:
             outcome = self.panel.save_label(
