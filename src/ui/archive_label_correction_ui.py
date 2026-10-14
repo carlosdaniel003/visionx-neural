@@ -22,6 +22,7 @@ from src.services.faltando_cnn_recovery_preflight import (
 from src.services.faltando_cnn_candidate_archive_validation import (
     candidate_preflight,
 )
+from src.services.faltando_cnn_regression_triage import triage_report
 
 
 def wait_for_parent_to_exit(pid: int) -> None:
@@ -105,7 +106,11 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.validation_button = QPushButton(
             "Validar candidato CNN 0,50 contra acervo completo (sem ativar)"
         )
+        self.triage_button = QPushButton(
+            "Analisar regressões do último relatório (sem reprocessar)"
+        )
         validation_row.addWidget(self.validation_button)
+        validation_row.addWidget(self.triage_button)
         layout.addLayout(validation_row)
 
         self.log = QTextEdit()
@@ -129,6 +134,49 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.light_weight_button.clicked.connect(self.start_light_weight_comparison)
         self.recovery_cancel.clicked.connect(self.cancel_recovery)
         self.validation_button.clicked.connect(self.start_candidate_validation)
+        self.triage_button.clicked.connect(self.start_regression_triage)
+
+    def start_regression_triage(self):
+        """Classifica transições já avaliadas, sem imagem, GPU nem treinamento."""
+        if self.train_process is not None:
+            return
+        folder = (
+            self.root / "reports/startup_regression/cnn_candidate_validation"
+        )
+        reports = sorted(folder.glob("comparacao_acervo_cnn_peso050_*.json"))
+        if not reports:
+            QMessageBox.warning(
+                self, "Sem relatório", "Execute primeiro a validação do acervo."
+            )
+            return
+        try:
+            path, report = triage_report(self.root, reports[-1])
+        except Exception as exc:
+            self.log.setPlainText(f"TRIAGEM BLOQUEADA:\n{exc}")
+            QMessageBox.warning(self, "Falha na triagem", str(exc))
+            return
+        by_category = report["changes_by_category"]
+        lines = [
+            "TRIAGEM CNN — SEM TREINAMENTO OU ATIVAÇÃO",
+            f"Resultado: {'REPROVADO' if report['candidate_rejected_by_archive_gate'] else 'SEM REGRESSÕES'}",
+            f"Imagens avaliadas: {report['eligible_images']}",
+            f"Novos OK→NG: {report['new_ok_false_ng']}",
+            f"Novos NG→OK: {report['new_ng_false_ok']}",
+            f"Novas revisões de imagens antes corretas: {report['new_reviews_from_previously_passed']}",
+            f"Imagens que exigem conferência humana: {report['required_human_review_count']}",
+            "", "Regressões por categoria:",
+        ]
+        for category, transitions in sorted(by_category.items()):
+            lines.append(f"{category}: " + ", ".join(
+                f"{key}={count}" for key, count in sorted(transitions.items())
+            ))
+        lines += [
+            "", "Nenhuma imagem entrou no treinamento.",
+            "Confirme os rótulos OK DESLOCADO e os IDs físicos antes de",
+            "considerar uma recuperação com exemplos difíceis.",
+            "", f"Relatório: {path}",
+        ]
+        self.log.setPlainText("\n".join(lines))
 
     def start_candidate_validation(self):
         """Duas avaliações operacionais reais com checkpoints imutáveis."""
@@ -192,6 +240,7 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.recovery_button.setEnabled(False)
         self.light_weight_button.setEnabled(False)
         self.validation_button.setEnabled(False)
+        self.triage_button.setEnabled(False)
         self.recovery_cancel.setEnabled(True)
         for button in (self.select_button, self.preview_button, self.commit_button):
             button.setEnabled(False)
@@ -291,6 +340,7 @@ class ArchiveLabelCorrectionDialog(QDialog):
         self.recovery_button.setEnabled(True)
         self.light_weight_button.setEnabled(True)
         self.validation_button.setEnabled(True)
+        self.triage_button.setEnabled(True)
         self.select_button.setEnabled(True)
         self.preview_button.setEnabled(True)
         # A prévia de correção deve ser refeita após qualquer experimento.

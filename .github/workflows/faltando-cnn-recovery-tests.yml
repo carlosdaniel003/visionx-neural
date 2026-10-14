@@ -10,11 +10,13 @@ on:
       - "src/scripts/compare_faltando_recovery_epochs.py"
       - "src/scripts/compare_faltando_recovery_light_weights.py"
       - "src/services/faltando_cnn_candidate_archive_validation.py"
+      - "src/services/faltando_cnn_regression_triage.py"
       - "src/ui/archive_label_correction_ui.py"
       - "tests/test_faltando_cnn_recovery_preflight.py"
       - "tests/test_faltando_recovery_comparison.py"
       - "tests/test_faltando_light_weight_comparison.py"
       - "tests/test_faltando_candidate_archive_validation.py"
+      - "tests/test_faltando_cnn_regression_triage.py"
       - "tests/test_archive_label_correction_ui_encoding.py"
       - "tests/utf8_console_probe.py"
       - ".github/workflows/faltando-cnn-recovery-tests.yml"
@@ -36,7 +38,7 @@ jobs:
           python -m pip install numpy opencv-python-headless scipy scikit-image PyQt6
       - name: Compile updated modules
         run: |
-          python -m py_compile src/services/faltando_cnn_recovery_preflight.py src/scripts/train_faltando_cnn_v2_online.py src/scripts/compare_faltando_recovery_epochs.py src/scripts/compare_faltando_recovery_light_weights.py src/services/faltando_cnn_candidate_archive_validation.py src/ui/archive_label_correction_ui.py tests/test_faltando_cnn_recovery_preflight.py tests/test_faltando_recovery_comparison.py tests/test_faltando_light_weight_comparison.py tests/test_faltando_candidate_archive_validation.py tests/test_archive_label_correction_ui_encoding.py tests/utf8_console_probe.py
+          python -m py_compile src/services/faltando_cnn_recovery_preflight.py src/scripts/train_faltando_cnn_v2_online.py src/scripts/compare_faltando_recovery_epochs.py src/scripts/compare_faltando_recovery_light_weights.py src/services/faltando_cnn_candidate_archive_validation.py src/services/faltando_cnn_regression_triage.py src/ui/archive_label_correction_ui.py tests/test_faltando_cnn_recovery_preflight.py tests/test_faltando_recovery_comparison.py tests/test_faltando_light_weight_comparison.py tests/test_faltando_candidate_archive_validation.py tests/test_faltando_cnn_regression_triage.py tests/test_archive_label_correction_ui_encoding.py tests/utf8_console_probe.py
       - name: Verify offline recovery preflight
         run: |
-          python -m unittest tests.test_faltando_cnn_recovery_preflight tests.test_faltando_recovery_comparison tests.test_faltando_light_weight_comparison tests.test_faltando_candidate_archive_validation tests.test_archive_label_correction_ui_encoding -v
+          python -m unittest tests.test_faltando_cnn_recovery_preflight tests.test_faltando_recovery_comparison tests.test_faltando_light_weight_comparison tests.test_faltando_candidate_archive_validation tests.test_faltando_cnn_regression_triage tests.test_archive_label_correction_ui_encoding -v

@@ -19,6 +19,7 @@ from src.core.neural.faltando_live import (
     FaltandoCNNLive, PINNED_RELATIVE_CHECKPOINT, PINNED_CHECKPOINT_SHA256,
 )
 from src.services.faltando_cnn_recovery_preflight import validate_recovery_inputs
+from src.services.faltando_cnn_regression_triage import triage_comparison
 from src.services.startup_regression.archive_inventory import inventory_archives
 from src.services.startup_regression.interactive_training_validation import (
     configure_low_priority, save_report, validate,
@@ -332,6 +333,17 @@ def validate_candidate_on_archive(root: Path | str, *,
             "Coletar eventos inéditos, de peças independentes, antes de promoção.",
         ],
     }
+    # Gate de segurança cobre TAMBÉM os OK do acervo integral,
+    # ausentes dos gates do treino incremental (117 imagens).
+    # Um score correto em 9 NG de treino não justifica sete novos falsos NG.
+    output["regression_triage"] = triage_comparison(output)
+    print(
+        "GATE ACERVO: " +
+        ("REPROVADO" if output["regression_triage"]["candidate_rejected_by_archive_gate"]
+         else "SEM REGRESSAO (AINDA NAO AUTORIZADO)") +
+        f"; novos falsos NG={output['regression_triage']['new_ok_false_ng']}",
+        flush=True,
+    )
     output_dir = root / "reports/startup_regression/cnn_candidate_validation"
     name = "comparacao_acervo_cnn_peso050_" + datetime.now(timezone.utc).strftime(
         "%Y%m%dT%H%M%S_%fZ"
