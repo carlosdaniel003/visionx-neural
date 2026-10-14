@@ -122,7 +122,7 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(state["state"], "ready")
         self.assertEqual(state["checkpoint_sha256"], self.hash)
         self.assertIsNotNone(clf._model)
-        with patch("src.core.neural.faltando_live.REVIEW_LOW_NG", 0.0), \\
+        with patch("src.core.neural.faltando_live.REVIEW_LOW_NG", 0.0), \
              patch("src.core.neural.faltando_live.REVIEW_HIGH_NG", 0.0):
             prepared = clf.inspect(r, t, "SIDE")
             regular = FaltandoCNNLive(self.checkpoint, self.hash).inspect(
