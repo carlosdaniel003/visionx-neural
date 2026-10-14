@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 from typing import Any
+import time
 
 import cv2
 import numpy as np
@@ -22,7 +23,7 @@ from src.config.settings import settings
 from src.core.epicenter_extractor import EpicenterExtractor
 from src.core.inspection import detect_anomalies
 from src.services.capture_debug_payload import decision_record
-from src.services.inspection_timing import begin_cycle
+from src.services.inspection_timing import begin_cycle, note_steps
 from src.services.capture_evidence import (
     store_capture_evidence,
     update_capture_debug_record,
@@ -714,9 +715,14 @@ def install_network_aoi_intake_filter(control_panel_cls) -> None:
                 aoi_info,
             )
 
+        validation_started_at = time.perf_counter()
         valid, reason, audit = validate_network_inspection(
             sample_crop,
             ng_crop,
+        )
+        note_steps(
+            self, "SIDE",
+            validation_ms=(time.perf_counter() - validation_started_at) * 1000,
         )
         record = _enrich_validation_record(
             self,
