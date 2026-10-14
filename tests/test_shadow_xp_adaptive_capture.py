@@ -114,6 +114,27 @@ class XpAdaptiveCaptureTests(unittest.TestCase):
             self.assertFalse(ControlPanel._send_xp_shadow_control(panel, True))
         self.assertIsNone(panel._xp_shadow_last_ack)
 
+    def test_rate_feedback_tracks_ack_without_repeating_messages(self):
+        class Panel:
+            def __init__(self):
+                self.messages = []
+            def update_network_status(self, message):
+                self.messages.append(message)
+
+        panel = Panel()
+        ControlPanel._report_xp_capture_rate(panel, "169.254.87.100", False)
+        ControlPanel._report_xp_capture_rate(panel, "169.254.87.100", False)
+        self.assertEqual(len(panel.messages), 1)
+        self.assertIn("sem ACK", panel.messages[0])
+
+        ControlPanel._report_xp_capture_rate(panel, "169.254.87.100", True)
+        ControlPanel._report_xp_capture_rate(panel, "169.254.87.100", True)
+        self.assertEqual(len(panel.messages), 2)
+        self.assertIn("0,18 s", panel.messages[1])
+
+        ControlPanel._report_xp_capture_rate(panel, "169.254.87.101", False)
+        self.assertEqual(len(panel.messages), 3)
+
     def test_fast_capture_lease_in_all_operational_modes(self):
         class Mode:
             current = "Modo Sombra"
