@@ -377,25 +377,47 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             index = memory if memory is not None else VerifiedKNNMemory()
             self._memory_first_index = index
 
+        # Medir a PRIMEIRA rota da memória, antes da CNN.
+        # Essa etapa não é coberta pelo perfil interno FaltandoCNNLive.
+        memory_timing: dict = {}
+        lookup_started_at = time.perf_counter()
         try:
-            match = index.lookup(
-                getattr(self, "experts", {}).get("knn"),
-                full_gab, full_test, info,
-            )
+            if type(index) is VerifiedKNNMemory:
+                match = index.lookup(
+                    getattr(self, "experts", {}).get("knn"),
+                    full_gab, full_test, info, timing=memory_timing,
+                )
+            else:
+                match = index.lookup(
+                    getattr(self, "experts", {}).get("knn"),
+                    full_gab, full_test, info,
+                )
         except Exception as exc:
-            # Índice indisponível: não reconhecer; especialista permanece
-            # necessário. Não usar KNN por semelhança como atalho.
+            # Índice indisponível: nunca permitir aprovação silenciosa.
             match = {"status": "UNAVAILABLE", "reason": str(exc)}
+        memory_timing.setdefault(
+            "total_ms",
+            round((time.perf_counter() - lookup_started_at) * 1000.0, 2),
+        )
+        memory_timing["status"] = str(match.get("status", "UNAVAILABLE"))
+
+        def with_memory_timing(outcome):
+            if isinstance(outcome, dict):
+                detail = outcome.setdefault("detail", {})
+                if isinstance(detail, dict):
+                    detail["verified_memory_timing"] = dict(memory_timing)
+            return outcome
+
         mode = canonical_memory_lighting(info.get("lighting_mode", "SIDE"))
         if match["status"] == "UNAVAILABLE":
-            return _review_result(
+            return with_memory_timing(_review_result(
                 "Verificação exata indisponível: " + str(match.get("reason", "")),
                 mode,
-            )
+            ))
         if match["status"] == "KNOWN":
-            return _recognized_result(match, mode)
+            return with_memory_timing(_recognized_result(match, mode))
         if match["status"] == "CONFLICT":
-            return _review_result(match["reason"], mode)
+            return with_memory_timing(_review_result(match["reason"], mode))
 
         category = canonical_memory_category(info.get("category", ""))
         if uses_faltando_v2(category):
@@ -413,7 +435,9 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             requested_info, global_box_info, aoi_epicenters,
         )
         if not isinstance(result, dict):
-            return _review_result("O especialista não retornou um resultado", mode)
+            return with_memory_timing(_review_result(
+                "O especialista não retornou um resultado", mode
+            ))
         detail = result.setdefault("detail", {})
         if not isinstance(detail, dict):
             detail = {}
@@ -437,7 +461,7 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             result["reason"] = "CASO NOVO • CNN FALTANDO v2. " + str(result.get("reason", ""))
         else:
             result["reason"] = "CASO NOVO • motores da categoria. " + str(result.get("reason", ""))
-        return result
+        return with_memory_timing(result)
 
     def reload_memory(self, *args, **kwargs):
         outcome = original_reload(self, *args, **kwargs)
