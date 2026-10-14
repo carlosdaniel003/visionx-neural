@@ -523,6 +523,19 @@ def format_multilight_debug_report(panel) -> str:
                 f"Registros no indice: {verified.get('record_count', '-')}",
                 f"Pares encontrados: {verified.get('matched_count', '-')}",
             ])
+            knn_warm = verified.get("warmup", {})
+            if isinstance(knn_warm, dict) and knn_warm:
+                lines.extend([
+                    f"KNN warmup estado: {knn_warm.get('state', '-')}",
+                    f"KNN warmup duracao: {knn_warm.get('duration_ms', '-')} ms",
+                ])
+        cnn_warm = detail.get("cnn_v2_warmup")
+        if isinstance(cnn_warm, dict) and cnn_warm:
+            lines.extend([
+                "",
+                f"CNN warmup estado: {cnn_warm.get('state', '-')}",
+                f"CNN warmup duracao: {cnn_warm.get('duration_ms', '-')} ms",
+            ])
         profile = detail.get("cnn_v2_performance")
         if isinstance(profile, dict) and profile:
             lines.extend([""] + format_inference_profile(profile))

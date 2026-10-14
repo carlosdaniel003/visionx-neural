@@ -14,6 +14,7 @@ on:
       - "src/ui/hud_window.py"
       - "src/ui/calibration_window.py"
       - "src/ui/network_xp_debug.py"
+      - "src/services/inspection_warmup.py"
       - "src/core/neural/faltando_inference_telemetry.py"
       - "src/core/neural/faltando_live.py"
       - "src/core/multilight_fusion.py"
@@ -68,6 +69,7 @@ on:
     branches: [central]
     paths:
       - "src/ui/network_xp_debug.py"
+      - "src/services/inspection_warmup.py"
       - "src/core/neural/faltando_inference_telemetry.py"
       - "src/core/neural/faltando_live.py"
       - "tests/test_network_xp_debug.py"

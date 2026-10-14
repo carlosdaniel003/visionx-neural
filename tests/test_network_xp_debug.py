@@ -1373,6 +1373,27 @@ class AdhesiveMultiLightDebugTests(unittest.TestCase):
             report.count("PERFIL DO ROTEADOR KNN VERIFICADO (ms)"), 1
         )
 
+    def test_background_preparation_status_is_visible_without_changing_verdict(self):
+        panel = self._panel("warmup-status-001")
+        panel.adhesive_multilight_last_category = "FALTANDO"
+        side = panel.adhesive_multilight_last_analyses["SIDE"]
+        side["detail"]["cnn_v2_warmup"] = {
+            "state": "ready", "duration_ms": 2300.5,
+        }
+        side["detail"]["verified_memory_timing"] = {
+            "total_ms": 4.0, "status": "NEW",
+            "index_reused": True, "index_build_ms": 0.0,
+            "warmup": {"state": "ready", "duration_ms": 3100.7},
+        }
+        before = side["verdict"]
+        report = format_multilight_debug_report(panel)
+        self.assertIn("KNN warmup estado: ready", report)
+        self.assertIn("KNN warmup duracao: 3100.7 ms", report)
+        self.assertIn("CNN warmup estado: ready", report)
+        self.assertIn("CNN warmup duracao: 2300.5 ms", report)
+        self.assertEqual(side["verdict"], before)
+        self.assertEqual(report.count("CNN warmup estado: ready"), 1)
+
     def test_copy_debug_appends_multilight_section_to_existing_report(self):
         panel = self._panel()
 
