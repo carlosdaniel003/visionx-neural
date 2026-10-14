@@ -64,6 +64,8 @@ class VerifiedKNNMemory:
         self._lock = RLock()
         self._index: dict[tuple, list[dict]] | None = None
         self._record_identity: tuple | None = None
+        self._all_scopes_indexed = False
+        self._indexed_scopes: set[tuple] = set()
         self.error = ""
         self._warmup_status = {"state": "not_started", "duration_ms": None}
 
@@ -71,6 +73,8 @@ class VerifiedKNNMemory:
         with self._lock:
             self._index = None
             self._record_identity = None
+            self._all_scopes_indexed = False
+            self._indexed_scopes = set()
             self.error = ""
             self._warmup_status = {
                 "state": "invalidated", "duration_ms": None,
@@ -220,11 +224,77 @@ class VerifiedKNNMemory:
                         continue
                 self._index = dict(built)
                 self._record_identity = identity
+                self._all_scopes_indexed = True
+                self._indexed_scopes = set()
+                profile["index_scope"] = "full_warmup"
                 profile["index_build_ms"] = round(
                     (time.perf_counter() - build_started_at) * 1000.0, 2
                 )
             else:
                 profile["index_build_ms"] = 0.0
+        profile["index_lookup_ms"] = round(
+            (time.perf_counter() - started_at) * 1000.0, 2
+        )
+
+    def _ensure_lookup_scope(
+        self, records: list[dict], identity: tuple,
+        key: tuple, profile: dict,
+    ) -> None:
+        """Reconstrói apenas categoria/luz/Parts durante inspeção.
+
+        _entry() só poderia autorizar um registro cujos metadados externos
+        category, lighting_mode e part concordam com a chave validada.
+        O filtro é estritamente necessário, nunca suficiente: JSON, fonte
+        humana e hashes dos dois PNGs ainda passam por _entry().
+        O warmup, por sua vez, continua montando o índice integral.
+        """
+        scope = (key[0], key[1], key[3])
+        started_at = time.perf_counter()
+        with self._lock:
+            if self._record_identity != identity or self._index is None:
+                reason = (
+                    "not_initialized_or_explicitly_invalidated"
+                    if self._index is None else "legacy_records_changed"
+                )
+                self._index = {}
+                self._record_identity = identity
+                self._all_scopes_indexed = False
+                self._indexed_scopes = set()
+                profile["index_rebuild_reason"] = reason
+            reused = (
+                self._all_scopes_indexed or scope in self._indexed_scopes
+            )
+            profile["index_reused"] = reused
+            if reused:
+                profile["index_build_ms"] = 0.0
+                profile["index_scope"] = (
+                    "full_warmup" if self._all_scopes_indexed else "cached_scope"
+                )
+            else:
+                began_build = time.perf_counter()
+                eligible = 0
+                for record in records:
+                    if not isinstance(record, dict):
+                        continue
+                    if (record.get("mode") != "anomaly"
+                            or canonical_memory_category(record.get("category")) != scope[0]
+                            or canonical_memory_lighting(record.get("lighting_mode")) != scope[1]
+                            or _clean(record.get("part")) != scope[2]):
+                        continue
+                    eligible += 1
+                    try:
+                        entry = self._entry(record)
+                        if entry is not None:
+                            self._index.setdefault(entry[0], []).append(entry[1])
+                    except (OSError, ValueError, TypeError, cv2.error):
+                        # Nenhuma falha permite promoção de par não auditado.
+                        continue
+                self._indexed_scopes.add(scope)
+                profile["index_scope"] = "targeted_legacy_lookup"
+                profile["scope_candidate_record_count"] = eligible
+                profile["index_build_ms"] = round(
+                    (time.perf_counter() - began_build) * 1000.0, 2
+                )
         profile["index_lookup_ms"] = round(
             (time.perf_counter() - started_at) * 1000.0, 2
         )
@@ -321,7 +391,7 @@ class VerifiedKNNMemory:
         with self._lock:
             # Não permitir invalidate() entre a checagem do índice e a
             # consulta do par exato. O RLock suporta _ensure_index().
-            self._ensure_index(records, identity, profile)
+            self._ensure_lookup_scope(records, identity, key, profile)
             matched = list(self._index.get(key, ()))
             profile["warmup"] = dict(self._warmup_status)
         profile["matched_count"] = len(matched)
