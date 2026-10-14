@@ -10,10 +10,10 @@ import time
 
 
 LIGHTS = ("SIDE", "TOP", "MID")
-STEPS = ("layout_crop_ms", "ocr_ms", "extraction_ms", "geometry_ms",
+STEPS = ("layout_crop_ms", "ocr_ms", "extraction_ms", "validation_ms", "geometry_ms",
          "preview_ms", "inference_ms", "render_ms", "processing_ms")
 NETWORK_STEPS = ("tcp_payload_ms", "decode_ms", "stability_ms",
-                 "payload_to_dispatch_ms")
+                 "payload_to_dispatch_ms", "dispatch_to_ui_ms")
 
 
 def _ms(start, end):
@@ -62,6 +62,9 @@ def note_frame(panel, light, transport=None):
         slot["payload_at"] = float(payload)
     if isinstance(ready, (float, int)) and ready > 0:
         slot["ready_at"] = float(ready)
+        slot["network"]["dispatch_to_ui_ms"] = _ms(
+            ready, time.perf_counter()
+        )
     command_started = slot["command"].get("started_at")
     if command_started:
         slot["command"]["to_payload_ms"] = _ms(command_started, payload)
@@ -171,9 +174,11 @@ def format_report(data):
         "decode_ms": "Descompressao/decode",
         "stability_ms": "Aguardando estabilidade de frames",
         "payload_to_dispatch_ms": "Recebimento ate despacho",
+        "dispatch_to_ui_ms": "Fila Qt: despacho ate UI",
         "layout_crop_ms": "Localizacao AOI / recortes",
         "ocr_ms": "OCR",
         "extraction_ms": "Extracao total (inclui OCR)",
+        "validation_ms": "Validacao de entrada AOI",
         "geometry_ms": "Geometria / epicentros",
         "preview_ms": "Preparo visual / miniaturas",
         "inference_ms": "Inferencia dos especialistas",
