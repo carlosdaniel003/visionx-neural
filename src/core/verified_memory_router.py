@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 import json
+import time
 from pathlib import Path
 from threading import RLock
 
@@ -143,18 +144,48 @@ class VerifiedKNNMemory:
             return None
         return key, {"label": label, "source_json": str(path)}
 
-    def lookup(self, knn, reference, test, info: dict) -> dict:
-        """Retorna KNOWN/NEW/CONFLICT/UNAVAILABLE, sem similaridade aproximada."""
+    def lookup(
+        self, knn, reference, test, info: dict,
+        *, timing: dict | None = None,
+    ) -> dict:
+        """Consulta exata; publica tempos apenas no perfil da chamada."""
+        started_at = time.perf_counter()
+        profile = {"schema": "visionx.verified_knn_lookup_timing.v1"}
+        try:
+            return self._lookup_profiled(knn, reference, test, info, profile)
+        finally:
+            profile["total_ms"] = round(
+                (time.perf_counter() - started_at) * 1000.0, 2
+            )
+            if isinstance(timing, dict):
+                timing.update(profile)
+
+    def _lookup_profiled(
+        self, knn, reference, test, info: dict, profile: dict,
+    ) -> dict:
+        """Mesmo algoritmo de busca, com medições monotônicas passivas."""
         if not _image_ok(reference) or not _image_ok(test):
             return {"status": "UNAVAILABLE", "reason": "Par AOI inválido"}
         # Consulta independente dos PNGs (o snapshot continua após exclusão).
         # Erro de integridade é elevado e bloqueia a aprovação por segurança.
-        durable = self.archive_store.lookup(reference, test, info)
+        archive_started_at = time.perf_counter()
+        try:
+            durable = self.archive_store.lookup(reference, test, info)
+        finally:
+            profile["archive_lookup_ms"] = round(
+                (time.perf_counter() - archive_started_at) * 1000.0, 2
+            )
         if durable["status"] in {"CONFLICT", "UNAVAILABLE"}:
             return durable
-        key = self._key(
-            info, image_fingerprint(reference), image_fingerprint(test)
-        )
+        hashes_started_at = time.perf_counter()
+        try:
+            key = self._key(
+                info, image_fingerprint(reference), image_fingerprint(test)
+            )
+        finally:
+            profile["fingerprints_ms"] = round(
+                (time.perf_counter() - hashes_started_at) * 1000.0, 2
+            )
         if key is None:
             return durable if durable["status"] == "KNOWN" else {
                 "status": "NEW", "reason": "OCR/categoria ou par incompleto"
@@ -164,6 +195,7 @@ class VerifiedKNNMemory:
                 "status": "NEW", "reason": "Nenhuma memória KNN carregada"
             }
 
+        records_started_at = time.perf_counter()
         lock = getattr(knn, "_memory_lock", None)
         if lock is not None:
             with lock:
@@ -174,11 +206,19 @@ class VerifiedKNNMemory:
             records = list(getattr(knn, "signatures_ok", ()) or ()) + list(
                 getattr(knn, "signatures_ng", ()) or ()
             )
+        profile["records_snapshot_ms"] = round(
+            (time.perf_counter() - records_started_at) * 1000.0, 2
+        )
+        profile["record_count"] = len(records)
         identity = (id(knn), id(getattr(knn, "signatures_ok", None)),
                     id(getattr(knn, "signatures_ng", None)),
                     len(records))
+        index_started_at = time.perf_counter()
         with self._lock:
-            if self._index is None or identity != self._record_identity:
+            reused = self._index is not None and identity == self._record_identity
+            profile["index_reused"] = reused
+            if not reused:
+                build_started_at = time.perf_counter()
                 built = defaultdict(list)
                 for record in records:
                     try:
@@ -190,8 +230,17 @@ class VerifiedKNNMemory:
                         continue
                 self._index = dict(built)
                 self._record_identity = identity
+                profile["index_build_ms"] = round(
+                    (time.perf_counter() - build_started_at) * 1000.0, 2
+                )
+            else:
+                profile["index_build_ms"] = 0.0
 
             matched = list(self._index.get(key, ()))
+        profile["index_lookup_ms"] = round(
+            (time.perf_counter() - index_started_at) * 1000.0, 2
+        )
+        profile["matched_count"] = len(matched)
         if not matched:
             return durable if durable["status"] == "KNOWN" else {
                 "status": "NEW",
