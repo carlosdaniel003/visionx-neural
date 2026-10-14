@@ -326,6 +326,168 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
             result["detail"]["verified_memory_timing"]["index_reused"]
         )
 
+    def test_archive_only_refresh_preserves_legacy_index_and_verified_label(self):
+        """O watcher troca duas listas, mas não mudou nenhum par legado."""
+        system = self.create_router()
+        knn = system.experts["knn"]
+        legacy = self.make_record("NG")
+        knn.signatures_ng = [legacy]
+        self.assertEqual(system.prepare_verified_memory_index()["state"], "ready")
+        original = self.inspect(system)
+        self.assertEqual(original["detail"]["recognition_route"], "KNOWN_KNN")
+        initial = original["detail"]["verified_memory_timing"]
+        self.assertTrue(initial["index_reused"])
+        self.assertEqual(initial["legacy_index_record_count"], 1)
+
+        # Simula múltiplos lotes append-only do arquivo durável:
+        # refresh_archive_memory() reconstrói listas, retendo os mesmos
+        # objetos legados e incluindo registros archive_persistent novos.
+        for count in (13, 28, 47):
+            durable = [
+                {"archive_persistent": True, "archive_record_id": str(i)}
+                for i in range(count)
+            ]
+            knn.signatures_ok = list(durable)
+            knn.signatures_ng = [legacy]
+            result = self.inspect(system)
+            profile = result["detail"]["verified_memory_timing"]
+            self.assertEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+            self.assertTrue(profile["index_reused"])
+            self.assertEqual(profile["index_build_ms"], 0)
+            self.assertEqual(profile["legacy_index_record_count"], 1)
+            self.assertEqual(profile["archive_persistent_record_count"], count)
+            self.assertEqual(profile["record_count"], count + 1)
+            self.assertEqual(profile["warmup"]["state"], "ready")
+
+    def test_archive_refresh_then_legacy_change_forces_fresh_verification(self):
+        """Atualizações reais do legado continuam exigindo novo índice."""
+        system = self.create_router()
+        knn = system.experts["knn"]
+        legacy = self.make_record("NG")
+        knn.signatures_ng = [legacy]
+        system.prepare_verified_memory_index()
+        self.assertEqual(self.inspect(system)["detail"]["recognition_route"], "KNOWN_KNN")
+
+        knn.signatures_ok = [
+            {"archive_persistent": True, "archive_record_id": "added"}
+        ]
+        stable = self.inspect(system)["detail"]["verified_memory_timing"]
+        self.assertTrue(stable["index_reused"])
+
+        # Troca de objeto legado na mesma posição/quantidade é alteração.
+        another = self.make_record("OK")
+        knn.signatures_ng = [another]
+        changed = self.inspect(system)
+        self.assertEqual(changed["verdict"], "FALHA FALSA")
+        self.assertEqual(changed["detail"]["recognition_route"], "KNOWN_KNN")
+        profile = changed["detail"]["verified_memory_timing"]
+        self.assertFalse(profile["index_reused"])
+        self.assertEqual(profile["index_rebuild_reason"], "legacy_records_changed")
+
+        system.reload_memory()
+        invalidated = system._get_verified_memory_index()._warmup_status
+        self.assertEqual(invalidated["state"], "invalidated")
+        self.assertEqual(invalidated["reason"], "orchestrator_reload_memory")
+        post_reload = self.inspect(system)["detail"]["verified_memory_timing"]
+        self.assertFalse(post_reload["index_reused"])
+        self.assertEqual(
+            post_reload["index_rebuild_reason"],
+            "not_initialized_or_explicitly_invalidated",
+        )
+
+    def test_invalidation_rechecks_only_matching_legacy_scope(self):
+        """Quando reload interrompe warmup, não varrer milhares de PNGs."""
+        from unittest.mock import patch
+
+        system = self.create_router()
+        knn = system.experts["knn"]
+        wanted = self.make_record("NG")
+        knn.signatures_ng = [wanted]
+        knn.signatures_ok = [
+            {
+                "mode": "anomaly",
+                "category": "FALTANDO",
+                "lighting_mode": "TOP",
+                "part": "R999",
+                "json_path": "missing_" + str(i) + ".json",
+            }
+            for i in range(1000)
+        ]
+        index = system._get_verified_memory_index()
+        original_entry = index._entry
+        candidates = []
+
+        def audit(record):
+            candidates.append(record)
+            return original_entry(record)
+
+        with patch.object(index, "_entry", side_effect=audit):
+            initial = self.inspect(system)
+            self.assertEqual(initial["detail"]["recognition_route"], "KNOWN_KNN")
+            self.assertEqual(len(candidates), 1)
+            first_profile = initial["detail"]["verified_memory_timing"]
+            self.assertEqual(first_profile["index_scope"], "targeted_legacy_lookup")
+            self.assertEqual(first_profile["scope_candidate_record_count"], 1)
+            self.assertEqual(first_profile["legacy_index_record_count"], 1001)
+            self.assertFalse(first_profile["index_reused"])
+
+            repeat = self.inspect(system)
+            self.assertEqual(repeat["detail"]["recognition_route"], "KNOWN_KNN")
+            self.assertTrue(repeat["detail"]["verified_memory_timing"]["index_reused"])
+            self.assertEqual(len(candidates), 1)
+
+            system.reload_memory()
+            next_case = self.inspect(system)
+            profile = next_case["detail"]["verified_memory_timing"]
+            self.assertEqual(next_case["detail"]["recognition_route"], "KNOWN_KNN")
+            self.assertFalse(profile["index_reused"])
+            self.assertEqual(profile["index_scope"], "targeted_legacy_lookup")
+            self.assertEqual(len(candidates), 2)
+
+    def test_warmup_after_scoped_index_must_be_complete(self):
+        system = self.create_router()
+        knn = system.experts["knn"]
+        wanted_side = self.make_record("NG")
+        wanted_top = self.make_record(
+            "OK", info=dict(self.info, lighting_mode="TOP")
+        )
+        knn.signatures_ng.append(wanted_side)
+        knn.signatures_ok.append(wanted_top)
+        index = system._get_verified_memory_index()
+        result = self.inspect(system)
+        self.assertEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+        self.assertFalse(index._all_scopes_indexed)
+        self.assertEqual(
+            len(index._indexed_scopes), 1,
+        )
+        warmed = system.prepare_verified_memory_index()
+        self.assertEqual(warmed["state"], "ready")
+        self.assertTrue(index._all_scopes_indexed)
+        self.assertFalse(warmed["index_reused"])
+        top = self.inspect(
+            system, info=dict(self.info, lighting_mode="TOP")
+        )
+        self.assertEqual(top["detail"]["recognition_route"], "KNOWN_KNN")
+        self.assertEqual(top["verdict"], "FALHA FALSA")
+        self.assertTrue(top["detail"]["verified_memory_timing"]["index_reused"])
+
+    def test_targeted_scope_preserves_conflict_and_fail_closed(self):
+        system = self.create_router()
+        knn = system.experts["knn"]
+        knn.signatures_ok.append(self.make_record("OK"))
+        knn.signatures_ng.append(self.make_record("NG"))
+        knn.signatures_ok.extend({
+            "mode": "anomaly", "category": "FALTANDO",
+            "lighting_mode": "TOP", "part": "R999",
+            "json_path": "absent_" + str(i),
+        } for i in range(100))
+        result = self.inspect(system)
+        profile = result["detail"]["verified_memory_timing"]
+        self.assertEqual(profile["index_scope"], "targeted_legacy_lookup")
+        self.assertEqual(profile["scope_candidate_record_count"], 2)
+        self.assertEqual(result["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertFalse(production_decision_policy(result)["auto_allowed"])
+
     def test_first_verified_lookup_builds_index_then_reuses_it(self):
         system = self.create_router()
         system.experts["knn"].signatures_ok.append(self.make_record("OK"))
