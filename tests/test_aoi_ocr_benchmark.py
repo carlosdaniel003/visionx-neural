@@ -98,6 +98,20 @@ class OCRBenchmarkTests(unittest.TestCase):
         self.assertFalse(candidate["manifest_reference_agreement"])
         self.assertFalse(candidate["eligible_for_automatic_activation"])
 
+    def test_reference_disagrees_with_original_and_does_not_approve_variant(self):
+        expected = dict(EXPECTED, parts="R175")
+        report = self.run_benchmark([(self.path, expected)], repeats=1)
+        self.assertEqual(
+            report["summary"]["baseline_original"]["mismatch_with_human_labels_cases"],
+            1,
+        )
+        candidate = report["summary"]["scale_2"]
+        self.assertEqual(candidate["mismatch_with_human_labels_cases"], 0)
+        # Mesmo candidato igual à referência declarada requer revisão do
+        # erro do baseline; não promover em lote sem auditoria independente.
+        self.assertFalse(candidate["manifest_reference_agreement"])
+        self.assertFalse(candidate["eligible_for_automatic_activation"])
+
     def test_scale_three_pixel_pipeline_matches_original_production(self):
         image = np.arange(120 * 240 * 3, dtype=np.uint8).reshape(120, 240, 3)
         fake = FakeOCR()
