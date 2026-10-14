@@ -71,6 +71,7 @@ class NetworkReceiver(QThread):
         self._candidate_stable_frames = 0
         self._candidate_received_at = 0.0
         self._candidate_first_stable_at = 0.0
+        self._candidate_previous_received_at = 0.0
         self.last_delivered_timing = {}
         self.last_auxiliary_timing = {}
         self._reserved_signature: np.ndarray | None = None
@@ -89,6 +90,8 @@ class NetworkReceiver(QThread):
         self._aux_signature = None
         self._aux_stable_frames = 0
         self._aux_first_stable_at = 0.0
+        self._aux_previous_received_at = 0.0
+        self._aux_pre_settle_frames = 0
         self._aux_dispatched = False
 
     def lock_image_gate(self) -> None:
@@ -105,6 +108,8 @@ class NetworkReceiver(QThread):
                 self._aux_signature = None
                 self._aux_stable_frames = 0
                 self._aux_first_stable_at = 0.0
+                self._aux_previous_received_at = 0.0
+                self._aux_pre_settle_frames = 0
                 self._aux_dispatched = False
 
     def arm_auxiliary_capture(self, lighting: str) -> bool:
@@ -122,6 +127,8 @@ class NetworkReceiver(QThread):
             self._aux_signature = None
             self._aux_stable_frames = 0
             self._aux_first_stable_at = 0.0
+            self._aux_previous_received_at = 0.0
+            self._aux_pre_settle_frames = 0
             self._aux_dispatched = False
             return True
 
@@ -130,8 +137,10 @@ class NetworkReceiver(QThread):
         with self._state_lock:
             if (not self._auxiliary_image_mode
                     or not self._aux_expected_lighting
-                    or self._aux_dispatched
-                    or at < self._aux_not_before):
+                    or self._aux_dispatched):
+                return False
+            if at < self._aux_not_before:
+                self._aux_pre_settle_frames += 1
                 return False
             signature = self._frame_signature(image)
             if self._same_signature(signature, self._aux_signature):
@@ -140,6 +149,15 @@ class NetworkReceiver(QThread):
                 self._aux_signature = signature
                 self._aux_stable_frames = 1
                 self._aux_first_stable_at = float(at)
+                self._aux_previous_received_at = 0.0
+            # Guardar timestamp do par consecutivo; não altera critérios.
+            self._aux_last_pair_gap_ms = (
+                round(max(0.0, at - self._aux_previous_received_at)
+                      * 1000.0, 2)
+                if self._aux_stable_frames >= 2
+                and self._aux_previous_received_at > 0 else None
+            )
+            self._aux_previous_received_at = float(at)
             if self._aux_stable_frames < self.STABLE_REQUIRED_FRAMES:
                 return False
             self._aux_dispatched = True
@@ -154,6 +172,8 @@ class NetworkReceiver(QThread):
         self._candidate_image = None
         self._candidate_ip = ""
         self._candidate_stable_frames = 0
+        self._candidate_previous_received_at = 0.0
+        self._candidate_last_pair_gap_ms = None
 
     def release_image_gate(self) -> None:
         """Libera a procura pela próxima anomalia válida.
@@ -274,14 +294,23 @@ class NetworkReceiver(QThread):
     ) -> int:
         """Mantém só o frame mais recente e retorna sua estabilidade atual."""
         with self._state_lock:
+            candidate_at = float(
+                received_at if received_at is not None
+                else time.perf_counter()
+            )
             if self._same_signature(signature, self._candidate_signature):
                 self._candidate_stable_frames += 1
             else:
                 self._candidate_stable_frames = 1
-                self._candidate_first_stable_at = float(
-                    received_at if received_at is not None
-                    else time.perf_counter()
-                )
+                self._candidate_first_stable_at = candidate_at
+                self._candidate_previous_received_at = 0.0
+            self._candidate_last_pair_gap_ms = (
+                round(max(0.0, candidate_at - self._candidate_previous_received_at)
+                      * 1000.0, 2)
+                if self._candidate_stable_frames >= 2
+                and self._candidate_previous_received_at > 0 else None
+            )
+            self._candidate_previous_received_at = candidate_at
 
             self._candidate_signature = signature.copy()
             self._candidate_image = image.copy()
@@ -499,6 +528,13 @@ class NetworkReceiver(QThread):
                                 0.0, payload_received_at
                                 - self._aux_first_stable_at
                             ) * 1000.0, 2),
+                            "last_stable_pair_gap_ms":
+                                self._aux_last_pair_gap_ms,
+                            "stable_frame_count": self._aux_stable_frames,
+                            "pre_settle_frames": self._aux_pre_settle_frames,
+                            "configured_settle_ms": round(
+                                self.AUXILIARY_LIGHT_SETTLE_SECONDS * 1000.0, 2
+                            ),
                             "payload_to_dispatch_ms": round(
                                 (ready_at - payload_received_at) * 1000.0, 2
                             ),
@@ -551,8 +587,9 @@ class NetworkReceiver(QThread):
                         candidate_received_at = float(
                             self._candidate_received_at or 0.0
                         )
-
-                    first_stable_at = self._candidate_first_stable_at
+                        first_stable_at = self._candidate_first_stable_at
+                        stable_count_confirmed = self._candidate_stable_frames
+                        last_pair_gap_ms = self._candidate_last_pair_gap_ms
                     # Reserva atomicamente antes de emitir o sinal Qt.
                     if not self._image_gate.try_reserve():
                         self._log_ignored_image(already_counted=True)
@@ -576,6 +613,8 @@ class NetworkReceiver(QThread):
                         "stability_ms": round(max(
                             0.0, candidate_received_at - first_stable_at
                         ) * 1000.0, 2),
+                        "last_stable_pair_gap_ms": last_pair_gap_ms,
+                        "stable_frame_count": stable_count_confirmed,
                         "payload_to_dispatch_ms": round(max(
                             0.0, ready_at - candidate_received_at
                         ) * 1000.0, 2),
