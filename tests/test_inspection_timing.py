@@ -21,7 +21,7 @@ class InspectionTimingTests(unittest.TestCase):
                 "tcp_payload_ms": 15.0, "decode_ms": 8.0,
                 "stability_ms": 220.0, "payload_to_dispatch_ms": 11.0,
             },
-            fast_ack=True,
+            fast_ack=True, previous_gate_release_at=base - 0.75,
         )
         note_steps(panel, "SIDE", validation_ms=50, geometry_ms=70,
                    inference_ms=620, render_ms=120, processing_ms=850)
@@ -44,6 +44,9 @@ class InspectionTimingTests(unittest.TestCase):
         presentation_mark(panel, "decision", base + 12.5)
         report = snapshot(panel, "event-42")
         self.assertEqual(report["cycle_side_to_result_ms"], 3500.0)
+        self.assertEqual(
+            report["previous_gate_release_to_side_ms"], 750.0
+        )
         self.assertEqual(report["lights"]["TOP"]["command"]["to_payload_ms"], 800.0)
         self.assertEqual(report["lights"]["TOP"]["command"]["to_ready_ms"], 820.0)
         self.assertEqual(report["lights"]["MID"]["command"]["to_ready_ms"], 680.0)
