@@ -204,7 +204,11 @@ class VerifiedKNNMemory:
         """Publica um índice somente após construí-lo integralmente."""
         started_at = time.perf_counter()
         with self._lock:
-            reused = self._index is not None and identity == self._record_identity
+            reused = (
+                self._index is not None
+                and identity == self._record_identity
+                and self._all_scopes_indexed
+            )
             profile["index_reused"] = reused
             if not reused:
                 profile["index_rebuild_reason"] = (
