@@ -654,7 +654,7 @@ class ControlPanel(QWidget):
         shadow = self.combo_mode.currentText() == "Modo Sombra"
         shadow_started = time.perf_counter()
         if str(getattr(self, "capture_cycle_source", "") or "") == "network":
-            note_extraction(self, "SIDE", self.processor_monitor)
+            note_extraction(self, "SIDE", getattr(self, "processor_monitor", None))
         self._inspection_images_visible = not shadow
         self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)
 
