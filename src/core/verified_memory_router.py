@@ -65,12 +65,14 @@ class VerifiedKNNMemory:
         self._index: dict[tuple, list[dict]] | None = None
         self._record_identity: tuple | None = None
         self.error = ""
+        self._warmup_status = {"state": "not_started", "duration_ms": None}
 
     def invalidate(self) -> None:
         with self._lock:
             self._index = None
             self._record_identity = None
             self.error = ""
+            self._warmup_status = {"state": "invalidated", "duration_ms": None}
 
     @staticmethod
     def _key(info: dict, reference_hash: str, test_hash: str) -> tuple | None:
@@ -144,6 +146,95 @@ class VerifiedKNNMemory:
             return None
         return key, {"label": label, "source_json": str(path)}
 
+    @staticmethod
+    def _snapshot_records(knn, profile: dict) -> tuple[list[dict], tuple]:
+        """Snapshot equivalente ao lookup legado, sob o lock do especialista."""
+        started_at = time.perf_counter()
+        lock = getattr(knn, "_memory_lock", None)
+        if lock is not None:
+            with lock:
+                records = list(getattr(knn, "signatures_ok", ()) or ()) + list(
+                    getattr(knn, "signatures_ng", ()) or ()
+                )
+                identity = (
+                    id(knn), id(getattr(knn, "signatures_ok", None)),
+                    id(getattr(knn, "signatures_ng", None)), len(records),
+                )
+        else:
+            records = list(getattr(knn, "signatures_ok", ()) or ()) + list(
+                getattr(knn, "signatures_ng", ()) or ()
+            )
+            identity = (
+                id(knn), id(getattr(knn, "signatures_ok", None)),
+                id(getattr(knn, "signatures_ng", None)), len(records),
+            )
+        profile["records_snapshot_ms"] = round(
+            (time.perf_counter() - started_at) * 1000.0, 2
+        )
+        profile["record_count"] = len(records)
+        return records, identity
+
+    def _ensure_index(
+        self, records: list[dict], identity: tuple, profile: dict,
+    ) -> None:
+        """Publica um índice somente após construí-lo integralmente."""
+        started_at = time.perf_counter()
+        with self._lock:
+            reused = self._index is not None and identity == self._record_identity
+            profile["index_reused"] = reused
+            if not reused:
+                build_started_at = time.perf_counter()
+                built = defaultdict(list)
+                for record in records:
+                    try:
+                        entry = self._entry(record)
+                        if entry is not None:
+                            built[entry[0]].append(entry[1])
+                    except (OSError, ValueError, TypeError, cv2.error):
+                        # Mesma política histórica: registros não auditáveis
+                        # não tornam um par conhecido.
+                        continue
+                self._index = dict(built)
+                self._record_identity = identity
+                profile["index_build_ms"] = round(
+                    (time.perf_counter() - build_started_at) * 1000.0, 2
+                )
+            else:
+                profile["index_build_ms"] = 0.0
+        profile["index_lookup_ms"] = round(
+            (time.perf_counter() - started_at) * 1000.0, 2
+        )
+
+    def warmup(self, knn) -> dict:
+        """Constrói o índice no worker, sem aprovar ou classificar imagens."""
+        started_at = time.perf_counter()
+        timing: dict = {"schema": "visionx.verified_knn_warmup.v1"}
+        with self._lock:
+            self._warmup_status = {"state": "running", "duration_ms": None}
+        try:
+            if knn is None:
+                raise ValueError("Especialista KNN indisponível")
+            records, identity = self._snapshot_records(knn, timing)
+            self._ensure_index(records, identity, timing)
+            # Se a memória foi alterada entre o snapshot e a publicação,
+            # o próximo lookup detectará a identidade diferente e reconstruirá.
+            with self._lock:
+                timing["state"] = "ready"
+                timing["duration_ms"] = round(
+                    (time.perf_counter() - started_at) * 1000.0, 2
+                )
+                timing["record_count"] = len(records)
+                self._warmup_status = dict(timing)
+        except Exception as exc:
+            with self._lock:
+                timing["state"] = "failed"
+                timing["error"] = type(exc).__name__
+                timing["duration_ms"] = round(
+                    (time.perf_counter() - started_at) * 1000.0, 2
+                )
+                self._warmup_status = dict(timing)
+        return dict(timing)
+
     def lookup(
         self, knn, reference, test, info: dict,
         *, timing: dict | None = None,
@@ -151,6 +242,8 @@ class VerifiedKNNMemory:
         """Consulta exata; publica tempos apenas no perfil da chamada."""
         started_at = time.perf_counter()
         profile = {"schema": "visionx.verified_knn_lookup_timing.v1"}
+        with self._lock:
+            profile["warmup"] = dict(self._warmup_status)
         try:
             return self._lookup_profiled(knn, reference, test, info, profile)
         finally:
@@ -195,51 +288,11 @@ class VerifiedKNNMemory:
                 "status": "NEW", "reason": "Nenhuma memória KNN carregada"
             }
 
-        records_started_at = time.perf_counter()
-        lock = getattr(knn, "_memory_lock", None)
-        if lock is not None:
-            with lock:
-                records = list(getattr(knn, "signatures_ok", ()) or ()) + list(
-                    getattr(knn, "signatures_ng", ()) or ()
-                )
-        else:
-            records = list(getattr(knn, "signatures_ok", ()) or ()) + list(
-                getattr(knn, "signatures_ng", ()) or ()
-            )
-        profile["records_snapshot_ms"] = round(
-            (time.perf_counter() - records_started_at) * 1000.0, 2
-        )
-        profile["record_count"] = len(records)
-        identity = (id(knn), id(getattr(knn, "signatures_ok", None)),
-                    id(getattr(knn, "signatures_ng", None)),
-                    len(records))
-        index_started_at = time.perf_counter()
+        records, identity = self._snapshot_records(knn, profile)
+        self._ensure_index(records, identity, profile)
         with self._lock:
-            reused = self._index is not None and identity == self._record_identity
-            profile["index_reused"] = reused
-            if not reused:
-                build_started_at = time.perf_counter()
-                built = defaultdict(list)
-                for record in records:
-                    try:
-                        entry = self._entry(record)
-                        if entry is not None:
-                            built[entry[0]].append(entry[1])
-                    except (OSError, ValueError, TypeError, cv2.error):
-                        # Um registro ruim não autoriza atalho de memória.
-                        continue
-                self._index = dict(built)
-                self._record_identity = identity
-                profile["index_build_ms"] = round(
-                    (time.perf_counter() - build_started_at) * 1000.0, 2
-                )
-            else:
-                profile["index_build_ms"] = 0.0
-
             matched = list(self._index.get(key, ()))
-        profile["index_lookup_ms"] = round(
-            (time.perf_counter() - index_started_at) * 1000.0, 2
-        )
+            profile["warmup"] = dict(self._warmup_status)
         profile["matched_count"] = len(matched)
         if not matched:
             return durable if durable["status"] == "KNOWN" else {
@@ -372,10 +425,7 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
                 aoi_info, global_box_info, aoi_epicenters
             )
 
-        index = getattr(self, "_memory_first_index", None)
-        if index is None:
-            index = memory if memory is not None else VerifiedKNNMemory()
-            self._memory_first_index = index
+        index = self._get_verified_memory_index()
 
         # Medir a PRIMEIRA rota da memória, antes da CNN.
         # Essa etapa não é coberta pelo perfil interno FaltandoCNNLive.
@@ -463,6 +513,19 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             result["reason"] = "CASO NOVO • motores da categoria. " + str(result.get("reason", ""))
         return with_memory_timing(result)
 
+    def _get_verified_memory_index(self):
+        existing = getattr(self, "_memory_first_index", None)
+        if existing is None:
+            existing = memory if memory is not None else VerifiedKNNMemory()
+            self._memory_first_index = existing
+        return existing
+
+    def prepare_verified_memory_index(self):
+        index = self._get_verified_memory_index()
+        if type(index) is VerifiedKNNMemory:
+            return index.warmup(getattr(self, "experts", {}).get("knn"))
+        return {"state": "unsupported"}
+
     def reload_memory(self, *args, **kwargs):
         outcome = original_reload(self, *args, **kwargs)
         cached = getattr(self, "_memory_first_index", None)
@@ -471,6 +534,8 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
         return outcome
 
     orchestrator_cls.inspect = inspect
+    orchestrator_cls._get_verified_memory_index = _get_verified_memory_index
+    orchestrator_cls.prepare_verified_memory_index = prepare_verified_memory_index
     orchestrator_cls.reload_memory = reload_memory
     orchestrator_cls._memory_first_router_installed = True
 
