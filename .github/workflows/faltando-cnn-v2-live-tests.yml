@@ -5,6 +5,7 @@ on:
     branches: [central]
     paths:
       - "src/core/neural/faltando_live.py"
+      - "src/services/inspection_warmup.py"
       - "src/core/neural/faltando_checkpoint_contract.py"
       - "src/core/neural/faltando_preprocessing.py"
       - "src/scripts/train_faltando_cnn_v2.py"
@@ -19,6 +20,7 @@ on:
     branches: [central]
     paths:
       - "src/core/neural/faltando_live.py"
+      - "src/services/inspection_warmup.py"
       - "src/core/neural/faltando_checkpoint_contract.py"
       - "src/core/neural/faltando_preprocessing.py"
       - "src/scripts/train_faltando_cnn_v2.py"
