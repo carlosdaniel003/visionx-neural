@@ -219,7 +219,12 @@ class VerifiedKNNMemory:
             # Se a memória foi alterada entre o snapshot e a publicação,
             # o próximo lookup detectará a identidade diferente e reconstruirá.
             with self._lock:
-                timing["state"] = "ready"
+                # Um reload que terminou entre a construção e o relato
+                # invalida a preparação; nunca anunciar índice antigo pronto.
+                timing["state"] = (
+                    "ready" if self._index is not None
+                    and self._record_identity == identity else "invalidated"
+                )
                 timing["duration_ms"] = round(
                     (time.perf_counter() - started_at) * 1000.0, 2
                 )
