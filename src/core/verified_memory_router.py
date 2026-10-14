@@ -289,8 +289,10 @@ class VerifiedKNNMemory:
             }
 
         records, identity = self._snapshot_records(knn, profile)
-        self._ensure_index(records, identity, profile)
         with self._lock:
+            # Não permitir invalidate() entre a checagem do índice e a
+            # consulta do par exato. O RLock suporta _ensure_index().
+            self._ensure_index(records, identity, profile)
             matched = list(self._index.get(key, ()))
             profile["warmup"] = dict(self._warmup_status)
         profile["matched_count"] = len(matched)
