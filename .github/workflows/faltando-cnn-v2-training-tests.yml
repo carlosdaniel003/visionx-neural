@@ -6,6 +6,18 @@ on:
     paths:
       - "src/core/neural/faltando_cnn_v2.py"
       - "src/scripts/train_faltando_cnn_v2.py"
+      - "src/core/neural/faltando_preprocessing.py"
+      - "src/core/neural/faltando_checkpoint_contract.py"
+      - "src/scripts/train_faltando_cnn_v2_online.py"
+      - "tests/test_faltando_cnn_v2_training.py"
+      - ".github/workflows/faltando-cnn-v2-training-tests.yml"
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/scripts/train_faltando_cnn_v2.py"
+      - "src/scripts/train_faltando_cnn_v2_online.py"
+      - "src/core/neural/faltando_checkpoint_contract.py"
+      - "src/core/neural/faltando_preprocessing.py"
       - "tests/test_faltando_cnn_v2_training.py"
       - ".github/workflows/faltando-cnn-v2-training-tests.yml"
   workflow_dispatch:
@@ -25,7 +37,7 @@ jobs:
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
           python -m pip install numpy opencv-python-headless
       - name: Compile v2
-        run: python -m py_compile src/core/neural/faltando_cnn_v2.py src/scripts/train_faltando_cnn_v2.py tests/test_faltando_cnn_v2_training.py
+        run: python -m py_compile src/core/neural/faltando_checkpoint_contract.py src/core/neural/faltando_preprocessing.py src/core/neural/faltando_cnn_v2.py src/scripts/train_faltando_cnn_v2_online.py src/scripts/train_faltando_cnn_v2.py tests/test_faltando_cnn_v2_training.py
       - name: Test multiscale training and integrity
         run: python -m unittest tests.test_faltando_cnn_v2_training -v
       - name: Verify v1 regression tests
