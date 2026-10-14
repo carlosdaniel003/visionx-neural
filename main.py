@@ -235,6 +235,13 @@ def main():
     install_xp_decision_shortcuts(panel)
     panel.show()
 
+    # Prepara checkpoint CNN e índice de pares humanos em workers sem
+    # bloquear a UI. A inspeção mantém a rota segura se a SIDE chegar antes.
+    from src.services.inspection_warmup import start_inspection_warmup
+    panel._inspection_warmup_threads = start_inspection_warmup(
+        panel.orchestrator
+    )
+
     # Memória KNN histórica em background, independente do modo atual.
     # Não faz OCR nem serialização no thread de captura da interface.
     def on_archive_memory_committed(_result):
