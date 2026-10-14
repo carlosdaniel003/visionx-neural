@@ -326,7 +326,9 @@ class VerifiedKNNMemory:
                 timing["duration_ms"] = round(
                     (time.perf_counter() - started_at) * 1000.0, 2
                 )
-                timing["record_count"] = len(records)
+                timing["record_count"] = timing.get(
+                    "record_count", len(records)
+                )
                 self._warmup_status = dict(timing)
         except Exception as exc:
             with self._lock:
