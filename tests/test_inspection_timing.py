@@ -121,6 +121,43 @@ class InspectionTimingTests(unittest.TestCase):
         begin_cycle(panel, "new", "Modo Teste")
         self.assertEqual(snapshot(panel, "new")["lights"]["SIDE"]["network"], {})
 
+    def test_live_archive_worker_timing_runs_without_processing_images(self):
+        from threading import Event
+        from unittest.mock import patch
+        from src.services.knn_archive_auto_memory import KNNArchiveAutoMemory
+
+        started = Event()
+        release = Event()
+        watcher = KNNArchiveAutoMemory(poll_interval=0.1)
+
+        def dummy_scan():
+            watcher._set_worker_phase("extracting_png")
+            started.set()
+            release.wait(timeout=2.0)
+            return {"imported": 0}
+
+        try:
+            with patch.object(watcher, "scan_once", side_effect=dummy_scan):
+                watcher.start()
+                self.assertTrue(started.wait(timeout=2.0))
+                before = watcher.activity()
+                self.assertTrue(before["scan_active"])
+                self.assertEqual(before["phase"], "extracting_png")
+                self.assertGreaterEqual(before["busy_total_ms"], 0.0)
+                release.set()
+                deadline = time.monotonic() + 2.0
+                while time.monotonic() < deadline:
+                    after = watcher.activity()
+                    if not after["scan_active"] and after["scan_count"] >= 1:
+                        break
+                    time.sleep(0.01)
+                self.assertEqual(after["phase"], "idle")
+                self.assertGreaterEqual(after["scan_count"], 1)
+                self.assertGreaterEqual(after["busy_total_ms"], 0.0)
+        finally:
+            release.set()
+            watcher.stop(timeout=2.0)
+
     def test_archive_worker_overlap_is_per_light_and_non_authoritative(self):
         from unittest.mock import patch
         states = [
