@@ -1,5 +1,7 @@
 """Memória KNN permanece após exclusão de PNGs e rejeita conflitos."""
 import json
+import os
+from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from pathlib import Path
@@ -184,6 +186,61 @@ class DurableMemoryTests(unittest.TestCase):
         self.assertEqual(
             {r["label"] for r in persisted.records()}, {"OK", "NG"}
         )
+
+    def test_windows_transient_replace_permission_is_retried_atomically(self):
+        from src.core import archive_persistent_memory as memory
+        # Reproduz o WinError 5 observado na máquina Windows:
+        # o primeiro replace falha, o segundo tem sucesso.
+        actual_replace = os.replace
+        calls = []
+
+        def flaky_replace(src, dst):
+            calls.append((src, dst))
+            if len(calls) == 1:
+                exc = PermissionError(13, "Acesso negado")
+                exc.winerror = 5
+                raise exc
+            return actual_replace(src, dst)
+
+        with patch.object(memory.os, "replace", side_effect=flaky_replace), \
+             patch.object(memory.os, "name", "nt"), \
+             patch.object(memory.time, "sleep", return_value=None) as pause:
+            result = self.store.add([entry("NG")])
+        self.assertEqual(result["new"], 1)
+        self.assertEqual(len(calls), 2)
+        pause.assert_called_once_with(0.05)
+        self.assertEqual(PersistentArchiveKNN(self.root).records()[0]["label"], "NG")
+
+    def test_windows_permanent_replace_denial_preserves_previous_snapshot(self):
+        from src.core import archive_persistent_memory as memory
+        self.store.add([entry("OK")])
+        original = self.store.path.read_bytes()
+        denied = PermissionError(13, "Acesso negado")
+        denied.winerror = 5
+
+        with patch.object(memory.os, "replace", side_effect=denied) as fake, \
+             patch.object(memory.os, "name", "nt"), \
+             patch.object(memory.time, "sleep", return_value=None):
+            with self.assertRaises(PermissionError):
+                self.store.add([entry("NG")])
+        self.assertEqual(fake.call_count, 5)
+        self.assertEqual(self.store.path.read_bytes(), original)
+        self.assertFalse(list(self.store.path.parent.glob("._knn_*.tmp")))
+        self.assertEqual(len(PersistentArchiveKNN(self.root).records()), 1)
+
+    def test_replace_does_not_retry_unrelated_permission_error(self):
+        from src.core import archive_persistent_memory as memory
+        denied = PermissionError(13, "Read-only ACL")
+        denied.winerror = 1314
+
+        with patch.object(memory.os, "replace", side_effect=denied) as fake, \
+             patch.object(memory.os, "name", "nt"), \
+             patch.object(memory.time, "sleep", return_value=None) as pause:
+            with self.assertRaises(PermissionError):
+                self.store.add([entry("OK")])
+        self.assertEqual(fake.call_count, 1)
+        pause.assert_not_called()
+        self.assertFalse(self.store.path.exists())
 
     def test_match_only_exact_and_same_light(self):
         self.store.add([entry("OK")])
