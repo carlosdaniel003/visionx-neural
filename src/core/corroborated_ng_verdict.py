@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.core.knn_visual_corroboration import trusted_three_light_ng_trend
+
 LIGHTS = frozenset({"SIDE", "TOP", "MID"})
 FUSION_RULE = "knn_visual_cnn_physical_corroboration_v1"
 
@@ -30,7 +32,19 @@ def corroborated_ng_verdict(analysis: Any) -> bool:
     if (
         detail.get("multilight_category") != "FALTANDO"
         or detail.get("recognition_route") != "NEW_CNN"
-        or detail.get("cnn_v2_consensus") != "OK"
+    ):
+        return False
+    # Segunda rota: CNN REVIEW em uma luz + KNN NG consistente nas três.
+    # Este veredito visual continua humano-pendente e independe do flag
+    # de revisão do XP, mas precisa de diagnósticos brutos verificáveis.
+    partial_rule = "knn_visual_three_light_ng_with_cnn_review_v1"
+    if (
+        detail.get("fusion_rule") == partial_rule
+        or trace.get("fusion_rule") == partial_rule
+    ):
+        return trusted_three_light_ng_trend(detail)
+    if (
+        detail.get("cnn_v2_consensus") != "OK"
         or (
             detail.get("fusion_rule") != FUSION_RULE
             and trace.get("fusion_rule") != FUSION_RULE
