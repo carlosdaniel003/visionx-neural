@@ -38,7 +38,7 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
     physical = physical if isinstance(physical, dict) else {}
     contradictory = bool(
         m["verdict"] in {"DEFEITO REAL", "REVISÃO OBRIGATÓRIA"}
-        and (neighbor_report.get("status") == "NG_CORROBORATED"
+        and (neighbor_report.get("status") in {"NG_CORROBORATED", "NG_TREND_THREE_LIGHTS"}
              or physical.get("status") == "SUSPECT_ABSENCE")
     )
     if m["cnn_per_light"]:
@@ -84,13 +84,21 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
             nearest = _finite_score(candidates.get("best_similarity"))
             if nearest is not None:
                 observed.append((light, nearest))
-            if info.get("status") == "NG_SIMILAR":
+            if info.get("status") in {"NG_SIMILAR", "NG_LEANING"}:
                 strong.append(light)
         # Uma linha única mantém legibilidade no painel de quatro cartões;
         # o detalhamento completo SIDE/TOP/MID fica no debug do resultado.
         if observed:
             strongest = max(score for _, score in observed)
-            status = "NG POR SEMELHANÇA" if len(strong) >= 2 else "VIZINHOS SEM CONSENSO"
+            corroborated = neighbor_report.get("status") in {
+                "NG_CORROBORATED", "NG_TREND_THREE_LIGHTS"
+            }
+            status = (
+                "NG POR CONVERGÊNCIA 3 LUZES"
+                if neighbor_report.get("status") == "NG_TREND_THREE_LIGHTS"
+                else "NG POR SEMELHANÇA" if corroborated
+                else "VIZINHOS SEM CONSENSO"
+            )
             display = (
                 f"{len(strong)}/3 luzes NG fortes • "
                 f"melhor similaridade {strongest * 100:.2f}% (não probabilística)"
@@ -102,7 +110,7 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
                 value_format=display,
             )
             item["knn_approximate"] = True
-            item["knn_visual_label"] = "NG" if len(strong) >= 2 else ""
+            item["knn_visual_label"] = "NG" if corroborated else ""
             item["known_memory_label"] = ""
             item["ng_score_uncalibrated"] = None
             item["similarity_score"] = strongest
