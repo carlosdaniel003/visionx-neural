@@ -60,8 +60,10 @@ def answer(status):
 
 
 class IndependentPhysicalVetoTests(unittest.TestCase):
-    def test_existing_cnn_auto_ok_without_physical_evidence_is_reachable(self):
-        self.assertTrue(production_decision_policy(cnn_ok())["auto_allowed"])
+    def test_cnn_auto_ok_without_physical_evidence_fails_closed(self):
+        policy = production_decision_policy(cnn_ok())
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["reason"], "cnn_faltando_physical_evidence_required")
 
     def test_one_suspicious_light_blocks_all_auto_ok_but_does_not_create_ng(self):
         outputs = iter((
