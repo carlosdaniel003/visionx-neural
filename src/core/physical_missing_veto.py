@@ -195,7 +195,7 @@ def apply_physical_missing_veto(
     detail = fused.get("detail")
     if not isinstance(detail, dict):
         return fused
-    if not (
+    auto_ok = bool(
         fused.get("multilight_final") is True
         and fused.get("eligible_for_final_decision") is True
         and fused.get("verdict") == "FALHA FALSA"
@@ -204,7 +204,18 @@ def apply_physical_missing_veto(
         and detail.get("cnn_v2_supervised_auto_eligible") is True
         and detail.get("cnn_v2_consensus") == "OK"
         and detail.get("multilight_category") == "FALTANDO"
-    ):
+    )
+    # Revisão CNN mista ainda deve receber diagnóstico físico independente:
+    # a sonda não classificará NG sozinha, mas estará disponível para
+    # auditar divergência TOP versus SIDE/MID.
+    from src.core.knn_visual_corroboration import verified_partial_cnn_review
+    mixed_review = bool(
+        fused.get("multilight_final") is True
+        and fused.get("verdict") == "REVISÃO OBRIGATÓRIA"
+        and detail.get("multilight_category") == "FALTANDO"
+        and verified_partial_cnn_review(detail) is not None
+    )
+    if not (auto_ok or mixed_review):
         return fused
 
     by_light = {}
@@ -252,6 +263,10 @@ def apply_physical_missing_veto(
         "geometry_review_lights": geometry_review, "lights": by_light,
     }
     detail["physical_missing_veto"] = audit
+    if mixed_review:
+        # A revisão CNN parcial não altera sua classificação aqui. A fusão
+        # de vizinhos executada a seguir pode usar a evidência física bruta.
+        return fused
     if status != "NO_STRONG_EVIDENCE":
         fused["verdict"] = "REVISÃO OBRIGATÓRIA"
         fused["is_defect"] = False
