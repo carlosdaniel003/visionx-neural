@@ -88,7 +88,18 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         detail.get("multilight_category") == "FALTANDO"
         and physical_veto.get("status") in {"SUSPECT_ABSENCE", "UNAVAILABLE"}
     )
-    if physical_blocked:
+    # Um caminho futuro que esqueça de executar a sonda física também não
+    # pode reutilizar três votos CNN OK como se tivessem contraprova.
+    physical_required = bool(
+        isinstance(analysis, dict)
+        and analysis.get("multilight_final") is True
+        and detail.get("multilight_category") == "FALTANDO"
+        and detail.get("recognition_route") == "NEW_CNN"
+        and detail.get("cnn_v2_consensus") == "OK"
+        and detail.get("cnn_v2_supervised_auto_eligible") is True
+        and physical_veto.get("status") != "NO_STRONG_EVIDENCE"
+    )
+    if physical_blocked or physical_required:
         return {
             "mode": "production",
             "confidence": confidence,
@@ -97,7 +108,10 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "auto_allowed": False,
             "operator_review_required": True,
             "proposed_decision": "",
-            "reason": "cnn_faltando_independent_physical_veto",
+            "reason": (
+                "cnn_faltando_independent_physical_veto" if physical_blocked
+                else "cnn_faltando_physical_evidence_required"
+            ),
             "operator_shortcuts": {"0": "OK", "1": "NG"},
         }
 
