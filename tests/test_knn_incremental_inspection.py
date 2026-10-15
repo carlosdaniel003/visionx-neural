@@ -62,6 +62,27 @@ class IncrementalKNNTests(MemoryFirstFixture):
             self.assertEqual(system.reloads, 0)
             self.assertEqual(len(knn.signatures_ng), 6)
 
+    def test_category_only_scoped_index_sees_incremental_legacy_record(self):
+        """Sem Board/Parts no OCR, novo registro aparece sem rebuild."""
+        with self._scope():
+            knn = self._knn()
+            system = self.create_router(knn=knn)
+            info = dict(self.info, board="", parts="", value="")
+            initial = self.inspect(system, info=info)
+            self.assertEqual(initial["detail"]["recognition_route"], "NEW_CNN")
+            self.assertEqual(
+                initial["detail"]["verified_memory_timing"]["index_scope"],
+                "targeted_legacy_lookup",
+            )
+            record = self._saved_record("NG")
+            system.ingest_saved_memory([record["json_path"]])
+            result = self.inspect(system, info=info)
+            self.assertEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+            self.assertTrue(result["detail"]["verified_memory_timing"]["index_reused"])
+            self.assertEqual(
+                result["detail"]["verified_memory_timing"]["index_build_ms"], 0.0
+            )
+
     def test_incremental_opposite_label_is_conflict_not_auto_ok(self):
         with self._scope():
             knn = self._knn()
