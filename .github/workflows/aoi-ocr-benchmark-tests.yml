@@ -53,7 +53,7 @@ jobs:
           python-version: "3.11"
       - name: Install optional OCR benchmark dependencies
         shell: pwsh
-        run: python -m pip install numpy opencv-python-headless PyQt6 mss pytesseract
+        run: python -m pip install numpy opencv-python-headless PyQt6 mss pytesseract scikit-image
       - name: Compile
         shell: pwsh
         run: python -m py_compile src/services/aoi_ocr_benchmark.py src/services/aoi_ocr_thread_trial.py tests/test_aoi_ocr_benchmark.py tests/test_aoi_ocr_thread_trial.py src/services/screen_monitor.py src/ui/control_panel.py src/ui/control_panel_ui.py main.py tests/test_aoi_value_only_contract.py tests/test_reduced_ui_startup.py
