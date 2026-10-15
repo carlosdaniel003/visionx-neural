@@ -60,14 +60,18 @@ class DecisionPersistenceQueue:
         """Apoio determinístico para testes/manutenção; não usar no ciclo produtivo."""
         self._queue.join()
 
-    def _reload_memory_once(self) -> None:
+    def _reload_memory_once(self, paths=()) -> None:
         if self.orchestrator is None:
             return
-        reload_memory = getattr(
-            self.orchestrator,
-            "reload_memory",
-            None,
-        )
+        incremental = getattr(self.orchestrator, "ingest_saved_memory", None)
+        if callable(incremental):
+            try:
+                incremental(tuple(paths))
+                return
+            except Exception as exc:
+                # Fallback raro: nunca deixar RAM parcialmente atualizada.
+                print("KNN incremental indisponível; recarga segura: " + str(exc))
+        reload_memory = getattr(self.orchestrator, "reload_memory", None)
         if callable(reload_memory):
             reload_memory()
 
@@ -81,6 +85,7 @@ class DecisionPersistenceQueue:
 
         persisted = False
         all_saved = True
+        saved_paths = task.setdefault("_saved_memory_paths", [])
         for item in samples:
             mode = str(item.get("lighting_mode", "") or "").strip().upper()
             local_analysis = item.get("analysis", {}) or {}
@@ -111,6 +116,8 @@ class DecisionPersistenceQueue:
             )
             persisted = bool(json_path) or persisted
             all_saved = all_saved and bool(json_path)
+            if json_path:
+                saved_paths.append(str(json_path))
         task["_online_all_persisted"] = all_saved
         return persisted
 
@@ -139,6 +146,8 @@ class DecisionPersistenceQueue:
                     work.pop("event_id", None)
                     json_path = self.dataset_manager.save_sample(**work)
                     persisted = bool(json_path)
+                    if json_path:
+                        work.setdefault("_saved_memory_paths", []).append(str(json_path))
 
                 if persisted:
                     # Nunca esperar backpropagation/validação no ciclo XP.
@@ -154,7 +163,7 @@ class DecisionPersistenceQueue:
                                 print("Aprendizado CNN incremental: job " + event_id)
                         except Exception as neural_exc:
                             print("Não foi possível enfileirar treino CNN: " + str(neural_exc))
-                    self._reload_memory_once()
+                    self._reload_memory_once(work.get("_saved_memory_paths", ()))
             except Exception as exc:
                 print(
                     "Falha não fatal na persistência assíncrona da decisão: "
