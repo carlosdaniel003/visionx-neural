@@ -9,6 +9,9 @@ on:
       - "src/ui/control_panel_ui.py"
       - "src/services/screen_monitor.py"
       - "tests/test_aoi_value_only_contract.py"
+      - "tests/test_reduced_ui_startup.py"
+      - "tests/test_missing_component_ui_contract.py"
+      - "tests/test_inverted_face_ui_contract.py"
       - "src/services/aoi_ocr_benchmark.py"
       - "src/services/aoi_ocr_thread_trial.py"
       - "src/services/aoi_ocr_fields.py"
@@ -27,6 +30,9 @@ on:
       - "src/ui/control_panel_ui.py"
       - "src/services/screen_monitor.py"
       - "tests/test_aoi_value_only_contract.py"
+      - "tests/test_reduced_ui_startup.py"
+      - "tests/test_missing_component_ui_contract.py"
+      - "tests/test_inverted_face_ui_contract.py"
       - "src/services/aoi_ocr_benchmark.py"
       - "src/services/aoi_ocr_thread_trial.py"
       - "src/services/aoi_ocr_fields.py"
@@ -47,13 +53,13 @@ jobs:
           python-version: "3.11"
       - name: Install optional OCR benchmark dependencies
         shell: pwsh
-        run: python -m pip install numpy opencv-python-headless PyQt6 mss pytesseract
+        run: python -m pip install numpy opencv-python-headless PyQt6 mss pytesseract scikit-image
       - name: Compile
         shell: pwsh
-        run: python -m py_compile src/services/aoi_ocr_benchmark.py src/services/aoi_ocr_thread_trial.py tests/test_aoi_ocr_benchmark.py tests/test_aoi_ocr_thread_trial.py src/services/screen_monitor.py src/ui/control_panel.py src/ui/control_panel_ui.py main.py tests/test_aoi_value_only_contract.py
+        run: python -m py_compile src/services/aoi_ocr_benchmark.py src/services/aoi_ocr_thread_trial.py tests/test_aoi_ocr_benchmark.py tests/test_aoi_ocr_thread_trial.py src/services/screen_monitor.py src/ui/control_panel.py src/ui/control_panel_ui.py main.py tests/test_aoi_value_only_contract.py tests/test_reduced_ui_startup.py
       - name: Offline safety regression
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONUTF8: "1"
-        run: python -m unittest tests.test_aoi_ocr_benchmark tests.test_aoi_ocr_thread_trial tests.test_aoi_ocr_fields tests.test_aoi_ocr_telemetry tests.test_aoi_value_only_contract -v
+        run: python -m unittest tests.test_aoi_ocr_benchmark tests.test_aoi_ocr_thread_trial tests.test_aoi_ocr_fields tests.test_aoi_ocr_telemetry tests.test_aoi_value_only_contract tests.test_reduced_ui_startup tests.test_missing_component_ui_contract tests.test_inverted_face_ui_contract -v

@@ -6,13 +6,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MissingComponentUIContractTests(unittest.TestCase):
-    def test_missing_debugger_is_installed_before_decision_panel(self):
+    def test_removed_visual_debugger_not_installed_on_startup(self):
         source = (ROOT / "main.py").read_text(encoding="utf-8")
-        self.assertIn("install_missing_component_panel", source)
-        self.assertLess(
-            source.index("install_missing_component_panel(panel)"),
-            source.index("install_decision_panel(panel)"),
-        )
+        self.assertNotIn("install_missing_component_panel", source)
+        self.assertIn("install_decision_panel(panel)", source)
+        self.assertIn("install_roi_visual_alignment(SilkExpert, MissingComponentExpert)", source)
+        self.assertIn("install_anomaly_memory_integration(MoEOrchestrator)", source)
 
     def test_debugger_explains_patch_expectation_and_localized_difference(self):
         source = (
@@ -49,7 +48,7 @@ class MissingComponentUIContractTests(unittest.TestCase):
         source = (
             ROOT / "src" / "ui" / "decision_model.py"
         ).read_text(encoding="utf-8")
-        self.assertIn('"missing": "Presença do componente"', source)
+        self.assertIn('"missing": "Sinal de ausência"', source)
 
 
 if __name__ == "__main__":
