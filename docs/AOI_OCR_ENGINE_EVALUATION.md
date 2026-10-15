@@ -1,3 +1,13 @@
+## 15/10/2026 — Campo Parts: referência E1~9 confundida com EL~~~9
+
+Evidência da interface AOI SIDE/TOP/MID fornecida e confirmada visualmente pelo operador: a referência `E1~9` foi exibida pelo ODIN como `EL~~~9`. A rotina `normalize_parts_ocr()` antiga procurava o **primeiro dígito reconhecido**. Com `EL~~~9`, só encontrava o dígito final `9`, preservava `EL~~~` como prefixo e o valor resultante não atendia à gramática; isso provocava releituras dirigidas adicionais.
+
+Correção em `aoi_ocr_fields.py` **estritamente delimitada**: se e somente se o token tiver formato `E[1IL|]~{2,}[0-9]+`, normalizar para `E1~<sufixo>`. O caso confirmado `EL~~~9` passa a `E1~9`, sem leituras adicionais caso seja a saída do OCR geral. Não se faz `L→1` globalmente, não se altera outro designador, nem se reescreve `EL~9` com separador único (continua ambíguo). Campos `Board` e `Value`, motor Tesseract, CNN/KNN e decisões não foram alterados.
+
+**Limite:** esse reparo não resolve `FICE~S`, encontrado em **3/6** arquivos FALTANDO do benchmark posterior, ainda inválido após 4 chamadas Tesseract. A mediana passou de 1123,96 ms para 1062,40 ms com OMP=1, ganho de **5,48%** apenas no experimento offline; não justifica mudar threads de produção. As seis capturas tinham `expected=null`, portanto suas saídas não foram validadas com verdade humana. Além disso, `RI75` passa na gramática mas pode representar leitura errada de `R175` ou outra referência; sintaxe válida não prova a identidade física.
+
+A correção `EL~~~9` é suportada **somente pela confirmação deste caso específico**. Antes de generalizar para outros tipos, projetar e comparar reconhecimento de campo Parts por ROI, com anotação humana dos campos e inclusão de casos fáceis e difíceis. Se a extração fiel não for possível, preservar a ambiguidade em vez de atribuir componente não verificado. A regra de fusão e o uso de memória não devem confiar cegamente em valores de OCR plausíveis.
+
 # OCR da AOI — avaliação de desempenho sem alterar Produção
 
 ## Evidência e hipótese

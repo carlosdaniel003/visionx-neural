@@ -92,6 +92,27 @@ class AOIOCRFieldNormalizationTests(unittest.TestCase):
     def test_parts_removes_false_cell_border_and_spaces(self):
         self.assertEqual(normalize_parts_ocr("[R3 ~ 5"), "R3~5")
 
+    def test_human_confirmed_e1_range_repairs_repeated_tilde_and_l_one(self):
+        # Evidência visual SIDE/TOP/MID: E1~9; OCR exibiu EL~~~9.
+        for raw in ("EL~~~9", "[EL~~~9", "EI~~~9", "E|~~~9",
+                    "E1~~~9", "EL~~9"):
+            with self.subTest(raw=raw):
+                result = normalize_parts_ocr(raw)
+                self.assertEqual(result, "E1~9")
+                self.assertTrue(looks_like_component_reference(result))
+
+    def test_e1_repair_is_strict_and_does_not_invent_other_components(self):
+        # Não fazer correções globais L->1, I->1 ou ~~ -> ~.
+        unchanged = (
+            "EL~9", "EI~9", "RL~~~9", "FICE~S", "RI75",
+            "EL9", "E1~9", "R3~~~5", "EIL~~~9",
+        )
+        for raw in unchanged:
+            with self.subTest(raw=raw):
+                self.assertEqual(normalize_parts_ocr(raw), raw)
+        self.assertFalse(looks_like_component_reference("EL~9"))
+        self.assertFalse(looks_like_component_reference("FICE~S"))
+
     def test_component_reference_contract(self):
         self.assertTrue(looks_like_component_reference("R3~5"))
         self.assertTrue(looks_like_component_reference("C120"))
