@@ -225,25 +225,24 @@ def evaluate_knn_visual_corroboration(
             result["strong_ng_lights"].append(light)
     if len(result["strong_ng_lights"]) >= 2:
         result["status"] = "NG_CORROBORATED"
-    else:
-        # Uma decisão multilight não precisa que cada ROI atinja a margem
-        # isolada 0.06: as três luzes devem concordar em NG e a média das
-        # vantagens NG/OK precisa superar um segundo limiar independente.
-        trend = [
-            light for light in LIGHTS
-            if result["lights"][light].get("status") in {"NG_SIMILAR", "NG_LEANING"}
-            and not result["lights"][light].get("cross_category_ng", False)
-            and isinstance(result["lights"][light].get("ng_margin_over_ok"), (int, float))
-            and result["lights"][light]["ng_margin_over_ok"] >= TREND_MIN_MARGIN
-        ]
-        result["trend_ng_lights"] = trend
-        if len(trend) == 3:
-            mean_margin = sum(
-                result["lights"][light]["ng_margin_over_ok"] for light in LIGHTS
-            ) / 3.0
-            result["ng_margin_mean"] = round(mean_margin, 6)
-            if mean_margin >= TREND_MIN_MEAN_MARGIN:
-                result["status"] = "NG_TREND_THREE_LIGHTS"
+    # Guardar a tendência tricolor mesmo quando duas luzes já alcançam
+    # NG_CORROBORATED. O ramo CNN REVIEW exige três luzes direcionais,
+    # não apenas duas fortes e uma ausente.
+    trend = [
+        light for light in LIGHTS
+        if result["lights"][light].get("status") in {"NG_SIMILAR", "NG_LEANING"}
+        and not result["lights"][light].get("cross_category_ng", False)
+        and isinstance(result["lights"][light].get("ng_margin_over_ok"), (int, float))
+        and result["lights"][light]["ng_margin_over_ok"] >= TREND_MIN_MARGIN
+    ]
+    result["trend_ng_lights"] = trend
+    if len(trend) == 3:
+        mean_margin = sum(
+            result["lights"][light]["ng_margin_over_ok"] for light in LIGHTS
+        ) / 3.0
+        result["ng_margin_mean"] = round(mean_margin, 6)
+        if mean_margin >= TREND_MIN_MEAN_MARGIN and result["status"] == "NO_CONCLUSION":
+            result["status"] = "NG_TREND_THREE_LIGHTS"
     if result["status"] == "NO_CONCLUSION" and any(
         x.get("status") == "CONFLICT" for x in result["lights"].values()
     ):
@@ -314,7 +313,11 @@ def trusted_three_light_ng_trend(detail: dict) -> bool:
     if not isinstance(detail, dict) or verified_partial_cnn_review(detail) is None:
         return False
     visual = detail.get("knn_visual_corroboration")
-    if not isinstance(visual, dict) or visual.get("status") != "NG_TREND_THREE_LIGHTS":
+    if (
+        not isinstance(visual, dict)
+        or visual.get("status") not in {"NG_TREND_THREE_LIGHTS", "NG_CORROBORATED"}
+        or set(visual.get("trend_ng_lights", [])) != set(LIGHTS)
+    ):
         return False
     lights = visual.get("lights")
     if not isinstance(lights, dict) or set(lights) != set(LIGHTS):
@@ -361,10 +364,7 @@ def apply_knn_visual_corroboration(
         return fused
     report = evaluate_knn_visual_corroboration(samples, category, knn)
     detail["knn_visual_corroboration"] = report
-    mixed_trend = (
-        report["status"] == "NG_TREND_THREE_LIGHTS"
-        and trusted_three_light_ng_trend(detail)
-    )
+    mixed_trend = trusted_three_light_ng_trend(detail)
     if mixed_trend:
         # Classificação visual NG (SEM COMANDO XP): três luzes KNN apontam NG
         # e uma luz CNN em revisão também aponta NG. A revisão do operador
