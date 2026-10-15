@@ -91,6 +91,15 @@ def normalize_parts_ocr(value: str) -> str:
     if not text:
         return text
 
+    # Evidência conferida na tela XP: E1~9 foi transcrito como EL~~~9.
+    # Correção SOMENTE deste formato corrompido (E + 1/I/L/barra +
+    # dois ou mais '~' + sufixo decimal). Não substituir L/I nos nomes
+    # válidos de componentes nem reescrever quaisquer outros designadores.
+    # Um único '~' com L/I permanece ambíguo e exige OCR dirigido.
+    range_artifact = re.fullmatch(r"E[1IL|]~{2,}(\d+)", text)
+    if range_artifact:
+        return "E1~" + range_artifact.group(1)
+
     first_digit = re.search(r"\d", text)
     if first_digit:
         index = first_digit.start()
