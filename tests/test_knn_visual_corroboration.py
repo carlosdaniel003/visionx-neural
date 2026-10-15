@@ -138,6 +138,26 @@ class ApproximateKNNConsensusTests(unittest.TestCase):
             self.assertTrue(outcome["lights"][light]["cross_category_ng"])
             self.assertEqual(outcome["lights"][light]["ng_support"], 3)
 
+    def test_cross_category_similar_ok_blocks_false_ng(self):
+        memory = knn(
+            ng=[
+                record(light, "NG", category="FALTANDO", delta=delta)
+                for light in ("SIDE", "TOP")
+                for delta in (0.0, .015, .03)
+            ],
+            ok=[
+                record(light, "OK", category="EMBORCADO")
+                for light in ("SIDE", "TOP")
+            ],
+        )
+        outcome = evaluate_knn_visual_corroboration(
+            samples(), "DESLOCADO", memory,
+        )
+        self.assertEqual(outcome["status"], "CONFLICT")
+        self.assertEqual(outcome["strong_ng_lights"], [])
+        self.assertEqual(outcome["lights"]["SIDE"]["status"], "CONFLICT")
+        self.assertGreater(outcome["lights"]["SIDE"]["ok"]["count"], 0)
+
     def test_empty_or_corrupt_data_is_not_a_vote(self):
         item = samples()
         item["TOP"]["test_image"] = None
