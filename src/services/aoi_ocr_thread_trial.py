@@ -90,10 +90,16 @@ def run_isolated_arms(
             env.pop("OMP_THREAD_LIMIT", None)
             if mode == "omp1":
                 env["OMP_THREAD_LIMIT"] = "1"
+            # Windows starts redirected Python stdout with the active ANSI
+            # code page (e.g. cp1252). Importing screen_monitor prints Unicode
+            # status symbols; prevent a UnicodeEncodeError *inside* the worker
+            # without changing the parent ODIN process or the OCR algorithm.
+            env["PYTHONIOENCODING"] = "utf-8"
             proc = runner(
                 worker_command(job_path, response, mode),
                 env=env, check=False, capture_output=True,
-                text=True, timeout=timeout,
+                text=True, encoding="utf-8", errors="replace",
+                timeout=timeout,
             )
             if proc.returncode != 0:
                 raise RuntimeError(
