@@ -23,12 +23,12 @@ GOOD = (
 BAD = (
     "Board P22-22200 (PRINCIPAL) Li3\n"
     "Parts R175 Block 1\n"
-    "Value 12 <= 1 <= 60 FALTANDO"
+    "Value 12 <= 1 <= 60 INVERTIDO"
 )
 EXPECTED = {
     "board": "",
     "parts": "",
-    "value": "12 <= 0 <= 60 FALTANDO",
+    "value": "",
     "category": "FALTANDO",
 }
 
@@ -39,7 +39,7 @@ class FakeOCR:
 
     def image_to_string(self, binary, config=""):
         self.binary_shapes.append(binary.shape[:2])
-        # Entradas com escala 2 e margem superior cortada perdem o campo Parts.
+        # Variante rápida erra a categoria; OCR alternativo não é promovido.
         return BAD if binary.shape[0] < 500 else GOOD
 
 
@@ -115,9 +115,7 @@ class OCRBenchmarkTests(unittest.TestCase):
         control = case["measurements"][0]["fields"]
         self.assertEqual(control["board"], "")
         self.assertEqual(control["parts"], "")
-        self.assertEqual(
-            control["value"], "40 <= 25.602 <= 98 Little Solder"
-        )
+        self.assertEqual(control["value"], "")
         self.assertEqual(control["category"], "Unknown")
         for item in report["summary"].values():
             self.assertEqual(item["unsupported_baseline_category_cases"], 1)
@@ -134,7 +132,7 @@ class OCRBenchmarkTests(unittest.TestCase):
         expected = {
             "board": "",
             "parts": "",
-            "value": "40 <= 25.602 <= 98 Little Solder",
+            "value": "",
             "category": "Unknown",
         }
         report = self.run_benchmark([(self.path, expected)], repeats=1)
@@ -147,7 +145,7 @@ class OCRBenchmarkTests(unittest.TestCase):
         )
 
     def test_reference_disagrees_with_original_and_does_not_approve_variant(self):
-        expected = dict(EXPECTED, value="12 <= 1 <= 60 FALTANDO")
+        expected = dict(EXPECTED, category="INVERTIDO")
         report = self.run_benchmark([(self.path, expected)], repeats=1)
         self.assertEqual(
             report["summary"]["baseline_original"]["mismatch_with_human_labels_cases"],
