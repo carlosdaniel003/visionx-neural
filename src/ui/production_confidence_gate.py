@@ -79,6 +79,28 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
 
     detail = (analysis or {}).get("detail", {}) if isinstance(analysis, dict) else {}
     detail = detail if isinstance(detail, dict) else {}
+    # Contraprova física independente: uma inconsistência ou ausência dos
+    # pares visuais proíbe 0/OK até confirmação humana. Esse segundo gate
+    # continua válido mesmo se uma tela intermediária mudar o veredito.
+    physical_veto = detail.get("physical_missing_veto", {})
+    physical_veto = physical_veto if isinstance(physical_veto, dict) else {}
+    physical_blocked = bool(
+        detail.get("multilight_category") == "FALTANDO"
+        and physical_veto.get("status") in {"SUSPECT_ABSENCE", "UNAVAILABLE"}
+    )
+    if physical_blocked:
+        return {
+            "mode": "production",
+            "confidence": confidence,
+            "threshold": None,
+            "verdict": "REVISÃO OBRIGATÓRIA",
+            "auto_allowed": False,
+            "operator_review_required": True,
+            "proposed_decision": "",
+            "reason": "cnn_faltando_independent_physical_veto",
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
+
     # AUTO-OK ou AUTO-NG pela CNN experimental somente se TRÊS luzes
     # verificadas concordarem, com mesmo SHA de modelo e sem revisão.
     # Uma pontuação isolada, até extrema, não autoriza nenhum comando.
