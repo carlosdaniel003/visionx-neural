@@ -48,7 +48,7 @@ class MissingComponentUIContractTests(unittest.TestCase):
         source = (
             ROOT / "src" / "ui" / "decision_model.py"
         ).read_text(encoding="utf-8")
-        self.assertIn('"missing": "Presença do componente"', source)
+        self.assertIn('"missing": "Sinal de ausência"', source)
 
 
 if __name__ == "__main__":
