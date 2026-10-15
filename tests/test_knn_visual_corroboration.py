@@ -13,6 +13,7 @@ from src.core.knn_visual_corroboration import (
     evaluate_knn_visual_corroboration, apply_knn_visual_corroboration,
 )
 from src.ui.neural_influence_model import neural_influence_rows
+from src.ui.neural_telemetry_model import memory_seen_state, memory_panel_text
 from src.ui.production_confidence_gate import production_decision_policy
 
 LIGHTS = ("SIDE", "TOP", "MID")
@@ -235,6 +236,11 @@ class ApproximateKNNConsensusTests(unittest.TestCase):
         self.assertGreaterEqual(len(neighbor), 1)
         self.assertTrue(all(x["fusion_weight"] == 0 for x in neighbor))
         self.assertTrue(all(x["ng_score_uncalibrated"] is None for x in neighbor))
+        memory = memory_seen_state(entry)
+        self.assertEqual(memory["status"], "NUNCA_VI")  # Sem par exato.
+        self.assertTrue(memory["approximate_ng_seen"])
+        self.assertEqual(memory["label"], "VI SEMELHANTE")
+        self.assertIn("VI SEMELHANTE", memory_panel_text(entry)[0])
 
 
 if __name__ == "__main__":
