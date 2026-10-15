@@ -45,11 +45,15 @@ class ValueOnlyUiTests(unittest.TestCase):
         self.assertNotIn('self._create_info_card("Componente"', builder)
         self.assertNotIn("lbl_board_value", builder)
         self.assertNotIn("lbl_parts_value", builder)
-        self.assertEqual(builder.count("self._create_info_card("), 3)
+        self.assertEqual(builder.count("self._create_info_card("), 2)
+        self.assertNotIn("Valor / OCR", builder)
+        self.assertNotIn("lbl_value_value", builder)
+        self.assertNotIn("ANÁLISE DOS ESPECIALISTAS", ui)
 
         controller = (ROOT / "src/ui/control_panel.py").read_text("utf-8")
         self.assertNotIn("lbl_board_value", controller)
         self.assertNotIn("lbl_parts_value", controller)
+        self.assertNotIn("lbl_value_value", controller)
 
 
 class OcrQtResponsivenessTests(unittest.TestCase):
