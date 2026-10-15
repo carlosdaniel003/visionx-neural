@@ -203,7 +203,7 @@ class DurableMemoryTests(unittest.TestCase):
             return actual_replace(src, dst)
 
         with patch.object(memory.os, "replace", side_effect=flaky_replace), \
-             patch.object(memory.os, "name", "nt"), \
+             patch.object(memory, "_is_transient_windows_replace_denial", return_value=True), \
              patch.object(memory.time, "sleep", return_value=None) as pause:
             result = self.store.add([entry("NG")])
         self.assertEqual(result["new"], 1)
@@ -219,7 +219,7 @@ class DurableMemoryTests(unittest.TestCase):
         denied.winerror = 5
 
         with patch.object(memory.os, "replace", side_effect=denied) as fake, \
-             patch.object(memory.os, "name", "nt"), \
+             patch.object(memory, "_is_transient_windows_replace_denial", return_value=True), \
              patch.object(memory.time, "sleep", return_value=None):
             with self.assertRaises(PermissionError):
                 self.store.add([entry("NG")])
@@ -234,7 +234,7 @@ class DurableMemoryTests(unittest.TestCase):
         denied.winerror = 1314
 
         with patch.object(memory.os, "replace", side_effect=denied) as fake, \
-             patch.object(memory.os, "name", "nt"), \
+             patch.object(memory, "_is_transient_windows_replace_denial", return_value=False), \
              patch.object(memory.time, "sleep", return_value=None) as pause:
             with self.assertRaises(PermissionError):
                 self.store.add([entry("OK")])
