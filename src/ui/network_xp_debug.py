@@ -281,6 +281,8 @@ def format_network_debug_report(record: dict | None) -> str:
                 "", "KNN VISUAL (VIZINHOS SIMILARES)", "-" * 72,
                 f"Situação: {visual.get('status', '-')}",
                 f"Luzes NG corroboradas: {visual.get('strong_ng_lights', [])}",
+                f"Luzes com tendência NG: {visual.get('trend_ng_lights', [])}",
+                f"Margem NG-OK média: {visual.get('ng_margin_mean', '-')}",
                 "Similaridade de assinatura NÃO é probabilidade nem par exato.",
             ])
             entries = visual.get("lights")
@@ -295,6 +297,7 @@ def format_network_debug_report(record: dict | None) -> str:
                     f" • NG={item.get('ng_count', '-')}"
                     f" (melhor {item.get('best_ng_similarity', '-')})"
                     f" • NG fortes={item.get('ng_support', '-')}"
+                    f" • margem NG-OK={item.get('ng_margin_over_ok', '-')}"
                     f" • cruzou categoria={item.get('cross_category_ng', False)}"
                 )
         if route.get("route"):
