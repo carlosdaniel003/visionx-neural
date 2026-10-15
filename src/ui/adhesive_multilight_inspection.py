@@ -447,6 +447,19 @@ def _finalize_multilight_decision(panel) -> dict | None:
         category,
     )
 
+    # O roteador exato permanece intacto. A nova camada lê somente as
+    # assinaturas KNN já carregadas em RAM e verifica vizinhos por luz.
+    # Evidência próxima não é rótulo humano exato nem habilita comando XP.
+    from src.core.knn_visual_corroboration import apply_knn_visual_corroboration
+    orchestrator = getattr(panel, "orchestrator", None)
+    experts = getattr(orchestrator, "experts", None)
+    knn = experts.get("knn") if isinstance(experts, dict) else None
+    fused = apply_knn_visual_corroboration(
+        fused,
+        getattr(panel, "adhesive_multilight_learning_samples", None),
+        category, knn,
+    )
+
     panel.current_analysis = fused
     panel.adhesive_multilight_final_analysis = fused
     panel.adhesive_multilight_last_final_analysis = fused
