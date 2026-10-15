@@ -6,12 +6,23 @@ on:
       - central
     paths:
       - "src/utils/text_normalizer.py"
+      - "src/core/shift_gatekeeper.py"
+      - "src/core/silkscreen_gatekeeper.py"
+      - "tests/test_aoi_category_routing.py"
       - "src/core/strict_category_memory.py"
       - "src/services/network_receiver.py"
       - "src/services/image_cycle_gate.py"
       - "src/ui/network_image_cycle_gate.py"
       - "tests/test_aoi_categories.py"
       - "tests/test_image_cycle_gate.py"
+      - ".github/workflows/aoi-categories-and-safe-discard.yml"
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/core/shift_gatekeeper.py"
+      - "src/core/silkscreen_gatekeeper.py"
+      - "src/ui/control_panel.py"
+      - "tests/test_aoi_category_routing.py"
       - ".github/workflows/aoi-categories-and-safe-discard.yml"
   workflow_dispatch:
 
@@ -39,11 +50,15 @@ jobs:
             src/core/strict_category_memory.py \
             src/services/network_receiver.py \
             src/services/image_cycle_gate.py \
-            src/ui/network_image_cycle_gate.py
+            src/ui/network_image_cycle_gate.py \
+            src/core/shift_gatekeeper.py \
+            src/core/silkscreen_gatekeeper.py \
+            tests/test_aoi_category_routing.py
 
       - name: Unit tests
         run: |
           python -m unittest \
             tests.test_aoi_categories \
             tests.test_image_cycle_gate \
+            tests.test_aoi_category_routing \
             -v
