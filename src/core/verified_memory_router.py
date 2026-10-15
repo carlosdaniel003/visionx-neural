@@ -68,6 +68,9 @@ class VerifiedKNNMemory:
         # Contém exclusivamente entradas legadas auditadas por _entry().
         self._visual_index: dict[tuple, list[dict]] | None = None
         self._record_identity: tuple | None = None
+        # Auditorias positivas sobrevivem a reloads; cada uso reconfere os
+        # metadados dos três arquivos (JSON e dois PNGs) antes de reutilizar.
+        self._audited_legacy: dict[tuple, tuple[tuple, tuple]] = {}
         self._all_scopes_indexed = False
         self._indexed_scopes: set[tuple] = set()
         self.error = ""
@@ -166,7 +169,63 @@ class VerifiedKNNMemory:
             or _clean(record.get("part")) != key[3]
         ):
             return None
-        return key, {"label": label, "source_json": str(path)}
+        return key, {
+            "label": label, "source_json": str(path),
+            "_verified_files": (str(path), str(ref_path), str(test_path)),
+        }
+
+    @staticmethod
+    def _legacy_record_token(record: dict) -> tuple:
+        """Identidade estável dos campos que autorizam _entry()."""
+        if not isinstance(record, dict):
+            return ("invalid", type(record).__name__, repr(record))
+        fields = ("json_path", "mode", "category", "lighting_mode",
+                  "part", "label", "folder_label", "path")
+        return tuple(str(record.get(field, "")) for field in fields)
+
+    @staticmethod
+    def _source_stamp(filename: str) -> tuple | None:
+        """Metadados físicos; symlinks, ausências e erros invalidam o cache."""
+        try:
+            path = Path(filename)
+            if path.is_symlink():
+                return None
+            stat = path.stat()
+            if not path.is_file():
+                return None
+            return (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns,
+                    stat.st_ino, stat.st_mode)
+        except (OSError, ValueError):
+            return None
+
+    def _cached_legacy_entry(self, record: dict, profile: dict):
+        """Reutiliza auditoria anterior apenas se JSON e PNGs não mudaram.
+
+        Um novo caminho, mudança de rótulo ou de bytes/metadados dispara
+        novamente _entry(), que valida proveniência humana e hashes RGB.
+        A indexação permanece estritamente exata e fail-closed.
+        """
+        token = self._legacy_record_token(record)
+        previous = self._audited_legacy.get(token)
+        if previous is not None:
+            entry, stamps = previous
+            filenames = entry[1]["_verified_files"]
+            current = tuple(self._source_stamp(name) for name in filenames)
+            if all(stamp is not None for stamp in current) and current == stamps:
+                profile["legacy_cache_hits"] = profile.get("legacy_cache_hits", 0) + 1
+                return entry
+            self._audited_legacy.pop(token, None)
+
+        profile["legacy_cache_misses"] = profile.get("legacy_cache_misses", 0) + 1
+        entry = self._entry(record)
+        if entry is not None:
+            stamps = tuple(
+                self._source_stamp(name)
+                for name in entry[1]["_verified_files"]
+            )
+            if all(stamp is not None for stamp in stamps):
+                self._audited_legacy[token] = (entry, stamps)
+        return entry
 
     @staticmethod
     def _snapshot_records(knn, profile: dict) -> tuple[list[dict], tuple]:
@@ -192,10 +251,14 @@ class VerifiedKNNMemory:
                 if not (isinstance(record, dict)
                         and record.get("archive_persistent"))
             ]
-            # Alterações de quantidade, substituições, inclusão ou exclusão
-            # de objetos legados forçam revalidação integral. Mutação interna
-            # é tratada por reload_memory -> invalidate() explícito.
-            identity = (id(knn), tuple(id(record) for record in legacy))
+            # Listas recriadas pelo reload/refresh não invalidam o legado
+            # se os campos que definem os registros continuam equivalentes.
+            # reload_memory invalida explicitamente o índice: nesse caso as
+            # auditorias positivas só sobrevivem com stamps físicos iguais.
+            identity = (
+                id(knn),
+                tuple(VerifiedKNNMemory._legacy_record_token(r) for r in legacy),
+            )
             return all_records, legacy, identity
 
         if lock is not None:
@@ -235,7 +298,7 @@ class VerifiedKNNMemory:
                 visual_built = defaultdict(list)
                 for record in records:
                     try:
-                        entry = self._entry(record)
+                        entry = self._cached_legacy_entry(record, profile)
                         if entry is not None:
                             built[entry[0]].append(entry[1])
                             visual_built[self._visual_key(entry[0])].append(entry[1])
@@ -245,6 +308,7 @@ class VerifiedKNNMemory:
                         continue
                 self._index = dict(built)
                 self._visual_index = dict(visual_built)
+                self._prune_audited_legacy(records)
                 self._record_identity = identity
                 self._all_scopes_indexed = True
                 self._indexed_scopes = set()
@@ -307,7 +371,7 @@ class VerifiedKNNMemory:
                         continue
                     eligible += 1
                     try:
-                        entry = self._entry(record)
+                        entry = self._cached_legacy_entry(record, profile)
                         if entry is not None:
                             self._index.setdefault(entry[0], []).append(entry[1])
                             self._visual_index.setdefault(
@@ -317,6 +381,7 @@ class VerifiedKNNMemory:
                         # Nenhuma falha permite promoção de par não auditado.
                         continue
                 self._indexed_scopes.add(scope)
+                self._prune_audited_legacy(records)
                 profile["index_scope"] = "targeted_legacy_lookup"
                 profile["scope_candidate_record_count"] = eligible
                 profile["index_build_ms"] = round(
@@ -325,6 +390,15 @@ class VerifiedKNNMemory:
         profile["index_lookup_ms"] = round(
             (time.perf_counter() - started_at) * 1000.0, 2
         )
+
+    def _prune_audited_legacy(self, records: list[dict]) -> None:
+        """Descarta cache de registros removidos sem custo a cada lookup."""
+        if len(self._audited_legacy) <= len(records):
+            return
+        live = {self._legacy_record_token(record) for record in records}
+        for token in tuple(self._audited_legacy):
+            if token not in live:
+                self._audited_legacy.pop(token, None)
 
     def warmup(self, knn) -> dict:
         """Constrói o índice no worker, sem aprovar ou classificar imagens."""
