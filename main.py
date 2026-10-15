@@ -72,7 +72,6 @@ from src.ui.decision_verdict_feedback import (
 )
 from src.ui.decision_panel import install_decision_panel
 from src.ui.iconography import install_iconography_hooks, install_svg_iconography
-from src.ui.inverted_face_panel import install_inverted_face_panel
 from src.ui.local_capture_safety import install_local_capture_safety
 from src.ui.lighting_shortcuts import install_lighting_shortcuts
 from src.ui.lighting_status_feedback import (
@@ -80,7 +79,6 @@ from src.ui.lighting_status_feedback import (
     install_lighting_status_feedback_hooks,
 )
 from src.ui.memory_status_ui import install_memory_status_ui
-from src.ui.missing_component_panel import install_missing_component_panel
 from src.ui.mode_selector_gate import install_mode_selector_gate
 from src.ui.network_aoi_intake_filter import install_network_aoi_intake_filter
 from src.ui.network_image_cycle_gate import install_network_image_cycle_gate
@@ -231,8 +229,9 @@ def main():
     install_decision_key_feedback(panel)
     install_ai_verdict_feedback(panel)
     install_lighting_status_feedback(panel)
-    install_missing_component_panel(panel)
-    install_inverted_face_panel(panel)
+    # Os painéis gráficos dos especialistas foram removidos do layout no PR #33.
+    # Não instalar os antigos debuggers: ambos dependem de scroll_layout,
+    # que não existe mais. Os motores físicos/CNN/KNN permanecem ativos.
     install_decision_panel(panel)
     install_test_mode_dataset_controls(panel)
     install_operational_controls(panel)
