@@ -425,7 +425,9 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
         knn.signatures_ng.append(first)
         index = system._get_verified_memory_index()
         system.prepare_verified_memory_index()
-        additional = self.make_record("OK", info=dict(self.info, parts="R999"))
+        another_test = self.test.copy()
+        another_test[5, 5] ^= 1
+        additional = self.make_record("OK", tst=another_test)
         knn.signatures_ok.append(additional)
         with patch.object(index, "_entry", wraps=index._entry) as audit:
             result = self.inspect(system)
