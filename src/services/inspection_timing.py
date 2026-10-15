@@ -60,6 +60,16 @@ def begin_cycle(
                    for light in LIGHTS},
         "presentation": {},
     }
+    # Resguarda OCR/captura da SIDE/TOP/MID: o observador do acervo continua
+    # ativo, mas inicia novos trabalhos pesados somente após liberar o gate.
+    # Não aguarda a thread KNN; um OCR já em andamento termina normalmente.
+    try:
+        from src.services.knn_archive_auto_memory import (
+            pause_archive_auto_memory_for_inspection,
+        )
+        pause_archive_auto_memory_for_inspection()
+    except Exception:
+        pass
     note_frame(panel, "SIDE", transport)
 
 
