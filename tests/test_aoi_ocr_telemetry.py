@@ -55,6 +55,25 @@ class ScreenMonitorOCRTimingTests(unittest.TestCase):
         self.assertFalse(profile["general_retry"])
         self.assertNotIn("R375", str(profile))
 
+    def test_e1_range_artifact_keeps_general_one_call_and_other_fields(self):
+        # Apenas correção humana localizada: não executar três Tesseracts
+        # extras para EL~~~9, mantendo Board, Value e categoria intactos.
+        raw = (
+            "Board P22-22200 (PRINCIPAL) Li3\n"
+            "Parts EL~~~9 Block 2 Step 3 Process 10\n"
+            "Value 15 <= 0 <= 70 FALTANDO"
+        )
+        result = self.read(_Tesseract([raw]))
+        self.assertEqual(result["parts"], "E1~9")
+        self.assertEqual(result["board"], "P22-22200 (PRINCIPAL) L13")
+        self.assertEqual(result["value"], "15 <= 0 <= 70 FALTANDO")
+        self.assertEqual(self.monitor.last_ocr_profile["call_count"], 1)
+        self.assertEqual(
+            self.monitor.last_ocr_profile["parts_reason"],
+            "valid_general_reference",
+        )
+        self.assertEqual(self.monitor.last_ocr_profile["route"], "general_blue")
+
     def test_red_retry_is_traced_and_earlier_data_cannot_leak(self):
         self.read(_Tesseract([_RAW]))
         fake = _Tesseract(["", _RAW])
