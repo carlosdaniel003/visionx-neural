@@ -140,6 +140,11 @@ class KNNArchiveAutoMemory:
         self._worker_last_scan_ms = None
         self._worker_phase = "idle"
         self._worker_background_mode = False
+        # A inspeção SIDE/TOP/MID tem precedência sobre OCR do acervo.
+        # Event é sinalizado pela UI sem aguardar o worker nem bloquear a AOI.
+        self._inspection_priority = Event()
+        self._deferred_scans = 0
+        self._deferred_candidates = 0
 
     def _set_worker_phase(self, phase: str) -> None:
         with self._lock:
@@ -165,7 +170,32 @@ class KNNArchiveAutoMemory:
                 "last_scan_ms": self._worker_last_scan_ms,
                 "imports_this_session": self._total_added,
                 "background_priority_applied": self._worker_background_mode,
+                "inspection_priority_active": self._inspection_priority.is_set(),
+                "deferred_scans": self._deferred_scans,
+                "deferred_candidates": self._deferred_candidates,
             }
+
+    def pause_for_inspection(self) -> None:
+        """Avisa o worker para NÃO iniciar mais OCR enquanto a peça é analisada.
+
+        Um OCR de PNG já iniciado não pode ser cancelado sem arriscar falha ou
+        perda de estado. A pausa é cooperativa no próximo arquivo; não bloqueia
+        a thread da interface nem altera os dados persistidos.
+        """
+        self._inspection_priority.set()
+
+    def resume_after_inspection(self) -> None:
+        """Retoma o backlog automaticamente quando a peça libera o gate."""
+        self._inspection_priority.clear()
+        self._wake.set()
+
+    def _defer_scan(self) -> dict:
+        with self._lock:
+            self._deferred_scans += 1
+        return {
+            "imported": 0, "pending": 0, "errors": 0,
+            "fatal": False, "deferred_for_inspection": True,
+        }
 
     def _ensure_extractor(self):
         if self._extractor is None:
@@ -232,6 +262,8 @@ class KNNArchiveAutoMemory:
     def scan_once(self, *, now: float | None = None) -> dict:
         """Uma passagem de verificação (também usada pelos testes offline)."""
         instant = time.monotonic() if now is None else float(now)
+        if self._inspection_priority.is_set():
+            return self._defer_scan()
         try:
             # Checksum inválido não é tratado como snapshot vazio.
             current = self.store.records()
@@ -288,7 +320,14 @@ class KNNArchiveAutoMemory:
 
         proposed = []
         accepted = []
-        for path, label, relative, stamp in candidates:
+        for candidate_index, (path, label, relative, stamp) in enumerate(candidates):
+            # Um ciclo de produção pode começar durante uma varredura já em
+            # andamento. Terminar o PNG corrente e adiar os próximos OCRs,
+            # preservando registros propostos para commit normal.
+            if self._inspection_priority.is_set():
+                with self._lock:
+                    self._deferred_candidates += len(candidates) - candidate_index
+                break
             try:
                 self._set_worker_phase("hashing_png")
                 # Fast path de reinicialização: sem OCR dos PNGs já importados.
@@ -384,6 +423,15 @@ class KNNArchiveAutoMemory:
             self._worker_background_mode = background
         try:
             while not self._stop.is_set():
+                if self._inspection_priority.is_set():
+                    # Sem enumerar pastas, abrir snapshot ou lançar Tesseract.
+                    # A thread acorda imediatamente quando o gate é liberado.
+                    with self._lock:
+                        self._deferred_scans += 1
+                        self._worker_phase = "deferred_inspection"
+                    self._wake.wait(self.poll_interval)
+                    self._wake.clear()
+                    continue
                 started = time.monotonic()
                 with self._lock:
                     self._worker_scan_active = True
@@ -427,6 +475,8 @@ class KNNArchiveAutoMemory:
         self._wake.set()
 
     def stop(self, timeout: float = 5.0):
+        # Nunca manter o worker pausado ao fechar o programa.
+        self._inspection_priority.clear()
         self._stop.set()
         self._wake.set()
         if self._thread is not None and self._thread.is_alive():
@@ -437,6 +487,22 @@ def activate_archive_auto_memory(watcher: KNNArchiveAutoMemory | None):
     global _active_monitor
     with _active_lock:
         _active_monitor = watcher
+
+
+def pause_archive_auto_memory_for_inspection() -> None:
+    """Sinaliza a prioridade da inspeção sem esperar OCR ou IO de background."""
+    with _active_lock:
+        worker = _active_monitor
+    if worker is not None:
+        worker.pause_for_inspection()
+
+
+def resume_archive_auto_memory_after_inspection() -> None:
+    """O observador retoma automaticamente no encerramento da peça."""
+    with _active_lock:
+        worker = _active_monitor
+    if worker is not None:
+        worker.resume_after_inspection()
 
 
 def notify_archive_image_saved(path: Path):
@@ -456,4 +522,6 @@ def archive_auto_memory_activity() -> dict | None:
 __all__ = [
     "KNNArchiveAutoMemory", "activate_archive_auto_memory",
     "notify_archive_image_saved", "archive_auto_memory_activity",
+    "pause_archive_auto_memory_for_inspection",
+    "resume_archive_auto_memory_after_inspection",
 ]
