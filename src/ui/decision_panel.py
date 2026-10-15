@@ -7,6 +7,7 @@ from types import MethodType
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel, QSizePolicy
 
+from src.core.corroborated_ng_verdict import corroborated_ng_verdict
 from src.ui.decision_model import (
     decision_summary,
     decision_trace_from_analysis,
@@ -100,10 +101,13 @@ def _render_panel(panel, analysis: dict | None) -> None:
         or (analysis or {}).get("production_review_required", False)
     )
     is_defect = bool((analysis or {}).get("is_defect", False))
+    # Revisão e classificação não são sinônimos: defeito corroborado fica
+    # vermelho NG, mesmo com confirmação humana exigida para transmitir 1.
     verdict_color = (
-        "#f5c518"
-        if review_required
-        else ("#ff6262" if is_defect else "#4ade80")
+        "#ff6262" if corroborated_ng_verdict(analysis)
+        else "#f5c518" if review_required
+        else "#ff6262" if is_defect
+        else "#4ade80"
     )
     panel.lbl_verdict.setStyleSheet(
         f"color: {verdict_color}; font-size: 17px; "
