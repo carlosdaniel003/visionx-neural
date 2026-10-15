@@ -136,7 +136,7 @@ def apply_physical_missing_veto(
     samples: dict | None,
     category: str,
     *,
-    probe: Callable = physical_absence_probe,
+    probe: Callable | None = None,
 ) -> dict | None:
     """Finalização SIDE/TOP/MID: apenas contradiz um AUTO-OK CNN FALTANDO.
 
@@ -164,6 +164,7 @@ def apply_physical_missing_veto(
         return fused
 
     by_light = {}
+    active_probe = probe if probe is not None else physical_absence_probe
     if not isinstance(samples, dict):
         samples = {}
     for light in LIGHTS:
@@ -172,7 +173,7 @@ def apply_physical_missing_veto(
             result = {"status": "UNAVAILABLE", "reason": "MISSING_LIGHT_PAIR", "scales": []}
         else:
             try:
-                result = probe(sample.get("sample_image"), sample.get("test_image"))
+                result = active_probe(sample.get("sample_image"), sample.get("test_image"))
                 if not isinstance(result, dict) or result.get("status") not in {
                     "SUSPECT_ABSENCE", "NO_STRONG_EVIDENCE", "UNAVAILABLE"
                 }:
