@@ -350,8 +350,6 @@ class ControlPanelUI:
         window.lbl_light_value = QLabel("SIDE")
 
         self.info_cards = [
-            self._create_info_card("Placa / Máquina", window.lbl_board_value),
-            self._create_info_card("Componente", window.lbl_parts_value),
             self._create_info_card("Categoria do Erro", window.lbl_category_value, accent=True),
             self._create_info_card("Valor / OCR", window.lbl_value_value),
             self._create_info_card("Iluminação Atual", window.lbl_light_value, accent=True),
