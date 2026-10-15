@@ -7,11 +7,13 @@ e verifica contrato final e trava de produção.
 from __future__ import annotations
 
 from copy import deepcopy
+from threading import RLock
+from types import SimpleNamespace
 from unittest.mock import patch
 import unittest
 
 from src.core.knn_visual_corroboration import (
-    apply_knn_visual_corroboration,
+    apply_knn_visual_corroboration, evaluate_knn_visual_corroboration,
     trusted_three_light_ng_trend, verified_partial_cnn_review,
 )
 from src.core.corroborated_ng_verdict import corroborated_ng_verdict
@@ -83,6 +85,39 @@ def report():
 
 
 class ThreeLightNGTrendTests(unittest.TestCase):
+    def test_aggregate_three_marginal_lights_reaches_ng_trend(self):
+        fixture = report()
+        knn = SimpleNamespace(
+            _memory_lock=RLock(), signatures_ok=[], signatures_ng=[]
+        )
+        with patch(
+            "src.core.knn_visual_corroboration._one_light",
+            side_effect=lambda sample, light, *args: fixture["lights"][light],
+        ):
+            result = evaluate_knn_visual_corroboration({}, "FALTANDO", knn)
+        self.assertEqual(result["status"], "NG_TREND_THREE_LIGHTS")
+        self.assertEqual(result["strong_ng_lights"], [])
+        self.assertEqual(result["trend_ng_lights"], list(LIGHTS))
+        self.assertGreaterEqual(result["ng_margin_mean"], .05)
+
+    def test_two_strong_and_one_trending_keep_three_light_proof(self):
+        fixture = report()
+        fixture["lights"]["SIDE"]["status"] = "NG_SIMILAR"
+        fixture["lights"]["TOP"]["status"] = "NG_SIMILAR"
+        knn = SimpleNamespace(
+            _memory_lock=RLock(), signatures_ok=[], signatures_ng=[]
+        )
+        with patch(
+            "src.core.knn_visual_corroboration._one_light",
+            side_effect=lambda sample, light, *args: fixture["lights"][light],
+        ):
+            result = evaluate_knn_visual_corroboration({}, "FALTANDO", knn)
+        self.assertEqual(result["status"], "NG_CORROBORATED")
+        self.assertEqual(result["trend_ng_lights"], list(LIGHTS))
+        analysis = case()
+        analysis["detail"]["knn_visual_corroboration"] = result
+        self.assertTrue(trusted_three_light_ng_trend(analysis["detail"]))
+
     def test_real_log_numbers_support_three_light_trend(self):
         entry = case()
         entry["detail"]["knn_visual_corroboration"] = report()
