@@ -1,4 +1,4 @@
-"""Integração das medições OCR reais sem mudar Board/Parts/Value."""
+"""Integração OCR somente Value, sem reler Board/Parts."""
 from __future__ import annotations
 
 import unittest
@@ -41,44 +41,54 @@ class ScreenMonitorOCRTimingTests(unittest.TestCase):
                 self.image, self.blue, self.red
             )
 
-    def test_valid_general_ocr_is_one_call_and_fields_unchanged(self):
+    def test_value_only_ignores_board_and_parts_without_extra_tesseract(self):
         fake = _Tesseract([_RAW])
         data = self.read(fake)
-        self.assertEqual(data["board"], "P22-22200 (PRINCIPAL) L13")
-        self.assertEqual(data["parts"], "R375")
+        self.assertEqual(data["board"], "")
+        self.assertEqual(data["parts"], "")
         self.assertEqual(data["value"], "12 <= 0 <= 60 FALTANDO")
         profile = self.monitor.last_ocr_profile
         self.assertEqual(profile["route"], "general_blue")
-        self.assertEqual(profile["parts_reason"], "valid_general_reference")
+        self.assertEqual(profile["parts_reason"], "parts_disabled")
         self.assertEqual(profile["call_count"], 1)
         self.assertEqual(profile["calls"][0]["phase"], "general_blue")
         self.assertFalse(profile["general_retry"])
         self.assertNotIn("R375", str(profile))
 
-    def test_e1_range_artifact_keeps_general_one_call_and_other_fields(self):
-        # Apenas correção humana localizada: não executar três Tesseracts
-        # extras para EL~~~9, mantendo Board, Value e categoria intactos.
+    def test_corrupt_parts_never_triggers_directed_ocr(self):
+        # Antes, FICE~S iniciava image_to_data + duas image_to_string.
+        # Agora só a categoria e os limites do Value são utilizados.
         raw = (
-            "Board P22-22200 (PRINCIPAL) Li3\n"
-            "Parts EL~~~9 Block 2 Step 3 Process 10\n"
+            "Board P22-22200 (PRINCIPAL) Li3\\n"
+            "Parts FICE~S Block 7 Step 1 Process 16\\n"
+            "Value 0 <= 48.866 <= 10 FALTANDO"
+        )
+        fake = _Tesseract([raw])
+        result = self.read(fake)
+        self.assertEqual(result["board"], "")
+        self.assertEqual(result["parts"], "")
+        self.assertEqual(result["value"], "0 <= 48.866 <= 10 FALTANDO")
+        self.assertEqual(len(fake.calls), 1)
+        self.assertEqual(self.monitor.last_ocr_profile["call_count"], 1)
+        self.assertEqual(self.monitor.last_ocr_profile["parts_reason"], "parts_disabled")
+
+    def test_valid_historical_e1_pattern_is_not_parsed(self):
+        raw = (
+            "Board P22-22200 (PRINCIPAL) Li3\\n"
+            "Parts EL~~~9 Block 2 Step 3 Process 10\\n"
             "Value 15 <= 0 <= 70 FALTANDO"
         )
         result = self.read(_Tesseract([raw]))
-        self.assertEqual(result["parts"], "E1~9")
-        self.assertEqual(result["board"], "P22-22200 (PRINCIPAL) L13")
+        self.assertEqual(result["parts"], "")
+        self.assertEqual(result["board"], "")
         self.assertEqual(result["value"], "15 <= 0 <= 70 FALTANDO")
         self.assertEqual(self.monitor.last_ocr_profile["call_count"], 1)
-        self.assertEqual(
-            self.monitor.last_ocr_profile["parts_reason"],
-            "valid_general_reference",
-        )
-        self.assertEqual(self.monitor.last_ocr_profile["route"], "general_blue")
 
     def test_red_retry_is_traced_and_earlier_data_cannot_leak(self):
         self.read(_Tesseract([_RAW]))
         fake = _Tesseract(["", _RAW])
         data = self.read(fake)
-        self.assertEqual(data["parts"], "R375")
+        self.assertEqual(data["parts"], "")
         profile = self.monitor.last_ocr_profile
         self.assertTrue(profile["general_retry"])
         self.assertEqual(profile["route"], "general_red_retry")
