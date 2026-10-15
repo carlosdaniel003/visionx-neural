@@ -16,7 +16,7 @@ from src.services import aoi_ocr_thread_trial as trial
 FIELDS = {
     "board": "",
     "parts": "",
-    "value": "0 <= 5 <= 10 FALTANDO",
+    "value": "",
     "category": "FALTANDO",
 }
 
@@ -140,10 +140,10 @@ class OcrThreadTrialTests(unittest.TestCase):
         runs = [
             _worker_result("default", self.job, 120),
             _worker_result("omp1", self.job, 40, fields={
-                **FIELDS, "value": "0 <= 6 <= 10 FALTANDO"
+                **FIELDS, "category": "INVERTIDO"
             }),
             _worker_result("omp1", self.job, 40, fields={
-                **FIELDS, "value": "0 <= 6 <= 10 FALTANDO"
+                **FIELDS, "category": "INVERTIDO"
             }),
             _worker_result("default", self.job, 120),
         ]
@@ -155,7 +155,7 @@ class OcrThreadTrialTests(unittest.TestCase):
 
     def test_unstable_baseline_and_missing_human_truth_stay_unverified(self):
         job = trial.make_job([(self.source, None)], repeats=1)
-        different = dict(FIELDS, value="0 <= 7 <= 10 FALTANDO")
+        different = dict(FIELDS, category="DESLOCADO")
         runs = [
             _worker_result("default", job, 130),
             _worker_result("omp1", job, 60),
