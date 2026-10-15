@@ -134,7 +134,11 @@ class ProductionGateIntegrationContractTests(unittest.TestCase):
     def test_real_defect_preserves_its_verdict_during_manual_wait(self):
         source = self.gate_source()
         self.assertIn(
-            '== "REVISÃO OBRIGATÓRIA"',
+            'policy.get("operator_review_required", False)',
+            source,
+        )
+        self.assertIn(
+            'and resolution == "pending"',
             source,
         )
         self.assertIn('analysis["production_review_required"]', source)
