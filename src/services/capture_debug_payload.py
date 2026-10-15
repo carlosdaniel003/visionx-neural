@@ -227,7 +227,49 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         raw_memory_review and not hard_missing
     )
 
+    # Reportar separadamente os dois tipos de testemunha. Contagens
+    # arquivadas não provam que houve correspondência visual e não alteram
+    # o veredito; só as distâncias efetivamente calculadas são relatadas.
+    visual = detail.get("knn_visual_corroboration")
+    visual = visual if isinstance(visual, dict) else {}
+    visual_lights = visual.get("lights")
+    visual_lights = visual_lights if isinstance(visual_lights, dict) else {}
+    visual_summary = {
+        "status": str(visual.get("status", "") or ""),
+        "strong_ng_lights": json_safe(visual.get("strong_ng_lights", [])),
+        "decision_authorized": visual.get("auto_decision_authorized") is True,
+        "lights": {},
+    }
+    for light in ("SIDE", "TOP", "MID"):
+        entry = visual_lights.get(light)
+        entry = entry if isinstance(entry, dict) else {}
+        ok = entry.get("ok")
+        ng = entry.get("ng")
+        ok = ok if isinstance(ok, dict) else {}
+        ng = ng if isinstance(ng, dict) else {}
+        visual_summary["lights"][light] = {
+            "status": str(entry.get("status", "") or ""),
+            "cross_category_ng": entry.get("cross_category_ng") is True,
+            "ng_support": int(entry.get("ng_support", 0) or 0),
+            "ok_count": int(ok.get("count", 0) or 0),
+            "ng_count": int(ng.get("count", 0) or 0),
+            "best_ok_similarity": json_safe(ok.get("best_similarity")),
+            "best_ng_similarity": json_safe(ng.get("best_similarity")),
+        }
+    physical = detail.get("physical_missing_veto")
+    physical = physical if isinstance(physical, dict) else {}
+    physical_summary = {
+        "status": str(physical.get("status", "") or ""),
+        "suspect_lights": json_safe(physical.get("suspect_lights", [])),
+        "unavailable_lights": json_safe(physical.get("unavailable_lights", [])),
+        "geometry_review_lights": json_safe(physical.get("geometry_review_lights", [])),
+    }
+    from src.core.corroborated_ng_verdict import corroborated_ng_verdict
+
     return {
+        "corroborated_ng_classification": corroborated_ng_verdict(analysis),
+        "knn_visual": visual_summary,
+        "physical_missing_veto": physical_summary,
         "category": str((aoi_info or {}).get("category", "") or ""),
         "is_defect": bool(analysis.get("is_defect", False)),
         "verdict": str(analysis.get("verdict", "") or ""),

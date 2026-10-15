@@ -539,10 +539,13 @@ def _finalize_multilight_decision(panel) -> dict | None:
     try:
         if mode == "Modo Produção":
             if fused.get("production_review_required", False):
-                panel.update_brain_status(
-                    "REVISÃO OBRIGATÓRIA • fusão multilight concluída.",
-                    True,
+                from src.core.corroborated_ng_verdict import corroborated_ng_verdict
+                status = (
+                    "NG • DEFEITO REAL • aguardando confirmação humana."
+                    if corroborated_ng_verdict(fused)
+                    else "REVISÃO OBRIGATÓRIA • fusão multilight concluída."
                 )
+                panel.update_brain_status(status, True)
             else:
                 panel.update_brain_status(
                     "Análise multilight concluída • emissão autônoma.",

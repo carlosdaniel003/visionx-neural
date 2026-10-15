@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from src.core.corroborated_ng_verdict import corroborated_ng_verdict
 from src.ui.decision_key_feedback import FEEDBACK_FADE_OUT_MS
 from src.ui.inspection_memory_feedback import memory_feedback_state
 from src.ui.theme import ACCENT, DANGER, SUCCESS, SURFACE
@@ -79,8 +80,11 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
         or detail.get("operator_review_required", False)
     )
 
-    # Revisão efetiva é um estado operacional próprio. Ela precisa chamar
-    # atenção do operador e nunca deve ser substituída pelo is_defect bruto.
+    # NG corroborado é uma CLASSIFICAÇÃO final; a pendência humana apenas
+    # controla o comando XP. Não apagar DEFEITO REAL por causa desse flag.
+    if corroborated_ng_verdict(analysis):
+        return "DEFEITO REAL", "ng"
+    # Revisões sem prova suficiente continuam distintas de um NG.
     if review_required:
         return "REVISÃO OBRIGATÓRIA", "ng"
 
