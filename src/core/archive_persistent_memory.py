@@ -82,6 +82,29 @@ def _writer_lock(lock_path: Path):
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def _atomic_replace_windows_retry(temp_name: str, target: Path) -> None:
+    """Publica o snapshot sem perder atomicidade em compartilhamento Win32.
+
+    No Windows, leitores externos/antivírus podem temporariamente abrir
+    memory.json sem FILE_SHARE_DELETE. Isso pode gerar WinError 5/32 durante
+    os.replace(), mesmo com o lock exclusivo entre *escritores* KNN.
+    Nunca remove/trunca o destino para contornar essa falha. Se o bloqueio
+    persistir, propaga a exceção e o chamador conserva o snapshot anterior.
+    """
+    for attempt in range(5):
+        try:
+            os.replace(temp_name, target)
+            return
+        except PermissionError as exc:
+            if (
+                os.name != "nt"
+                or getattr(exc, "winerror", None) not in (5, 32)
+                or attempt == 4
+            ):
+                raise
+            time.sleep(0.05 * (2 ** attempt))
+
+
 def _canonical(obj) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False, allow_nan=False)
@@ -240,7 +263,7 @@ class PersistentArchiveKNN:
                         os.fsync(handle.fileno())
                     if self.path.exists():
                         shutil.copy2(self.path, self.path.with_suffix(".json.bak"))
-                    os.replace(temp_name, self.path)
+                    _atomic_replace_windows_retry(temp_name, self.path)
                 finally:
                     if temp_name and os.path.exists(temp_name):
                         os.unlink(temp_name)
@@ -327,7 +350,7 @@ class PersistentArchiveKNN:
                     os.fsync(handle.fileno())
                 if self.path.exists():
                     shutil.copy2(self.path, self.path.with_suffix(".json.bak"))
-                os.replace(temp_name, self.path)
+                _atomic_replace_windows_retry(temp_name, self.path)
             finally:
                 if temp_name and os.path.exists(temp_name):
                     os.unlink(temp_name)
