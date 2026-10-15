@@ -5,6 +5,8 @@ on:
     branches: [central]
     paths:
       - "src/ui/neural_telemetry_model.py"
+      - "src/ui/neural_influence_model.py"
+      - "src/ui/widgets/decision_influence.py"
       - "src/ui/inspection_memory_feedback.py"
       - "src/ui/decision_verdict_feedback.py"
       - "src/ui/widgets/knn_spectrum.py"
@@ -37,7 +39,7 @@ jobs:
           python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
       - name: Compile
         run: |
-          python -m py_compile src/ui/neural_telemetry_model.py src/ui/inspection_memory_feedback.py src/ui/decision_verdict_feedback.py src/ui/widgets/knn_spectrum.py src/ui/decision_panel.py tests/test_binary_knn_memory_dashboard.py
+          python -m py_compile src/ui/neural_telemetry_model.py src/ui/neural_influence_model.py src/ui/widgets/decision_influence.py src/ui/inspection_memory_feedback.py src/ui/decision_verdict_feedback.py src/ui/widgets/knn_spectrum.py src/ui/decision_panel.py tests/test_binary_knn_memory_dashboard.py
       - name: Binary KNN, panels, production and debug UI regressions
         run: |
           python -m unittest tests.test_binary_knn_memory_dashboard tests.test_memory_visual_feedback_v2 tests.test_combined_verdict_memory_overlay tests.test_neural_telemetry_panels tests.test_decision_verdict_feedback tests.test_decision_influence_contract tests.test_decision_key_feedback tests.test_decision_model -v
