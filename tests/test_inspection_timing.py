@@ -121,6 +121,35 @@ class InspectionTimingTests(unittest.TestCase):
         begin_cycle(panel, "new", "Modo Teste")
         self.assertEqual(snapshot(panel, "new")["lights"]["SIDE"]["network"], {})
 
+    def test_network_cycle_defers_background_ocr_until_gate_release(self):
+        from unittest.mock import patch
+        from src.services.knn_archive_auto_memory import (
+            KNNArchiveAutoMemory, activate_archive_auto_memory,
+        )
+        from src.ui.network_image_cycle_gate import _release_cycle
+
+        watcher = KNNArchiveAutoMemory(poll_interval=0.1)
+        activate_archive_auto_memory(watcher)
+        try:
+            panel = SimpleNamespace(
+                capture_cycle_source="network", network_receiver=None,
+            )
+            begin_cycle(panel, "xp-side-event", "Modo Teste")
+            self.assertTrue(watcher.activity()["inspection_priority_active"])
+            # Finalização multilight não encerra o gate: em modo Teste
+            # o operador ainda precisa salvar OK/NG ou descartar.
+            finish_cycle(panel)
+            self.assertTrue(watcher.activity()["inspection_priority_active"])
+            with patch("src.ui.network_image_cycle_gate._safe_sync"):
+                _release_cycle(panel)
+            self.assertFalse(watcher.activity()["inspection_priority_active"])
+            self.assertIsNotNone(
+                panel._inspection_previous_gate_release_at
+            )
+        finally:
+            activate_archive_auto_memory(None)
+            watcher.stop(timeout=1)
+
     def test_live_archive_worker_timing_runs_without_processing_images(self):
         from threading import Event
         from unittest.mock import patch
