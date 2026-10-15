@@ -71,6 +71,9 @@ class VerifiedKNNMemory:
         # Auditorias positivas sobrevivem a reloads; cada uso reconfere os
         # metadados dos três arquivos (JSON e dois PNGs) antes de reutilizar.
         self._audited_legacy: dict[tuple, tuple[tuple, tuple]] = {}
+        # Rejeições comprovadas também são cacheadas com os stamps das
+        # fontes: JSON/PNG novo ou alterado volta a passar por _entry().
+        self._rejected_legacy: dict[tuple, tuple[tuple, tuple]] = {}
         self._all_scopes_indexed = False
         self._indexed_scopes: set[tuple] = set()
         self.error = ""
@@ -198,6 +201,27 @@ class VerifiedKNNMemory:
         except (OSError, ValueError):
             return None
 
+    @staticmethod
+    def _candidate_source_files(record: dict) -> tuple[str, ...]:
+        """Inclui arquivos ausentes para detectar se aparecerem mais tarde."""
+        json_path = str(record.get("json_path", "") or "")
+        if not json_path:
+            return ()
+        files = [json_path]
+        try:
+            data = json.loads(Path(json_path).read_text(encoding="utf-8"))
+            storage = data.get("storage", {})
+            if isinstance(storage, dict):
+                for field in ("reference_image_file", "test_image_file"):
+                    name = storage.get(field)
+                    if (isinstance(name, str) and name
+                            and Path(name).name == name
+                            and Path(name).suffix.lower() == ".png"):
+                        files.append(str(Path(json_path).parent / name))
+        except (OSError, ValueError, TypeError):
+            pass
+        return tuple(files)
+
     def _cached_legacy_entry(self, record: dict, profile: dict):
         """Reutiliza auditoria anterior apenas se JSON e PNGs não mudaram.
 
@@ -216,6 +240,16 @@ class VerifiedKNNMemory:
                 return entry
             self._audited_legacy.pop(token, None)
 
+        negative = self._rejected_legacy.get(token)
+        if negative is not None:
+            files, stamps = negative
+            if tuple(self._source_stamp(name) for name in files) == stamps:
+                profile["legacy_rejected_cache_hits"] = (
+                    profile.get("legacy_rejected_cache_hits", 0) + 1
+                )
+                return None
+            self._rejected_legacy.pop(token, None)
+
         profile["legacy_cache_misses"] = profile.get("legacy_cache_misses", 0) + 1
         entry = self._entry(record)
         if entry is not None:
@@ -225,6 +259,13 @@ class VerifiedKNNMemory:
             )
             if all(stamp is not None for stamp in stamps):
                 self._audited_legacy[token] = (entry, stamps)
+            self._rejected_legacy.pop(token, None)
+        else:
+            files = self._candidate_source_files(record)
+            if files:
+                self._rejected_legacy[token] = (
+                    files, tuple(self._source_stamp(name) for name in files),
+                )
         return entry
 
     @staticmethod
@@ -392,13 +433,75 @@ class VerifiedKNNMemory:
         )
 
     def _prune_audited_legacy(self, records: list[dict]) -> None:
-        """Descarta cache de registros removidos sem custo a cada lookup."""
-        if len(self._audited_legacy) <= len(records):
-            return
+        """Mantém somente entradas presentes no snapshot legado atual."""
         live = {self._legacy_record_token(record) for record in records}
-        for token in tuple(self._audited_legacy):
-            if token not in live:
-                self._audited_legacy.pop(token, None)
+        for cache in (self._audited_legacy, self._rejected_legacy):
+            for token in tuple(cache):
+                if token not in live:
+                    cache.pop(token, None)
+
+    def apply_saved_legacy(self, knn, json_paths) -> None:
+        """Aplica deltas no índice já pronto sem revalidar todo o legado.
+
+        A atualização ocorre sob o mesmo lock da consulta e warmup.
+        Se outra alteração não relatada for observada, invalida para uma
+        reconstrução segura em vez de publicar um índice incompleto.
+        """
+        from collections import Counter
+
+        changed = {str(Path(p).resolve()) for p in json_paths}
+        if not changed:
+            return
+        with self._lock:
+            if self._index is None or self._record_identity is None:
+                return
+            records, identity = self._snapshot_records(knn, {})
+            previous = [
+                token for token in self._record_identity[1]
+                if str(Path(token[0]).resolve()) not in changed
+            ]
+            current = [
+                token for token in identity[1]
+                if str(Path(token[0]).resolve()) not in changed
+            ]
+            if (self._record_identity[0] != identity[0]
+                    or Counter(previous) != Counter(current)):
+                self.invalidate(reason="untracked_legacy_change")
+                return
+
+            # Retira as versões antigas apenas dos caminhos efetivamente
+            # persistidos; índices de demais peças permanecem íntegros.
+            for index in (self._index, self._visual_index):
+                for key in tuple(index):
+                    kept = [row for row in index[key]
+                            if str(Path(row["source_json"]).resolve()) not in changed]
+                    if kept:
+                        index[key] = kept
+                    else:
+                        del index[key]
+            for token in tuple(self._audited_legacy):
+                if str(Path(token[0]).resolve()) in changed:
+                    self._audited_legacy.pop(token, None)
+            for token in tuple(self._rejected_legacy):
+                if str(Path(token[0]).resolve()) in changed:
+                    self._rejected_legacy.pop(token, None)
+
+            profile = {}
+            for record in records:
+                if str(Path(record.get("json_path", "")).resolve()) not in changed:
+                    continue
+                entry = self._cached_legacy_entry(record, profile)
+                if entry is None:
+                    continue
+                key, detail = entry
+                scope = (key[0], key[1], key[3])
+                if self._all_scopes_indexed or scope in self._indexed_scopes:
+                    self._index.setdefault(key, []).append(detail)
+                    self._visual_index.setdefault(
+                        self._visual_key(key), []
+                    ).append(detail)
+            self._record_identity = identity
+            self._prune_audited_legacy(records)
 
     def warmup(self, knn) -> dict:
         """Constrói o índice no worker, sem aprovar ou classificar imagens."""
@@ -501,10 +604,10 @@ class VerifiedKNNMemory:
                 "status": "NEW", "reason": "Nenhuma memória KNN carregada"
             }
 
-        records, identity = self._snapshot_records(knn, profile)
         with self._lock:
-            # Não permitir invalidate() entre a checagem do índice e a
-            # consulta do par exato. O RLock suporta _ensure_index().
+            # Snapshot e índice da MESMA geração. Sem isto, a thread
+            # de persistência pode publicar atualização entre as duas etapas.
+            records, identity = self._snapshot_records(knn, profile)
             self._ensure_lookup_scope(records, identity, key, profile)
             matched = list(
                 self._visual_index.get(self._visual_key(key), ())
@@ -747,6 +850,17 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             return index.warmup(getattr(self, "experts", {}).get("knn"))
         return {"state": "unsupported"}
 
+    def ingest_saved_memory(self, json_paths):
+        """Atualização incremental dos JSONs criados pelo operador."""
+        knn = getattr(self, "experts", {}).get("knn")
+        if knn is None or not hasattr(knn, "ingest_saved_samples"):
+            return self.reload_memory()
+        paths = tuple(str(p) for p in json_paths if p)
+        knn.ingest_saved_samples(paths)
+        cached = getattr(self, "_memory_first_index", None)
+        if cached is not None and type(cached) is VerifiedKNNMemory:
+            cached.apply_saved_legacy(knn, paths)
+
     def reload_memory(self, *args, **kwargs):
         outcome = original_reload(self, *args, **kwargs)
         cached = getattr(self, "_memory_first_index", None)
@@ -758,6 +872,7 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
     orchestrator_cls._get_verified_memory_index = _get_verified_memory_index
     orchestrator_cls.prepare_verified_memory_index = prepare_verified_memory_index
     orchestrator_cls.reload_memory = reload_memory
+    orchestrator_cls.ingest_saved_memory = ingest_saved_memory
     orchestrator_cls._memory_first_router_installed = True
 
 
