@@ -1,4 +1,4 @@
-"""Integração OCR somente Value, sem reler Board/Parts."""
+"""Integração OCR somente Categoria, sem Board/Parts/Value."""
 from __future__ import annotations
 
 import unittest
@@ -46,7 +46,8 @@ class ScreenMonitorOCRTimingTests(unittest.TestCase):
         data = self.read(fake)
         self.assertEqual(data["board"], "")
         self.assertEqual(data["parts"], "")
-        self.assertEqual(data["value"], "12 <= 0 <= 60 FALTANDO")
+        self.assertEqual(data["value"], "")
+        self.assertEqual(data["category"], "FALTANDO")
         profile = self.monitor.last_ocr_profile
         self.assertEqual(profile["route"], "general_blue")
         self.assertEqual(profile["parts_reason"], "parts_disabled")
@@ -67,7 +68,8 @@ class ScreenMonitorOCRTimingTests(unittest.TestCase):
         result = self.read(fake)
         self.assertEqual(result["board"], "")
         self.assertEqual(result["parts"], "")
-        self.assertEqual(result["value"], "0 <= 48.866 <= 10 FALTANDO")
+        self.assertEqual(result["value"], "")
+        self.assertEqual(result["category"], "FALTANDO")
         self.assertEqual(len(fake.calls), 1)
         self.assertEqual(self.monitor.last_ocr_profile["call_count"], 1)
         self.assertEqual(self.monitor.last_ocr_profile["parts_reason"], "parts_disabled")
@@ -81,7 +83,29 @@ class ScreenMonitorOCRTimingTests(unittest.TestCase):
         result = self.read(_Tesseract([raw]))
         self.assertEqual(result["parts"], "")
         self.assertEqual(result["board"], "")
-        self.assertEqual(result["value"], "15 <= 0 <= 70 FALTANDO")
+        self.assertEqual(result["value"], "")
+        self.assertEqual(result["category"], "FALTANDO")
+        self.assertEqual(self.monitor.last_ocr_profile["call_count"], 1)
+
+    def test_category_must_come_from_value_line_not_parts_text(self):
+        # Evita que tokens isolados em nome de componente/placa sejam
+        # confundidos com a categoria e desviem a inferência.
+        fake = _Tesseract([
+            "Board MISSING TEST\nParts FALTANDO\nValue 2 <= 3 <= 8 INVERTIDO"
+        ])
+        result = self.read(fake)
+        self.assertEqual(result["category"], "INVERTIDO")
+        self.assertEqual(result["value"], "")
+        self.assertEqual(result["raw_text"], "")
+
+    def test_unsupported_value_category_returns_unknown_fail_closed(self):
+        fake = _Tesseract([
+            "Board P24-03804 L05\nParts R37\n"
+            "Value 40 <= 25.602 <= 98 Little Solder"
+        ])
+        result = self.read(fake)
+        self.assertEqual(result["category"], "Unknown")
+        self.assertEqual(result["value"], "")
         self.assertEqual(self.monitor.last_ocr_profile["call_count"], 1)
 
     def test_red_retry_is_traced_and_earlier_data_cannot_leak(self):
