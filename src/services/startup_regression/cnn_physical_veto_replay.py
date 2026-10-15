@@ -90,6 +90,10 @@ def replay_event(root: Path, aoi_event_id: str) -> dict:
             light for light in LIGHTS
             if lights[light]["status"] == "UNAVAILABLE"
         ]
+        geometry_review = [
+            light for light in LIGHTS
+            if lights[light]["status"] == "GEOMETRY_REVIEW"
+        ]
         result["events"].append({
             "journal_event_id": row["journal_event_id"],
             "human_label": row["label"],
@@ -97,7 +101,8 @@ def replay_event(root: Path, aoi_event_id: str) -> dict:
             "lights": lights,
             "suspect_lights": suspected,
             "unavailable_lights": unavailable,
-            "would_veto_cnn_all_ok": bool(suspected or unavailable),
+            "geometry_review_lights": geometry_review,
+            "would_veto_cnn_all_ok": bool(suspected or unavailable or geometry_review),
             "note": (
                 "Hipótese contrafactual: somente se a CNN tivesse votado OK "
                 "em todas as luzes, NÃO é uma nova inferência CNN."
@@ -128,6 +133,7 @@ def main(argv=None) -> int:
     for event in result["events"]:
         print(event["human_label"], "suspeitas:", event["suspect_lights"],
               "indisponíveis:", event["unavailable_lights"],
+              "geometria:", event["geometry_review_lights"],
               "veto:", event["would_veto_cnn_all_ok"])
     return 0
 
