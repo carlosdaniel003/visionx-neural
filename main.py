@@ -5,6 +5,16 @@ Inicializa o Painel de Controle.
 """
 import sys
 
+# O PowerShell corporativo pode iniciar Python com saída cp1252. Logs com
+# caracteres Unicode são opcionais; não podem derrubar o ODIN antes de a
+# janela ser criada. Esta proteção vale também para importações subsequentes.
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(errors="backslashreplace")
+        except (OSError, ValueError):
+            pass
+
 from PyQt6.QtWidgets import QApplication
 
 import src.core.anomaly_memory_integration as anomaly_memory_module
