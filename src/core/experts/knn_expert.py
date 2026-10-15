@@ -104,6 +104,79 @@ class KNNExpert:
                 return candidate
         return None
 
+    def _parse_legacy_record(self, json_path: Path, folder_label: str) -> dict | None:
+        """Compartilha a leitura original com a ingestão incremental."""
+        with open(json_path, "r", encoding="utf-8") as json_file:
+            data = json.load(json_file)
+        aoi_info = data.get("aoi_info", {})
+        part_name = self._clean_string(aoi_info.get("parts", ""))
+        category_name = self._clean_string(aoi_info.get("category", "Unknown"))
+        resolved_label = self._resolve_record_label(data, folder_label)
+        anomaly_memory = self._extract_anomaly_memory(data)
+        analysis = data.get("analysis", {})
+        legacy_embedding = analysis.get("embedding", []) if isinstance(analysis, dict) else []
+        legacy_signature = None
+        if legacy_embedding:
+            candidate = np.asarray(legacy_embedding, dtype=np.float32).reshape(-1)
+            if candidate.size and np.all(np.isfinite(candidate)):
+                legacy_signature = candidate
+        if anomaly_memory is None and legacy_signature is None:
+            return None
+        image_file = str(data.get("image_file", ""))
+        match_path = str(json_path.parent / image_file) if image_file else str(json_path)
+        lighting_mode = str(aoi_info.get("lighting_mode", "") or "").strip().upper()
+        if lighting_mode not in {"SIDE", "TOP", "MID"}:
+            lighting_mode = "SIDE"
+        return {
+            "part": part_name, "category": category_name,
+            "lighting_mode": lighting_mode, "path": match_path,
+            "json_path": str(json_path), "label": resolved_label,
+            "folder_label": folder_label,
+            "mode": "anomaly" if anomaly_memory is not None else "legacy_image",
+            "anomaly_signature": anomaly_memory, "sig": legacy_signature,
+        }
+
+    def ingest_saved_samples(self, json_paths) -> list[dict]:
+        """Atualiza somente JSONs recém-salvos; não varre todo o histórico.
+
+        O arquivo persistente exato já foi atualizado de forma síncrona
+        após o voto humano. Esta operação atualiza o especialista KNN legado
+        e devolve os registros alterados ao índice verificado.
+        """
+        changed = {}
+        for raw_path in json_paths:
+            path = Path(raw_path).resolve()
+            if path.suffix.lower() != ".json":
+                raise ValueError("Apenas JSON de memória é aceito")
+            folder_label = None
+            for root, label in ((settings.NORMAL_DIR, "OK"),
+                                (settings.ANOMALY_DIR, "NG")):
+                if path.is_relative_to(Path(root).resolve()):
+                    folder_label = label
+                    break
+            if folder_label is None:
+                raise ValueError("JSON fora dos diretórios KNN autorizados")
+            # JSON salvo pode ser uma atualização de memória deduplicada:
+            # substituir o registro desse caminho, sem duplicá-lo.
+            record = self._parse_legacy_record(path, folder_label)
+            changed[str(path)] = record
+
+        if not changed:
+            return []
+        with self._memory_lock:
+            keep_ok = [r for r in self.signatures_ok if
+                       r.get("archive_persistent") or
+                       str(Path(r.get("json_path", "")).resolve()) not in changed]
+            keep_ng = [r for r in self.signatures_ng if
+                       r.get("archive_persistent") or
+                       str(Path(r.get("json_path", "")).resolve()) not in changed]
+            for record in changed.values():
+                if record is not None:
+                    (keep_ng if record["label"] == "NG" else keep_ok).append(record)
+            self.signatures_ok = keep_ok
+            self.signatures_ng = keep_ng
+        return [record for record in changed.values() if record is not None]
+
     def _load_all(self):
         print("Varredura da memória de anomalias...")
         loaded_paths: set[str] = set()
@@ -126,66 +199,10 @@ class KNNExpert:
                     continue
 
                 try:
-                    with open(json_path, "r", encoding="utf-8") as json_file:
-                        data = json.load(json_file)
-
-                    aoi_info = data.get("aoi_info", {})
-                    part_name = self._clean_string(aoi_info.get("parts", ""))
-                    category_name = self._clean_string(
-                        aoi_info.get("category", "Unknown")
-                    )
-                    resolved_label = self._resolve_record_label(data, folder_label)
-                    anomaly_memory = self._extract_anomaly_memory(data)
-
-                    analysis = data.get("analysis", {})
-                    legacy_embedding = (
-                        analysis.get("embedding", [])
-                        if isinstance(analysis, dict)
-                        else []
-                    )
-                    legacy_signature = None
-                    if legacy_embedding:
-                        candidate = np.asarray(
-                            legacy_embedding,
-                            dtype=np.float32,
-                        ).reshape(-1)
-                        if candidate.size and np.all(np.isfinite(candidate)):
-                            legacy_signature = candidate
-
-                    if anomaly_memory is None and legacy_signature is None:
+                    record = self._parse_legacy_record(json_path, folder_label)
+                    if record is None:
                         continue
-
-                    image_file = str(data.get("image_file", ""))
-                    match_path = (
-                        str(json_path.parent / image_file)
-                        if image_file
-                        else str(json_path)
-                    )
-                    lighting_mode = str(
-                        aoi_info.get("lighting_mode", "") or ""
-                    ).strip().upper()
-                    if lighting_mode not in {"SIDE", "TOP", "MID"}:
-                        # Memória anterior ao multilight geral corresponde à
-                        # iluminação padrão usada historicamente pela AOI.
-                        lighting_mode = "SIDE"
-
-                    record = {
-                        "part": part_name,
-                        "category": category_name,
-                        "lighting_mode": lighting_mode,
-                        "path": match_path,
-                        "json_path": str(json_path),
-                        "label": resolved_label,
-                        "folder_label": folder_label,
-                        "mode": "anomaly" if anomaly_memory is not None else "legacy_image",
-                        "anomaly_signature": anomaly_memory,
-                        "sig": legacy_signature,
-                    }
-
-                    if resolved_label == "NG":
-                        loaded_ng.append(record)
-                    else:
-                        loaded_ok.append(record)
+                    (loaded_ng if record["label"] == "NG" else loaded_ok).append(record)
                     loaded_paths.add(canonical_path)
                 except Exception as exc:
                     print(f"KNN ignorou JSON inválido {json_path}: {exc}")
