@@ -46,6 +46,14 @@ class StartupWithoutSpecialistsTests(unittest.TestCase):
     def test_main_ui_and_decision_footer_show_without_removed_scroll_layout(self):
         app = QApplication.instance() or QApplication([])
         panel = QWidget()
+        # O QWidget isolado não tem os slots operacionais do ControlPanel.
+        # Eles ficam inertes: o smoke exercita a construção real do layout
+        # sem iniciar receptor XP, CNN, discos ou comandos físicos.
+        panel.start_monitoring = lambda: None
+        panel.skip_image = lambda: None
+        panel.save_label = lambda *args, **kwargs: None
+        panel.set_ng_archive_enabled = lambda checked: None
+        panel.set_ok_archive_enabled = lambda checked: None
         builder = ControlPanelUI()
         panel.ui_builder = builder
         try:
