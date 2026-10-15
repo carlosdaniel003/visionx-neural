@@ -6,7 +6,6 @@ A CNN, KNN, os pesos e os vereditos das três luzes não são modificados.
 """
 from __future__ import annotations
 
-from copy import deepcopy
 import math
 from typing import Callable
 
