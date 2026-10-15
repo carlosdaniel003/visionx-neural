@@ -26,6 +26,9 @@ MIN_REFERENCE_DISTINCTNESS = 0.25
 MAX_DIRECT_SIMILARITY = 0.65
 MAX_NEARBY_SIMILARITY = 0.35
 MAX_IMAGE_SIDE = 256
+# Apenas aparagem central de margem mínima, sem resize ou interpolação.
+MAX_CENTER_TRIM_PIXELS = 6
+MAX_CENTER_TRIM_FRACTION = 0.02
 FOCUS_FRACTIONS = (0.58, 0.76)
 
 
@@ -35,10 +38,46 @@ def _valid_pair(reference, test) -> bool:
         and isinstance(test, np.ndarray)
         and reference.dtype == test.dtype == np.uint8
         and reference.ndim == test.ndim == 3
-        and reference.shape == test.shape
-        and reference.shape[2] == 3
+        and reference.shape[2] == test.shape[2] == 3
         and min(reference.shape[:2]) >= 32
+        and min(test.shape[:2]) >= 32
     )
+
+
+def _prepare_geometry(reference, test):
+    """Iguala margens AOI pequenas sem resize/interpolação.
+
+    Aparagem geométrica NUNCA pode habilitar AUTO-OK; mesmo sem suspeita
+    física, essa imagem exige revisão humana por geometria incerta.
+    """
+    if not _valid_pair(reference, test):
+        return None, None, {
+            "method": "invalid", "requires_review": True,
+            "reason": "INVALID_PAIR",
+        }
+    rh, rw = reference.shape[:2]
+    th, tw = test.shape[:2]
+    dw, dh = abs(rw - tw), abs(rh - th)
+    if (dw > MAX_CENTER_TRIM_PIXELS or dh > MAX_CENTER_TRIM_PIXELS
+            or dw > min(rw, tw) * MAX_CENTER_TRIM_FRACTION
+            or dh > min(rh, th) * MAX_CENTER_TRIM_FRACTION):
+        return None, None, {
+            "method": "invalid", "requires_review": True,
+            "reason": "GEOMETRY_OUT_OF_RANGE",
+            "reference_hw": [rh, rw], "test_hw": [th, tw],
+        }
+    h, w = min(rh, th), min(rw, tw)
+    def trim(frame):
+        fh, fw = frame.shape[:2]
+        y, x = (fh - h) // 2, (fw - w) // 2
+        return frame[y:y + h, x:x + w].copy()
+    mismatched = bool(dw or dh)
+    return trim(reference), trim(test), {
+        "method": "center_trim_no_rescale" if mismatched else "exact",
+        "requires_review": mismatched,
+        "reference_hw": [rh, rw], "test_hw": [th, tw],
+        "comparison_hw": [h, w],
+    }
 
 
 def _center_box(shape, fraction: float) -> tuple[int, int, int, int]:
@@ -64,8 +103,12 @@ def physical_absence_probe(reference, test) -> dict:
     gabarito; não aprende rótulos e não combina scores CNN ou da KNN.
     Falha ou geometria ambígua = UNAVAILABLE, nunca evidência de presença.
     """
-    if not _valid_pair(reference, test):
-        return {"status": "UNAVAILABLE", "reason": "INVALID_PAIR", "scales": []}
+    reference, test, geometry = _prepare_geometry(reference, test)
+    if reference is None:
+        return {
+            "status": "UNAVAILABLE", "reason": geometry["reason"],
+            "scales": [], "geometry": geometry,
+        }
     try:
         height, width = reference.shape[:2]
         ratio = min(1.0, MAX_IMAGE_SIDE / max(height, width))
@@ -83,12 +126,12 @@ def physical_absence_probe(reference, test) -> dict:
             if not isinstance(raw, dict) or raw.get("missing_active") is not True:
                 return {
                     "status": "UNAVAILABLE", "reason": "INACTIVE_PROBE",
-                    "scales": measurements,
+                    "scales": measurements, "geometry": geometry,
                 }
             if raw.get("missing_classification") == "SEM DADOS":
                 return {
                     "status": "UNAVAILABLE", "reason": "INVALID_PHYSICAL_ROI",
-                    "scales": measurements,
+                    "scales": measurements, "geometry": geometry,
                 }
             keys = {
                 "score": "missing_score",
@@ -119,15 +162,16 @@ def physical_absence_probe(reference, test) -> dict:
         return {
             "status": (
                 "SUSPECT_ABSENCE" if any(row["suspected_absence"] for row in measurements)
+                else "GEOMETRY_REVIEW" if geometry["requires_review"]
                 else "NO_STRONG_EVIDENCE"
             ),
             "reason": "TWO_SCALE_ROI_CHECK",
-            "scales": measurements,
+            "scales": measurements, "geometry": geometry,
         }
     except (ValueError, TypeError, cv2.error, RuntimeError) as exc:
         return {
             "status": "UNAVAILABLE", "reason": type(exc).__name__,
-            "scales": [],
+            "scales": [], "geometry": geometry,
         }
 
 
@@ -175,7 +219,8 @@ def apply_physical_missing_veto(
             try:
                 result = active_probe(sample.get("sample_image"), sample.get("test_image"))
                 if not isinstance(result, dict) or result.get("status") not in {
-                    "SUSPECT_ABSENCE", "NO_STRONG_EVIDENCE", "UNAVAILABLE"
+                    "SUSPECT_ABSENCE", "NO_STRONG_EVIDENCE",
+                    "GEOMETRY_REVIEW", "UNAVAILABLE"
                 }:
                     result = {
                         "status": "UNAVAILABLE", "reason": "INVALID_PROBE_RESULT",
@@ -192,16 +237,19 @@ def apply_physical_missing_veto(
                  if by_light[light]["status"] == "SUSPECT_ABSENCE"]
     unavailable = [light for light in LIGHTS
                    if by_light[light]["status"] == "UNAVAILABLE"]
+    geometry_review = [light for light in LIGHTS
+                       if by_light[light]["status"] == "GEOMETRY_REVIEW"]
     status = (
         "SUSPECT_ABSENCE" if suspected else
-        "UNAVAILABLE" if unavailable else "NO_STRONG_EVIDENCE"
+        "UNAVAILABLE" if unavailable else
+        "GEOMETRY_REVIEW" if geometry_review else "NO_STRONG_EVIDENCE"
     )
     audit = {
         "policy": POLICY, "status": status,
         "diagnostic_only": True, "authorizes_ng": False,
         "authorizes_ok": False, "review_required": status != "NO_STRONG_EVIDENCE",
         "suspect_lights": suspected, "unavailable_lights": unavailable,
-        "lights": by_light,
+        "geometry_review_lights": geometry_review, "lights": by_light,
     }
     detail["physical_missing_veto"] = audit
     if status != "NO_STRONG_EVIDENCE":
@@ -212,7 +260,8 @@ def apply_physical_missing_veto(
         fused["reason"] = (
             "CNN FALTANDO V2 votou OK nas três luzes, mas a contraprova física "
             + ("encontrou suspeita de componente ausente" if suspected else
-               "não pôde ser concluída em todas as iluminações")
+               "não pôde ser concluída em todas as iluminações" if unavailable
+               else "exigiu aparagem geométrica não validada")
             + "; operador deve confirmar OK/NG. Nenhum 0/1 automático autorizado."
         )
         detail["final_score"] = 0.50

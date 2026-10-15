@@ -165,6 +165,63 @@ class IndependentPhysicalVetoTests(unittest.TestCase):
         self.assertEqual(len(result["scales"]), 2)
         self.assertTrue(all(not x["suspected_absence"] for x in result["scales"]))
 
+    def test_aoi_reference_570_test_567_measured_but_never_auto_ok(self):
+        reference = np.full((477, 570, 3), (45, 65, 90), dtype=np.uint8)
+        reference[140:345, 185:392] = 10
+        test = reference[:, 1:568].copy()
+        physical = physical_absence_probe(reference, test)
+        self.assertEqual(physical["status"], "GEOMETRY_REVIEW")
+        self.assertEqual(physical["geometry"]["comparison_hw"], [477, 567])
+        self.assertEqual(physical["geometry"]["method"], "center_trim_no_rescale")
+        self.assertTrue(physical["geometry"]["requires_review"])
+        self.assertEqual(len(physical["scales"]), 2)
+        samples = physical_samples()
+        samples["SIDE"]["sample_image"] = reference
+        samples["SIDE"]["test_image"] = test
+        fused = apply_physical_missing_veto(
+            cnn_ok(), samples, "FALTANDO",
+        )
+        self.assertEqual(fused["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertEqual(
+            fused["detail"]["physical_missing_veto"]["geometry_review_lights"],
+            ["SIDE"],
+        )
+        self.assertFalse(production_decision_policy(fused)["auto_allowed"])
+
+    def test_small_crop_mismatch_can_report_strong_physical_suspicion(self):
+        reference = np.zeros((120, 200, 3), dtype=np.uint8)
+        test = np.zeros((120, 198, 3), dtype=np.uint8)
+        strong = {
+            "missing_active": True, "missing_is_defect": True,
+            "missing_classification": "CONTEÚDO ESPERADO AUSENTE",
+            "missing_score": .97, "missing_changed_coverage": .85,
+            "missing_background_exposure": .8,
+            "missing_reference_distinctness": .75,
+            "missing_direct_similarity": .12, "missing_best_similarity": .05,
+        }
+        with patch(
+            "src.core.physical_missing_veto.ROIPatchExpectationExpert.analyze",
+            return_value=strong,
+        ):
+            physical = physical_absence_probe(reference, test)
+        self.assertEqual(physical["status"], "SUSPECT_ABSENCE")
+        self.assertTrue(physical["geometry"]["requires_review"])
+
+    def test_large_mismatch_stays_unavailable_and_cannot_release(self):
+        reference = np.zeros((477, 570, 3), dtype=np.uint8)
+        test = np.zeros((477, 550, 3), dtype=np.uint8)
+        physical = physical_absence_probe(reference, test)
+        self.assertEqual(physical["status"], "UNAVAILABLE")
+        self.assertEqual(physical["reason"], "GEOMETRY_OUT_OF_RANGE")
+        self.assertEqual(physical["scales"], [])
+
+    def test_second_gate_forbids_overridden_geometry_review(self):
+        fused = cnn_ok()
+        fused["detail"]["physical_missing_veto"] = {"status": "GEOMETRY_REVIEW"}
+        policy = production_decision_policy(fused)
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "")
+
     def test_real_probe_rejects_invalid_geometry_instead_of_marking_clear(self):
         one = np.zeros((60, 60, 3), dtype=np.uint8)
         for bad in (None, one[:30], one.astype(np.float32)):

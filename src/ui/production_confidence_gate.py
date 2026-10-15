@@ -86,7 +86,7 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     physical_veto = physical_veto if isinstance(physical_veto, dict) else {}
     physical_blocked = bool(
         detail.get("multilight_category") == "FALTANDO"
-        and physical_veto.get("status") in {"SUSPECT_ABSENCE", "UNAVAILABLE"}
+        and physical_veto.get("status") in {"SUSPECT_ABSENCE", "UNAVAILABLE", "GEOMETRY_REVIEW"}
     )
     # Um caminho futuro que esqueça de executar a sonda física também não
     # pode reutilizar três votos CNN OK como se tivessem contraprova.
