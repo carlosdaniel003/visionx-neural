@@ -113,15 +113,30 @@ def _one_light(
         ng = _scored_records(query, ng_records, label="NG", light=light,
                              category=category, cross_category=False)
         cross_category = False
-        # AOI pode chamar ausência real de INVERTIDO/DESLOCADO/EMBORCADO.
-        # Consultar outras classes só quando não há NG locais, exigindo
-        # margem de similaridade mais estrita e rótulo NG auditado.
-        if not ng and uses_faltando_v2(category):
-            ng = _scored_records(
+        # A AOI pode rotular ausência como INVERTIDO/DESLOCADO/EMBORCADO.
+        # Um único NG local fraco não deve ocultar exemplares de ausência
+        # muito semelhantes aprendidos sob outra categoria.
+        local_support = sum(
+            rec["similarity"] >= MIN_NG_SIMILARITY for rec in ng
+        )
+        if local_support < MIN_NG_EXAMPLES and uses_faltando_v2(category):
+            other_ng = _scored_records(
                 query, ng_records, label="NG", light=light,
                 category=category, cross_category=True,
             )
-            cross_category = bool(ng)
+            strong_cross = sum(
+                rec["similarity"] >= CROSS_CATEGORY_MIN_SIMILARITY
+                for rec in other_ng
+            )
+            if strong_cross >= 3:
+                ng = other_ng
+                cross_category = True
+                # Uma peça boa parecida de OUTRA categoria também é
+                # contraprova, não pode ser ignorada por OCR diferente.
+                ok += _scored_records(
+                    query, ok_records, label="OK", light=light,
+                    category=category, cross_category=True,
+                )
         best_ok = max((r["similarity"] for r in ok), default=None)
         best_ng = max((r["similarity"] for r in ng), default=None)
         cutoff = CROSS_CATEGORY_MIN_SIMILARITY if cross_category else MIN_NG_SIMILARITY
