@@ -45,9 +45,11 @@ class ShiftGatekeeper:
             tolerance = 0.08  # Tolerância normal (8%)
             
             if aoi_info:
+                category = str(aoi_info.get("category", "")).upper()
                 val_text = str(aoi_info.get("value", "")).upper()
-                # Se a AOI avisou que tá deslocado (Shifted ou Sifted), a IA fica mais rigorosa.
-                if "SHIFT" in val_text or "SIFT" in val_text:
+                # A categoria canônica agora substitui o Value numérico.
+                # Preservar compatibilidade com entradas legadas em inglês.
+                if category == "DESLOCADO" or "SHIFT" in val_text or "SIFT" in val_text:
                     tolerance = 0.04  # Cai para 4% de tolerância
                     print(f"📡 Porteiro 1: OCR alertou SHIFT. Tolerância de deslocamento reduzida para {tolerance:.0%}")
             
