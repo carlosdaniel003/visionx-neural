@@ -80,8 +80,21 @@ class SharedCategoryTests(unittest.TestCase):
                 policy = production_decision_policy(fused)
                 self.assertEqual(fused["detail"]["cnn_v2_consensus"], "OK")
                 self.assertTrue(fused["detail"]["cnn_v2_supervised_auto_eligible"])
-                self.assertEqual(policy["proposed_decision"], "OK")
-                self.assertTrue(policy["auto_allowed"])
+                if category == "FALTANDO":
+                    # A etapa 3 exige prova de execução da sonda física.
+                    self.assertFalse(policy["auto_allowed"])
+                    self.assertEqual(policy["reason"], "cnn_faltando_physical_evidence_required")
+                else:
+                    self.assertEqual(policy["proposed_decision"], "OK")
+                    self.assertTrue(policy["auto_allowed"])
+
+    def test_faltando_three_ok_with_clear_physical_probe_uses_previous_gate(self):
+        fused = final("FALTANDO")
+        fused["detail"]["physical_missing_veto"] = {
+            "status": "NO_STRONG_EVIDENCE",
+            "policy": "cnn_faltando_independent_physical_veto_v1",
+        }
+        self.assertTrue(production_decision_policy(fused)["auto_allowed"])
 
     def test_three_ng_votes_permit_supervised_ng(self):
         for category in CATEGORIES:
