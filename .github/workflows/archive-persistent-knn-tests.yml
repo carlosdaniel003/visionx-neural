@@ -22,6 +22,8 @@ on:
   pull_request:
     branches: [central]
     paths:
+      - "src/core/archive_persistent_memory.py"
+      - "tests/test_archive_persistent_knn.py"
       - "src/services/knn_archive_auto_memory.py"
       - "tests/test_knn_archive_auto_memory.py"
       - ".github/workflows/archive-persistent-knn-tests.yml"
