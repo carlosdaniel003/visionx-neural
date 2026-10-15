@@ -181,6 +181,7 @@ def inspect_variant(monitor, frame, blue_bar, red_bar, variant, pytesseract_modu
     profile = getattr(monitor, "last_ocr_profile", {})
     return {
         "fields": fields,
+        "ocr_text_detected": bool(info.get("ocr_text_detected", False)),
         "elapsed_ms": elapsed,
         "tesseract_calls": profile.get("call_count"),
         "tesseract_ms": profile.get("tesseract_calls_ms"),
@@ -224,7 +225,8 @@ def compare_variants(
             # Campo categoria é a única saída operacional de OCR.
             # "Unknown" pode ser medido offline, sem ser elegível a promoção.
             if (
-                not isinstance(baseline["fields"].get("category"), str)
+                not baseline.get("ocr_text_detected")
+                or not isinstance(baseline["fields"].get("category"), str)
                 or not baseline["fields"]["category"].strip()
             ):
                 raise ValueError(
