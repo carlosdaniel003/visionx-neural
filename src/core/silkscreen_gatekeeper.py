@@ -65,10 +65,12 @@ class SilkscreenGatekeeper:
             is_ocr_reverse = False
 
             if aoi_info:
+                category = str(aoi_info.get("category", "")).upper()
                 val_text = str(aoi_info.get("value", "")).upper()
-                
-                # 1. Se a AOI avisou que tá deslocado (Shift), a IA fica mais relaxada no Silkscreen
-                if "SHIFT" in val_text or "SIFT" in val_text:
+
+                # O contexto canônico substitui Value numérico; manter
+                # variantes legadas para arquivos e chamadas antigas.
+                if category == "DESLOCADO" or "SHIFT" in val_text or "SIFT" in val_text:
                     tolerance = 0.08  # Sobe a tolerancia para 8%, pq o deslocamento borra as letras
                     print(f"📡 Porteiro 2: OCR alertou SHIFT. Tolerância de Silkscreen afrouxada para {tolerance:.0%}")
                 
