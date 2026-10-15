@@ -24,7 +24,7 @@ from pathlib import Path
 from PyQt6.QtCore import QCoreApplication, QEventLoop, QThread, QTimer, pyqtSignal
 from src.config.settings import settings
 from src.services.aoi_ocr_timing import AOIOCRTiming
-from src.services.aoi_ocr_fields import normalize_value_ocr
+from src.utils.text_normalizer import normalize_aoi_text
 
 HAS_TESSERACT = False
 try:
@@ -62,7 +62,7 @@ _OCR_UI_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ODINOCR
 def _read_tesseract_responsive(callable_ocr):
     """Preserva o resultado síncrono, mas não congela a event loop Qt da UI.
 
-    A SIDE continua aguardando o texto de Value antes de validar a entrada ou
+    A SIDE continua aguardando a categoria antes de validar a entrada ou
     permitir TOP/MID. Somente o processo externo do Tesseract sai da UI.
     Não iniciar event loop aninhada em threads MSS/KNN/background.
     """
@@ -453,17 +453,19 @@ class ScreenMonitor(QThread):
     def _extract_text_info_timed(
         self, frame_bgr, blue_bar, red_bar, timing: AOIOCRTiming,
     ) -> dict:
-        # Reutilizar o OCR da SIDE exclusivamente para TOP/MID da mesma peça;
-        # categorias, identificação e valor são os mesmos nas três luzes.
+        # Reutilizar a categoria da SIDE exclusivamente para TOP/MID da mesma
+        # peça; não abrir processos Tesseract adicionais.
         aux = getattr(self, "_shadow_auxiliary_info", None)
         if isinstance(aux, dict) and aux:
             timing.route = "auxiliary_reuse"
             timing.parts_reason = "parts_disabled"
             return dict(aux)
-        # Chaves vazias preservam compatibilidade com os consumidores KNN e
-        # relatórios históricos. Não executar reconhecimento de Board/Parts:
-        # apenas Value define a categoria operacional nesta interface.
-        info = {"board": "", "parts": "", "value": "", "raw_text": ""}
+        # Contrato de compatibilidade: manter os campos legados vazios.
+        # Somente a categoria é reconhecida e entregue ao pipeline.
+        info = {
+            "board": "", "parts": "", "value": "",
+            "category": "Unknown", "raw_text": "",
+        }
         if not HAS_TESSERACT:
             timing.route = "tesseract_unavailable"
             info["raw_text"] = "[OCR não disponível]"
@@ -504,22 +506,26 @@ class ScreenMonitor(QThread):
             info["raw_text"] = "[Nenhum texto encontrado]"
             return info
 
-        info["raw_text"] = raw
+        # OCR ainda lê a faixa de texto da AOI, mas descartamos operandos e
+        # referências: só a categoria vinculada à linha Value é aproveitada.
+        # Nunca inferir a categoria de outras linhas (Board/Parts/menus).
         for line in raw.split('\n'):
-            lc = line.strip()
-            if not lc:
-                continue
-            if not info["value"]:
-                m = re.search(
-                    r'[Vv][Aa][Ll1iI][Uu][Ee]\s*[:\-\.\s]\s*(.+?)'
-                    r'(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Pp][Aa][Rr]|\s*$)', lc)
-                if m and m.group(1).strip():
-                    info["value"] = m.group(1).strip()
+            match = re.search(
+                r'[Vv][Aa][Ll1iI][Uu][Ee]\s*[:\-\.\s]\s*(.+?)'
+                r'(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Pp][Aa][Rr]|\s*$)',
+                line.strip(),
+            )
+            if match:
+                info["category"], _discarded_numeric_value = normalize_aoi_text(
+                    match.group(1)
+                )
+                if info["category"] != "Unknown":
+                    break
 
         timing.parts_reason = "parts_disabled"
-        info["value"] = normalize_value_ocr(info["value"])
-
-        print(f"📋 OCR — Value: '{info['value']}'")
+        # raw_text/board/parts/value deliberadamente vazios: não armazenar
+        # texto sem uso e evitar retenção de números e identificações.
+        print(f"OCR — Categoria: '{info['category']}'")
         return info
 
     # =================================================================
