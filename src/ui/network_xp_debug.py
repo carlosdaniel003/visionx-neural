@@ -274,6 +274,29 @@ def format_network_debug_report(record: dict | None) -> str:
                     f"{entry.get('verdict', '-') or '-'} • score NG {display} "
                     f"• checkpoint {'OK' if entry.get('checkpoint_verified') else 'não verificado'}"
                 )
+        visual = decision.get("knn_visual")
+        visual = visual if isinstance(visual, dict) else {}
+        if visual.get("status"):
+            lines.extend([
+                "", "KNN VISUAL (VIZINHOS SIMILARES)", "-" * 72,
+                f"Situação: {visual.get('status', '-')}",
+                f"Luzes NG corroboradas: {visual.get('strong_ng_lights', [])}",
+                "Similaridade de assinatura NÃO é probabilidade nem par exato.",
+            ])
+            entries = visual.get("lights")
+            entries = entries if isinstance(entries, dict) else {}
+            for light in ("SIDE", "TOP", "MID"):
+                item = entries.get(light)
+                item = item if isinstance(item, dict) else {}
+                lines.append(
+                    f"{light}: {item.get('status', '-')}"
+                    f" • vizinhos OK={item.get('ok_count', '-')}"
+                    f" (melhor {item.get('best_ok_similarity', '-')})"
+                    f" • NG={item.get('ng_count', '-')}"
+                    f" (melhor {item.get('best_ng_similarity', '-')})"
+                    f" • NG fortes={item.get('ng_support', '-')}"
+                    f" • cruzou categoria={item.get('cross_category_ng', False)}"
+                )
         if route.get("route"):
             lines.extend([
                 "", "MEMÓRIA KNN (ROTA EFETIVA)", "-" * 72,
