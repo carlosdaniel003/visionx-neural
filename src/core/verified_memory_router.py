@@ -253,6 +253,7 @@ class VerifiedKNNMemory:
         profile["legacy_cache_misses"] = profile.get("legacy_cache_misses", 0) + 1
         entry = self._entry(record)
         if entry is not None:
+            entry[1]["_verified_token"] = token
             stamps = tuple(
                 self._source_stamp(name)
                 for name in entry[1]["_verified_files"]
@@ -432,6 +433,16 @@ class VerifiedKNNMemory:
             (time.perf_counter() - started_at) * 1000.0, 2
         )
 
+    def _matched_legacy_still_verified(self, detail: dict) -> bool:
+        """Nenhum KNOWN legado pode usar PNG/JSON alterado após o warmup."""
+        token = detail.get("_verified_token")
+        cached = self._audited_legacy.get(token)
+        if cached is None or cached[0][1] is not detail:
+            return False
+        files = detail["_verified_files"]
+        current = tuple(self._source_stamp(name) for name in files)
+        return all(stamp is not None for stamp in current) and current == cached[1]
+
     def _prune_audited_legacy(self, records: list[dict]) -> None:
         """Mantém somente entradas presentes no snapshot legado atual."""
         live = {self._legacy_record_token(record) for record in records}
@@ -495,7 +506,9 @@ class VerifiedKNNMemory:
                     continue
                 key, detail = entry
                 scope = (key[0], key[1], key[3])
-                if self._all_scopes_indexed or scope in self._indexed_scopes:
+                if (self._all_scopes_indexed
+                        or scope in self._indexed_scopes
+                        or (key[0], key[1], "") in self._indexed_scopes):
                     self._index.setdefault(key, []).append(detail)
                     self._visual_index.setdefault(
                         self._visual_key(key), []
@@ -560,6 +573,7 @@ class VerifiedKNNMemory:
 
     def _lookup_profiled(
         self, knn, reference, test, info: dict, profile: dict,
+        *, retry_if_changed: bool = True,
     ) -> dict:
         """Mesmo algoritmo de busca, com medições monotônicas passivas."""
         if not _image_ok(reference) or not _image_ok(test):
@@ -614,6 +628,22 @@ class VerifiedKNNMemory:
                 if category_only else self._index.get(key, ())
             )
             profile["warmup"] = dict(self._warmup_status)
+            stale_match = any(
+                not self._matched_legacy_still_verified(item)
+                for item in matched
+            )
+            if stale_match:
+                self.invalidate(reason="legacy_source_changed_during_session")
+        if stale_match:
+            if retry_if_changed:
+                return self._lookup_profiled(
+                    knn, reference, test, info, profile,
+                    retry_if_changed=False,
+                )
+            return {
+                "status": "UNAVAILABLE",
+                "reason": "Origem KNN mudou durante a verificação exata",
+            }
         profile["matched_count"] = len(matched)
         if not matched:
             return durable if durable["status"] == "KNOWN" else {
