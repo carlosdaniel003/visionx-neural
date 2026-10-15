@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
-from uuid import UUID
 
 
 SCHEMA = "visionx.cnn_confirmed_event_audit.v1"
