@@ -179,7 +179,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
     visual = detail.get("knn_visual_corroboration") or {}
     visual = visual if isinstance(visual, dict) else {}
     similar_ng = bool(
-        not known and visual.get("status") == "NG_CORROBORATED"
+        not known and visual.get("status") in {"NG_CORROBORATED", "NG_TREND_THREE_LIGHTS"}
     )
     return {
         "status": status,
