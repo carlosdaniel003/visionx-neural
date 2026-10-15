@@ -111,6 +111,8 @@ class KNNArchiveAutoMemory:
         settle_seconds: float = 0.5,
         batch_size: int = 24,
         on_committed: Callable | None = None,
+        post_inspection_quiet_seconds: float = 3.0,
+        max_idle_deferral_seconds: float = 30.0,
     ):
         self.root = Path(root or BASE_DIR).expanduser().resolve()
         self.store = store if store is not None else PersistentArchiveKNN(self.root)
@@ -120,6 +122,19 @@ class KNNArchiveAutoMemory:
         self.settle_seconds = max(0.0, float(settle_seconds))
         self.batch_size = max(1, int(batch_size))
         self.on_committed = on_committed
+        # Ao liberar o gate, a próxima SIDE normalmente chega em ~2 s.
+        # Aguardar brevemente evita iniciar Tesseract de acervo justo antes
+        # da próxima peça. Limite anti-starvation garante progresso na folga.
+        self.post_inspection_quiet_seconds = max(
+            0.0, float(post_inspection_quiet_seconds)
+        )
+        self.max_idle_deferral_seconds = max(
+            self.post_inspection_quiet_seconds,
+            float(max_idle_deferral_seconds),
+        )
+        self._idle_grace_until = 0.0
+        self._idle_grace_deferrals = 0
+        self._last_scan_started_at = time.monotonic()
         self._wake = Event()
         self._stop = Event()
         self._thread: Thread | None = None
@@ -173,6 +188,16 @@ class KNNArchiveAutoMemory:
                 "inspection_priority_active": self._inspection_priority.is_set(),
                 "deferred_scans": self._deferred_scans,
                 "deferred_candidates": self._deferred_candidates,
+                "idle_grace_active": (
+                    now < self._idle_grace_until
+                    and now - self._last_scan_started_at
+                    < self.max_idle_deferral_seconds
+                    and not self._inspection_priority.is_set()
+                ),
+                "idle_grace_remaining_ms": round(
+                    max(0.0, self._idle_grace_until - now) * 1000.0, 2,
+                ),
+                "idle_grace_deferrals": self._idle_grace_deferrals,
             }
 
     def pause_for_inspection(self) -> None:
@@ -185,8 +210,19 @@ class KNNArchiveAutoMemory:
         self._inspection_priority.set()
 
     def resume_after_inspection(self) -> None:
-        """Retoma o backlog automaticamente quando a peça libera o gate."""
-        self._inspection_priority.clear()
+        """Retoma backlog após breve janela para chegada da próxima SIDE.
+
+        A janela é finita: após max_idle_deferral_seconds sem uma passagem,
+        o observador aproveita a próxima folga mesmo que os ciclos continuem.
+        Liberações repetidas sem pause não prorrogam a janela.
+        """
+        with self._lock:
+            if self._inspection_priority.is_set():
+                self._idle_grace_until = max(
+                    self._idle_grace_until,
+                    time.monotonic() + self.post_inspection_quiet_seconds,
+                )
+            self._inspection_priority.clear()
         self._wake.set()
 
     def _defer_scan(self) -> dict:
@@ -434,6 +470,20 @@ class KNNArchiveAutoMemory:
                     continue
                 started = time.monotonic()
                 with self._lock:
+                    remaining = max(0.0, self._idle_grace_until - started)
+                    overdue = (
+                        started - self._last_scan_started_at
+                        >= self.max_idle_deferral_seconds
+                    )
+                    if remaining > 0.0 and not overdue:
+                        self._idle_grace_deferrals += 1
+                        self._worker_phase = "deferred_between_inspections"
+                if remaining > 0.0 and not overdue:
+                    self._wake.wait(min(self.poll_interval, remaining))
+                    self._wake.clear()
+                    continue
+                with self._lock:
+                    self._last_scan_started_at = started
                     self._worker_scan_active = True
                     self._worker_scan_started = started
                     self._worker_phase = "reading_snapshot"
@@ -477,6 +527,8 @@ class KNNArchiveAutoMemory:
     def stop(self, timeout: float = 5.0):
         # Nunca manter o worker pausado ao fechar o programa.
         self._inspection_priority.clear()
+        with self._lock:
+            self._idle_grace_until = 0.0
         self._stop.set()
         self._wake.set()
         if self._thread is not None and self._thread.is_alive():
