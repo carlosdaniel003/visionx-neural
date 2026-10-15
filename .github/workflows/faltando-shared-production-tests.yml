@@ -9,6 +9,8 @@ on:
       - "src/core/neural/faltando_live.py"
       - "src/core/multilight_fusion.py"
       - "src/core/physical_missing_veto.py"
+      - "src/services/startup_regression/faltando_archive_neighbors_audit.py"
+      - "tests/test_faltando_archive_neighbors_audit.py"
       - "src/ui/adhesive_multilight_inspection.py"
       - "tests/test_cnn_independent_physical_veto.py"
       - "tests/test_cnn_physical_veto_replay.py"
@@ -45,7 +47,7 @@ jobs:
           python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
       - name: Syntax verification
         run: |
-          python -m py_compile src/core/neural/faltando_category_scope.py src/core/neural/faltando_multilight_consensus.py src/core/neural/faltando_live.py src/core/multilight_fusion.py src/core/physical_missing_veto.py src/ui/adhesive_multilight_inspection.py tests/test_cnn_independent_physical_veto.py tests/test_cnn_physical_veto_replay.py src/services/startup_regression/cnn_physical_veto_replay.py src/core/verified_memory_router.py src/ui/production_confidence_gate.py src/ui/production_autonomy_controller.py tests/test_faltando_shared_production.py main.py
+          python -m py_compile src/core/neural/faltando_category_scope.py src/core/neural/faltando_multilight_consensus.py src/core/neural/faltando_live.py src/core/multilight_fusion.py src/core/physical_missing_veto.py src/services/startup_regression/faltando_archive_neighbors_audit.py tests/test_faltando_archive_neighbors_audit.py src/ui/adhesive_multilight_inspection.py tests/test_cnn_independent_physical_veto.py tests/test_cnn_physical_veto_replay.py src/services/startup_regression/cnn_physical_veto_replay.py src/core/verified_memory_router.py src/ui/production_confidence_gate.py src/ui/production_autonomy_controller.py tests/test_faltando_shared_production.py main.py
       - name: Routing, memory, supervision, pause and production policies
         run: |
-          python -m unittest tests.test_faltando_shared_production tests.test_verified_memory_router tests.test_production_confidence_gate tests.test_production_autonomy_controller tests.test_faltando_cnn_v2_live tests.test_cnn_independent_physical_veto tests.test_cnn_physical_veto_replay tests.test_physical_absence_guard -v
+          python -m unittest tests.test_faltando_shared_production tests.test_verified_memory_router tests.test_production_confidence_gate tests.test_production_autonomy_controller tests.test_faltando_cnn_v2_live tests.test_cnn_independent_physical_veto tests.test_cnn_physical_veto_replay tests.test_faltando_archive_neighbors_audit tests.test_physical_absence_guard -v
