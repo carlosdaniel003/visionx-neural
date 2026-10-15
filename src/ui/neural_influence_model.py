@@ -76,29 +76,36 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
         # O número exibido é similaridade de assinatura, não score CNN.
         by_light = neighbor_report.get("lights")
         by_light = by_light if isinstance(by_light, dict) else {}
+        strong = []
+        observed = []
         for light in LIGHTS:
             info = _map(by_light.get(light))
-            if info.get("status") != "NG_SIMILAR":
-                continue
             candidates = _map(info.get("ng"))
             nearest = _finite_score(candidates.get("best_similarity"))
-            if nearest is None:
-                continue
+            if nearest is not None:
+                observed.append((light, nearest))
+            if info.get("status") == "NG_SIMILAR":
+                strong.append(light)
+        # Uma linha única mantém legibilidade no painel de quatro cartões;
+        # o detalhamento completo SIDE/TOP/MID fica no debug do resultado.
+        if observed:
+            strongest = max(score for _, score in observed)
+            status = "NG POR SEMELHANÇA" if len(strong) >= 2 else "VIZINHOS SEM CONSENSO"
+            display = (
+                f"{len(strong)}/3 luzes NG fortes • "
+                f"melhor similaridade {strongest * 100:.2f}% (não probabilística)"
+            )
             item = row(
-                f"knn_visual_{light.lower()}",
-                f"KNN VIZINHOS • {light}",
-                nearest, text="NG POR SEMELHANÇA",
+                "knn_visual_summary", "KNN • VIZINHOS",
+                strongest, text=status,
                 weight=0.0, selected=False,
-                value_format=(
-                    f"NG semelhantes {info.get('ng_support', 0)}"
-                    f" • similaridade {nearest * 100:.2f}% • não é probabilidade"
-                ),
+                value_format=display,
             )
             item["knn_approximate"] = True
-            item["knn_visual_label"] = "NG"
+            item["knn_visual_label"] = "NG" if len(strong) >= 2 else ""
             item["known_memory_label"] = ""
             item["ng_score_uncalibrated"] = None
-            item["similarity_score"] = nearest
+            item["similarity_score"] = strongest
             rows.append(item)
         if rows:
             return rows
