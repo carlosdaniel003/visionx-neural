@@ -72,6 +72,20 @@ def eligible_online_case(task: dict) -> bool:
     )
 
 
+def training_job_state(exit_code: int, outcome: dict) -> str:
+    """Um processo concluído não significa que o checkpoint foi promovido."""
+    if int(exit_code) != 0:
+        return "FAILED"
+    if not isinstance(outcome, dict):
+        return "FAILED"
+    if outcome.get("promoted") is True:
+        return "PROMOTED"
+    if outcome.get("promoted") is False:
+        return "REJECTED"
+    # Exit code zero sem outcome validado NÃO confirma treinamento.
+    return "FAILED"
+
+
 def _png_bytes(frame) -> bytes:
     if (
         not isinstance(frame, np.ndarray)
@@ -163,18 +177,19 @@ class OnlineLearningQueue:
                     else {}
                 )
                 promoted = outcome.get("promoted")
-                final_state = (
-                    "PROMOTED" if promoted is True
-                    else "REJECTED" if promoted is False
-                    else "COMPLETED" if result == 0 else "FAILED"
+                final_state = training_job_state(result, outcome)
+                self._write_latest(
+                    name, state=final_state,
+                    promoted=promoted if isinstance(promoted, bool) else None,
                 )
-                self._write_latest(name, state=final_state, promoted=promoted)
                 state = {
                     "schema": "visionx.neural_online_task_status.v1",
                     "event": name,
                     "finished_at_utc": datetime.now(timezone.utc).isoformat(),
                     "exit_code": int(result),
-                    "status": "COMPLETED" if result == 0 else "FAILED",
+                    "status": final_state,
+                    "promoted": promoted if isinstance(promoted, bool) else None,
+                    "outcome_available": bool(outcome),
                 }
                 tmp = status_file.with_suffix(".json.tmp")
                 tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
@@ -300,6 +315,6 @@ class OnlineLearningQueue:
 
 
 __all__ = [
-    "OnlineLearningQueue", "eligible_online_case",
+    "OnlineLearningQueue", "eligible_online_case", "training_job_state",
     "SPECIALIST_TRAINERS", "ONLINE_SCHEMA",
 ]
