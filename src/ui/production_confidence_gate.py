@@ -85,6 +85,18 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     # continua válido mesmo se uma tela intermediária mudar o veredito.
     physical_veto = detail.get("physical_missing_veto", {})
     physical_veto = physical_veto if isinstance(physical_veto, dict) else {}
+    # A apresentação de NG corroborado e a emissão 1/NG são dimensões
+    # diferentes: mesmo sem SUSPECT_ABSENCE a convergência KNN tricolor
+    # pode classificar NG, mas NUNCA autoriza XP automático.
+    if corroborated_ng_verdict(analysis):
+        return {
+            "mode": "production", "confidence": confidence,
+            "threshold": None, "verdict": "DEFEITO REAL",
+            "auto_allowed": False, "operator_review_required": True,
+            "proposed_decision": "NG",
+            "reason": "corroborated_ng_requires_human_confirmation",
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
     physical_blocked = bool(
         detail.get("multilight_category") == "FALTANDO"
         and physical_veto.get("status") in {"SUSPECT_ABSENCE", "UNAVAILABLE", "GEOMETRY_REVIEW"}
