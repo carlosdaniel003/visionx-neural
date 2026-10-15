@@ -359,6 +359,84 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
             self.assertEqual(profile["record_count"], count + 1)
             self.assertEqual(profile["warmup"]["state"], "ready")
 
+    def test_equivalent_recreated_legacy_objects_reuse_warm_index(self):
+        """Recriar os dicionários sem alterar conteúdo não reabre os PNGs."""
+        from unittest.mock import patch
+
+        system = self.create_router()
+        knn = system.experts["knn"]
+        knn.signatures_ng.append(self.make_record("NG"))
+        index = system._get_verified_memory_index()
+        system.prepare_verified_memory_index()
+        with patch.object(index, "_entry", wraps=index._entry) as audit:
+            for _ in range(3):
+                knn.signatures_ng = [dict(record) for record in knn.signatures_ng]
+                result = self.inspect(system)
+                self.assertEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+                profile = result["detail"]["verified_memory_timing"]
+                self.assertTrue(profile["index_reused"])
+                self.assertEqual(profile["index_build_ms"], 0)
+            audit.assert_not_called()
+
+    def test_changed_json_after_reload_is_audited_not_trusted_from_cache(self):
+        """Mesmo caminho não mantém KNOWN após perder proveniência humana."""
+        system = self.create_router()
+        record = self.make_record("NG")
+        system.experts["knn"].signatures_ng.append(record)
+        system.prepare_verified_memory_index()
+        path = Path(record["json_path"])
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["decision"]["source"] = "production_auto"
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        system.reload_memory()
+        result = self.inspect(system)
+        self.assertEqual(result["detail"]["recognition_route"], "NEW_CNN")
+        profile = result["detail"]["verified_memory_timing"]
+        self.assertFalse(profile["index_reused"])
+        self.assertEqual(profile.get("legacy_cache_hits", 0), 0)
+        self.assertEqual(profile["legacy_cache_misses"], 1)
+
+    def test_changed_png_after_reload_is_rehashed_not_trusted_from_cache(self):
+        """Um pixel diferente invalida os fingerprints do par auditado."""
+        system = self.create_router()
+        record = self.make_record("NG")
+        system.experts["knn"].signatures_ng.append(record)
+        system.prepare_verified_memory_index()
+        path = Path(record["json_path"]).parent / "t.png"
+        changed = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        changed[60, 80] ^= 1
+        cv2.imwrite(str(path), changed)
+
+        system.reload_memory()
+        result = self.inspect(system)
+        self.assertEqual(result["detail"]["recognition_route"], "NEW_CNN")
+        profile = result["detail"]["verified_memory_timing"]
+        self.assertEqual(profile.get("legacy_cache_hits", 0), 0)
+        self.assertEqual(profile["legacy_cache_misses"], 1)
+
+    def test_new_legacy_record_reuses_unchanged_previous_audit(self):
+        """Após atualização legítima, revalida apenas o novo documento."""
+        from unittest.mock import patch
+
+        system = self.create_router()
+        knn = system.experts["knn"]
+        first = self.make_record("NG")
+        knn.signatures_ng.append(first)
+        index = system._get_verified_memory_index()
+        system.prepare_verified_memory_index()
+        additional = self.make_record("OK", info=dict(self.info, parts="R999"))
+        knn.signatures_ok.append(additional)
+        with patch.object(index, "_entry", wraps=index._entry) as audit:
+            result = self.inspect(system)
+        self.assertEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+        profile = result["detail"]["verified_memory_timing"]
+        self.assertFalse(profile["index_reused"])
+        self.assertEqual(profile["index_rebuild_reason"], "legacy_records_changed")
+        self.assertEqual(profile["legacy_cache_hits"], 1)
+        self.assertEqual(profile["legacy_cache_misses"], 1)
+        self.assertEqual(audit.call_count, 1)
+
     def test_archive_refresh_then_legacy_change_forces_fresh_verification(self):
         """Atualizações reais do legado continuam exigindo novo índice."""
         system = self.create_router()
@@ -442,7 +520,10 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
             self.assertEqual(next_case["detail"]["recognition_route"], "KNOWN_KNN")
             self.assertFalse(profile["index_reused"])
             self.assertEqual(profile["index_scope"], "targeted_legacy_lookup")
-            self.assertEqual(len(candidates), 2)
+            # O registro não mudou: a auditoria de JSON+PNGs permanece
+            # aproveitável, mesmo após a invalidação explícita do índice.
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(profile["legacy_cache_hits"], 1)
 
     def test_warmup_after_scoped_index_must_be_complete(self):
         system = self.create_router()
