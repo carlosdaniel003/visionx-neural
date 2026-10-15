@@ -146,6 +146,14 @@ class InspectionTimingTests(unittest.TestCase):
             self.assertIsNotNone(
                 panel._inspection_previous_gate_release_at
             )
+            # _force_discard_cleanup zera a origem antes de _release_cycle.
+            # Ainda assim a thread do acervo PRECISA ser retomada.
+            begin_cycle(panel, "xp-side-aborted", "Modo Teste")
+            self.assertTrue(watcher.activity()["inspection_priority_active"])
+            panel.capture_cycle_source = None
+            with patch("src.ui.network_image_cycle_gate._safe_sync"):
+                _release_cycle(panel)
+            self.assertFalse(watcher.activity()["inspection_priority_active"])
         finally:
             activate_archive_auto_memory(None)
             watcher.stop(timeout=1)
