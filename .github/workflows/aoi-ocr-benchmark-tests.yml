@@ -9,6 +9,7 @@ on:
       - "tests/test_aoi_ocr_benchmark.py"
       - "tests/test_aoi_ocr_thread_trial.py"
       - "docs/AOI_OCR_BENCHMARK.md"
+      - "docs/AOI_OCR_ENGINE_EVALUATION.md"
       - ".github/workflows/aoi-ocr-benchmark-tests.yml"
   push:
     branches: [central]
