@@ -174,9 +174,21 @@ def memory_seen_state(analysis: dict | None) -> dict:
     known = bool(recognized)
     queried = known or bool(unrecognized)
     status = "JA_VI" if known else "NUNCA_VI" if queried else None
+    detail = ((analysis or {}).get("detail") or {}) if isinstance(analysis, dict) else {}
+    detail = detail if isinstance(detail, dict) else {}
+    visual = detail.get("knn_visual_corroboration") or {}
+    visual = visual if isinstance(visual, dict) else {}
+    similar_ng = bool(
+        not known and visual.get("status") == "NG_CORROBORATED"
+    )
     return {
         "status": status,
-        "label": "JÁ VI" if known else "NUNCA VI" if queried else "",
+        "label": (
+            "JÁ VI" if known else
+            "VI SEMELHANTE" if similar_ng else
+            "NUNCA VI" if queried else ""
+        ),
+        "approximate_ng_seen": similar_ng,
         "recognized_lights": recognized,
         "new_lights": unrecognized,
         "unreported_lights": unreported if any(light_routes.values()) else [],
@@ -210,6 +222,13 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
             "Correspondência exata gabarito/teste.",
         )
     if result == "NUNCA_VI":
+        if memory.get("approximate_ng_seen"):
+            return (
+                "VI SEMELHANTE • KNN VISUAL NG",
+                "A KNN recuperou exemplos NG visualmente semelhantes em pelo "
+                "menos duas iluminações. O par NÃO é idêntico; a CNN pode "
+                "discordar. Não equivale a julgamento 0/1 automático.",
+            )
         if memory["has_multilight"]:
             return (
                 "NUNCA VI • KNN SEM MATCH EXATO",

@@ -25,7 +25,7 @@ class DecisionInfluenceWidget(QWidget):
         self.rows = neural_influence_rows(analysis) or influence_rows(self.trace)
         if self.rows and self.rows[0].get("telemetry_row"):
             self.setToolTip(
-                "Verde: falha falsa/OK; vermelho: defeito/NG. "
+                "Verde: voto CNN OK não contradito; vermelho: NG. "
                 "A barra representa os scores brutos da CNN por iluminação, "
                 "não acurácia nem probabilidade calibrada. "
                 "KNN exato recupera somente rótulos humanos confirmados."
@@ -128,9 +128,19 @@ class DecisionInfluenceWidget(QWidget):
             if known_label in {"OK", "NG"}:
                 state = known_label
                 status_text = f"MEMÓRIA HUMANA • {known_label} • PAR EXATO"
+            elif row.get("knn_approximate"):
+                corroborated = row.get("knn_visual_label") == "NG"
+                state = "NG" if corroborated else "REVISÃO"
+                status_text = (
+                    "KNN • NG SEMELHANTE (NÃO EXATO)"
+                    if corroborated else "KNN • VIZINHOS INCONCLUSIVOS"
+                )
+            elif row.get("contradicted"):
+                state = "REVISÃO"
+                status_text = "CNN VOTOU OK • CONTRADITA POR OUTRO MOTOR"
             elif "FALHA FALSA" in verdict:
                 state = "OK"
-                status_text = "OK • FALHA FALSA"
+                status_text = "CNN VOTOU OK • NÃO É APROVAÇÃO FINAL"
             elif "DEFEITO REAL" in verdict:
                 state = "NG"
                 status_text = "NG • DEFEITO REAL"
@@ -165,7 +175,11 @@ class DecisionInfluenceWidget(QWidget):
                 bar_rect = QRectF(rect.x() + 10, y + 28, rect.width() - 20, 10)
                 ok_width = bar_rect.width() * (1.0 - float(score))
                 painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(QColor("#4ade80"))
+                # A CNN pode votar OK e mesmo assim estar contradita pela
+                # contraprova física/KNN. Não pintar o OK como verde validado.
+                painter.setBrush(QColor(
+                    "#56616c" if row.get("contradicted") else "#4ade80"
+                ))
                 if ok_width > 0:
                     painter.drawRect(QRectF(bar_rect.x(), bar_rect.y(), ok_width, 10))
                 painter.setBrush(QColor("#ff6262"))
@@ -177,16 +191,22 @@ class DecisionInfluenceWidget(QWidget):
                 painter.drawText(
                     QRectF(rect.x() + 10, y + 39, rect.width() - 20, 15),
                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                    f"Score NG bruto {score * 100:.4f}%  •  OK complementar "
-                    f"{(1-score)*100:.4f}%",
+                    f"Score NG bruto {score * 100:.4f}% (não calibrado)"
+                    + (" • VOTO CNN CONTESTADO" if row.get("contradicted")
+                       else " • voto CNN, não conclusão final"),
                 )
             else:
                 painter.setFont(QFont("Consolas", 7))
                 painter.setPen(QColor("#9aa6b2"))
+                label_text = (
+                    str(row.get("display_text", "KNN visual"))
+                    if row.get("knn_approximate")
+                    else "KNN: rótulo humano exato • sem score de probabilidade"
+                )
                 painter.drawText(
                     QRectF(rect.x() + 10, y + 24, rect.width() - 20, 21),
                     Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                    "KNN: rótulo humano exato • sem score de probabilidade",
+                    self._elide(painter, label_text, int(rect.width() - 20)),
                 )
 
         painter.setPen(QColor("#98a5b1"))
@@ -194,7 +214,7 @@ class DecisionInfluenceWidget(QWidget):
         painter.drawText(
             QRectF(10, max(0, height - 29), width - 20, 25),
             Qt.AlignmentFlag.AlignCenter,
-            "Scores CNN não calibrados. Votos multilight não são soma de pesos.",
+            "CNN verde = apenas voto OK; amarelo = contradição. KNN ≠ probabilidade.",
         )
 
     def paintEvent(self, event):
