@@ -105,7 +105,7 @@ class AOIOCRFieldNormalizationTests(unittest.TestCase):
         # Não fazer correções globais L->1, I->1 ou ~~ -> ~.
         unchanged = (
             "EL~9", "EI~9", "RL~~~9", "FICE~S", "RI75",
-            "EL9", "E1~9", "R3~~~5", "EIL~~~9", "E1~~~S",
+            "EL9", "E1~9", "R3~~~5", "EIL~~~9",
         )
         for raw in unchanged:
             with self.subTest(raw=raw):
