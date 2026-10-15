@@ -115,6 +115,23 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "operator_shortcuts": {"0": "OK", "1": "NG"},
         }
 
+    # Divergência forte entre vizinhos NG e CNN OK veta AUTO-OK inclusive
+    # se outra camada visual reescrever o veredito de apresentação.
+    neighbors = detail.get("knn_visual_corroboration")
+    neighbors = neighbors if isinstance(neighbors, dict) else {}
+    if (
+        neighbors.get("status") == "NG_CORROBORATED"
+        and detail.get("cnn_v2_consensus") == "OK"
+    ):
+        return {
+            "mode": "production", "confidence": confidence, "threshold": None,
+            "verdict": "REVISÃO OBRIGATÓRIA",
+            "auto_allowed": False, "operator_review_required": True,
+            "proposed_decision": "",
+            "reason": "cnn_knn_visual_ng_disagreement",
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
+
     # AUTO-OK ou AUTO-NG pela CNN experimental somente se TRÊS luzes
     # verificadas concordarem, com mesmo SHA de modelo e sem revisão.
     # Uma pontuação isolada, até extrema, não autoriza nenhum comando.
