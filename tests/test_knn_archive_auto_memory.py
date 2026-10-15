@@ -212,9 +212,9 @@ class AutoArchiveTests(unittest.TestCase):
 
     def test_pause_mid_scan_finishes_current_png_then_defers_next(self):
         first = self.ok_dir / "2026-10-15_0910_FALTANDO_SIDE.png"
-        second = self.ok_dir / "2026-10-15_0911_FALTANDO_SIDE.png"
+        second = self.ng_dir / "2026-10-15_0911_FALTANDO_SIDE.png"
         synthetic_png(first, "OK")
-        synthetic_png(second, "OK")
+        synthetic_png(second, "NG")
         self.assertEqual(self.watcher.scan_once(now=1.0)["pending"], 2)
         called = []
 
