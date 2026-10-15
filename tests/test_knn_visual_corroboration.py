@@ -195,6 +195,10 @@ class ApproximateKNNConsensusTests(unittest.TestCase):
         entry["detail"]["operator_review_required"] = False
         entry["detail"]["cnn_v2_supervised_auto_eligible"] = True
         entry["detail"]["decision_trace"]["operator_review_required"] = False
+        # A sonda física concluiu sem suspeita: quem deve vetar é a KNN.
+        entry["detail"]["physical_missing_veto"] = {
+            "status": "NO_STRONG_EVIDENCE"
+        }
         policy = production_decision_policy(entry)
         self.assertFalse(policy["auto_allowed"])
         self.assertEqual(policy["reason"], "cnn_knn_visual_ng_disagreement")
