@@ -14,13 +14,11 @@ class InvertedFaceUIContractTests(unittest.TestCase):
             source.index("install_inverted_face_integration(MoEOrchestrator)"),
         )
 
-    def test_debugger_is_installed_before_decision_panel(self):
+    def test_removed_visual_debugger_not_installed_on_startup(self):
         source = (ROOT / "main.py").read_text(encoding="utf-8")
-        self.assertIn("install_inverted_face_panel", source)
-        self.assertLess(
-            source.index("install_inverted_face_panel(panel)"),
-            source.index("install_decision_panel(panel)"),
-        )
+        self.assertNotIn("install_inverted_face_panel", source)
+        self.assertIn("install_decision_panel(panel)", source)
+        self.assertIn("install_inverted_face_integration(MoEOrchestrator)", source)
 
     def test_debugger_exposes_witness_views_and_metrics(self):
         source = (
