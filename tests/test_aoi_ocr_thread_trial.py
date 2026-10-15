@@ -67,6 +67,9 @@ class OcrThreadTrialTests(unittest.TestCase):
             self.assertTrue(kw["capture_output"])
             self.assertFalse(kw["check"])
             self.assertGreaterEqual(kw["timeout"], 1)
+            self.assertEqual(kw["env"]["PYTHONIOENCODING"], "utf-8")
+            self.assertEqual(kw["encoding"], "utf-8")
+            self.assertEqual(kw["errors"], "replace")
             job = json.loads(
                 Path(cmd[cmd.index("--_job") + 1]).read_text("utf-8")
             )
@@ -102,6 +105,26 @@ class OcrThreadTrialTests(unittest.TestCase):
         self.assertEqual(
             self.source.read_bytes(), b"original sample for mocked trial"
         )
+
+    def test_child_prints_unicode_even_when_parent_uses_cp1252(self):
+        """Integration: redirected stdout on Windows must not crash on emoji."""
+        import sys
+        from unittest.mock import patch
+
+        # Reproduce the corporate PowerShell configuration that triggered
+        # UnicodeEncodeError on import of screen_monitor in child processes.
+        with patch.dict(os.environ, {"PYTHONIOENCODING": "cp1252"}):
+            env = dict(os.environ)
+            env["PYTHONIOENCODING"] = "utf-8"
+            proc = subprocess.run(
+                [sys.executable, "-c", "print('\\u2705 Tesseract encontrado')"],
+                env=env, check=False, capture_output=True,
+                text=True, encoding="utf-8", errors="replace",
+                timeout=10,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("\\u2705 Tesseract encontrado", proc.stdout)
+            self.assertEqual(os.environ["PYTHONIOENCODING"], "cp1252")
 
     def test_mismatched_candidate_is_not_accepted_even_when_faster(self):
         runs = [
