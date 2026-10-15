@@ -73,6 +73,15 @@ def _release_cycle(panel) -> None:
         except Exception as exc:
             print(f"Falha não fatal ao liberar entrada de imagens: {exc}")
     if was_network:
+        # Retoma OCR do acervo mesmo em skip/watchdog/erro: o gate da peça
+        # é a única fonte de encerramento seguro do intervalo prioritário.
+        try:
+            from src.services.knn_archive_auto_memory import (
+                resume_archive_auto_memory_after_inspection,
+            )
+            resume_archive_auto_memory_after_inspection()
+        except Exception:
+            pass
         # Tempo desde a liberação produtiva ate a próxima SIDE estável.
         # Não confundir este intervalo com a inferência da peça anterior.
         panel._inspection_previous_gate_release_at = time.perf_counter()
