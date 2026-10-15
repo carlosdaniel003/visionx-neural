@@ -59,8 +59,8 @@ class ScreenMonitorOCRTimingTests(unittest.TestCase):
         # Antes, FICE~S iniciava image_to_data + duas image_to_string.
         # Agora só a categoria e os limites do Value são utilizados.
         raw = (
-            "Board P22-22200 (PRINCIPAL) Li3\\n"
-            "Parts FICE~S Block 7 Step 1 Process 16\\n"
+            "Board P22-22200 (PRINCIPAL) Li3\n"
+            "Parts FICE~S Block 7 Step 1 Process 16\n"
             "Value 0 <= 48.866 <= 10 FALTANDO"
         )
         fake = _Tesseract([raw])
@@ -74,8 +74,8 @@ class ScreenMonitorOCRTimingTests(unittest.TestCase):
 
     def test_valid_historical_e1_pattern_is_not_parsed(self):
         raw = (
-            "Board P22-22200 (PRINCIPAL) Li3\\n"
-            "Parts EL~~~9 Block 2 Step 3 Process 10\\n"
+            "Board P22-22200 (PRINCIPAL) Li3\n"
+            "Parts EL~~~9 Block 2 Step 3 Process 10\n"
             "Value 15 <= 0 <= 70 FALTANDO"
         )
         result = self.read(_Tesseract([raw]))
