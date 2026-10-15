@@ -886,10 +886,15 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
         if knn is None or not hasattr(knn, "ingest_saved_samples"):
             return self.reload_memory()
         paths = tuple(str(p) for p in json_paths if p)
-        knn.ingest_saved_samples(paths)
         cached = getattr(self, "_memory_first_index", None)
         if cached is not None and type(cached) is VerifiedKNNMemory:
-            cached.apply_saved_legacy(knn, paths)
+            # Sem intervalo entre atualizar as listas KNN e o índice:
+            # SIDE/TOP/MID sempre consultam uma geração completa.
+            with cached._lock:
+                knn.ingest_saved_samples(paths)
+                cached.apply_saved_legacy(knn, paths)
+        else:
+            knn.ingest_saved_samples(paths)
 
     def reload_memory(self, *args, **kwargs):
         outcome = original_reload(self, *args, **kwargs)
