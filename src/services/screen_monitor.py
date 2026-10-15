@@ -13,20 +13,18 @@ Usa APENAS:
 2. "Cinza sustentado" para BOTTOM: para onde ≥90% do restante é cinza
 3. Colunas com gap_limit=6
 """
+from concurrent.futures import ThreadPoolExecutor
+
 import cv2
 import numpy as np
 import mss
 import re
 import time
 from pathlib import Path
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QEventLoop, QThread, QTimer, pyqtSignal
 from src.config.settings import settings
 from src.services.aoi_ocr_timing import AOIOCRTiming
-from src.services.aoi_ocr_fields import (
-    normalize_board_ocr,
-    normalize_value_ocr,
-    recover_parts_from_text_zone,
-)
+from src.services.aoi_ocr_fields import normalize_value_ocr
 
 HAS_TESSERACT = False
 try:
@@ -56,6 +54,36 @@ except ImportError:
 
 
 DEBUG_DIR = Path("public/debug_crop")
+# Um único worker dedicado a OCR da UI: evita vários processos Tesseract
+# paralelos em memória. OCR de acervo/MSS em QThread mantém execução normal.
+_OCR_UI_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ODINOCR")
+
+
+def _read_tesseract_responsive(callable_ocr):
+    """Preserva o resultado síncrono, mas não congela a event loop Qt da UI.
+
+    A SIDE continua aguardando o texto de Value antes de validar a entrada ou
+    permitir TOP/MID. Somente o processo externo do Tesseract sai da UI.
+    Não iniciar event loop aninhada em threads MSS/KNN/background.
+    """
+    app = QCoreApplication.instance()
+    if app is None or QThread.currentThread() != app.thread():
+        return callable_ocr()
+
+    future = _OCR_UI_EXECUTOR.submit(callable_ocr)
+    if not future.done():
+        loop = QEventLoop()
+        heartbeat = QTimer()
+        heartbeat.setInterval(25)
+        heartbeat.timeout.connect(
+            lambda: loop.quit() if future.done() else None
+        )
+        heartbeat.start()
+        try:
+            loop.exec()
+        finally:
+            heartbeat.stop()
+    return future.result()
 
 
 class ScreenMonitor(QThread):
@@ -401,13 +429,13 @@ class ScreenMonitor(QThread):
             _, binary = cv2.threshold(gray_big, 0, 255,
                                        cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             read = pytesseract.image_to_string
-            raw = (
-                read(binary, config='--psm 6 --oem 3')
-                if timing is None else timing.call(
+            if timing is None:
+                invoke = lambda: read(binary, config='--psm 6 --oem 3')
+            else:
+                invoke = lambda: timing.call(
                     phase, read, binary, config='--psm 6 --oem 3'
                 )
-            )
-            return raw.strip()
+            return _read_tesseract_responsive(invoke).strip()
         except Exception:
             return ""
 
@@ -430,8 +458,11 @@ class ScreenMonitor(QThread):
         aux = getattr(self, "_shadow_auxiliary_info", None)
         if isinstance(aux, dict) and aux:
             timing.route = "auxiliary_reuse"
-            timing.parts_reason = "side_reused"
+            timing.parts_reason = "parts_disabled"
             return dict(aux)
+        # Chaves vazias preservam compatibilidade com os consumidores KNN e
+        # relatórios históricos. Não executar reconhecimento de Board/Parts:
+        # apenas Value define a categoria operacional nesta interface.
         info = {"board": "", "parts": "", "value": "", "raw_text": ""}
         if not HAS_TESSERACT:
             timing.route = "tesseract_unavailable"
@@ -467,10 +498,7 @@ class ScreenMonitor(QThread):
                 raw = self._ocr_fast(
                     text_zone_r, timing=timing, phase="general_red_retry"
                 )
-                if raw:
-                    # A releitura dirigida de Parts deve usar a mesma região
-                    # que efetivamente produziu o texto bruto selecionado.
-                    text_zone = text_zone_r
+                # Sem OCR dirigido de Parts: nenhuma ROI adicional.
 
         if not raw:
             info["raw_text"] = "[Nenhum texto encontrado]"
@@ -481,17 +509,6 @@ class ScreenMonitor(QThread):
             lc = line.strip()
             if not lc:
                 continue
-            if not info["board"]:
-                m = re.search(
-                    r'[BbRr8Hh][Oo0][Aa][Rr][Dd]\s*[:\-\.\s]\s*(\S.*)', lc)
-                if m:
-                    info["board"] = m.group(1).strip()
-            if not info["parts"]:
-                m = re.search(
-                    r'[PpFf][Aa][Rr][Tt][Ss]?\s*[:\-\.\s]\s*(.+?)'
-                    r'(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Vv][Aa][Ll]|\s*$)', lc)
-                if m and m.group(1).strip():
-                    info["parts"] = m.group(1).strip()
             if not info["value"]:
                 m = re.search(
                     r'[Vv][Aa][Ll1iI][Uu][Ee]\s*[:\-\.\s]\s*(.+?)'
@@ -499,17 +516,10 @@ class ScreenMonitor(QThread):
                 if m and m.group(1).strip():
                     info["value"] = m.group(1).strip()
 
-        info["board"] = normalize_board_ocr(info["board"])
-        info["parts"] = recover_parts_from_text_zone(
-            text_zone,
-            info["parts"],
-            pytesseract,
-            timing=timing,
-        )
+        timing.parts_reason = "parts_disabled"
         info["value"] = normalize_value_ocr(info["value"])
 
-        print(f"📋 OCR — Board: '{info['board']}' | "
-              f"Parts: '{info['parts']}' | Value: '{info['value']}'")
+        print(f"📋 OCR — Value: '{info['value']}'")
         return info
 
     # =================================================================

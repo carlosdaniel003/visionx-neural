@@ -458,8 +458,6 @@ class ControlPanel(QWidget):
         return QPixmap.fromImage(q_img)
 
     def _reset_aoi_info(self):
-        self.lbl_board_value.setText("-")
-        self.lbl_parts_value.setText("-")
         self.lbl_category_value.setText("-")
         self.lbl_value_value.setText("-")
         self.current_aoi_info = {}
@@ -511,8 +509,6 @@ class ControlPanel(QWidget):
         if hasattr(self, 'frame_knn'): self.frame_knn.update_data({})
 
     def _update_aoi_info(self, aoi_info: dict):
-        self.lbl_board_value.setText(aoi_info.get("board", "-"))
-        self.lbl_parts_value.setText(aoi_info.get("parts", "-"))
         self.lbl_category_value.setText(aoi_info.get("category", "Unknown"))
         self.lbl_value_value.setText(aoi_info.get("value", "-"))
 

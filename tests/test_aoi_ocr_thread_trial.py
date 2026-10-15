@@ -14,20 +14,20 @@ from src.services import aoi_ocr_thread_trial as trial
 
 
 FIELDS = {
-    "board": "P22-22200 (PRINCIPAL) L13",
-    "parts": "D10~5",
+    "board": "",
+    "parts": "",
     "value": "0 <= 5 <= 10 FALTANDO",
     "category": "FALTANDO",
 }
 
 
-def _sample(ms=120, *, fields=None, parts_valid=True):
+def _sample(ms=120, *, fields=None, parts_valid=None):
     return {
         "fields": dict(fields or FIELDS),
         "elapsed_ms": ms,
         "tesseract_calls": 1,
         "tesseract_ms": ms,
-        "parts_reason": "valid_general_reference",
+        "parts_reason": "parts_disabled",
         "parts_syntax_valid": parts_valid,
     }
 
@@ -106,6 +106,16 @@ class OcrThreadTrialTests(unittest.TestCase):
             self.source.read_bytes(), b"original sample for mocked trial"
         )
 
+    def test_disabled_parts_are_not_counted_as_invalid(self):
+        reports = [
+            _worker_result("default", self.job),
+            _worker_result("omp1", self.job),
+            _worker_result("omp1", self.job),
+            _worker_result("default", self.job),
+        ]
+        summary = trial.summarize_trial(self.job, reports)
+        self.assertEqual(summary["invalid_parts_cases"], {"default": 0, "omp1": 0})
+
     def test_child_prints_unicode_even_when_parent_uses_cp1252(self):
         """Integration: redirected stdout on Windows must not crash on emoji."""
         import sys
@@ -130,10 +140,10 @@ class OcrThreadTrialTests(unittest.TestCase):
         runs = [
             _worker_result("default", self.job, 120),
             _worker_result("omp1", self.job, 40, fields={
-                **FIELDS, "parts": "D11~5"
+                **FIELDS, "value": "0 <= 6 <= 10 FALTANDO"
             }),
             _worker_result("omp1", self.job, 40, fields={
-                **FIELDS, "parts": "D11~5"
+                **FIELDS, "value": "0 <= 6 <= 10 FALTANDO"
             }),
             _worker_result("default", self.job, 120),
         ]
@@ -145,7 +155,7 @@ class OcrThreadTrialTests(unittest.TestCase):
 
     def test_unstable_baseline_and_missing_human_truth_stay_unverified(self):
         job = trial.make_job([(self.source, None)], repeats=1)
-        different = dict(FIELDS, parts="D12~5")
+        different = dict(FIELDS, value="0 <= 7 <= 10 FALTANDO")
         runs = [
             _worker_result("default", job, 130),
             _worker_result("omp1", job, 60),

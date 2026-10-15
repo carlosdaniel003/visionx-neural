@@ -106,12 +106,12 @@ def _image_paths(args) -> list[tuple[Path, dict | None]]:
                 if (
                     not isinstance(expected, dict)
                     or set(expected) != set(FIELDS)
-                    or any(not isinstance(expected[k], str) or not expected[k].strip()
-                           for k in FIELDS)
+                    or any(not isinstance(expected[k], str) for k in FIELDS)
+                    or any(not expected[k].strip() for k in ("value", "category"))
                 ):
                     raise ValueError(
-                        "expected exige board, parts, value e category "
-                        "com rótulos humanos não vazios"
+                        "expected exige board e parts vazios/legados, value e "
+                        "category com rótulos humanos não vazios"
                     )
             source = (manifest.parent / row["path"]).resolve(strict=True)
             if manifest.parent not in source.parents:
@@ -222,17 +222,14 @@ def compare_variants(
                 monitor, frame, *bars, VARIANTS[0], module
             )
             # Uma categoria fora do escopo operacional (ex.: Little Solder)
-            # não significa que o OCR de Board/Parts/Value falhou. Permitir
-            # somente seu benchmark OFFLINE, sem tratá-la como elegível.
-            # Campos textuais ausentes continuam bloqueando a comparação.
+            # não significa que o OCR do Value falhou. Permitir
+            # somente o benchmark OFFLINE sem tratá-la como elegível.
+            # Board/Parts estão desativados operacionalmente.
             if any(
                 not isinstance(baseline["fields"].get(k), str)
                 or not baseline["fields"][k].strip()
-                for k in FIELDS
-            ) or any(
-                baseline["fields"].get(k) == "Unknown"
-                for k in ("board", "parts", "value")
-            ):
+                for k in ("value", "category")
+            ) or baseline["fields"].get("value") == "Unknown":
                 raise ValueError(
                     "Baseline tem campo OCR vazio/desconhecido; recusar comparação: "
                     + str(path)

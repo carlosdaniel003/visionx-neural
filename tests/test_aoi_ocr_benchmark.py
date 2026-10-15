@@ -23,11 +23,11 @@ GOOD = (
 BAD = (
     "Board P22-22200 (PRINCIPAL) Li3\n"
     "Parts R175 Block 1\n"
-    "Value 12 <= 0 <= 60 FALTANDO"
+    "Value 12 <= 1 <= 60 FALTANDO"
 )
 EXPECTED = {
-    "board": "P22-22200 (PRINCIPAL) L13",
-    "parts": "RI75",
+    "board": "",
+    "parts": "",
     "value": "12 <= 0 <= 60 FALTANDO",
     "category": "FALTANDO",
 }
@@ -113,8 +113,8 @@ class OCRBenchmarkTests(unittest.TestCase):
         case = report["cases"][0]
         self.assertFalse(case["baseline_category_supported"])
         control = case["measurements"][0]["fields"]
-        self.assertEqual(control["board"], "P24-03804 (PRINCIPAL) L05")
-        self.assertEqual(control["parts"], "JF271")
+        self.assertEqual(control["board"], "")
+        self.assertEqual(control["parts"], "")
         self.assertEqual(
             control["value"], "40 <= 25.602 <= 98 Little Solder"
         )
@@ -132,8 +132,8 @@ class OCRBenchmarkTests(unittest.TestCase):
         ))
         self.fake.image_to_string = lambda binary, config="": text
         expected = {
-            "board": "P24-03804 (PRINCIPAL) L05",
-            "parts": "JF271",
+            "board": "",
+            "parts": "",
             "value": "40 <= 25.602 <= 98 Little Solder",
             "category": "Unknown",
         }
@@ -147,7 +147,7 @@ class OCRBenchmarkTests(unittest.TestCase):
         )
 
     def test_reference_disagrees_with_original_and_does_not_approve_variant(self):
-        expected = dict(EXPECTED, parts="R175")
+        expected = dict(EXPECTED, value="12 <= 1 <= 60 FALTANDO")
         report = self.run_benchmark([(self.path, expected)], repeats=1)
         self.assertEqual(
             report["summary"]["baseline_original"]["mismatch_with_human_labels_cases"],
@@ -194,7 +194,7 @@ class OCRBenchmarkTests(unittest.TestCase):
         self.assertEqual(sources, [(self.path.resolve(strict=True), EXPECTED)])
 
         manifest.write_text(json.dumps([
-            {"path": "frame.png", "expected": {"board": "fake"}}
+            {"path": "frame.png", "expected": {"value": "fake"}}
         ]), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "expected exige"):
             benchmark._image_paths(SimpleNamespace(
