@@ -129,8 +129,12 @@ class DecisionInfluenceWidget(QWidget):
                 state = known_label
                 status_text = f"MEMÓRIA HUMANA • {known_label} • PAR EXATO"
             elif row.get("knn_approximate"):
-                state = "NG"
-                status_text = "KNN • NG SEMELHANTE (NÃO EXATO)"
+                corroborated = row.get("knn_visual_label") == "NG"
+                state = "NG" if corroborated else "REVISÃO"
+                status_text = (
+                    "KNN • NG SEMELHANTE (NÃO EXATO)"
+                    if corroborated else "KNN • VIZINHOS INCONCLUSIVOS"
+                )
             elif row.get("contradicted"):
                 state = "REVISÃO"
                 status_text = "CNN VOTOU OK • CONTRADITA POR OUTRO MOTOR"
@@ -187,8 +191,9 @@ class DecisionInfluenceWidget(QWidget):
                 painter.drawText(
                     QRectF(rect.x() + 10, y + 39, rect.width() - 20, 15),
                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                    f"Score NG bruto {score * 100:.4f}%  •  OK complementar "
-                    f"{(1-score)*100:.4f}%",
+                    f"Score NG bruto {score * 100:.4f}% (não calibrado)"
+                    + (" • VOTO CNN CONTESTADO" if row.get("contradicted")
+                       else " • voto CNN, não conclusão final"),
                 )
             else:
                 painter.setFont(QFont("Consolas", 7))
