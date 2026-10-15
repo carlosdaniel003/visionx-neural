@@ -1,3 +1,19 @@
+## 15/10/2026 — WinError 5 durante persistência KNN; saída inesperada da janela ainda não explicada
+
+Relatório do terminal após PR #30: o VisionX abriu e executou múltiplas inspeções, gerou texto OCR, eventos multilight e enfileirou atualizações incrementais CNN. Duas operações de memória KNN falharam ao publicar `data/knn_archive_memory/memory.json`:
+
+```text
+KNN live: memória NÃO persistida: [WinError 5] Acesso negado: '...tmp' -> '...memory.json'
+KNN falhou na gravação atômica da memória:
+PermissionError: [WinError 5] Acesso negado: '...tmp' -> '...memory.json'
+```
+
+O código atual já usa `_writer_lock` para serializar **escritores KNN**, mas isso não impede um leitor externo, backup/antivírus ou outro processo de manter o arquivo destino aberto sem `FILE_SHARE_DELETE` no Windows. **Não é possível afirmar que esse foi o bloqueador exato**, nem que a exceção foi responsável pelo encerramento da GUI: o observador trata a falha no worker, e o relatório não contém traceback fatal de `main.py`. O término em um prompt PowerShell demanda captura do código de saída e, se houver falha nativa, dump/Visualizador de Eventos.
+
+Correção de robustez restrita a `PersistentArchiveKNN`: em `os.replace(tmp, memory.json)`, repetir até quatro vezes **somente** se o sistema for Windows e o erro de publicação for `WinError 5` (acesso negado) ou `WinError 32` (sharing violation), com esperas finitas de 50/100/200/400 ms. As duas rotas atômicas (append-only e retificação explicitamente verificada) usam o mesmo helper. O lock entre escritores continua detido, o backup é mantido, a publicação permanece um único `os.replace` atômico, e o arquivo original não é apagado nem truncado. Se o erro persistir, é **propagado sem mascarar a falha**, e o `tmp` é removido normalmente pelo finally existente. Nenhum impacto em precisão OCR, CNN/KNN, SHA, imagens, contratos de julgamento ou comandos XP.
+
+O teste em CI simula WinError transitório e persistente e confirma que arquivo original e registros sobrevivem à falha permanente. **Não tratar como correção garantida do problema de inicialização.**
+
 ## 15/10/2026 — 7 ciclos após PR #29: janela entre peças
 
 Medições sequenciais FALTANDO Modo Teste: **4,58 / 7,27 / 16,92 / 8,96 / 11,81 / 6,05 / 14,70 segundos** (média 10,04 s, mediana 8,96 s; não há crescimento monótono). A 7ª inspeção, evento `c026ddf6cb9147a5aab7b78568838a7e`, demorou 14,703 s. OCR da SIDE foi 4,306 s em **4 Tesseracts**, retornando `Parts=FICE~S` sem candidato válido. A fase `parts_anchor_data` levou 1,443 s e o total das chamadas foi 4,004 s. Recortes SIDE levaram 1,697 s, dos quais 821 ms na gravação de PNGs de debug (incluídos na etapa); validação SIDE 1,735 s; router KNN SIDE 1,479 s, reconstrução 1,191 s por `legacy_records_changed` e warmup invalidado por `orchestrator_reload_memory`. A CNN pura SIDE levou 28 ms. Não somar etapas que se sobrepõem.
