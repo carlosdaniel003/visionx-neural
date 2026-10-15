@@ -465,6 +465,7 @@ class ScreenMonitor(QThread):
         info = {
             "board": "", "parts": "", "value": "",
             "category": "Unknown", "raw_text": "",
+            "ocr_text_detected": False,
         }
         if not HAS_TESSERACT:
             timing.route = "tesseract_unavailable"
@@ -506,6 +507,7 @@ class ScreenMonitor(QThread):
             info["raw_text"] = "[Nenhum texto encontrado]"
             return info
 
+        info["ocr_text_detected"] = True
         # OCR ainda lê a faixa de texto da AOI, mas descartamos operandos e
         # referências: só a categoria vinculada à linha Value é aproveitada.
         # Nunca inferir a categoria de outras linhas (Board/Parts/menus).
