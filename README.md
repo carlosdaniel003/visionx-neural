@@ -1,3 +1,23 @@
+## 15/10/2026 — Lentidão progressiva de inspeções: correção operacional confirmada (PR #39 e #40)
+
+**Estado na estação ODIN (relato do operador em 15/10/2026): RESOLVIDO.** Após atualizar a branch `central` com o PR #40, o operador testou o programa e confirmou: **"deu certo"**. Essa é a confirmação operacional da correção da lentidão progressiva, não um benchmark cronometrado novo; o tempo médio, percentis e estabilidade em operação prolongada não foram informados.
+
+**Histórico e medição antes da correção final:**
+- A lentidão crescia entre análises consecutivas: um ensaio anterior atingiu **61,62 s** (categoria FALTANDO), com **25,73 s SIDE** e **22,13 s TOP** reconstruindo o índice legado KNN.
+- No quinto evento observado após o PR #39 (`1f08c66a7c8d45879cfd7214586ae33e`, categoria INVERTIDO, Modo Teste), o ciclo SIDE→resultado consumiu **18.662,96 ms**. Somente a consulta KNN da SIDE custou **6.148,60 ms**, sendo **5.668,38 ms** de reconstrução; apesar do warmup `ready` de **12.693,05 ms**, a consulta não reutilizou o índice. Foram **151 `legacy_cache_misses`** e 10 hits entre 161 candidatos na SIDE. TOP e MID registraram `warmup.state=invalidated`, motivo `orchestrator_reload_memory`. A inferência neural CNN não era o principal gargalo (**42,13 ms SIDE**, **44,78 ms TOP**, **64,22 ms MID**).
+- O caminho de persistência assíncrona `DecisionPersistenceQueue` acionava `orchestrator.reload_memory()` após cada decisão gravada. A recarga completa revarria JSONs do legado, substituía registros KNN e invalidava o índice já aquecido. Registros legados inelegíveis também eram novamente auditados porque o cache só guardava entradas positivas.
+
+**Correções incorporadas:**
+1. **PR #39**, commit `65f5e9a9fd1554cd9255cc4e29b582877c437336`: índice identificado por atributos relevantes dos registros, e cache de auditorias verificadas com observação dos arquivos JSON/PNG em vez de dependência em `id(record)`.
+2. **PR #40**, commit `717bc2fb7999ca917d9dd6582a3913a524d2693c`: `src/services/decision_persistence.py` registra os caminhos JSON efetivamente persistidos e chama a ingestão incremental, evitando recargas integrais no fluxo normal de decisão. `src/core/experts/knn_expert.py` incorpora/substitui somente esses registros, preservando as assinaturas persistentes. `src/core/verified_memory_router.py` atualiza os índices de forma coordenada, mantém cache de auditorias rejeitadas enquanto as fontes não mudam e reconfere registros positivos antes de usar `KNOWN_KNN`.
+3. O fallback para `reload_memory()` permanece em casos de falha da atualização incremental; mudanças de conteúdo, registros novos/removidos fora do fluxo rastreado e conflitos OK/NG não podem autorizar aprovação por memória obsoleta.
+
+**Validação:** dez verificações GitHub Actions passaram no PR #40, incluindo `tests/test_knn_incremental_inspection.py`, consultas por categoria sem Board/Parts, cinco decisões consecutivas sem recarga integral, conflitos de rótulo, alterações de PNG e persistência multilight parcial. **A confirmação real fornecida pelo operador foi positiva após a integração.** Não há números novos para afirmar um tempo fixo de inspeção; manter medição por evento com `verified_memory_timing.index_reused`, `index_build_ms`, `legacy_cache_hits`, `legacy_rejected_cache_hits`, `legacy_cache_misses` e `cycle_side_to_result_ms` se a latência voltar a subir.
+
+**Escopo preservado:** nenhum ajuste de pesos/limiares CNN, fusão multilight, OCR, comandos XP 0/1 ou política de revisão e supervisão humana. A recuperação KNN continua condicionada a par visual exato e origem válida, nunca a similaridade aproximada.
+
+---
+
 ## 14/10/2026 — Acervo KNN em segundo plano sem competir por prioridade com AOI (PR #25)
 
 No evento `0fa093f9dcf344eeb2c5997b9671ec8a`, a inspeção FALTANDO em Modo Teste atingiu **25.611,67 ms**. O observador KNN registrou trabalho concorrente ao longo de **8.516,29 ms SIDE**, **1.827,53 ms TOP** e **10.929,92 ms MID**, alternando entre `extracting_png` e `enumerating_files`. Até essa medição, havia completado **57 varreduras**, com **zero importações novas** na sessão. OCR SIDE demorou **6.996,75 ms** em quatro subprocessos, recuperação Parts inválida; MID teve recortes **4.067,32 ms**, geometria **2.489,46 ms**, inferência **3.056,21 ms**, renderização **992,54 ms**. Os tempos são medições sobrepostas e a coincidência não comprova causalidade.
