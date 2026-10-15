@@ -1318,9 +1318,8 @@ class ControlPanelUI:
         for viewport in self.image_viewports:
             viewport.setMinimumHeight(profile.image_min_height)
         if self.capture_preview_viewport is not None:
-            self.capture_preview_viewport.setMinimumHeight(
-                140 if compact else 180
-            )
+            preview_min_height = 140 if compact else 180
+            self.capture_preview_viewport.setMinimumHeight(preview_min_height)
 
         window.root_content.setMinimumWidth(0)
         window.root_content.updateGeometry()
