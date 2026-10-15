@@ -75,7 +75,7 @@ class SilkscreenGatekeeper:
                     print(f"📡 Porteiro 2: OCR alertou SHIFT. Tolerância de Silkscreen afrouxada para {tolerance:.0%}")
                 
                 # 2. Se a AOI avisou que tá invertido (Reverse)
-                if "REVERS" in val_text or "WRONG" in val_text:
+                if category == "INVERTIDO" or "REVERS" in val_text or "WRONG" in val_text:
                     is_ocr_reverse = True
                     print("📡 Porteiro 2: OCR alertou REVERSE. Validando interseccao com epicentro...")
 
