@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.core.corroborated_ng_verdict import corroborated_ng_verdict
 from src.core.neural.faltando_category_scope import uses_faltando_v2
 
 
@@ -100,16 +101,19 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         and physical_veto.get("status") != "NO_STRONG_EVIDENCE"
     )
     if physical_blocked or physical_required:
+        corroborated_ng = corroborated_ng_verdict(analysis)
         return {
             "mode": "production",
             "confidence": confidence,
             "threshold": None,
-            "verdict": "REVISÃO OBRIGATÓRIA",
+            "verdict": "DEFEITO REAL" if corroborated_ng
+                       else "REVISÃO OBRIGATÓRIA",
             "auto_allowed": False,
             "operator_review_required": True,
-            "proposed_decision": "",
+            "proposed_decision": "NG" if corroborated_ng else "",
             "reason": (
-                "cnn_faltando_independent_physical_veto" if physical_blocked
+                "corroborated_ng_requires_human_confirmation" if corroborated_ng
+                else "cnn_faltando_independent_physical_veto" if physical_blocked
                 else "cnn_faltando_physical_evidence_required"
             ),
             "operator_shortcuts": {"0": "OK", "1": "NG"},
@@ -222,9 +226,10 @@ def _record_policy(panel, policy: dict, resolution: str = "pending") -> None:
             **policy,
             "resolution": str(resolution),
         }
+        # Uma peça classificada NG também pode precisar do operador para
+        # enviar 1 ao XP. O flag sinaliza ação PENDENTE, não a classe.
         analysis["production_review_required"] = bool(
-            str(policy.get("verdict", "") or "").strip().upper()
-            == "REVISÃO OBRIGATÓRIA"
+            policy.get("operator_review_required", False)
             and resolution == "pending"
         )
 
