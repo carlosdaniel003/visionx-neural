@@ -195,6 +195,76 @@ class AutoArchiveTests(unittest.TestCase):
         activate_archive_auto_memory(None)
         self.assertIsNone(archive_auto_memory_activity())
 
+    def test_inspection_priority_defers_scan_and_imports_after_release(self):
+        path = self.ng_dir / "2026-10-15_0900_FALTANDO_SIDE.png"
+        synthetic_png(path, "NG")
+        self.watcher.pause_for_inspection()
+        paused = self.watcher.scan_once(now=1.0)
+        self.assertTrue(paused["deferred_for_inspection"])
+        self.assertEqual(self.store.records(), [])
+        self.assertTrue(self.watcher.activity()["inspection_priority_active"])
+        self.assertEqual(self.watcher.activity()["deferred_scans"], 1)
+        self.watcher.resume_after_inspection()
+        self.assertFalse(self.watcher.activity()["inspection_priority_active"])
+        self.assertEqual(self.watcher.scan_once(now=2.0)["imported"], 0)
+        self.assertEqual(self.watcher.scan_once(now=3.0)["imported"], 1)
+        self.assertEqual(len(self.store.records()), 1)
+
+    def test_pause_mid_scan_finishes_current_png_then_defers_next(self):
+        first = self.ok_dir / "2026-10-15_0910_FALTANDO_SIDE.png"
+        second = self.ok_dir / "2026-10-15_0911_FALTANDO_SIDE.png"
+        synthetic_png(first, "OK")
+        synthetic_png(second, "OK")
+        self.assertEqual(self.watcher.scan_once(now=1.0)["pending"], 2)
+        called = []
+
+        def trigger_pause(frame):
+            called.append(1)
+            self.watcher.pause_for_inspection()
+            return fake_extractor(frame)
+
+        self.watcher._extractor = trigger_pause
+        result = self.watcher.scan_once(now=2.0)
+        self.assertEqual(len(called), 1)
+        self.assertEqual(result["imported"], 1)
+        self.assertEqual(len(self.store.records()), 1)
+        self.assertEqual(self.watcher.activity()["deferred_candidates"], 1)
+        self.watcher._extractor = fake_extractor
+        self.watcher.resume_after_inspection()
+        result = self.watcher.scan_once(now=3.0)
+        self.assertEqual(result["imported"], 1)
+        self.assertEqual(len(self.store.records()), 2)
+
+    def test_background_thread_does_not_begin_scans_during_inspection(self):
+        from src.services.knn_archive_auto_memory import (
+            pause_archive_auto_memory_for_inspection,
+            resume_archive_auto_memory_after_inspection,
+        )
+        scanned = Event()
+        calls = []
+
+        def track():
+            calls.append(1)
+            scanned.set()
+            return {"imported": 0}
+
+        activate_archive_auto_memory(self.watcher)
+        self.addCleanup(activate_archive_auto_memory, None)
+        pause_archive_auto_memory_for_inspection()
+        try:
+            with patch.object(self.watcher, "scan_once", side_effect=track):
+                self.watcher.start()
+                time.sleep(.18)
+                self.assertEqual(calls, [])
+                self.assertEqual(
+                    self.watcher.activity()["phase"], "deferred_inspection"
+                )
+                resume_archive_auto_memory_after_inspection()
+                self.assertTrue(scanned.wait(timeout=2.0))
+        finally:
+            self.watcher.stop()
+        self.assertGreaterEqual(len(calls), 1)
+
     def test_scandir_nested_pngs_are_sorted_and_do_not_follow_symlinks(self):
         """Enumera o mesmo conjunto seguro, sem resolver cada caminho."""
         from pathlib import Path
