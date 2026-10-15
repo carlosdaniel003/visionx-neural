@@ -207,5 +207,35 @@ class IndependentPhysicalVetoTests(unittest.TestCase):
         self.assertEqual(result["status"], "NO_STRONG_EVIDENCE")
 
 
+class MultilightFinalizationContractTests(unittest.TestCase):
+    def test_finalizer_runs_physical_guard_before_exposing_current_analysis(self):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        from src.ui import adhesive_multilight_inspection as ui
+
+        panel = SimpleNamespace(
+            adhesive_multilight_analyses={},
+            adhesive_multilight_learning_samples=physical_samples(),
+            current_aoi_info={"category": "FALTANDO"},
+            combo_mode=SimpleNamespace(currentText=lambda: "Modo Sombra"),
+            lbl_verdict=MagicMock(), lbl_reason=MagicMock(),
+            lbl_timer=MagicMock(), btn_start=MagicMock(), btn_skip=MagicMock(),
+            capture_start_time=0.0, capture_start_source="network",
+            update_brain_status=MagicMock(),
+        )
+        with patch.object(ui, "fuse_multilight", return_value=cnn_ok()), \\
+             patch.object(ui, "finish_cycle"), \\
+             patch(
+                 "src.core.physical_missing_veto.physical_absence_probe",
+                 return_value=answer("SUSPECT_ABSENCE")
+             ):
+            result = ui._finalize_multilight_decision(panel)
+        self.assertIs(result, panel.current_analysis)
+        self.assertEqual(result["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertEqual(result["detail"]["physical_missing_veto"]["suspect_lights"],
+                         list(LIGHTS))
+        self.assertFalse(production_decision_policy(result)["auto_allowed"])
+
+
 if __name__ == "__main__":
     unittest.main()
