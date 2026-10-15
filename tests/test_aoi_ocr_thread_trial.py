@@ -117,13 +117,13 @@ class OcrThreadTrialTests(unittest.TestCase):
             env = dict(os.environ)
             env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.run(
-                [sys.executable, "-c", "print('\\u2705 Tesseract encontrado')"],
+                [sys.executable, "-c", "print('\u2705 Tesseract encontrado')"],
                 env=env, check=False, capture_output=True,
                 text=True, encoding="utf-8", errors="replace",
                 timeout=10,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertIn("\\u2705 Tesseract encontrado", proc.stdout)
+            self.assertIn("\u2705 Tesseract encontrado", proc.stdout)
             self.assertEqual(os.environ["PYTHONIOENCODING"], "cp1252")
 
     def test_mismatched_candidate_is_not_accepted_even_when_faster(self):
