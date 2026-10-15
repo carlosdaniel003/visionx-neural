@@ -8,8 +8,19 @@ on:
       - "src/services/anomaly_learning.py"
       - "src/services/decision_persistence.py"
       - "src/scripts/train_faltando_cnn_v2_online.py"
+      - "src/services/startup_regression/cnn_confirmed_event_audit.py"
+      - "tests/test_cnn_confirmed_event_audit.py"
       - "src/core/neural/faltando_live.py"
       - "tests/test_faltando_live_incremental_learning.py"
+      - ".github/workflows/faltando-live-incremental-tests.yml"
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/services/neural_online_learning.py"
+      - "src/scripts/train_faltando_cnn_v2_online.py"
+      - "src/services/startup_regression/cnn_confirmed_event_audit.py"
+      - "tests/test_faltando_live_incremental_learning.py"
+      - "tests/test_cnn_confirmed_event_audit.py"
       - ".github/workflows/faltando-live-incremental-tests.yml"
   workflow_dispatch:
 
@@ -28,6 +39,6 @@ jobs:
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
           python -m pip install numpy opencv-python-headless scipy scikit-image
       - name: Compile new modules
-        run: python -m py_compile src/services/neural_online_learning.py src/services/anomaly_learning.py src/services/decision_persistence.py src/scripts/train_faltando_cnn_v2_online.py src/core/neural/faltando_live.py tests/test_faltando_live_incremental_learning.py
+        run: python -m py_compile src/services/neural_online_learning.py src/services/anomaly_learning.py src/services/decision_persistence.py src/scripts/train_faltando_cnn_v2_online.py src/core/neural/faltando_live.py tests/test_faltando_live_incremental_learning.py src/services/startup_regression/cnn_confirmed_event_audit.py tests/test_cnn_confirmed_event_audit.py
       - name: Test online spool training, candidate gates and live reload
-        run: python -m unittest tests.test_faltando_live_incremental_learning -v
+        run: python -m unittest tests.test_faltando_live_incremental_learning tests.test_cnn_confirmed_event_audit -v
