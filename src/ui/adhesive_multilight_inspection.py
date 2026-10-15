@@ -438,6 +438,15 @@ def _finalize_multilight_decision(panel) -> dict | None:
             pass
         return None
 
+    # Contraprova física independente somente para consenso AUTO-OK da
+    # CNN FALTANDO. É veto de segurança; jamais muda OK em NG automático.
+    from src.core.physical_missing_veto import apply_physical_missing_veto
+    fused = apply_physical_missing_veto(
+        fused,
+        getattr(panel, "adhesive_multilight_learning_samples", None),
+        category,
+    )
+
     panel.current_analysis = fused
     panel.adhesive_multilight_final_analysis = fused
     panel.adhesive_multilight_last_final_analysis = fused
