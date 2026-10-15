@@ -16,10 +16,11 @@ from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2, MODEL_SCHEMA_V2
 from src.core.neural.faltando_live import FaltandoCNNLive
 from src.services.neural_online_learning import (
     OnlineLearningQueue, eligible_online_case, ONLINE_SCHEMA,
+    training_job_state,
 )
 from src.scripts.train_faltando_cnn_v2_online import (
     _on_disk_event, _all_online, train_online, PairDataset, POINTER_SCHEMA,
-    _supervised_loss,
+    _supervised_loss, _forced_online_replay,
 )
 from src.services.anomaly_learning import _decision_task
 from src.services.decision_persistence import DecisionPersistenceQueue
@@ -76,6 +77,44 @@ class OnlineFixtures(unittest.TestCase):
         path_id = self.q.submit_saved(self.task(label, multilight=multi))
         self.assertIsNotNone(path_id)
         return self.q.events/(path_id+".json")
+
+
+class CNNHardCaseReplayTests(unittest.TestCase):
+    def test_reinforces_prior_falsely_ok_ng_including_mid_only(self):
+        first = {"id": "old-ng", "label": "NG", "views": {"SIDE": {}, "MID": {}}}
+        next_ok = {"id": "old-ok", "label": "OK", "views": {"SIDE": {}}}
+        newest = {"id": "new-ng", "label": "NG", "views": {"SIDE": {}, "TOP": {}}}
+        baseline = {"cases": [
+            {"event_id_or_group_hint": "old-ng", "label": "NG",
+             "correct": True, "per_light": {
+                 "SIDE": {"correct": True}, "MID": {"correct": False}}},
+            {"event_id_or_group_hint": "old-ok", "label": "OK",
+             "correct": True, "per_light": {"SIDE": {"correct": True}}},
+            {"event_id_or_group_hint": "new-ng", "label": "NG",
+             "correct": False, "per_light": {
+                 "SIDE": {"correct": False}, "TOP": {"correct": False}}},
+        ]}
+        forced = _forced_online_replay(newest, [first, next_ok, newest], baseline)
+        self.assertEqual([item["id"] for item in forced], ["old-ng", "new-ng"])
+
+    def test_replay_fails_closed_on_swapped_events_or_missing_lights(self):
+        case = {"id": "ng", "label": "NG", "views": {"SIDE": {}, "TOP": {}}}
+        with self.assertRaisesRegex(ValueError, "identidade"):
+            _forced_online_replay(case, [case], {"cases": [{
+                "event_id_or_group_hint": "other", "label": "NG",
+                "correct": False, "per_light": {"SIDE": {}, "TOP": {}}
+            }]})
+        with self.assertRaisesRegex(ValueError, "iluminações"):
+            _forced_online_replay(case, [case], {"cases": [{
+                "event_id_or_group_hint": "ng", "label": "NG",
+                "correct": False, "per_light": {"SIDE": {"correct": False}}
+            }]})
+
+    def test_training_status_distinguishes_rejected_and_missing_outcome(self):
+        self.assertEqual(training_job_state(0, {"promoted": True}), "PROMOTED")
+        self.assertEqual(training_job_state(0, {"promoted": False}), "REJECTED")
+        self.assertEqual(training_job_state(0, {}), "FAILED")
+        self.assertEqual(training_job_state(1, {"promoted": True}), "FAILED")
 
 
 class EventSpoolingTests(OnlineFixtures):
