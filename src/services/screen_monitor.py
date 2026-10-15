@@ -22,11 +22,7 @@ from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 from src.config.settings import settings
 from src.services.aoi_ocr_timing import AOIOCRTiming
-from src.services.aoi_ocr_fields import (
-    normalize_board_ocr,
-    normalize_value_ocr,
-    recover_parts_from_text_zone,
-)
+from src.services.aoi_ocr_fields import normalize_value_ocr
 
 HAS_TESSERACT = False
 try:
@@ -430,8 +426,11 @@ class ScreenMonitor(QThread):
         aux = getattr(self, "_shadow_auxiliary_info", None)
         if isinstance(aux, dict) and aux:
             timing.route = "auxiliary_reuse"
-            timing.parts_reason = "side_reused"
+            timing.parts_reason = "parts_disabled"
             return dict(aux)
+        # Chaves vazias preservam compatibilidade com os consumidores KNN e
+        # relatórios históricos. Não executar reconhecimento de Board/Parts:
+        # apenas Value define a categoria operacional nesta interface.
         info = {"board": "", "parts": "", "value": "", "raw_text": ""}
         if not HAS_TESSERACT:
             timing.route = "tesseract_unavailable"
@@ -467,10 +466,7 @@ class ScreenMonitor(QThread):
                 raw = self._ocr_fast(
                     text_zone_r, timing=timing, phase="general_red_retry"
                 )
-                if raw:
-                    # A releitura dirigida de Parts deve usar a mesma região
-                    # que efetivamente produziu o texto bruto selecionado.
-                    text_zone = text_zone_r
+                # Sem OCR dirigido de Parts: nenhuma ROI adicional.
 
         if not raw:
             info["raw_text"] = "[Nenhum texto encontrado]"
@@ -481,17 +477,6 @@ class ScreenMonitor(QThread):
             lc = line.strip()
             if not lc:
                 continue
-            if not info["board"]:
-                m = re.search(
-                    r'[BbRr8Hh][Oo0][Aa][Rr][Dd]\s*[:\-\.\s]\s*(\S.*)', lc)
-                if m:
-                    info["board"] = m.group(1).strip()
-            if not info["parts"]:
-                m = re.search(
-                    r'[PpFf][Aa][Rr][Tt][Ss]?\s*[:\-\.\s]\s*(.+?)'
-                    r'(?:\s+[Bb][Ll][Oo][Cc][Kk]|\s+[Vv][Aa][Ll]|\s*$)', lc)
-                if m and m.group(1).strip():
-                    info["parts"] = m.group(1).strip()
             if not info["value"]:
                 m = re.search(
                     r'[Vv][Aa][Ll1iI][Uu][Ee]\s*[:\-\.\s]\s*(.+?)'
@@ -499,17 +484,10 @@ class ScreenMonitor(QThread):
                 if m and m.group(1).strip():
                     info["value"] = m.group(1).strip()
 
-        info["board"] = normalize_board_ocr(info["board"])
-        info["parts"] = recover_parts_from_text_zone(
-            text_zone,
-            info["parts"],
-            pytesseract,
-            timing=timing,
-        )
+        timing.parts_reason = "parts_disabled"
         info["value"] = normalize_value_ocr(info["value"])
 
-        print(f"📋 OCR — Board: '{info['board']}' | "
-              f"Parts: '{info['parts']}' | Value: '{info['value']}'")
+        print(f"📋 OCR — Value: '{info['value']}'")
         return info
 
     # =================================================================
