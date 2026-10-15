@@ -47,10 +47,9 @@ def worker_measure(job: dict, mode: str) -> dict:
             result = inspect_variant(
                 monitor, frame, *bars, VARIANTS[0], screen_monitor.pytesseract,
             )
-            from src.services.aoi_ocr_fields import looks_like_component_reference
-            result["parts_syntax_valid"] = looks_like_component_reference(
-                result["fields"]["parts"]
-            )
+            # Campo Parts desativado: não avaliar nem contar erros de sua
+            # gramática no benchmark. None distingue "não medido" de inválido.
+            result["parts_syntax_valid"] = None
             runs.append(result)
         rows.append({"sha256": source["sha256"], "measurements": runs})
     return {
@@ -143,7 +142,7 @@ def summarize_trial(job: dict, outputs: list[dict]) -> dict:
         disagreed += different
         for mode, runs in by_mode.items():
             measured[mode].extend(float(r["elapsed_ms"]) for r in runs)
-            if any(not r["parts_syntax_valid"] for r in runs):
+            if any(r["parts_syntax_valid"] is False for r in runs):
                 invalid_parts[mode].add(i)
             expected = source.get("expected")
             if expected is not None and any(
@@ -259,7 +258,7 @@ def main(argv=None) -> int:
     )
     print(
         f"Divergencias={report['different_from_baseline_cases']}; "
-        f"Parts invalidos={report['invalid_parts_cases']}; "
+        f"Parts desativado (erros contados=0): {report['invalid_parts_cases']}; "
         f"rótulos humanos={report['human_labels_supplied']}"
     )
     print("Resultado: " + str(out))
