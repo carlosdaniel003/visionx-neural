@@ -250,6 +250,8 @@ class AutoArchiveTests(unittest.TestCase):
 
         activate_archive_auto_memory(self.watcher)
         self.addCleanup(activate_archive_auto_memory, None)
+        # O teste desta função avalia pause/resume; grace tem teste próprio.
+        self.watcher.post_inspection_quiet_seconds = 0.05
         pause_archive_auto_memory_for_inspection()
         try:
             with patch.object(self.watcher, "scan_once", side_effect=track):
@@ -264,6 +266,83 @@ class AutoArchiveTests(unittest.TestCase):
         finally:
             self.watcher.stop()
         self.assertGreaterEqual(len(calls), 1)
+
+    def test_post_inspection_grace_prevents_ocr_between_fast_cycles(self):
+        """Liberação->nova SIDE em menos de 3s não abre scan pesado."""
+        done = Event()
+        entered = Event()
+        scanned = []
+
+        def scan():
+            scanned.append(time.monotonic())
+            entered.set()
+            return {"imported": 0}
+
+        watcher = KNNArchiveAutoMemory(
+            self.root, store=self.store, extractor=fake_extractor,
+            poll_interval=.02, post_inspection_quiet_seconds=.24,
+            max_idle_deferral_seconds=.6,
+        )
+        try:
+            watcher.pause_for_inspection()
+            with patch.object(watcher, "scan_once", side_effect=scan):
+                watcher.start()
+                watcher.resume_after_inspection()
+                self.assertTrue(watcher.activity()["idle_grace_active"])
+                self.assertFalse(entered.wait(timeout=.09))
+                self.assertEqual(scanned, [])
+                self.assertGreater(watcher.activity()["idle_grace_deferrals"], 0)
+                self.assertTrue(entered.wait(timeout=1.2))
+                self.assertFalse(watcher.activity()["idle_grace_active"])
+        finally:
+            done.set()
+            watcher.stop(timeout=2)
+
+    def test_immediate_second_inspection_keeps_grace_and_archives_resume(self):
+        path = self.ng_dir / "2026-10-15_1015_FALTANDO.png"
+        synthetic_png(path, "NG")
+        started = Event()
+
+        def on_commit(_result):
+            started.set()
+
+        watcher = KNNArchiveAutoMemory(
+            self.root, store=self.store, extractor=fake_extractor,
+            poll_interval=.02, settle_seconds=.01, batch_size=2,
+            post_inspection_quiet_seconds=.22,
+            max_idle_deferral_seconds=.5,
+            on_committed=on_commit,
+        )
+        try:
+            watcher.pause_for_inspection()
+            watcher.start()
+            watcher.resume_after_inspection()
+            self.assertFalse(started.wait(timeout=.07))
+            watcher.pause_for_inspection()
+            self.assertTrue(watcher.activity()["inspection_priority_active"])
+            self.assertFalse(started.wait(timeout=.23))
+            watcher.resume_after_inspection()
+            self.assertTrue(started.wait(timeout=2.0))
+            self.assertEqual(len(self.store.records()), 1)
+        finally:
+            watcher.stop(timeout=2)
+
+    def test_repeated_gate_release_is_idempotent_and_timeout_bounded(self):
+        watcher = KNNArchiveAutoMemory(
+            self.root, store=self.store, extractor=fake_extractor,
+            poll_interval=.02, post_inspection_quiet_seconds=.22,
+            max_idle_deferral_seconds=.3,
+        )
+        watcher.pause_for_inspection()
+        watcher.resume_after_inspection()
+        initial = watcher._idle_grace_until
+        time.sleep(.02)
+        watcher.resume_after_inspection()
+        self.assertEqual(watcher._idle_grace_until, initial)
+        with watcher._lock:
+            watcher._last_scan_started_at = time.monotonic() - .5
+        self.assertFalse(watcher.activity()["idle_grace_active"])
+        watcher.stop()
 
     def test_scandir_nested_pngs_are_sorted_and_do_not_follow_symlinks(self):
         """Enumera o mesmo conjunto seguro, sem resolver cada caminho."""
