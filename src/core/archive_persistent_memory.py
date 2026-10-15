@@ -82,6 +82,11 @@ def _writer_lock(lock_path: Path):
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def _is_transient_windows_replace_denial(exc: PermissionError) -> bool:
+    """Somente falhas Windows típicas de sharing / delete sharing."""
+    return os.name == "nt" and getattr(exc, "winerror", None) in (5, 32)
+
+
 def _atomic_replace_windows_retry(temp_name: str, target: Path) -> None:
     """Publica o snapshot sem perder atomicidade em compartilhamento Win32.
 
@@ -97,8 +102,7 @@ def _atomic_replace_windows_retry(temp_name: str, target: Path) -> None:
             return
         except PermissionError as exc:
             if (
-                os.name != "nt"
-                or getattr(exc, "winerror", None) not in (5, 32)
+                not _is_transient_windows_replace_denial(exc)
                 or attempt == 4
             ):
                 raise
