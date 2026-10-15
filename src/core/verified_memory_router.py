@@ -1,8 +1,9 @@
 """Roteamento: memória KNN *verificada* primeiro, especialidade para casos novos.
 
 Um match aproximado de embedding/anomaly_signature NÃO significa caso visto.
-O atalho só reconhece RGB idêntico do PAR gabarito/teste arquivado,
-com board, parts, categoria, iluminação e rótulo do operador coerentes.
+O atalho exige par gabarito/teste RGB pixel-idêntico, categoria, luz e
+rótulo humano verificável. Campos antigos Board/Parts/Value são opcionais
+somente na captura atual sem OCR: nunca são inventados ou inferidos.
 Não modifica a memória nem retreina a CNN. Instalar após faltando_live.
 """
 from __future__ import annotations
@@ -63,6 +64,9 @@ class VerifiedKNNMemory:
         self.archive_store = archive_store if archive_store is not None else PersistentArchiveKNN()
         self._lock = RLock()
         self._index: dict[tuple, list[dict]] | None = None
+        # Índice alternativo SOMENTE para captura atual sem Board/Parts/Value.
+        # Contém exclusivamente entradas legadas auditadas por _entry().
+        self._visual_index: dict[tuple, list[dict]] | None = None
         self._record_identity: tuple | None = None
         self._all_scopes_indexed = False
         self._indexed_scopes: set[tuple] = set()
@@ -72,6 +76,7 @@ class VerifiedKNNMemory:
     def invalidate(self, *, reason: str = "explicit_reload") -> None:
         with self._lock:
             self._index = None
+            self._visual_index = None
             self._record_identity = None
             self._all_scopes_indexed = False
             self._indexed_scopes = set()
@@ -91,6 +96,16 @@ class VerifiedKNNMemory:
         if not all((category, board, parts, reference_hash, test_hash)):
             return None
         return category, light, board, parts, value, reference_hash, test_hash
+
+    @staticmethod
+    def _visual_key(key: tuple) -> tuple:
+        """Categoria + luz + hashes de AMBAS as imagens; nunca similaridade."""
+        return key[0], key[1], key[5], key[6]
+
+    @staticmethod
+    def _category_only_query(info: dict) -> bool:
+        """O OCR atual entrega exclusivamente a categoria (PR #33)."""
+        return not any(_clean(info.get(name)) for name in ("board", "parts", "value"))
 
     @staticmethod
     def _entry(record: dict) -> tuple[tuple, dict] | None:
@@ -217,16 +232,19 @@ class VerifiedKNNMemory:
                 )
                 build_started_at = time.perf_counter()
                 built = defaultdict(list)
+                visual_built = defaultdict(list)
                 for record in records:
                     try:
                         entry = self._entry(record)
                         if entry is not None:
                             built[entry[0]].append(entry[1])
+                            visual_built[self._visual_key(entry[0])].append(entry[1])
                     except (OSError, ValueError, TypeError, cv2.error):
                         # Mesma política histórica: registros não auditáveis
                         # não tornam um par conhecido.
                         continue
                 self._index = dict(built)
+                self._visual_index = dict(visual_built)
                 self._record_identity = identity
                 self._all_scopes_indexed = True
                 self._indexed_scopes = set()
@@ -244,10 +262,11 @@ class VerifiedKNNMemory:
         self, records: list[dict], identity: tuple,
         key: tuple, profile: dict,
     ) -> None:
-        """Reconstrói apenas categoria/luz/Parts durante inspeção.
+        """Reconstrói escopo categoria/luz e Parts quando ainda disponível.
 
-        _entry() só poderia autorizar um registro cujos metadados externos
-        category, lighting_mode e part concordam com a chave validada.
+        _entry() só autoriza registro com metadados históricos auditados;
+        na captura sem Parts, todos os componentes da categoria/luz podem
+        concorrer, mas apenas hashes RGB dos DOIS PNGs permitem um match.
         O filtro é estritamente necessário, nunca suficiente: JSON, fonte
         humana e hashes dos dois PNGs ainda passam por _entry().
         O warmup, por sua vez, continua montando o índice integral.
@@ -261,6 +280,7 @@ class VerifiedKNNMemory:
                     if self._index is None else "legacy_records_changed"
                 )
                 self._index = {}
+                self._visual_index = {}
                 self._record_identity = identity
                 self._all_scopes_indexed = False
                 self._indexed_scopes = set()
@@ -283,13 +303,16 @@ class VerifiedKNNMemory:
                     if (record.get("mode") != "anomaly"
                             or canonical_memory_category(record.get("category")) != scope[0]
                             or canonical_memory_lighting(record.get("lighting_mode")) != scope[1]
-                            or _clean(record.get("part")) != scope[2]):
+                            or (scope[2] and _clean(record.get("part")) != scope[2])):
                         continue
                     eligible += 1
                     try:
                         entry = self._entry(record)
                         if entry is not None:
                             self._index.setdefault(entry[0], []).append(entry[1])
+                            self._visual_index.setdefault(
+                                self._visual_key(entry[0]), []
+                            ).append(entry[1])
                     except (OSError, ValueError, TypeError, cv2.error):
                         # Nenhuma falha permite promoção de par não auditado.
                         continue
@@ -377,16 +400,27 @@ class VerifiedKNNMemory:
             return durable
         hashes_started_at = time.perf_counter()
         try:
-            key = self._key(
-                info, image_fingerprint(reference), image_fingerprint(test)
-            )
+            reference_hash = image_fingerprint(reference)
+            test_hash = image_fingerprint(test)
+            key = self._key(info, reference_hash, test_hash)
+            category_only = self._category_only_query(info)
+            if key is None and category_only:
+                category = canonical_memory_category(info.get("category", ""))
+                light = canonical_memory_lighting(info.get("lighting_mode", ""))
+                if (category and category not in {"UNKNOWN", "UNKNOW", "DESCONHECIDO"}
+                        and light in {"SIDE", "TOP", "MID"}):
+                    key = (category, light, "", "", "", reference_hash, test_hash)
         finally:
             profile["fingerprints_ms"] = round(
                 (time.perf_counter() - hashes_started_at) * 1000.0, 2
             )
+        profile["legacy_lookup_mode"] = (
+            "exact_visual_category_light" if category_only and key is not None
+            else "legacy_metadata" if key is not None else "unavailable"
+        )
         if key is None:
             return durable if durable["status"] == "KNOWN" else {
-                "status": "NEW", "reason": "OCR/categoria ou par incompleto"
+                "status": "NEW", "reason": "Categoria ou par AOI inválido"
             }
         if knn is None:
             return durable if durable["status"] == "KNOWN" else {
@@ -398,7 +432,10 @@ class VerifiedKNNMemory:
             # Não permitir invalidate() entre a checagem do índice e a
             # consulta do par exato. O RLock suporta _ensure_index().
             self._ensure_lookup_scope(records, identity, key, profile)
-            matched = list(self._index.get(key, ()))
+            matched = list(
+                self._visual_index.get(self._visual_key(key), ())
+                if category_only else self._index.get(key, ())
+            )
             profile["warmup"] = dict(self._warmup_status)
         profile["matched_count"] = len(matched)
         if not matched:
@@ -421,7 +458,10 @@ class VerifiedKNNMemory:
             "source_json": matched[0]["source_json"],
             "matches": len(matched) + (durable.get("matches", 0)
                                        if durable["status"] == "KNOWN" else 0),
-            "reason": "Par visual exato com rótulo consistente",
+            "reason": (
+                "Par RGB exato auditado por categoria e iluminação, sem OCR legado"
+                if category_only else "Par visual exato com rótulo consistente"
+            ),
             "memory_source": "HUMAN_VERIFIED_PAIR",
         }
 
