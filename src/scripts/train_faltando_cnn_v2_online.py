@@ -302,6 +302,44 @@ def _supervised_loss(logits, by_light, mask, truth, *, light_weight: float):
     return primary + light_weight * (aux * mask).sum() / mask.sum().clamp_min(1)
 
 
+def _forced_online_replay(newest: dict, online: list[dict],
+                          baseline: dict) -> list[dict]:
+    """Reforça erros do champion sem esquecer o evento recém-confirmado.
+
+    A lista é montada a partir de inferência REAL do checkpoint anterior,
+    mantendo evento/luz e rótulo humano. Em relatórios antigos simulados
+    sem detalhe por caso, mantém o comportamento anterior (somente newest).
+    """
+    rows = baseline.get("cases")
+    if rows is None:
+        return [newest]
+    if not isinstance(rows, list) or len(rows) != len(online):
+        raise ValueError("Replay CNN anterior não corresponde aos eventos online")
+    selected = []
+    seen = set()
+    for case, event in zip(rows, online):
+        if (not isinstance(case, dict)
+                or case.get("event_id_or_group_hint") != event.get("id")
+                or case.get("label") != event.get("label")):
+            raise ValueError("Replay CNN anterior diverge da identidade/rótulo online")
+        per_light = case.get("per_light")
+        if (not isinstance(per_light, dict)
+                or set(per_light) != set(event.get("views", {}))):
+            raise ValueError("Replay CNN anterior diverge das iluminações online")
+        wrong = case.get("correct") is not True or any(
+            value.get("correct") is not True for value in per_light.values()
+            if isinstance(value, dict)
+        ) or not all(isinstance(value, dict) for value in per_light.values())
+        if wrong:
+            event_id = event["id"]
+            if event_id not in seen:
+                selected.append(event)
+                seen.add(event_id)
+    if newest["id"] not in seen:
+        selected.append(newest)
+    return selected
+
+
 def train_online(
     root: Path, event: Path, *, epochs: int = 3,
     candidate_only: bool = False, recovery_correction_id: str | None = None,
@@ -357,6 +395,18 @@ def train_online(
     net = FaltandoCNNV2()
     net.load_state_dict(prior["state_dict"], strict=True)
 
+    # Medir as falhas reais do modelo anterior ANTES de otimizar a CNN.
+    # Eventos NG que ele classificou OK (inclusive MID) receberão
+    # gradiente explícito por época, em vez de depender do sampler.
+    previous = FaltandoCNNV2()
+    previous.load_state_dict(prior["state_dict"], strict=True)
+    old_result = _assess(previous, historical, size, focus)
+    old_online = _assess(previous, online, size, focus)
+    if not old_result["all_correct"]:
+        raise ValueError(
+            "Modelo anterior não passou replay conhecido. Promoção bloqueada."
+        )
+
     # Retreino curto; a memória histórica participa de TODA atualização.
     examples = historical + online
     freq = Counter(r["label"] for r in examples)
@@ -371,9 +421,11 @@ def train_online(
         sampler=sampler, num_workers=0
     )
     opt = torch.optim.AdamW(net.parameters(), lr=.00002, weight_decay=.02)
-    # Garantir gradiente da amostra nova em TODA época, em vez de
-    # depender de sua seleção probabilística no replay balanceado.
-    forced_items = recovery if recovery else [newest]
+    # Garantir gradiente do evento novo E dos NG/OK que o champion
+    # já errou. O modo recuperação mantém seu conjunto auditado fixo.
+    forced_items = (
+        recovery if recovery else _forced_online_replay(newest, online, old_online)
+    )
     fresh_loader = DataLoader(
         PairDataset(forced_items, size, focus), batch_size=1,
         shuffle=False, num_workers=0,
@@ -393,8 +445,8 @@ def train_online(
             nn.utils.clip_grad_norm_(net.parameters(), 2.)
             opt.step()
             average += float(loss.item())
-        # Atualização obrigatória para todos os eventos retificados (3
-        # trincas SIDE/TOP/MID) ou apenas o caso novo online normal.
+        # Atualização obrigatória para eventos retificados, casos antigos
+        # incorretos e o novo evento humano (inclusive falhas só em MID).
         for r, t, rf, tf, mask, truth in fresh_loader:
             logits, by_light = net(r, t, rf, tf, mask)
             loss = _supervised_loss(
@@ -409,14 +461,8 @@ def train_online(
         print(f"CNN FALTANDO ONLINE época {ix}/{epochs} loss={average/len(loader):.6f}",
               flush=True)
 
-    previous = FaltandoCNNV2()
-    previous.load_state_dict(prior["state_dict"], strict=True)
-    old_result = _assess(previous, historical, size, focus)
-    old_online = _assess(previous, online, size, focus)
     new_result = _assess(net, historical, size, focus)
     new_online = _assess(net, online, size, focus)
-    if not old_result["all_correct"]:
-        raise ValueError("Modelo anterior não passou replay conhecido. Promoção bloqueada.")
 
     gates = {
         "historical_unchanged": new_result["all_correct"],
@@ -458,6 +504,10 @@ def train_online(
         "base_checkpoint_sha256": sha256(base_path.read_bytes()).hexdigest(),
         "new_event_forced_each_epoch": True,
         "forced_events_per_epoch": [item["id"] for item in forced_items],
+        "forced_previous_error_count": (
+            0 if recovery else
+            sum(item["id"] != newest["id"] for item in forced_items)
+        ),
         "recovery_correction_id": recovery_correction_id,
         "candidate_only": bool(candidate_only),
         "passed_internal_gates": bool(accepted),
