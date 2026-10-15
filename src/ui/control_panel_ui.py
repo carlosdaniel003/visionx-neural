@@ -20,7 +20,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.ui.adhesive_multilight_analysis import AdhesiveMultiLightAnalysisView
 from src.ui.adhesive_multilight_inspection import AdhesiveMultiLightView
 from src.ui.branding import DISPLAY_NAME, MONITOR_WINDOW_TITLE
 from src.ui.network_xp_debug import (
@@ -31,12 +30,6 @@ from src.ui.network_xp_debug import (
 from src.ui.responsive_layout import profile_for_width
 from src.ui.theme import APP_STYLESHEET
 from src.ui.widgets.knn_spectrum import KNNSpectrumWidget
-from src.ui.widgets.neural_specialist import NeuralSpecialistWidget, VerifiedMemorySpecialistWidget
-from src.ui.widgets.radar_chart import RadarChartWidget
-from src.ui.widgets.semantic_dna import SemanticDNAWidget
-from src.ui.widgets.shift_debugger import ShiftDebuggerWidget
-from src.ui.widgets.silk_debugger import SilkDebuggerWidget
-from src.ui.widgets.ssim_debugger import SSIMDebuggerWidget
 
 
 class _ResponsivePixmapLabel(QLabel):
@@ -337,7 +330,7 @@ class ControlPanelUI:
         section_layout.addWidget(
             self._section_heading(
                 "IDENTIFICAÇÃO DA INSPEÇÃO",
-                "Dados extraídos da AOI e contexto usado pelos especialistas.",
+                "Categoria do defeito reconhecida pela AOI.",
             )
         )
 
@@ -346,12 +339,10 @@ class ControlPanelUI:
         self.info_grid.setVerticalSpacing(8)
 
         window.lbl_category_value = QLabel("-")
-        window.lbl_value_value = QLabel("-")
         window.lbl_light_value = QLabel("SIDE")
 
         self.info_cards = [
             self._create_info_card("Categoria do Erro", window.lbl_category_value, accent=True),
-            self._create_info_card("Valor / OCR", window.lbl_value_value),
             self._create_info_card("Iluminação Atual", window.lbl_light_value, accent=True),
         ]
 
@@ -465,87 +456,11 @@ class ControlPanelUI:
         window._adhesive_inspection_mode = False
         images_layout.addWidget(window.inspection_view_stack, stretch=1)
 
-        window.telemetry_section = QFrame()
-        window.telemetry_section.setObjectName("sectionPanel")
-        window.telemetry_section.setMinimumWidth(0)
-        telemetry_layout = QVBoxLayout(window.telemetry_section)
-        telemetry_layout.setContentsMargins(10, 10, 10, 10)
-        telemetry_layout.setSpacing(8)
-        telemetry_layout.addWidget(
-            self._section_heading(
-                "ANÁLISE DOS ESPECIALISTAS",
-                "Percorra os cards para investigar textura, tinta, semântica, deslocamento e score.",
-            )
-        )
-
-        window.telemetry_view_stack = _CurrentPageStack()
-        window.telemetry_view_stack.setMinimumWidth(0)
-        window.telemetry_view_stack.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Preferred,
-        )
-
-        window.normal_telemetry_view = QWidget()
-        normal_telemetry_layout = QVBoxLayout(window.normal_telemetry_view)
-        normal_telemetry_layout.setContentsMargins(0, 0, 0, 0)
-        normal_telemetry_layout.setSpacing(0)
-
-        window.scroll_area = QScrollArea()
-        window.scroll_area.setWidgetResizable(True)
-        window.scroll_area.setMinimumWidth(0)
-        window.scroll_area.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOn
-        )
-        window.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        window.scroll_content = QWidget()
-        window.scroll_layout = QHBoxLayout(window.scroll_content)
-        window.scroll_layout.setContentsMargins(2, 2, 2, 2)
-        window.scroll_layout.setSpacing(10)
-
-        window.frame_ssim_debug = SSIMDebuggerWidget()
-        window.frame_silk = SilkDebuggerWidget()
-        window.frame_dna = SemanticDNAWidget()
-        window.frame_shift = ShiftDebuggerWidget()
-        window.frame_radar = RadarChartWidget()
-        window.frame_neural = NeuralSpecialistWidget()
-        window.frame_memory_expert = VerifiedMemorySpecialistWidget()
-
-        debug_items = [
-            ("SSIM • TEXTURA E CALOR", window.frame_ssim_debug),
-            ("XOR • TINTA E EPICENTRO", window.frame_silk),
-            ("DNA • ASSINATURA SEMÂNTICA", window.frame_dna),
-            ("SHIFT • DESLOCAMENTO", window.frame_shift),
-            ("FUSÃO • SCORE FINAL", window.frame_radar),
-            ("CNN FALTANDO v2 • REDE NEURAL", window.frame_neural),
-            ("KNN • PAR HUMANO VERIFICADO", window.frame_memory_expert),
-        ]
-        for label, widget in debug_items:
-            window.scroll_layout.addWidget(self._wrap_debug_widget(label, widget))
-        window.scroll_layout.addStretch()
-        window.scroll_area.setWidget(window.scroll_content)
-        normal_telemetry_layout.addWidget(window.scroll_area, stretch=1)
-
-        window.adhesive_multilight_analysis_view = (
-            AdhesiveMultiLightAnalysisView()
-        )
-        window.telemetry_view_stack.addWidget(window.normal_telemetry_view)
-        window.telemetry_view_stack.addWidget(
-            window.adhesive_multilight_analysis_view
-        )
-        window.telemetry_view_stack.setCurrentWidget(
-            window.normal_telemetry_view
-        )
-        telemetry_layout.addWidget(window.telemetry_view_stack, stretch=1)
-
+        # Sem painel Análise dos Especialistas: exibir apenas inspeção.
+        # Os especialistas continuam executados pelo orquestrador, mas
+        # não instanciamos seus gráficos nem a página extra de análise.
         window.main_splitter.addWidget(window.images_section)
-        window.main_splitter.addWidget(window.telemetry_section)
-        splitter_handle = window.main_splitter.handle(1)
-        if splitter_handle is not None:
-            splitter_handle.setEnabled(False)
-            splitter_handle.setCursor(Qt.CursorShape.ArrowCursor)
         window.main_splitter.setStretchFactor(0, 1)
-        window.main_splitter.setStretchFactor(1, 3)
         parent_layout.addWidget(window.main_splitter, stretch=10)
 
     @staticmethod
@@ -1311,19 +1226,6 @@ class ControlPanelUI:
             )
             stack.setCurrentWidget(target)
 
-        telemetry_stack = getattr(
-            window,
-            "telemetry_view_stack",
-            None,
-        )
-        if telemetry_stack is not None:
-            telemetry_target = (
-                window.adhesive_multilight_analysis_view
-                if enabled
-                else window.normal_telemetry_view
-            )
-            telemetry_stack.setCurrentWidget(telemetry_target)
-
         viewport = getattr(
             getattr(window, "root_scroll", None),
             "viewport",
@@ -1400,74 +1302,24 @@ class ControlPanelUI:
                 getattr(window, "_adhesive_inspection_mode", False),
             )
         )
-        orientation = (
-            Qt.Orientation.Vertical
-            if multilight_mode or profile.splitter_vertical
-            else Qt.Orientation.Horizontal
-        )
-        window.main_splitter.setOrientation(orientation)
+        # A inspeção usa a largura disponível em todos os breakpoints,
+        # sem reservar espaço ou CPU para cartões de especialistas.
+        window.main_splitter.setOrientation(Qt.Orientation.Vertical)
         window.main_splitter.setMinimumWidth(0)
+        window.main_splitter.setStretchFactor(0, 1)
         window.images_section.setMinimumWidth(0)
-        window.telemetry_section.setMinimumWidth(0)
-        window.telemetry_section.setMaximumWidth(16777215)
-        window.scroll_area.setMinimumWidth(0)
-
+        window.images_section.setMaximumWidth(16777215)
+        window.images_section.setMinimumHeight(
+            560 if compact else 520
+        )
+        window.main_splitter.setMinimumHeight(
+            560 if compact else 520
+        )
         for viewport in self.image_viewports:
             viewport.setMinimumHeight(profile.image_min_height)
-
         if self.capture_preview_viewport is not None:
             preview_min_height = 140 if compact else 180
             self.capture_preview_viewport.setMinimumHeight(preview_min_height)
-
-        for wrapper in self.debug_wrappers:
-            wrapper.setMinimumWidth(profile.debugger_min_width)
-            wrapper.setMaximumWidth(profile.debugger_max_width)
-            wrapper.setMinimumHeight(265 if compact else 300)
-
-        if multilight_mode:
-            # Em multilight, imagens e especialistas usam a largura inteira.
-            # Em notebook o conteúdo cresce verticalmente dentro do root_scroll;
-            # em monitores grandes os próprios painéis internos refluem em colunas.
-            window.main_splitter.setStretchFactor(0, 1)
-            window.main_splitter.setStretchFactor(1, 1)
-            window.images_section.setMaximumWidth(16777215)
-            window.images_section.setMinimumHeight(
-                540 if compact else 500
-            )
-            window.telemetry_section.setMinimumHeight(
-                520 if compact else 420
-            )
-            window.main_splitter.setMinimumHeight(
-                1080 if compact else 960
-            )
-            window.main_splitter.setSizes(
-                [540 if compact else 500, 540 if compact else 460]
-            )
-        elif profile.splitter_vertical:
-            # Notebook: as imagens ocupam uma seção vertical estável e alta o
-            # suficiente para mostrar captura + quatro cards sem precisar
-            # arrastar uma divisória. O root_scroll cuida da página inteira.
-            window.main_splitter.setStretchFactor(0, 1)
-            window.main_splitter.setStretchFactor(1, 1)
-            window.images_section.setMaximumWidth(16777215)
-            window.images_section.setMinimumHeight(560)
-            window.telemetry_section.setMinimumHeight(430)
-            window.main_splitter.setMinimumHeight(1000)
-            window.main_splitter.setSizes([560, 440])
-        else:
-            window.main_splitter.setStretchFactor(0, 1)
-            window.main_splitter.setStretchFactor(1, 3)
-            # Em monitores maiores, a largura da inspeção acompanha a tela,
-            # com limites para preservar área suficiente aos especialistas.
-            image_width = min(520, max(420, int(width * 0.28)))
-            window.images_section.setMaximumWidth(image_width)
-            window.images_section.setMinimumHeight(520)
-            window.telemetry_section.setMinimumHeight(520)
-            window.main_splitter.setMinimumHeight(560)
-            available_for_telemetry = max(1, width - image_width)
-            window.main_splitter.setSizes(
-                [image_width, available_for_telemetry]
-            )
 
         window.root_content.setMinimumWidth(0)
         window.root_content.updateGeometry()

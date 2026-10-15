@@ -459,7 +459,6 @@ class ControlPanel(QWidget):
 
     def _reset_aoi_info(self):
         self.lbl_category_value.setText("-")
-        self.lbl_value_value.setText("-")
         self.current_aoi_info = {}
         self.current_analysis = None
 
@@ -510,51 +509,15 @@ class ControlPanel(QWidget):
 
     def _update_aoi_info(self, aoi_info: dict):
         self.lbl_category_value.setText(aoi_info.get("category", "Unknown"))
-        self.lbl_value_value.setText(aoi_info.get("value", "-"))
 
     def _update_reference_panel(self, analysis: dict):
-        detail = analysis.get("detail", {})
-        active_engines = analysis.get("active_engines", [])
-        for name in ("frame_neural", "frame_memory_expert"):
-            if hasattr(self, name):
-                getattr(self, name).setVisible(False)
-        
-        if "ssim_expert.py" in active_engines and hasattr(self, 'frame_ssim_debug'):
-            self.frame_ssim_debug.update_data(detail)
-            self.frame_ssim_debug.setVisible(True)
-            
-        if "silk_expert.py" in active_engines and hasattr(self, 'frame_silk'):
-            self.frame_silk.update_data(detail)
-            self.frame_silk.setVisible(True)
-            
-        if "semantic_expert.py" in active_engines and hasattr(self, 'frame_dna'):
-            self.frame_dna.update_data(detail)
-            self.frame_dna.setVisible(True)
-            
-        if "shift_expert.py" in active_engines and hasattr(self, 'frame_shift'):
-            self.frame_shift.update_data(detail)
-            self.frame_shift.setVisible(True)
-            
-        neural_lights = any(
-            isinstance(item, dict) and item.get("cnn_active", False)
-            for item in (detail.get("cnn_v2_light_diagnostics") or {}).values()
-        )
-        if ("faltando_cnn_v2.py" in active_engines or detail.get("cnn_v2_active")
-                or neural_lights) and hasattr(self, "frame_neural"):
-            self.frame_neural.update_data(detail, analysis)
-            self.frame_neural.setVisible(True)
+        """Manter o cartão da memória local, sem renderizar especialistas ocultos.
 
-        if (detail.get("recognition_route") in {"KNOWN_KNN", "MULTILIGHT_MIXED"}
-                or "knn_expert.py" in active_engines) and hasattr(self, "frame_memory_expert"):
-            self.frame_memory_expert.update_data(detail, analysis)
-            self.frame_memory_expert.setVisible(True)
-
-        if not active_engines and not neural_lights and hasattr(self, 'frame_radar'):
-            self.frame_radar.update_data(detail)
-            self.frame_radar.setVisible(True)
-            
-        if hasattr(self, 'frame_knn'):
-            self.frame_knn.update_data(detail)
+        Os motores de análise continuam no orquestrador, mas seus gráficos
+        individuais não são mais construídos nem atualizados na interface.
+        """
+        if hasattr(self, "frame_knn"):
+            self.frame_knn.update_data(analysis.get("detail", {}))
 
     def _update_confidence_panel(self, analysis: dict):
         verdict = analysis.get("verdict", "?")
@@ -654,10 +617,14 @@ class ControlPanel(QWidget):
         self._inspection_images_visible = not shadow
         self.update_brain_status("🧠 Processando Tensores Matemáticos...", True)
 
-        raw_val = aoi_info.get("value", "")
-        cat_name, norm_val = normalize_aoi_text(raw_val)
+        # Categoria reconhecida isoladamente pela SIDE tem precedência.
+        # Aceitar Value somente como fallback legado de testes/importadores.
+        raw_category = str(aoi_info.get("category", "") or "")
+        cat_name, _ignored = normalize_aoi_text(raw_category)
+        if cat_name == "Unknown":
+            cat_name, _ignored = normalize_aoi_text(aoi_info.get("value", ""))
         aoi_info["category"] = cat_name
-        aoi_info["value"] = norm_val
+        aoi_info["value"] = ""
 
         if not shadow:
             self._safe_maximize()

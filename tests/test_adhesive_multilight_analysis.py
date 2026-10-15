@@ -123,37 +123,22 @@ class AdhesiveMultiLightAnalysisViewTests(unittest.TestCase):
 
 
 class AdhesiveSpecialistSourceContractTests(unittest.TestCase):
-    def test_ui_has_separate_normal_and_adhesive_telemetry_pages(self):
+    def test_specialist_panel_removed_without_removing_multilight_processing(self):
         source = open(
-            "src/ui/control_panel_ui.py",
-            encoding="utf-8",
+            "src/ui/control_panel_ui.py", encoding="utf-8"
         ).read()
+        self.assertNotIn("ANÁLISE DOS ESPECIALISTAS", source)
+        self.assertNotIn("window.telemetry_section = QFrame()", source)
+        self.assertNotIn("window.adhesive_multilight_analysis_view =", source)
+        self.assertIn("window.adhesive_multilight_view", source)
+        self.assertIn("window.main_splitter.addWidget(window.images_section)", source)
 
-        self.assertIn("window.normal_telemetry_view", source)
-        self.assertIn(
-            "window.adhesive_multilight_analysis_view",
-            source,
-        )
-        self.assertIn("window.telemetry_view_stack", source)
-
-    def test_adhesive_mode_switches_images_and_specialists_together(self):
+    def test_multilight_still_switches_image_pages(self):
         source = open(
-            "src/ui/control_panel_ui.py",
-            encoding="utf-8",
+            "src/ui/control_panel_ui.py", encoding="utf-8"
         ).read()
-
-        self.assertIn(
-            "window.adhesive_multilight_view",
-            source,
-        )
-        self.assertIn(
-            "window.adhesive_multilight_analysis_view",
-            source,
-        )
-        self.assertIn(
-            "telemetry_stack.setCurrentWidget(telemetry_target)",
-            source,
-        )
+        self.assertIn("stack.setCurrentWidget(target)", source)
+        self.assertNotIn("telemetry_stack.setCurrentWidget(telemetry_target)", source)
 
     def test_current_stage_populates_side_and_auxiliary_lighting_analyses(self):
         source = open(
@@ -191,7 +176,7 @@ class AdhesiveSpecialistSourceContractTests(unittest.TestCase):
         ).read()
 
         self.assertIn(
-            "if adhesive_mode or profile.splitter_vertical",
+            "window.main_splitter.setOrientation(Qt.Orientation.Vertical)",
             source,
         )
         self.assertIn(

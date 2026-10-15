@@ -1742,8 +1742,13 @@ class NetworkXPDebugUILayoutTests(unittest.TestCase):
             "window.main_splitter.setMinimumWidth(0)",
             source,
         )
-        self.assertIn(
+        # A coluna visual dos especialistas foi removida de propósito.
+        self.assertNotIn(
             "window.telemetry_section.setMinimumWidth(0)",
+            source,
+        )
+        self.assertIn(
+            "window.images_section.setMaximumWidth(16777215)",
             source,
         )
         self.assertNotIn(

@@ -235,8 +235,9 @@ class AdhesiveSourceContractTests(unittest.TestCase):
 
         self.assertIn("window.normal_inspection_view", source)
         self.assertIn("window.adhesive_multilight_view", source)
-        self.assertIn("window.normal_telemetry_view", source)
-        self.assertIn("window.adhesive_multilight_analysis_view", source)
+        self.assertNotIn("window.normal_telemetry_view", source)
+        self.assertNotIn("window.adhesive_multilight_analysis_view", source)
+        self.assertNotIn("ANÁLISE DOS ESPECIALISTAS", source)
         self.assertIn("_CurrentPageStack", source)
         self.assertIn(
             "window.inspection_view_stack.setCurrentWidget(\n"

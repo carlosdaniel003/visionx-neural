@@ -107,11 +107,11 @@ def _image_paths(args) -> list[tuple[Path, dict | None]]:
                     not isinstance(expected, dict)
                     or set(expected) != set(FIELDS)
                     or any(not isinstance(expected[k], str) for k in FIELDS)
-                    or any(not expected[k].strip() for k in ("value", "category"))
+                    or not expected["category"].strip()
                 ):
                     raise ValueError(
-                        "expected exige board e parts vazios/legados, value e "
-                        "category com rótulos humanos não vazios"
+                        "expected exige campos legado board/parts/value e "
+                        "category com rótulo humano não vazio"
                     )
             source = (manifest.parent / row["path"]).resolve(strict=True)
             if manifest.parent not in source.parents:
@@ -171,16 +171,17 @@ def inspect_variant(monitor, frame, blue_bar, red_bar, variant, pytesseract_modu
         ):
             info = monitor._extract_text_info(frame, blue_bar, red_bar)
     elapsed = round((time.perf_counter() - started) * 1000.0, 2)
-    category, value = normalize_aoi_text(info.get("value", ""))
+    category, _unused = normalize_aoi_text(
+        info.get("category") or info.get("value", "")
+    )
     fields = {
-        "board": info.get("board", ""),
-        "parts": info.get("parts", ""),
-        "value": value,
+        "board": "", "parts": "", "value": "",
         "category": category,
     }
     profile = getattr(monitor, "last_ocr_profile", {})
     return {
         "fields": fields,
+        "ocr_text_detected": bool(info.get("ocr_text_detected", False)),
         "elapsed_ms": elapsed,
         "tesseract_calls": profile.get("call_count"),
         "tesseract_ms": profile.get("tesseract_calls_ms"),
@@ -221,15 +222,13 @@ def compare_variants(
             baseline = inspect_variant(
                 monitor, frame, *bars, VARIANTS[0], module
             )
-            # Uma categoria fora do escopo operacional (ex.: Little Solder)
-            # não significa que o OCR do Value falhou. Permitir
-            # somente o benchmark OFFLINE sem tratá-la como elegível.
-            # Board/Parts estão desativados operacionalmente.
-            if any(
-                not isinstance(baseline["fields"].get(k), str)
-                or not baseline["fields"][k].strip()
-                for k in ("value", "category")
-            ) or baseline["fields"].get("value") == "Unknown":
+            # Campo categoria é a única saída operacional de OCR.
+            # "Unknown" pode ser medido offline, sem ser elegível a promoção.
+            if (
+                not baseline.get("ocr_text_detected")
+                or not isinstance(baseline["fields"].get("category"), str)
+                or not baseline["fields"]["category"].strip()
+            ):
                 raise ValueError(
                     "Baseline tem campo OCR vazio/desconhecido; recusar comparação: "
                     + str(path)

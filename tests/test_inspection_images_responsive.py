@@ -75,22 +75,20 @@ class ResponsiveInspectionSourceContractTests(unittest.TestCase):
         source = (
             ROOT / "src" / "ui" / "control_panel_ui.py"
         ).read_text(encoding="utf-8")
-
         self.assertIn("window.main_splitter.setHandleWidth(0)", source)
-        self.assertIn("splitter_handle.setEnabled(False)", source)
-        self.assertIn("window.images_section.setMinimumHeight(560)", source)
-        self.assertIn("window.main_splitter.setMinimumHeight(1000)", source)
+        self.assertIn("window.main_splitter.addWidget(window.images_section)", source)
+        self.assertNotIn("window.main_splitter.addWidget(window.telemetry_section)", source)
 
-    def test_wide_image_section_uses_bounded_responsive_width(self):
+    def test_responsive_images_use_entire_available_width(self):
         source = (
             ROOT / "src" / "ui" / "control_panel_ui.py"
         ).read_text(encoding="utf-8")
-
+        self.assertIn("window.images_section.setMaximumWidth(16777215)", source)
         self.assertIn(
-            "image_width = min(520, max(420, int(width * 0.28)))",
+            "window.images_section.setMinimumHeight(",
             source,
         )
-        self.assertIn("window.main_splitter.setMinimumHeight(560)", source)
+        self.assertNotIn("image_width = min(520,", source)
 
     def test_controller_passes_original_pixmaps_to_responsive_views(self):
         source = (
