@@ -345,8 +345,6 @@ class ControlPanelUI:
         self.info_grid.setHorizontalSpacing(8)
         self.info_grid.setVerticalSpacing(8)
 
-        window.lbl_board_value = QLabel("-")
-        window.lbl_parts_value = QLabel("-")
         window.lbl_category_value = QLabel("-")
         window.lbl_value_value = QLabel("-")
         window.lbl_light_value = QLabel("SIDE")
