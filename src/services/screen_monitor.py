@@ -13,13 +13,15 @@ Usa APENAS:
 2. "Cinza sustentado" para BOTTOM: para onde ≥90% do restante é cinza
 3. Colunas com gap_limit=6
 """
+from concurrent.futures import ThreadPoolExecutor
+
 import cv2
 import numpy as np
 import mss
 import re
 import time
 from pathlib import Path
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QEventLoop, QThread, QTimer, pyqtSignal
 from src.config.settings import settings
 from src.services.aoi_ocr_timing import AOIOCRTiming
 from src.services.aoi_ocr_fields import normalize_value_ocr
@@ -52,6 +54,36 @@ except ImportError:
 
 
 DEBUG_DIR = Path("public/debug_crop")
+# Um único worker dedicado a OCR da UI: evita vários processos Tesseract
+# paralelos em memória. OCR de acervo/MSS em QThread mantém execução normal.
+_OCR_UI_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ODINOCR")
+
+
+def _read_tesseract_responsive(callable_ocr):
+    """Preserva o resultado síncrono, mas não congela a event loop Qt da UI.
+
+    A SIDE continua aguardando o texto de Value antes de validar a entrada ou
+    permitir TOP/MID. Somente o processo externo do Tesseract sai da UI.
+    Não iniciar event loop aninhada em threads MSS/KNN/background.
+    """
+    app = QCoreApplication.instance()
+    if app is None or QThread.currentThread() != app.thread():
+        return callable_ocr()
+
+    future = _OCR_UI_EXECUTOR.submit(callable_ocr)
+    if not future.done():
+        loop = QEventLoop()
+        heartbeat = QTimer()
+        heartbeat.setInterval(25)
+        heartbeat.timeout.connect(
+            lambda: loop.quit() if future.done() else None
+        )
+        heartbeat.start()
+        try:
+            loop.exec()
+        finally:
+            heartbeat.stop()
+    return future.result()
 
 
 class ScreenMonitor(QThread):
@@ -397,13 +429,13 @@ class ScreenMonitor(QThread):
             _, binary = cv2.threshold(gray_big, 0, 255,
                                        cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             read = pytesseract.image_to_string
-            raw = (
-                read(binary, config='--psm 6 --oem 3')
-                if timing is None else timing.call(
+            if timing is None:
+                invoke = lambda: read(binary, config='--psm 6 --oem 3')
+            else:
+                invoke = lambda: timing.call(
                     phase, read, binary, config='--psm 6 --oem 3'
                 )
-            )
-            return raw.strip()
+            return _read_tesseract_responsive(invoke).strip()
         except Exception:
             return ""
 
