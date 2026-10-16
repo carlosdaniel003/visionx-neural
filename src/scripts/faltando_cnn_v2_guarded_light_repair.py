@@ -19,6 +19,7 @@ from uuid import uuid4
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2, LIGHTS, MODEL_SCHEMA_V2
@@ -176,18 +177,159 @@ def _select_hard_pairs(
     }
 
 
+
+def _weak_event_mil_loss(logits, by_light, mask, truth, *, light_weight: float):
+    """Event-level NG in multilight must NOT imply NG under every illumination.
+
+    Multi-light NG has *only* an event label: the MIL max aggregator provides
+    its positive gradient. Multi-light OK safely supervises every visible light
+    as negative. Single-light NG/OK provides an individual light label.
+    Unobserved lights have zero auxiliary gradient.
+    """
+    if logits.shape != truth.shape or by_light.shape != mask.shape:
+        raise ValueError("Dimensões de logits/verdade/máscara inválidas")
+    if by_light.shape[0] != truth.shape[0] or by_light.shape[1] != 3:
+        raise ValueError("Dimensão de iluminação inesperada")
+    if bool(torch.any(mask.sum(1) < 1)):
+        raise ValueError("Evento sem iluminação")
+    if not 0. < light_weight <= 1.:
+        raise ValueError("Peso de supervisão fora dos limites")
+    primary = F.binary_cross_entropy_with_logits(logits, truth)
+    single_view = mask.sum(dim=1) == 1
+    # Supervise OK views; NG views only if individually labelled (single-view).
+    eligible = mask * ((truth[:, None] == 0) | single_view[:, None]).to(mask.dtype)
+    auxiliary = F.binary_cross_entropy_with_logits(
+        by_light, truth[:, None].expand_as(by_light), reduction="none",
+    )
+    return primary + light_weight * (auxiliary * eligible).sum() / eligible.sum().clamp_min(1)
+
+
+def _select_mil_hard_pairs(
+    net: FaltandoCNNV2, historical: list[dict], online: list[dict],
+    archive_train: list[dict], size: int, focus: float, *,
+    per_light: int = 12,
+) -> tuple[list[dict], dict]:
+    """Only single-view NG can be mined by illumination; online NG by event.
+
+    Never mine a weakly-labelled multi-view event as a per-view positive.
+    Protect the original historical OKs in half of paired replay steps.
+    """
+    if not 2 <= per_light <= 32:
+        raise ValueError("Exposição por iluminação fora dos limites")
+    train_eval = _assess(net, archive_train, size, focus)
+    online_eval = _assess(net, online, size, focus)
+    historical_eval = _assess(net, historical, size, focus)
+    for data, metrics in ((archive_train, train_eval), (online, online_eval),
+                          (historical, historical_eval)):
+        if len(data) != len(metrics["cases"]):
+            raise ValueError("Diagnóstico incompleto para mineração MIL")
+
+    ng_steps, light_counts = [], {}
+    for light in LIGHTS:
+        eligible = [
+            (e, r) for e, r in zip(archive_train, train_eval["cases"])
+            if e["label"] == "NG" and len(e["views"]) == 1 and light in e["views"]
+        ]
+        if not eligible:
+            raise ValueError("Nenhum NG individual no treino para " + light)
+        eligible.sort(key=lambda x: (
+            float(x[1]["per_light"][light]["score"]), x[0]["id"]
+        ))
+        ng_steps.extend(eligible[i % len(eligible)][0] for i in range(per_light))
+        light_counts[light] = per_light
+
+    online_ng = [
+        (e, r) for e, r in zip(online, online_eval["cases"])
+        if e["label"] == "NG" and len(e["views"]) > 1
+    ]
+    if online_ng:
+        online_ng.sort(key=lambda x: (float(x[1]["ng_score"]), x[0]["id"]))
+        ng_steps.extend(online_ng[i % len(online_ng)][0] for i in range(per_light))
+    old_ok = [
+        (e, r) for e, r in zip(historical, historical_eval["cases"])
+        if e["label"] == "OK"
+    ]
+    if not old_ok:
+        raise ValueError("Sem âncoras históricas OK")
+    old_ok.sort(key=lambda x: (
+        -max(float(v["score"]) for v in x[1]["per_light"].values()), x[0]["id"],
+    ))
+    ok_other = [
+        (e, r) for e, r in (
+            list(zip(archive_train, train_eval["cases"]))
+            + list(zip(online, online_eval["cases"]))
+        ) if e["label"] == "OK"
+    ]
+    if not ok_other:
+        raise ValueError("Sem OK de desenvolvimento")
+    ok_other.sort(key=lambda x: (
+        -max(float(v["score"]) for v in x[1]["per_light"].values()), x[0]["id"],
+    ))
+    anchor_steps = max(1, len(ng_steps) // 2)
+    old_hard = old_ok[:max(1, min(2, len(old_ok)))]
+    ok_steps = [
+        old_hard[i % len(old_hard)][0] for i in range(anchor_steps)
+    ]
+    ok_steps.extend(
+        ok_other[i % len(ok_other)][0]
+        for i in range(len(ng_steps) - anchor_steps)
+    )
+    if len(ok_steps) != len(ng_steps):
+        raise ValueError("Replay MIL não balanceado")
+    return [
+        e for a, b in zip(ng_steps, ok_steps) for e in (a, b)
+    ], {
+        "NG": len(ng_steps), "OK": len(ok_steps),
+        "hard_ng_single_view_by_light": light_counts,
+        "hard_ng_multi_view_event_only": per_light if online_ng else 0,
+        "protected_original_ok_steps": anchor_steps,
+        "weak_multilight_ng_per_view_supervision": False,
+    }
+
+
+
+def _mil_selection_score(historical: dict, online: dict, archive_train: dict) -> tuple:
+    """Use event-only NG labels for multilight online; no fake per-view truth."""
+    historical_errors = sum(
+        not view["correct"]
+        for case in historical["cases"] for view in case["per_light"].values()
+    )
+    archive_ng_errors = sum(
+        not case["correct"] for case in archive_train["cases"]
+        if case["label"] == "NG"
+    )
+    archive_ok_errors = sum(
+        not case["correct"] for case in archive_train["cases"]
+        if case["label"] == "OK"
+    )
+    return (
+        int(not historical["all_correct"]),
+        historical_errors,
+        online["ng_false_ok"],
+        archive_ok_errors,
+        archive_ng_errors,
+        -online["correct_events"],
+        -archive_train["correct_images"],
+    )
+
+
 def repair_offline(
     root: Path, manifest: Path, start_report: Path, *,
     epochs: int = 4, lr: float = .00001, per_light: int = 12,
+    supervision_mode: str = "all_lights",
 ) -> dict:
     """Short, low-LR head-only supervised correction; no active model changes."""
     root = Path(root).resolve()
+    if supervision_mode not in ("all_lights", "event_mil"):
+        raise ValueError("Modo de supervisão desconhecido")
     if not (type(epochs) is int and 1 <= epochs <= 8
             and 0 < lr <= .00002 and 2 <= per_light <= 32):
         raise ValueError("Parâmetros de reparo fora dos limites")
     if (root / "reports/neural_online/live_active.json").exists():
         raise ValueError("Checkpoint online ativo: auditar antes de corrigir")
     torch.set_num_threads(max(1, min(2, torch.get_num_threads())))
+    if supervision_mode == "event_mil":
+        torch.manual_seed(42)
     manifest = Path(manifest)
     manifest = manifest if manifest.is_absolute() else root / manifest
     if not manifest.is_file() or manifest.is_symlink():
@@ -231,7 +373,8 @@ def repair_offline(
         )
 
     current_hist, current_online, current_train = development_assess()
-    best_score = _selection_score(current_hist, current_online, current_train)
+    scorer = _mil_selection_score if supervision_mode == "event_mil" else _selection_score
+    best_score = scorer(current_hist, current_online, current_train)
     best_epoch = 0
     best_state = deepcopy(net.state_dict())
 
@@ -251,9 +394,14 @@ def repair_offline(
     }]
     for epoch in range(1, epochs + 1):
         net.eval()
-        replay, counts = _select_hard_pairs(
-            net, historical, online, train, size, focus, per_light=per_light,
-        )
+        if supervision_mode == "event_mil":
+            replay, counts = _select_mil_hard_pairs(
+                net, historical, online, train, size, focus, per_light=per_light,
+            )
+        else:
+            replay, counts = _select_hard_pairs(
+                net, historical, online, train, size, focus, per_light=per_light,
+            )
         if {e["label"] for e in replay} != {"OK", "NG"}:
             raise ValueError("Replay sem ambas as classes")
         loader = DataLoader(
@@ -265,9 +413,14 @@ def repair_offline(
         for r, t, rf, tf, mask, truth in loader:
             logits, by_light = net(r, t, rf, tf, mask)
             # Increase per-light gradient, especially on MID missed by event.
-            loss = _supervised_loss(
-                logits, by_light, mask, truth, light_weight=.5,
-            )
+            if supervision_mode == "event_mil":
+                loss = _weak_event_mil_loss(
+                    logits, by_light, mask, truth, light_weight=.5,
+                )
+            else:
+                loss = _supervised_loss(
+                    logits, by_light, mask, truth, light_weight=.5,
+                )
             if not bool(torch.isfinite(loss)):
                 raise ValueError("Loss de reparo não finita")
             optimizer.zero_grad(set_to_none=True)
@@ -276,7 +429,7 @@ def repair_offline(
             optimizer.step()
             running += float(loss.item())
         current_hist, current_online, current_train = development_assess()
-        score = _selection_score(current_hist, current_online, current_train)
+        score = scorer(current_hist, current_online, current_train)
         if score < best_score:
             best_epoch, best_score = epoch, score
             best_state = deepcopy(net.state_dict())
@@ -324,6 +477,7 @@ def repair_offline(
         "archive_labels_experimental": True,
         "individual_pair_review_complete": False,
         "guarded_light_repair_offline": True,
+        "supervision_mode": supervision_mode,
         "selected_repair_epoch": best_epoch,
     }, candidate)
     result = {
@@ -338,6 +492,8 @@ def repair_offline(
         "base_checkpoint_sha256": _sha(base_path),
         "manifest_sha256": provenance["manifest_sha256"],
         "split": split, "training_only_head": True,
+        "supervision_mode": supervision_mode,
+        "weak_multilight_ng_per_view_supervision": supervision_mode != "event_mil",
         "selected_epoch": best_epoch, "epochs": epochs,
         "learning_rate": lr, "per_light_supervision_weight": .5,
         "history": history,
@@ -356,6 +512,7 @@ def repair_offline(
         "limitations": [
             "Usa rótulos provisórios das pastas, não qualificação individual.",
             "Holdout de 87 imagens já visto: não é avaliação independente.",
+            "NG multilight online só tem rótulo por evento; suas métricas por luz são diagnósticas.",
             "Não substitui validação cruzada de DESLOCADO, INVERTIDO, EMBORCADO.",
             "Candidato SEMPRE bloqueado para uso em produção.",
         ],
@@ -382,10 +539,13 @@ def main(argv=None) -> int:
     p.add_argument("--epochs", type=int, default=4)
     p.add_argument("--lr", type=float, default=.00001)
     p.add_argument("--per-light", type=int, default=12)
+    p.add_argument("--supervision-mode", choices=("all_lights", "event_mil"),
+                   default="all_lights")
     args = p.parse_args(argv)
     repair_offline(
         args.root, args.manifest, args.start_report,
         epochs=args.epochs, lr=args.lr, per_light=args.per_light,
+        supervision_mode=args.supervision_mode,
     )
     return 0
 
