@@ -1,3 +1,69 @@
+## 16/10/2026 — Voltar a focar no candidato de 97,70% (SEM treino)
+
+**Diretriz do operador:** cessar a sequência de retreinamentos e focar
+no **primeiro checkpoint** de FALTANDO V2 que atingiu **85/87
+(97,70%)** no holdout original (68/68 NG e 17/19 OK). SHA-256
+`c13ca3296eee5e7741c58f29a6ef035296c0fe84a5651a9481462d72042b120c`.
+É necessário manter no relatório **o problema que o reprovou**:
+no conjunto **histórico original**, acertou apenas **98/117**,
+classificando **19 imagens OK como NG**. A porcentagem 97,70% foi
+obtida em **outro conjunto** que o da CNN universal, e não autoriza
+Produção.
+
+A CNN universal recente alcançou 93/106 (87,74%) em suas **106
+imagens**, com 10 NG→OK e 3 OK→NG, mas não é possível
+interpretar a queda de 97,70% para 87,74% como piora diretamente
+comparável por causa das diferentes partições.
+
+Para comparar **os mesmos 106 pares** sem treinamento, alterar
+checkpoint, fusão ou limiares, foi criado o CLI de benchmark somente
+leitura `src.scripts.benchmark_original_97p70_offline`.
+Ele:
+1. Encontra e autentica o relatório e checkpoint originais com
+   SHA-256 **fixado no código**, modo experimental e métricas
+   85/87 e 98/117.
+2. Autentica o relatório/checkpoint universal por hash,
+   schema e proveniência, recompõe a **mesma partição** das 559
+   amostras pós deduplicação e confirma a igualdade dos **IDs
+   de treino, validação e teste** do relatório publicado.
+3. Reavalia **apenas a CNN 97,70%** nos mesmos 106 pares
+   originais do teste universal. Reusa os scores da CNN universal
+   publicados no `training_report.json`, sem voltar a treiná-la.
+4. Produz tabela de acurácia, NG→OK, OK→NG por categoria,
+   erros exclusivos de cada CNN, discordâncias, marcadores
+   conhecidos da triagem humana, e diagnóstico **separado** com
+   limiares já existentes 0,10/0,90 (a métrica primária .50
+   é apenas do laboratório).
+5. Preserva a medição histórica 98/117, explicita exemplos
+   vistos em holdouts anteriores, nunca altera nenhum peso,
+   dataset, `live_active.json`, calibração nem roteamento.
+   Não seleciona automaticamente modelo vencedor, não promove
+   candidato e não reivindica avaliação cega.
+
+**Comando local (após integrar esta PR à `central`):**
+
+```powershell
+cd C:\visionx-neural-main
+git switch central
+git pull origin central
+
+python -X utf8 -m src.scripts.benchmark_original_97p70_offline --root . --manifest "reports/faltando_neural/run_20261016T154441_358349Z/manifest.json" --original-report "reports/faltando_neural/archive_experiments/20261016T125315_996834Z_c3e70a/training_report.json" --universal-report "reports/aoi_universal_quality/experiments/20261016T174911_634701Z_347cc2/training_report.json"
+```
+
+Saída: `reports/aoi_universal_quality/benchmarks/<run>/head_to_head_report.json`.
+A comparação **não exige o modelo universal ser carregado para inferência**,
+pois reutiliza suas predições originais assinadas por SHA do checkpoint
+e da fonte. Se qualquer fonte mudou ou não existe, falha sem escrever.
+
+**Próximo passo, somente após o benchmark:** identificar qual arquitetura
+tem melhor cobertura NG **nesse mesmo conjunto** e quantos OK históricos
+a CNN original deixa passar; só elaborar eventual correção com
+método e amostras *independentes*, sem repetir otimização ad hoc
+do holdout que já foi visto. O checkpoint de 97,70% permanece
+**referência experimental fixada**, nunca `live_active.json`.
+
+---
+
 # CNN universal de qualidade AOI — candidato offline de laboratório
 
 **Data:** 16/10/2026. **Status:** experimento de desenvolvimento; sem aprovação de Produção.
