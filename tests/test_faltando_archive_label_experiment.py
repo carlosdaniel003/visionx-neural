@@ -30,12 +30,12 @@ class BulkArchiveExperimentTests(CNNV2Fixture):
         self.assertTrue(all(len(e["views"]) == 1 for e in events))
         self.assertFalse((self.manifest_path.parent / "qualification.json").exists())
         self.assertEqual(len([
-            e for e in events if e.get("split_group") and "::name::" in e["split_group"]
+            e for e in events if e.get("split_group") and "::candidate::" in e["split_group"]
         ]), 3)
         train, hold, _ = split_verified_events(events)
         self.assertEqual(len(train) + len(hold), 15)
         grouped = [e for e in events if e.get("split_group")
-                   and "::name::" in e["split_group"]]
+                   and "::candidate::" in e["split_group"]]
         self.assertEqual(len({e["split_group"] for e in grouped}), 1)
         self.assertTrue(all(e in train for e in grouped)
                         or all(e in hold for e in grouped))
