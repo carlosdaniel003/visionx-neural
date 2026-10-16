@@ -272,7 +272,8 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
                 "NUNCA VI • KNN SEM MATCH EXATO",
                 "Nenhuma das iluminações consultadas tem par humano exato nem "
                 "vizinhos NG corroborados nesta inspeção. A CNN é um modelo "
-                "separado da memória KNN.",
+                "separado da memória KNN. Isso não significa que o tipo "
+                "de defeito nunca foi registrado.",
             )
         return (
             "NUNCA VI • KNN SEM MATCH EXATO",
