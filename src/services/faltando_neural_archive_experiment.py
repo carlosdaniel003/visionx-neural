@@ -27,6 +27,15 @@ def archive_labeled_experimental_events(manifest_path: Path) -> tuple[list[dict]
     human_cases = 0
     seen: dict[tuple[str, str], str] = {}
     counts = Counter()
+    # Candidate links from the preparation manifest are only split fences:
+    # they prevent related images from crossing train/holdout, not a claim
+    # that SIDE/TOP/MID are the same inspected physical event.
+    split_hints: dict[str, str] = {}
+    for group_id, group in store.groups.items():
+        for source in group["paths"].values():
+            if source in split_hints:
+                raise ValueError("Par pertence a trincas candidatas sobrepostas")
+            split_hints[source] = group["label"] + "::candidate::" + group_id
     for source, item in sorted(store.by_path.items()):
         if item.get("status") != "EXTRACTED_PENDING_REVIEW":
             raise ValueError("Acervo experimental contém par não extraído: " + source)
@@ -34,7 +43,7 @@ def archive_labeled_experimental_events(manifest_path: Path) -> tuple[list[dict]
         expected_prefix = ("public", label.lower() + "_archive")
         if tuple(Path(source).parts[:2]) != expected_prefix:
             raise ValueError("Pasta de origem contradiz rótulo do manifesto: " + source)
-        if item.get("category_hint") != "FALTANDO":
+        if item.get("category_hint") not in (None, "FALTANDO"):
             raise ValueError("Categoria de origem fora do escopo FALTANDO: " + source)
         store._validate_source(source)
         review = store.case_reviews.get(source)
@@ -63,9 +72,9 @@ def archive_labeled_experimental_events(manifest_path: Path) -> tuple[list[dict]
         hint = _group_hint(source)
         event_id = item.get("event_id")
         split_group = (
-            label + "::name::" + hint if hint
-            else label + "::event::" + str(event_id) if event_id
-            else None
+            split_hints.get(source)
+            or (label + "::name::" + hint if hint else None)
+            or (label + "::event::" + str(event_id) if event_id else None)
         )
         rows.append({
             "id": "archive_provisional:" + source,
