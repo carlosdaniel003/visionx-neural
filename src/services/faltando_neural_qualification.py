@@ -6,7 +6,7 @@ manifesto da preparação, mantendo PNGs e rótulos originais inalterados.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -23,6 +23,42 @@ REVIEW_STATES = frozenset(("CONFIRMED_OK", "CONFIRMED_NG", "REJECTED"))
 GROUP_STATES = frozenset(("CONFIRMED_VISUAL_ASSOCIATION", "REJECTED"))
 HEX64 = re.compile(r"^[a-f0-9]{64}$")
 LIGHTS = ("SIDE", "TOP", "MID")
+
+
+def _normalize_triplet_candidates(records: list[dict]) -> dict[str, dict]:
+    """Aceita manifestos antigos com ID repetido somente entre OK e NG.
+
+    Normaliza em RAM, sem reescrever manifesto, fontes ou revisões. Duplicata
+    com MESMO rótulo é ambígua e continua sendo erro de integridade.
+    """
+    labels_by_id: dict[str, set[str]] = defaultdict(set)
+    combinations: set[tuple[str, str]] = set()
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("Registro de trinca inválido")
+        name, label = record.get("id"), record.get("label")
+        if not isinstance(name, str) or not name.strip() or label not in ("OK", "NG"):
+            raise ValueError("ID ou rótulo de trinca inválido")
+        pair = (name, label)
+        if pair in combinations:
+            raise ValueError("IDs de trinca repetidos para o mesmo rótulo")
+        combinations.add(pair)
+        labels_by_id[name].add(label)
+
+    groups: dict[str, dict] = {}
+    for record in records:
+        name, label = record["id"], record["label"]
+        # Compatibilidade: no manifesto antigo dois grupos com o mesmo nome,
+        # um OK e outro NG, eram salvos com IDs idênticos. Não fundi-los.
+        qualified = f"{label}::{name}" if len(labels_by_id[name]) > 1 else name
+        if qualified in groups:
+            raise ValueError("IDs de trinca colidentes após normalização")
+        group = dict(record)
+        group["id"] = qualified
+        if qualified != name:
+            group["source_name_hint"] = name
+        groups[qualified] = group
+    return groups
 
 
 def _inside(parent: Path, candidate: Path) -> bool:
@@ -148,12 +184,9 @@ class QualificationStore:
             self.expected_labels[path] = sample["expected_label_from_archive"]
             self.files[path] = (origin, derived[0], derived[1])
 
-        self.groups = {
-            record["id"]: record
-            for record in self.manifest.get("name_only_triplet_candidates", [])
-        }
-        if len(self.groups) != len(self.manifest.get("name_only_triplet_candidates", [])):
-            raise ValueError("IDs de trinca repetidos")
+        self.groups = _normalize_triplet_candidates(
+            self.manifest.get("name_only_triplet_candidates", [])
+        )
         for name, record in self.groups.items():
             frames = record.get("paths", {})
             if set(frames) != set(LIGHTS) or len(set(frames.values())) != 3:

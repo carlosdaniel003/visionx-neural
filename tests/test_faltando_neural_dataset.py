@@ -106,6 +106,35 @@ class FaltandoDatasetPreparationTests(unittest.TestCase):
             {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in sources},
         )
 
+    def test_ok_ng_triplets_with_same_basename_get_distinct_manifest_ids(self):
+        """O mesmo nome pode existir em ok_archive e ng_archive."""
+        name = "2026-10-08_0735_FALTANDO"
+        for label, folder, base in (("OK", self.ok, 70), ("NG", self.ng, 100)):
+            for i, mode in enumerate(("SIDE", "TOP", "MID")):
+                self.put(folder, f"{name}_{mode}.png", base+i)
+        report, run = prepare_faltando(self.root, extractor=self.extractor)
+        self.assertEqual(report["summary"]["name_only_triplets"], 2)
+        items = report["name_only_triplet_candidates"]
+        self.assertEqual({row["id"] for row in items},
+                         {f"OK::{name}", f"NG::{name}"})
+        self.assertEqual({row["source_name_hint"] for row in items}, {name})
+        self.assertEqual({row["label"] for row in items}, {"OK", "NG"})
+        for row in items:
+            self.assertEqual(set(row["paths"]), {"SIDE", "TOP", "MID"})
+            self.assertTrue(all(
+                row["paths"][mode].startswith(
+                    "public/" + row["label"].lower() + "_archive/"
+                )
+                for mode in ("SIDE", "TOP", "MID")
+            ))
+            self.assertEqual(
+                row["status"], "NAME_ONLY_NEEDS_HUMAN_QUALIFICATION"
+            )
+        saved = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            len({row["id"] for row in saved["name_only_triplet_candidates"]}), 2
+        )
+
     def test_unreadable_png_never_becomes_training_candidate(self):
         (self.ng / "invalid_FALTANDO.png").write_bytes(b"not png")
         report, _ = prepare_faltando(self.root, extractor=self.extractor)
