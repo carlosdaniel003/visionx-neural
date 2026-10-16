@@ -287,6 +287,32 @@ def _select_mil_hard_pairs(
     }
 
 
+
+def _mil_selection_score(historical: dict, online: dict, archive_train: dict) -> tuple:
+    """Use event-only NG labels for multilight online; no fake per-view truth."""
+    historical_errors = sum(
+        not view["correct"]
+        for case in historical["cases"] for view in case["per_light"].values()
+    )
+    archive_ng_errors = sum(
+        not case["correct"] for case in archive_train["cases"]
+        if case["label"] == "NG"
+    )
+    archive_ok_errors = sum(
+        not case["correct"] for case in archive_train["cases"]
+        if case["label"] == "OK"
+    )
+    return (
+        int(not historical["all_correct"]),
+        historical_errors,
+        online["ng_false_ok"],
+        archive_ok_errors,
+        archive_ng_errors,
+        -online["correct_events"],
+        -archive_train["correct_images"],
+    )
+
+
 def repair_offline(
     root: Path, manifest: Path, start_report: Path, *,
     epochs: int = 4, lr: float = .00001, per_light: int = 12,
@@ -347,7 +373,8 @@ def repair_offline(
         )
 
     current_hist, current_online, current_train = development_assess()
-    best_score = _selection_score(current_hist, current_online, current_train)
+    scorer = _mil_selection_score if supervision_mode == "event_mil" else _selection_score
+    best_score = scorer(current_hist, current_online, current_train)
     best_epoch = 0
     best_state = deepcopy(net.state_dict())
 
@@ -402,7 +429,7 @@ def repair_offline(
             optimizer.step()
             running += float(loss.item())
         current_hist, current_online, current_train = development_assess()
-        score = _selection_score(current_hist, current_online, current_train)
+        score = scorer(current_hist, current_online, current_train)
         if score < best_score:
             best_epoch, best_score = epoch, score
             best_state = deepcopy(net.state_dict())
