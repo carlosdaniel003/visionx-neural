@@ -1,3 +1,37 @@
+## 16/10/2026 — Correção de instalação da CNN 97,70%: 117 luzes ≠ 117 eventos
+
+Ao executar `src.scripts.deploy_faltando_97p70_trial install`, o instalador
+original bloqueou incorretamente com `ValueError: Casos individuais
+históricos não estão presentes`. Causa: o relatório
+`new_historical["images"] == 117` representa **117 observações
+SIDE/TOP/MID**, enquanto `len(new_historical["cases"])` representa
+**eventos**, que podem ter múltiplas iluminações. O instalador
+exigia `len(cases) == 117` e, portanto, confundia eventos com luzes.
+
+A rotina foi corrigida para **percorrer a lista de eventos e somar as
+entradas `case["per_light"]`**, exigindo resultados booleanos
+individuais e total `117`, dos quais `98` acertos, `19`
+erros OK→NG e **0 erros NG→OK**, além de confirmar 85/87 no
+holdout original e correspondência do SHA-256. **Não foram
+enfraquecidos os gates**. Ausência de resultados individuais,
+iluminação inválida, falta de uma luz, divergência na taxa histórica
+ou NG→OK falham sem instalar. Testes reais simulam **67 eventos e
+117 luzes**, e também a perda de uma vista ou troca enganosa de tipo
+de erro conservando a soma 98/117.
+
+A execução com erro ocorreu **antes da cópia do checkpoint e antes
+da criação do ponteiro ativo**; não há motivo para apagar pesos,
+reinstalar PyTorch ou remover arquivos da estação. Após atualizar
+`central`, repetir o mesmo comando com ODIN fechado. A ativação
+continua **somente assistida**, bloqueando 0/1 automático devido
+aos falsos NG históricos. Para verificar o estado antes de repetir:
+
+```powershell
+python -X utf8 -m src.scripts.deploy_faltando_97p70_trial status --root .
+```
+
+---
+
 ## 16/10/2026 — Ativação local reversível do checkpoint 97,70% (ENSAIO ASSISTIDO)
 
 O operador solicitou **substituir a CNN atualmente usada** pelo primeiro
