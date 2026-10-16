@@ -1,3 +1,74 @@
+## 16/10/2026 — Benchmark realizado: preservar o candidato de 97,70%
+
+**Decisão operacional de desenvolvimento:** parar a série de fine-tunings
+que vinham reduzindo o recall de NG, e **congelar como REFERÊNCIA
+EXPERIMENTAL** o primeiro candidato CNN V2. Checkpoint SHA-256 fixo:
+`c13ca3296eee5e7741c58f29a6ef035296c0fe84a5651a9481462d72042b120c`.
+Sem alterar runtime, pesos, KNN, limiares, fusão, XP ou ponteiro ativo.
+
+**Relatório real do usuário:**
+`reports/aoi_universal_quality/benchmarks/20261016T181313_610125Z_e527c1/head_to_head_report.json`.
+O benchmark autenticou os dois checkpoints e reutilizou as mesmas
+**106** imagens do teste universal (sem retreinamento), mas **29
+das 106** sobrepõem imagens já vistas no holdout antigo. Portanto, não
+é avaliação cega e não permite reivindicar 97,70% em produção.
+
+| Indicador no MESMO conjunto de 106 | Original 97,70% | Universal |
+|---|---:|---:|
+| Acertos gerais | **93/106 (87,74%)** | **93/106 (87,74%)** |
+| NG corretamente reconhecidos | **63/63 (100%)** | 53/63 (84,13%) |
+| **NG→OK** (grave: defeito liberado) | **0** | **10** |
+| OK corretamente reconhecidos | 30/43 | **40/43** |
+| **OK→NG** (falso alarme) | **13** | **3** |
+
+O modelo original **não ganhou em acurácia total**, mas fez **0 NG→OK**
+nessas 106 imagens. Não se deve usar a CNN universal sozinha para
+substituí-lo: ela deixou passar dez NG. Também não se deve afirmar que
+a CNN original está validada universalmente, porque neste teste
+**DESLOCADO, EMBORCADO e INVERTIDO têm apenas OK**; os únicos NG nas
+categorias AOI são 62 em FALTANDO e 1 em MUITO ADESIVO. A categoria
+AOI pode estar errada sobre a falha física. O usuário já havia
+identificado INVERTIDO físico em casos arquivados como FALTANDO, e
+a CNN original os detectou neste ensaio (por exemplo os MID 0851 e 1437).
+
+**Distribuição dos 13 OK→NG originais:** EMBORCADO 5; INVERTIDO 3;
+DESLOCADO 2; FALTANDO 2; MUITO ADESIVO 1. Portanto, **11/13** estão
+fora da categoria AOI `FALTANDO`, mas continuam sendo casos de qualidade
+geral que não podem ser simplesmente ignorados. Na série anterior de
+117 imagens históricas do FALTANDO, a CNN original teve apenas
+**98/117** acertos: **19 OK→NG**. Os resultados antigos 85/87=97,70%
+e 68/68 NG pertencem a OUTRO holdout e não substituem a medição 93/106.
+
+**Diagnóstico em limiares operacionais preexistentes (0,10/0,90)
+SEM alterar limiares:** a CNN original apresentou 63 NG conclusivos,
+zero NG liberados ou em REVIEW; dos 43 OK, 22 OK conclusivos,
+13 REVIEW e **8 falsos NG conclusivos**. Isso reforça que a melhora
+necessária é no falso alarme OK→NG, sem degradar a detecção NG.
+
+**Discordância como hipótese SOMENTE offline, não regra produtiva:**
+dos 106, os dois concordam em **83 acertos** e **3 erros (ambos marcam
+NG em OK)**. Discordam em **20**: **10 NG** que a CNN original detectou
+e a universal classificou OK, e **10 OK** que a original marcou NG e
+a universal classificou OK. Se uma análise hipotética marcasse toda
+discordância como **REVIEW, nunca auto-OK**, haveria 20 REVIEW, 53 NG
+conclusivos corretos, 30 OK conclusivos corretos e 3 falsos NG restantes
+nas 86 decisões concluídas; **não** satisfaz 97% nem demonstra
+segurança operacional. Essa simulação não autoriza substituir o
+especialista nem introduzir um novo filtro na linha.
+
+**Direção aprovada para investigação futura:** preservar o checkpoint
+original e seu recall como referência; avaliar reduções de falso
+alarme **sem liberar automaticamente qualquer NG** e sem usar o
+holdout já reutilizado para escolher novo threshold, época ou regra.
+Se houver necessidade de um segundo estágio, somente um protocolo
+offline e reversível que encaminhe casos incertos para REVISÃO,
+após definir a semântica operacional de REVIEW. Precisamos de
+exemplos físicos independentes e de regressão de todas as categorias
+antes de qualquer promoção. O usuário **já revisou** as pranchas dos
+14 exemplos difíceis; não solicitar repetição dessa revisão.
+
+---
+
 ## 16/10/2026 — Voltar a focar no candidato de 97,70% (SEM treino)
 
 **Diretriz do operador:** cessar a sequência de retreinamentos e focar
