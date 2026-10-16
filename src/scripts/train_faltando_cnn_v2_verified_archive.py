@@ -123,6 +123,10 @@ def qualified_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
             "views": {light: pair[1] for light, _, pair in parts},
             "sources": [path for _, path, _ in parts],
             "grouping": "HUMAN_VISUAL_ASSOCIATION",
+            "component": tuple(
+                str(store.by_path[parts[0][1]].get("ocr_observed", {}).get(k, "")).strip().upper()
+                for k in ("board", "parts")
+            ),
         })
         consumed.update(path for _, path, _ in parts)
         used[labels_value] += len(parts)
@@ -138,6 +142,10 @@ def qualified_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
             "id": "reviewed_single:" + path, "label": label,
             "views": {light: view}, "sources": [path],
             "grouping": "HUMAN_CONFIRMED_SINGLE",
+            "component": tuple(
+                str(store.by_path[path].get("ocr_observed", {}).get(k, "")).strip().upper()
+                for k in ("board", "parts")
+            ),
         })
         used[label] += 1
 
@@ -199,7 +207,15 @@ def split_verified_events(
             parents[b] = a
 
     cached = {}
+    components = {}
     for index, event in enumerate(events):
+        component = event.get("component")
+        if (isinstance(component, tuple) and len(component) == 2
+                and all(component)):
+            if component in components:
+                union(index, components[component])
+            else:
+                components[component] = index
         if event.get("label") not in ("OK", "NG") or not event.get("views"):
             raise ValueError("Evento sem rótulo/par")
         for light, pair in event["views"].items():
