@@ -1,3 +1,63 @@
+## 16/10/2026 — Blend 0,10 reprovado e reparo supervisionado por luz (experimental)
+
+O operador executou a PR #50 usando os dois checkpoints locais. O `blend_grid`
+selecionou **10% da rede agressiva** por histórico + online + treino, sem
+consultar holdout. Resultado **79/87 = 90,80%**, com 60/68 NG e 19/19 OK
+no holdout. Histórico original **116/117**, online **325/357** imagens
+(118/119 eventos; um NG ainda foi classificado OK por evento).
+Gates reprovados por `historical_replay_all_correct=false` e
+`holdout_accuracy_minimum=false`.
+
+A mesma imagem `public/ok_archive/2026-10-02_1542_FALTANDO.png` permanece
+falso NG histórico com **score 0,9874**. No holdout, oito NG ainda errados:
+- MID: quatro `0,005374–0,006913` (falsos OK *conclusivos*);
+- SIDE: dois `0,211301` e `0,243677` (faixa de revisão);
+- TOP: dois `0,371278` e `0,409442` (faixa de revisão).
+
+**Decisão técnica:** não continuar interpolando os mesmos pesos para tentar
+"achar" 97%. Todas as 11 combinações anteriores já erraram pelo menos
+um OK original. Requer nova otimização supervisionada e um conjunto novo
+de validação antes de concluir qualquer ganho real.
+
+A ferramenta `src.scripts.faltando_cnn_v2_guarded_light_repair` foi
+desenvolvida especificamente como **novo experimento offline**:
+- Requer os arquivos locais originais dos dois checkpoints, blend e
+  manifesto; valida hashes, provenance e os *mesmos IDs do split* antes de
+  iniciar; não altera dados e não aceita caminho arbitrário.
+- Começa do checkpoint blend 0,10 (não do modelo em produção). Congela
+  o encoder e treina somente a `head` com AdamW e taxa baixa, de
+  modo a testar se é possível corrigir a margem sem destruir recursos.
+- A cada época usa exclusivamente imagens de **treino do arquivo, replay
+  humano online e histórico original** para escolher NG difíceis POR LUZ
+  (SIDE, TOP e MID, 12 exposições de cada) e OK difíceis. Um terço dos
+  passos OK protege explicitamente os OK históricos com score NG maior;
+  os passos extras ficam pareados NG/OK e a perda por luz é 0,5.
+- Salva a melhor época entre 0 e 4 por métricas históricas/online/treino,
+  sem usar o holdout para seleção. Depois da escolha avalia as 87 imagens
+  do holdout **uma única vez**; aplica os gates existentes, inclusive
+  precisão mínima de 97% e preservação **117/117**.
+- Produz **apenas candidato** em `archive_repairs/` com
+  `production_approval_eligible=false`, `promoted=false`.
+  Não modifica champion, KNN, thresholds, XP ou fusão. O holdout de
+  87 imagens **não é mais independente**, pois já foi observado.
+
+**Executar somente após esta PR estar integrada, com ODIN fechado:**
+
+```powershell
+cd C:\visionx-neural-main
+git switch central
+git pull origin central
+python -X utf8 -m src.scripts.faltando_cnn_v2_guarded_light_repair --root . --manifest "reports/faltando_neural/run_20261016T114234_996180Z/manifest.json" --start-report "reports/faltando_neural/archive_blends/20261016T140735_446262Z_6884b5/blend_report.json" --epochs 4 --lr 0.00001 --per-light 12
+```
+
+A mera aprovação de testes GitHub **não é resultado do treinamento real**.
+O script pode voltar a reprovar gates ou selecionar a época 0. É um
+teste de hipótese controlado, não uma promessa de 97–98%.
+Mesmo com gates aprovados, precisa de replay multi-categoria e imagens
+novas independentes antes de qualquer avaliação para Produção.
+
+---
+
 ## 16/10/2026 — Segundo fine-tuning reprovado; análise de mistura de pesos offline
 
 **Resultado efetivamente observado com PR #49:** cinco épocas, replay balanceado
