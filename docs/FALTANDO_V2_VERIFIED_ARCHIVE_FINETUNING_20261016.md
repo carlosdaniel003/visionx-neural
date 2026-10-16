@@ -1,3 +1,63 @@
+## 16/10/2026 — 5º ensaio MIL sem ganho; auditoria dos exemplos difíceis
+
+O experimento local com `--supervision-mode event_mil` concluiu 4 épocas,
+com 48 NG e 48 OK no replay por época, mas **selecionou a época 0**
+(sem aplicar as alterações). A loss caiu `1.229865→1.180511`, enquanto
+as métricas de desenvolvimento ficaram piores que o início:
+histórico **116/117** em todas as épocas; acertos online individuais
+**325→324**; treino **318→317**. O resultado efetivamente salvo é
+idêntico ao blend inicial: **79/87 = 90,80%**, com 60/68 NG e
+19/19 OK no holdout; foram reprovados o gate do histórico e o piso de
+97%. O OK histórico `public/ok_archive/2026-10-02_1542_FALTANDO.png`
+permanece falso NG (score 0,9874). Isso demonstra que a mudança de
+supervisão é metodologicamente mais defensável, mas **não resolve sozinha**
+os exemplos difíceis. Não aumentar épocas cegamente.
+
+No relatório local observam-se **14 PNGs distintos que falharam**:
+- **8 NG do holdout**, sendo 4 MID com scores ~0,003–0,007,
+  2 SIDE ~0,21–0,24, e 2 TOP ~0,37–0,41;
+- **5 NG do treino** classificados OK, todos MID;
+- **1 OK do treino**, que é o **mesmo OK** falho no histórico original.
+- Existe ainda **1 evento NG online multilight** abaixo do limiar binário,
+  que não é o mesmo que um PNG do manifesto; seu ID está no próprio relatório.
+
+Para examinar a causa visual dos erros **sem revisar as 420 fontes**,
+a ferramenta nova `src.scripts.faltando_v2_audit_failed_pairs`
+gera pranchas PNG mostrando:
+**captura AOI / recorte gabarito / recorte teste / diferença x3**
+em grupos separados `historico`, `treino`, `holdout`. Um resumo
+`audit_index.json` registra nomes originais, rótulos **provisórios**
+e scores; não modifica arquivos fonte, rótulos, qualificação, pesos,
+KNN, regras de fusão, checkpoint ativo ou XP. O mesmo OK pode aparecer
+em duas pranchas, mas é contabilizado como **uma única fonte**.
+
+**Comando após integrar a PR à central:**
+
+```powershell
+cd C:\visionx-neural-main
+git switch central
+git pull origin central
+python -X utf8 -m src.scripts.faltando_v2_audit_failed_pairs --root . --manifest "reports/faltando_neural/run_20261016T114234_996180Z/manifest.json" --report "reports/faltando_neural/archive_repairs/20261016T144311_951641Z_8d0438/repair_report.json"
+```
+
+As pranchas são gravadas exclusivamente sob
+`reports/faltando_neural/failed_pair_audits/<run>/`, sem
+treinamento. A diferença ampliada serve apenas para facilitar a
+comparação visual; se os recortes tiverem tamanhos diferentes, o
+redimensionamento será indicado. Compartilhar uma prancha pode
+expor conteúdo da captura AOI; revisar informações sensíveis antes
+de enviar.
+
+**Política de medição:** os mesmos 87 exemplos já foram vistos
+repetidamente ao ajustar os métodos. **Não são mais um holdout cego**,
+nem sustentam alegação de 97–98% de generalização. Auditoria dirigida
+nesses casos os transforma explicitamente em **dados de desenvolvimento**.
+Reservar novas capturas físicas, independentes, para a próxima medição
+de generalização. Não aprovar checkpoint experimental para Produção,
+mesmo se alcançar o objetivo nesse acervo.
+
+---
+
 ## 16/10/2026 — Reparo por iluminação 93,10%; revisão da semântica de rótulos por luz
 
 A execução local de `faltando_cnn_v2_guarded_light_repair`, com
