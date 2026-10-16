@@ -143,6 +143,10 @@ def verify_operator_triage(
         source for source, row in review_map.items()
         if row["visual_category"] == "FALTANDO"
     )
+    confirmed_general_ng = sorted(
+        source for source, row in review_map.items()
+        if row["visual_category"] in ("FALTANDO", "INVERTIDO")
+    )
     return {
         "schema": "visionx.faltando_v2_operator_triage_report.v1",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -153,6 +157,10 @@ def verify_operator_triage(
         "visual_categories": dict(categories),
         "audit_occurrences": dict(diagnostic_counts),
         "reviewed_missing_from_contact_sheets": confirmed_missing,
+        "reviewed_general_ng_from_contact_sheets": confirmed_general_ng,
+        "cross_category_quality_ng_keeps_inverted": True,
+        "aoi_category_is_only_routing_hint": True,
+        "general_ng_does_not_imply_missing_component": True,
         "quarantine_for_future_faltando_experiments": quarantined,
         "inverted_not_relabelled_ok": True,
         "remaining_archive_pairs_unreviewed": True,

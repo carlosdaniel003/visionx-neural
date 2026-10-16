@@ -1,3 +1,77 @@
+## 16/10/2026 — Correção de escopo: categoria AOI ≠ defeito real (cobertura geral)
+
+**Esclarecimento do operador:** a AOI rotula/encaminha muitos defeitos
+de **componente FALTANDO sob outras categorias**. Portanto um detector
+de qualidade não pode limitar sua observação apenas a casos cujo
+`category_hint` seja `FALTANDO`. Um PNG rotulado `INVERTIDO` pela
+AOI pode fisicamente conter FALTANDO, e vice-versa.
+
+São **três conceitos diferentes** que não devem ser confundidos:
+1. `aoi_category`: categoria de origem atribuída pela AOI, **pista
+   falível de roteamento**, não verdade física;
+2. `visual_defect_type`: tipo efetivamente observado por operador
+   (FALTANDO, INVERTIDO, EMBORCADO, DESLOCADO, MUITOADESIVO, outro,
+   incerto), sujeito a revisão;
+3. `quality_label`: OK/NG de inspeção (se confirmado), sem implicar
+   sozinho um tipo físico específico.
+
+**Reinterpretação correta dos 14 PNGs revisados:** 9 FALTANDO são NG,
+4 INVERTIDO **também são NG de qualidade geral**, e o 1542 deve ser
+ignorado. O antigo campo `quarantine_for_future_faltando_experiments`
+faz sentido **somente em treinamento binário específico de ausência**:
+os 4 INVERTIDO não podem virar exemplos de FALTANDO positivo, e o
+IGNORAR não é rótulo novo. Em um futuro **detector geral de NG**,
+os 4 INVERTIDO permanecem exemplos **NG válidos**. O script
+`faltando_v2_record_operator_triage` agora informa também
+`reviewed_general_ng_from_contact_sheets` (13 fontes), preservando
+`reviewed_missing_from_contact_sheets` (9 fontes), sem treinar.
+
+**Auditoria do código:** hoje `uses_faltando_v2` já encaminha para a
+CNN v2 as categorias AOI FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO.
+A categoria `MUITOADESIVO` tem especialista próprio e UNKNOWN/novas
+categorias não são cobertas pelo roteador atual. Não remover essas
+barreiras produtivas antes de treinar e validar uma CNN universal,
+pois mudanças de roteamento podem produzir NG/OK incorretos em
+uma linha industrial.
+
+A preparação antiga de `faltando_neural_dataset` selecionava
+apenas `category_hint == FALTANDO`. Novo modo de **preparação offline
+diagnóstica de todas as categorias**, explicitamente ativado:
+```powershell
+cd C:\visionx-neural-main
+git switch central
+git pull origin central
+python -X utf8 -m src.services.faltando_neural_dataset --root . --all-aoi-categories
+```
+- Percorre **todas** as capturas válidas em `public/ok_archive` e
+  `public/ng_archive`, inclusive `MUITOADESIVO` e `UNKNOWN`, sem
+  filtragem por categoria AOI. Extrai pares reais e preserva
+  `category_hint` do inventário, além do OCR observado.
+- Atribui `visual_defect_type=null`, `quality_label_is_provisional=true`
+  e `review_required+=CONFIRM_VISUAL_DEFECT_TYPE`. O nome da categoria
+  não pode determinar o defeito real.
+- Gera manifesto exclusivo de preparação em
+  `reports/faltando_neural/run_*/manifest.json`, com
+  `all_aoi_categories_preparation_only=true`. Nenhum
+  `qualification.json`/rótulo muda; `training_ready=0`.
+- **Rejeita explicitamente** esse manifesto nos treinadores experimentais
+  existentes que assumem categoria FALTANDO; não treinar um conjunto
+  universal fingindo que NG equivale a componente ausente.
+- Não ativa ou modifica CNN de Produção, KNN, OCR, thresholds, fusão,
+  armazenamento de origem ou comandos XP. O roteamento produtivo
+  permanece idêntico. Não há promessa de ganho de acurácia nessa etapa.
+
+**Arquitetura-alvo:** avaliar `OK/NG de qualidade geral` a partir do
+par gabarito/teste para **qualquer categoria AOI**, com associação
+independente ao tipo físico quando realmente disponível. Não dar
+AUTO-OK global com base apenas na ausência de um defeito específico;
+avaliar perda por iluminação, independência por peça e cobertura
+de categorias. Novas capturas independentes serão necessárias para
+medir a meta 97–98%. Os 87 exemplos já usados repetidamente não
+podem servir como holdout cego.
+
+---
+
 ## 16/10/2026 — Classificação explícita do operador das cinco pranchas
 
 Após ver as pranchas de auditoria, o operador distinguiu **três

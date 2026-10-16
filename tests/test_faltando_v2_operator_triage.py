@@ -92,6 +92,13 @@ class OperatorTriageTests(CNNV2Fixture):
                          {sources[1][0], sources[2][0]})
         self.assertEqual(result["reviewed_missing_from_contact_sheets"],
                          [sources[0][0]])
+        self.assertEqual(
+            result["reviewed_general_ng_from_contact_sheets"],
+            sorted([sources[0][0], sources[1][0]]),
+        )
+        self.assertTrue(result["cross_category_quality_ng_keeps_inverted"])
+        self.assertTrue(result["aoi_category_is_only_routing_hint"])
+        self.assertTrue(result["general_ng_does_not_imply_missing_component"])
         self.assertTrue(result["inverted_not_relabelled_ok"])
         self.assertFalse(result["production_approval_eligible"])
         self.assertFalse(result["train_performed"])

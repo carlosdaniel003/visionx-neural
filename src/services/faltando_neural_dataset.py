@@ -137,12 +137,19 @@ def prepare_faltando(
     *,
     extractor: Callable[[np.ndarray], tuple] | None = None,
     inventory: dict | None = None,
+    include_all_aoi_categories: bool = False,
 ) -> tuple[dict[str, Any], Path]:
     """Gera pares derivados e manifesto, nunca altera o acervo de origem.
 
     Mantém training_ready=False até qualificação humana explícita. Um sufixo
     SIDE/TOP/MID é apenas pista; só manifesto válido confirma event_id.
+
+    Opt-in universal: extração diagnóstica de TODAS as categorias AOI,
+    inclusive UNKNOWN. Categoria AOI é uma pista, NÃO o defeito físico
+    confirmado. Nunca transforma rótulo geral NG em NG de FALTANDO.
     """
+    if type(include_all_aoi_categories) is not bool:
+        raise ValueError("Opção de categorias AOI deve ser booleana")
     root = Path(root).expanduser().resolve()
     reports_root = (root / "reports").resolve()
     output_base = (
@@ -157,8 +164,9 @@ def prepare_faltando(
     selected = sorted(
         (
             item for item in source_inventory.get("images", [])
-            if item.get("category_hint") == "FALTANDO"
-            and item.get("expected_label") in ("OK", "NG")
+            if item.get("expected_label") in ("OK", "NG")
+            and (include_all_aoi_categories
+                 or item.get("category_hint") == "FALTANDO")
         ),
         key=lambda item: item["path"],
     )
@@ -182,7 +190,7 @@ def prepare_faltando(
             "source_path": relative,
             "source_sha256": item.get("file_sha256", ""),
             "expected_label_from_archive": label,
-            "category_hint": "FALTANDO",
+            "category_hint": item.get("category_hint", "UNKNOWN"),
             "lighting_mode": lighting,
             "lighting_source": item.get("lighting_source"),
             "event_id": item.get("event_id"),
@@ -197,6 +205,11 @@ def prepare_faltando(
                 "VERIFY_INDEPENDENT_OBSERVATION",
             ],
         }
+        if include_all_aoi_categories:
+            sample["aoi_category_is_not_visual_defect_type"] = True
+            sample["visual_defect_type"] = None
+            sample["quality_label_is_provisional"] = True
+            sample["review_required"].append("CONFIRM_VISUAL_DEFECT_TYPE")
         samples.append(sample)
         if item.get("status") != "VALID_PNG":
             sample["error"] = "Inventário classificou o PNG como inválido"
@@ -249,8 +262,11 @@ def prepare_faltando(
                     for key in ("board", "parts", "value", "category")
                 },
             })
-            if (str(info.get("category", "") or "").strip().upper()
-                    not in ("", "FALTANDO")):
+            observed_category = str(info.get("category", "") or "").strip().upper()
+            if (
+                observed_category
+                and observed_category != str(sample["category_hint"]).strip().upper()
+            ):
                 sample["review_required"].append("OCR_CATEGORY_MISMATCH")
         except (OSError, ValueError, cv2.error, RuntimeError) as exc:
             sample["status"] = "EXTRACTION_FAILED"
@@ -285,13 +301,22 @@ def prepare_faltando(
         "generated_at_utc": now.isoformat(),
         "root": str(root),
         "output_dir": str(run_dir),
-        "stage": "NEURAL_FALTANDO_DATA_PREPARATION_ONLY",
+        "stage": (
+            "NEURAL_CROSS_CATEGORY_AOI_PREPARATION_ONLY"
+            if include_all_aoi_categories else "NEURAL_FALTANDO_DATA_PREPARATION_ONLY"
+        ),
+        "all_aoi_categories_preparation_only": include_all_aoi_categories,
+        "aoi_category_not_visual_defect_type": include_all_aoi_categories,
+        "defect_type_individually_reviewed": False,
         "training_performed": False,
         "model_or_production_modified": False,
         "dataset_ready": False,
         "summary": {
             "total": len(samples),
             "by_label": dict(labels),
+            "by_aoi_category_hint": dict(Counter(
+                item["category_hint"] for item in samples
+            )),
             "by_lighting": dict(Counter(item["lighting_mode"] for item in samples)),
             "extracted": statuses["EXTRACTED_PENDING_REVIEW"],
             "unusable": len(samples) - statuses["EXTRACTED_PENDING_REVIEW"],
@@ -316,10 +341,16 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument("--all-aoi-categories", action="store_true",
+                        help="Preparação diagnóstica de todas as categorias AOI; NÃO gera treino aprovado.")
     args = parser.parse_args(argv)
     root = args.root.resolve()
-    print("Preparação offline FALTANDO (sem KNN/CNN e sem mudar dataset)", flush=True)
-    report, run_dir = prepare_faltando(root, args.output_dir)
+    print("Preparação offline multcategoria (sem KNN/CNN e sem mudar dataset)"
+          if args.all_aoi_categories
+          else "Preparação offline FALTANDO (sem KNN/CNN e sem mudar dataset)", flush=True)
+    report, run_dir = prepare_faltando(
+        root, args.output_dir, include_all_aoi_categories=args.all_aoi_categories,
+    )
     print(_summary_text(report))
     print(f"Manifesto: {run_dir / 'manifest.json'}")
     print(f"Resumo:    {run_dir / 'summary.txt'}")
