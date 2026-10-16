@@ -1,3 +1,79 @@
+## 16/10/2026 — Classificação explícita do operador das cinco pranchas
+
+Após ver as pranchas de auditoria, o operador distinguiu **três
+interpretações** dos 14 arquivos individuais selecionados pelos erros da CNN.
+Essas classificações são *observações humanas relativas às imagens
+exibidas*, NÃO validação cega de toda a base, nem autorização de promover
+pesos. A anotação verificável com hashes por arquivo está em
+`docs/faltando_v2_operator_triage_20261016.json`.
+
+| Fonte (PNG em `public/`) | Vista | Classificação informada |
+|---|---|---|
+| `ok_archive/2026-10-02_1542_FALTANDO.png` | SIDE | **IGNORAR**, sem afirmar novo rótulo |
+| `ng_archive/2026-10-14_0851_FALTANDO_MID.png` | MID | **INVERTIDO**, bolinha em canto inferior esquerdo |
+| `ng_archive/2026-10-14_1513_FALTANDO_MID_2.png` | MID | **FALTANDO** |
+| `ng_archive/2026-10-15_1437_FALTANDO_MID.png` | MID | **INVERTIDO**, bolinha inversa |
+| `ng_archive/2026-10-15_1540_FALTANDO_MID_2.png` | MID | **FALTANDO** |
+| `ng_archive/2026-10-14_0816_FALTANDO_SIDE.png` | SIDE | **FALTANDO** |
+| `ng_archive/2026-10-15_0831_FALTANDO_SIDE_2.png` | SIDE | **FALTANDO** |
+| `ng_archive/2026-10-14_0851_FALTANDO_TOP.png` | TOP | **INVERTIDO**, bolinha difícil de ver por escuridão |
+| `ng_archive/2026-10-15_1437_FALTANDO_TOP.png` | TOP | **INVERTIDO**, bolinha difícil de ver por escuridão |
+| `ng_archive/2026-10-14_1458_FALTANDO_MID_2.png` | MID | **FALTANDO** |
+| `ng_archive/2026-10-14_1532_FALTANDO_MID.png` | MID | **FALTANDO** |
+| `ng_archive/2026-10-15_1513_FALTANDO_MID_3.png` | MID | **FALTANDO** |
+| `ng_archive/2026-10-15_1543_FALTANDO_MID.png` | MID | **FALTANDO** |
+| `ng_archive/2026-10-15_1544_FALTANDO_MID_3.png` | MID | **FALTANDO** |
+
+Total: **9 FALTANDO**, **4 INVERTIDO**, **1 IGNORAR**. Há **14
+fontes distintas**, pois o OK `1542` reaparece no histórico e no
+treino, mas é o mesmo PNG. O operador esclareceu que a **detecção de
+INVERTIDO depende da bolinha de serigrafia/orientação**; o corpo do
+componente não muda visivelmente ao inverter. Isso invalida assumir
+que todas as imagens arquivadas como NG na pasta `FALTANDO`
+representem componente fisicamente ausente.
+
+**Tratamento seguro:**
+- Os nove FALTANDO continuam NG da categoria FALTANDO apenas no escopo
+  da anotação. As quatro imagens INVERTIDO ficam **separadas para
+  quarentena** em futuros experimentos específicos FALTANDO: não viram
+  OK automaticamente, nem entram no treinamento INVERTIDO sem protocolo
+  apropriado. O OK `1542` é excluído da seleção futura **sem
+  reinterpretar sua classe**.
+- Nenhum rótulo, PNG, `manifest.json`, `qualification.json`,
+  `live_active.json`, checkpoint, KNN ou fusão foi alterado.
+  Os relatórios dos ensaios anteriores e métricas 79/87, 81/87, 85/87
+  **permanecem históricos** e **não devem ser recalculados
+  artificialmente** removendo casos difíceis.
+- A fonte com nome `FALTANDO` no PNG é um *hint* do AOI e não
+  certifica o tipo de falha. Os outros ~400 PNGs não foram
+  individualmente classificados nesta auditoria.
+- Em especial os quatro INVERTIDO de MID/TOP têm nomes de capturas
+  semelhantes, mas não declarar que sejam os mesmos eventos físicos
+  sem manifesto confirmado.
+- **É necessário novo conjunto cego e independente** para medir
+  97–98% em FALTANDO, com categorias separadas. Não usar os mesmos
+  87 casos para otimizar e depois alegar generalização.
+
+Para conferir a anotação contra os PNGs reais e gerar um
+`operator_triage_report.json` **somente diagnóstico** na estação:
+
+```powershell
+cd C:\visionx-neural-main
+git switch central
+git pull origin central
+python -X utf8 -m src.scripts.faltando_v2_record_operator_triage --root . --manifest "reports/faltando_neural/run_20261016T114234_996180Z/manifest.json" --audit-index "reports/faltando_neural/failed_pair_audits/20261016T150944_317522Z_d33196/audit_index.json"
+```
+
+A rotina verifica SHA do manifesto, da captura original e a igualdade
+entre as 14 fontes do índice e as 14 anotadas. Em caso de conflito,
+falha sem gravar nenhuma alteração no dataset. Ela só cria relatório
+em `reports/faltando_neural/operator_triage/<run>/`, e **não
+aplica a triagem automaticamente a nenhum treinador**.
+Qualquer consumo futuro deve ser explícito, não automático,
+com nova partição e revisão de independência.
+
+---
+
 ## 16/10/2026 — 5º ensaio MIL sem ganho; auditoria dos exemplos difíceis
 
 O experimento local com `--supervision-mode event_mil` concluiu 4 épocas,
