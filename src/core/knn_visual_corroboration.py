@@ -27,6 +27,13 @@ MIN_NG_SIMILARITY = 0.90
 MIN_BEST_NG_SIMILARITY = 0.93
 MIN_NG_MARGIN = 0.06
 MIN_NG_EXAMPLES = 2
+# Convergência tricolor: limiares NOVOS somente para NG em revisão
+# com CNN parcialmente favorável a NG; não relaxar o KNN convencional.
+TREND_MIN_NG_SIMILARITY = 0.91
+TREND_MIN_MARGIN = 0.04
+TREND_MIN_NG_EXAMPLES = 3
+TREND_MIN_MEAN_MARGIN = 0.05
+PARTIAL_CNN_MIN_NG_SCORE = 0.60
 CROSS_CATEGORY_MIN_SIMILARITY = 0.97
 MAX_CANDIDATES_PER_LIGHT = 2500
 
@@ -149,6 +156,17 @@ def _one_light(
             and len(supported_ng) >= (3 if cross_category else MIN_NG_EXAMPLES)
             and margin_ok
         )
+        # Não considerar pequenas variações da mesma foto dez votos;
+        # assinaturas distintas foram filtradas acima. Exigimos um OK
+        # comparável na própria luz para medir a margem real.
+        margin = (best_ng - best_ok
+                  if best_ng is not None and best_ok is not None else None)
+        trending_ng = bool(
+            not cross_category
+            and margin is not None and margin >= TREND_MIN_MARGIN
+            and best_ng >= TREND_MIN_NG_SIMILARITY
+            and len(supported_ng) >= TREND_MIN_NG_EXAMPLES
+        )
         conflict = bool(
             best_ok is not None and best_ng is not None
             and abs(best_ng - best_ok) < MIN_NG_MARGIN
@@ -156,10 +174,12 @@ def _one_light(
         )
         return {
             "status": ("NG_SIMILAR" if corroborated else
+                       "NG_LEANING" if trending_ng else
                        "CONFLICT" if conflict else "NO_CONCLUSION"),
             "reason": "SIGNATURE_NEIGHBORS",
             "cross_category_ng": cross_category,
             "ng_support": len(supported_ng),
+            "ng_margin_over_ok": round(margin, 6) if margin is not None else None,
             "ok": _summary(ok),
             "ng": _summary(ng),
             "map_peak": round(peak, 6),
@@ -178,8 +198,8 @@ def evaluate_knn_visual_corroboration(
         "diagnostic_only": False, "auto_decision_authorized": False,
         "recognition_route": "APPROXIMATE_KNN",
         "similarity_is_probability": False,
-        "lights": {}, "strong_ng_lights": [],
-        "status": "NO_CONCLUSION",
+        "lights": {}, "strong_ng_lights": [], "trend_ng_lights": [],
+        "ng_margin_mean": None, "status": "NO_CONCLUSION",
     }
     if not uses_faltando_v2(cat):
         result["status"] = "OUT_OF_SCOPE"
@@ -205,11 +225,124 @@ def evaluate_knn_visual_corroboration(
             result["strong_ng_lights"].append(light)
     if len(result["strong_ng_lights"]) >= 2:
         result["status"] = "NG_CORROBORATED"
-    elif any(x.get("status") == "CONFLICT" for x in result["lights"].values()):
+    # Guardar a tendência tricolor mesmo quando duas luzes já alcançam
+    # NG_CORROBORATED. O ramo CNN REVIEW exige três luzes direcionais,
+    # não apenas duas fortes e uma ausente.
+    trend = [
+        light for light in LIGHTS
+        if result["lights"][light].get("status") in {"NG_SIMILAR", "NG_LEANING"}
+        and not result["lights"][light].get("cross_category_ng", False)
+        and isinstance(result["lights"][light].get("ng_margin_over_ok"), (int, float))
+        and result["lights"][light]["ng_margin_over_ok"] >= TREND_MIN_MARGIN
+    ]
+    result["trend_ng_lights"] = trend
+    if len(trend) == 3:
+        mean_margin = sum(
+            result["lights"][light]["ng_margin_over_ok"] for light in LIGHTS
+        ) / 3.0
+        result["ng_margin_mean"] = round(mean_margin, 6)
+        if mean_margin >= TREND_MIN_MEAN_MARGIN and result["status"] == "NO_CONCLUSION":
+            result["status"] = "NG_TREND_THREE_LIGHTS"
+    if result["status"] == "NO_CONCLUSION" and any(
+        x.get("status") == "CONFLICT" for x in result["lights"].values()
+    ):
         result["status"] = "CONFLICT"
-    elif all(x.get("status") == "UNAVAILABLE" for x in result["lights"].values()):
+    elif result["status"] == "NO_CONCLUSION" and all(
+        x.get("status") == "UNAVAILABLE" for x in result["lights"].values()
+    ):
         result["status"] = "UNAVAILABLE"
     return result
+
+
+def verified_partial_cnn_review(detail: dict) -> dict | None:
+    """TOP/SIDE/MID consistentes: 2 votos OK, 1 revisão NG-leaning.
+
+    Usa diagnósticos brutos completos, pois o consenso CNN original sai
+    antecipadamente com INVALID_LIGHT_EVIDENCE em revisão local.
+    """
+    if (
+        not isinstance(detail, dict)
+        or detail.get("cnn_v2_consensus") != "REVIEW"
+        or detail.get("recognition_route") != "NEW_CNN"
+    ):
+        return None
+    diags = detail.get("cnn_v2_light_diagnostics")
+    if not isinstance(diags, dict) or set(diags) != set(LIGHTS):
+        return None
+    reviews, oks, hashes = [], [], []
+    for light in LIGHTS:
+        d = diags[light]
+        if not isinstance(d, dict):
+            return None
+        sha = str(d.get("checkpoint_sha256", ""))
+        if (
+            d.get("route") != "NEW_CNN"
+            or d.get("cnn_active") is not True
+            or d.get("cnn_status") != "INFERENCE_OK"
+            or d.get("checkpoint_verified") is not True
+            or len(sha) != 64 or any(c not in "0123456789abcdefABCDEF" for c in sha)
+            or canonical_memory_category(d.get("category")) != "FALTANDO"
+        ):
+            return None
+        hashes.append(sha.lower())
+        raw_score = d.get("ng_score_uncalibrated")
+        if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
+            return None
+        score = float(raw_score)
+        if not math.isfinite(score) or not 0 <= score <= 1:
+            return None
+        verdict = d.get("verdict")
+        if verdict == "FALHA FALSA" and score <= 0.10:
+            oks.append(light)
+        elif (
+            verdict == "REVISÃO OBRIGATÓRIA"
+            and PARTIAL_CNN_MIN_NG_SCORE <= score < 0.90
+        ):
+            reviews.append({"light": light, "ng_score_uncalibrated": score})
+        else:
+            return None
+    if len(set(hashes)) != 1 or len(oks) != 2 or len(reviews) != 1:
+        return None
+    return {"review_light": reviews[0]["light"],
+            "ng_score_uncalibrated": round(reviews[0]["ng_score_uncalibrated"], 6),
+            "checkpoint_sha256": hashes[0]}
+
+
+def trusted_three_light_ng_trend(detail: dict) -> bool:
+    """Contrato independente para classificação NG tricolor, não AUTO-NG."""
+    if not isinstance(detail, dict) or verified_partial_cnn_review(detail) is None:
+        return False
+    visual = detail.get("knn_visual_corroboration")
+    if (
+        not isinstance(visual, dict)
+        or visual.get("status") not in {"NG_TREND_THREE_LIGHTS", "NG_CORROBORATED"}
+        or set(visual.get("trend_ng_lights", [])) != set(LIGHTS)
+    ):
+        return False
+    lights = visual.get("lights")
+    if not isinstance(lights, dict) or set(lights) != set(LIGHTS):
+        return False
+    margins = []
+    for light in LIGHTS:
+        row = lights[light]
+        if not isinstance(row, dict) or row.get("cross_category_ng"):
+            return False
+        if row.get("status") not in {"NG_LEANING", "NG_SIMILAR"}:
+            return False
+        ok, ng = row.get("ok"), row.get("ng")
+        if not isinstance(ok, dict) or not isinstance(ng, dict):
+            return False
+        a, b = ng.get("best_similarity"), ok.get("best_similarity")
+        if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+            return False
+        if not math.isfinite(a) or not math.isfinite(b):
+            return False
+        if a < TREND_MIN_NG_SIMILARITY or a - b < TREND_MIN_MARGIN - 1e-6:
+            return False
+        if not isinstance(row.get("ng_support"), int) or row["ng_support"] < 3:
+            return False
+        margins.append(a-b)
+    return sum(margins)/3 >= TREND_MIN_MEAN_MARGIN - 1e-6
 
 
 def apply_knn_visual_corroboration(
@@ -231,6 +364,33 @@ def apply_knn_visual_corroboration(
         return fused
     report = evaluate_knn_visual_corroboration(samples, category, knn)
     detail["knn_visual_corroboration"] = report
+    mixed_trend = trusted_three_light_ng_trend(detail)
+    if mixed_trend:
+        # Classificação visual NG (SEM COMANDO XP): três luzes KNN apontam NG
+        # e uma luz CNN em revisão também aponta NG. A revisão do operador
+        # permanece separada do rótulo final, como no NG+física existente.
+        fused["verdict"] = "DEFEITO REAL"
+        fused["is_defect"] = True
+        fused["production_review_required"] = True
+        fused["eligible_for_final_decision"] = False
+        fused["confidence"] = 0.5
+        fused["reason"] = (
+            "NG POR CONVERGÊNCIA VISUAL: KNN favoreceu NG em SIDE/TOP/MID "
+            "sobre os vizinhos OK, com CNN parcialmente favorável a NG "
+            "na luz de revisão. Confirmação humana pendente; "
+            "não é um comando NG automático."
+        )
+        detail["operator_review_required"] = True
+        detail["cnn_v2_supervised_auto_eligible"] = False
+        detail["fusion_rule"] = "knn_visual_three_light_ng_with_cnn_review_v1"
+        detail["cnn_review_ng_support"] = verified_partial_cnn_review(detail)
+        detail["final_score"] = 0.5
+        trace = detail.get("decision_trace")
+        if isinstance(trace, dict):
+            trace["operator_review_required"] = True
+            trace["fusion_rule"] = detail["fusion_rule"]
+            trace["final_score"] = 0.5
+        return fused
     if report["status"] != "NG_CORROBORATED":
         return fused
     if detail.get("cnn_v2_consensus") != "OK":
@@ -266,5 +426,5 @@ def apply_knn_visual_corroboration(
 
 __all__ = [
     "evaluate_knn_visual_corroboration", "apply_knn_visual_corroboration",
-    "SCHEMA",
+    "SCHEMA", "verified_partial_cnn_review", "trusted_three_light_ng_trend",
 ]

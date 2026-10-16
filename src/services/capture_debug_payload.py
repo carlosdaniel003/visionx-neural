@@ -237,6 +237,8 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
     visual_summary = {
         "status": str(visual.get("status", "") or ""),
         "strong_ng_lights": json_safe(visual.get("strong_ng_lights", [])),
+        "trend_ng_lights": json_safe(visual.get("trend_ng_lights", [])),
+        "ng_margin_mean": json_safe(visual.get("ng_margin_mean")),
         "decision_authorized": visual.get("auto_decision_authorized") is True,
         "lights": {},
     }
@@ -251,6 +253,7 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
             "status": str(entry.get("status", "") or ""),
             "cross_category_ng": entry.get("cross_category_ng") is True,
             "ng_support": int(entry.get("ng_support", 0) or 0),
+            "ng_margin_over_ok": json_safe(entry.get("ng_margin_over_ok")),
             "ok_count": int(ok.get("count", 0) or 0),
             "ng_count": int(ng.get("count", 0) or 0),
             "best_ok_similarity": json_safe(ok.get("best_similarity")),
