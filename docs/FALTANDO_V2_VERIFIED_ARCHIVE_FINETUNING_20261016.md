@@ -1,3 +1,65 @@
+## 16/10/2026 — Correção experimental: preservar OK enquanto a CNN aprende NG
+
+**Treino real da PR #48 na estação, 5 épocas, 420 fontes (411 pares únicos: 294 NG,
+117 OK, nove repetições exatas removidas).** Split agrupado por semelhança visual
+(110 agrupamentos): 324 imagens no treino e 87 no holdout, todas com **rótulos
+provisórios das pastas**, sem revisão individual. O champion original (SHA
+`6e4a31e8…`) acertou no holdout 38/87 (49 NG→OK, nenhum OK→NG).
+O candidato `c13ca329…` acertou **85/87 = 97,70% binários**, corrigiu 49
+NG→OK, mas produziu **2 novos OK→NG binários no holdout**, e caiu no
+histórico de 117/117 para **98/117** imagens corretas. No histórico, houve 19
+erros novos de iluminação OK, nove deles NG conclusivos pelos limiares
+operacionais 0,10/0,90. Gates **REPROVADOS** e pesos não promovidos.
+O jornal online passou de 112/357 para 345/357 acertos por iluminação, mas
+perdeu um OK. A redução da loss até 0,095419 **não garante generalização**.
+
+**Diagnóstico do código:** o replay forçado tinha 158 pares incorretos e todos
+eram NG; após o sampler balanceado, 158 passos de gradiente só para NG foram
+executados a **cada época**, potencialmente deslocando o limite decisório.
+
+**Correção da etapa atual:**
+- Somente com `--archive-labels-experimental`, limita o replay de erros
+  por época e faz lotes de dois exemplos, um NG difícil e um OK-âncora.
+  Rotaciona os erros NG para cobrir defeitos diferentes nas cinco épocas.
+  Prioriza os OK com maior score NG individual por luz do modelo vigente.
+  As âncoras incluem OK do replay histórico e online já disponível, além dos
+  OK do subconjunto de treino, **nunca o holdout**.
+- Mede após cada época `historical`, `online` e `train`; escolhe a
+  melhor época por regressão do histórico (principalmente OK) e recuperação
+  NG do online/treino. O holdout é avaliado **uma única vez ao final** sobre
+  o checkpoint escolhido (além da medição inicial do champion), evitando
+  escolher época pelo próprio holdout.
+- Meta de desenvolvimento: **98%**; piso aceitável do experimento:
+  **97%** de acerto binário por imagem no holdout, usando limiar 0,50
+  apenas como métrica de treinamento. O piso adicional não substitui os
+  gates já existentes de não piorar OK/NG, preservar todo histórico e
+  evitar novos falsos OK. Uma acurácia de 97% com regressão crítica segue
+  **REPROVADA**.
+- Relatório separa por SIDE/TOP/MID os diagnósticos com limiares operacionais
+  `score<=0,10 => OK`, `score>=0,90 => NG`, `0,10<score<0,90 => revisão`;
+  estas métricas **não** alteram a inferência nem o comando XP.
+- A rota estrita de qualificação individual fica com o comportamento de
+  replay original; a alteração de gradiente e seleção de época fica restrita
+  aos candidatos experimentais em lote. Nenhuma promoção automática de pesos
+  e nenhuma edição de imagens, KNN, OCR, fusão ou checkpoint ativo.
+
+**Após integrar a PR**, para repetir **um novo** treino offline com os
+mesmos dados históricos sem recapturar nem revisar manualmente as 420 fontes:
+
+```powershell
+cd C:\visionx-neural-main
+git switch central
+git pull origin central
+python -X utf8 -m src.scripts.train_faltando_cnn_v2_verified_archive --root . --manifest "reports/faltando_neural/run_20261016T114234_996180Z/manifest.json" --epochs 5 --holdout 0.25 --seed 42 --archive-labels-experimental
+```
+
+A comparação atual é apenas offline com rótulos presumidos. Atingir 97–98%
+no holdout não garante 97–98% em Produção, não certifica independência
+física da peça nem cobertura de categorias DESLOCADO/INVERTIDO/EMBORCADO.
+**Não promover automaticamente nenhum checkpoint.**
+
+---
+
 ## Experimento solicitado: aceitar rótulos do arquivo em lote (16/10/2026)
 
 O operador confirmou que não fará 420 revisões individuais e autorizou usar

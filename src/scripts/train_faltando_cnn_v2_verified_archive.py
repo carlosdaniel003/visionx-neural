@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
+from copy import deepcopy
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -301,6 +302,7 @@ def split_verified_events(
 def candidate_acceptance(
     old_anchors: dict, new_anchors: dict, old_online: dict,
     new_online: dict, old_holdout: dict, new_holdout: dict,
+    *, minimum_holdout_accuracy: float | None = None,
 ) -> dict:
     """Exige NG e OK melhores/iguais em holdout, sem perder histórico."""
     def errors(result: dict) -> tuple[int, int]:
@@ -314,6 +316,17 @@ def candidate_acceptance(
                     for x in c["per_light"].values()))
                 for c in result["cases"]),
         )
+    if minimum_holdout_accuracy is not None and not (
+        .5 < minimum_holdout_accuracy <= 1.
+    ):
+        raise ValueError("Meta mínima de acurácia fora dos limites")
+    holdout_images = int(new_holdout.get("images", sum(
+        len(case["per_light"]) for case in new_holdout["cases"]
+    )))
+    accuracy = (
+        new_holdout["correct_images"] / holdout_images
+        if holdout_images else 0.
+    )
     old_ng, old_ok = errors(old_holdout)
     new_ng, new_ok = errors(new_holdout)
     gates = {
@@ -332,6 +345,10 @@ def candidate_acceptance(
         "historical_no_new_false_ok": (
             new_anchors["ng_false_ok"] <= old_anchors["ng_false_ok"]
         ),
+        "holdout_accuracy_minimum": (
+            minimum_holdout_accuracy is None
+            or accuracy >= minimum_holdout_accuracy - 1e-12
+        ),
     }
     return {
         "gates": gates, "passed": all(gates.values()),
@@ -339,7 +356,126 @@ def candidate_acceptance(
         "candidate_holdout_ng_errors": new_ng,
         "baseline_holdout_ok_errors": old_ok,
         "candidate_holdout_ok_errors": new_ok,
+        "holdout_accuracy": round(accuracy, 6),
+        "holdout_accuracy_minimum": minimum_holdout_accuracy,
+        "holdout_accuracy_goal": .98 if minimum_holdout_accuracy else None,
+        "holdout_goal_reached": (
+            accuracy >= .98 if minimum_holdout_accuracy is not None else None
+        ),
     }
+
+
+def _label_light_errors(result: dict, label: str) -> int:
+    """Count light-level misclassifications; never substitute event accuracy."""
+    return sum(
+        not view["correct"]
+        for case in result["cases"] if case["label"] == label
+        for view in case["per_light"].values()
+    )
+
+
+def _balanced_hard_replay(
+    hard: list[dict], anchors: list[dict], model: FaltandoCNNV2,
+    size: int, focus: float, *, seed: int, epoch: int, epochs: int,
+) -> tuple[list[dict], dict]:
+    """Balance real gradient steps NG/OK; never inspect the held-out cases.
+
+    Rotate the errors of the original checkpoint through epochs. Each paired
+    batch contains an NG and an OK; prioritize OK currently nearest to a false
+    NG classification, including proven historical OK anchors.
+    """
+    by_label = {
+        label: [x for x in hard if x["label"] == label]
+        for label in ("NG", "OK")
+    }
+    if not any(by_label.values()):
+        return [], {"NG": 0, "OK": 0, "paired_steps": 0}
+    if not 1 <= epoch <= epochs:
+        raise ValueError("Época fora do intervalo")
+    count = min(48, max(8, math.ceil(max(map(len, by_label.values())) / epochs)))
+    target = {}
+    for label in ("NG", "OK"):
+        pool = by_label[label]
+        others = [e for e in anchors if e["label"] == label]
+        if not others:
+            raise ValueError("Sem âncoras OK/NG para reforço balanceado")
+        if label == "OK":
+            scored = _assess(model, others, size, focus)
+            if len(scored["cases"]) != len(others):
+                raise ValueError("Diagnóstico de OK incompleto no replay")
+            # Worst individual illumination controls the risk of false NG.
+            ranked = sorted(
+                zip(others, scored["cases"]),
+                key=lambda pair: (
+                    -max(float(v["score"]) for v in pair[1]["per_light"].values()),
+                    pair[0]["id"],
+                ),
+            )
+            target[label] = [ranked[i % len(ranked)][0] for i in range(count)]
+        else:
+            pool = pool if pool else others
+            indexes = list(range(len(pool)))
+            random.Random(seed + 1009).shuffle(indexes)
+            offset = (epoch - 1) * count
+            target[label] = [
+                pool[indexes[(offset + i) % len(indexes)]]
+                for i in range(count)
+            ]
+    samples = [
+        event
+        for pair in zip(target["NG"], target["OK"])
+        for event in pair
+    ]
+    if len(samples) != 2 * count:
+        raise ValueError("Reforço com classes desequilibradas")
+    return samples, {"NG": count, "OK": count, "paired_steps": count}
+
+
+def _selection_score(historical: dict, online: dict, development: dict) -> tuple:
+    """Choose an epoch from training/anchors ONLY, never from the holdout."""
+    ok_errors = (_label_light_errors(historical, "OK")
+                 + _label_light_errors(online, "OK"))
+    old_ng_errors = _label_light_errors(historical, "NG")
+    return (
+        int(not historical["all_correct"]),
+        ok_errors,
+        old_ng_errors,
+        online["ng_false_ok"],
+        _label_light_errors(development, "NG"),
+        -online["correct_images"],
+        -development["correct_images"],
+    )
+
+
+def _operational_light_summary(result: dict) -> dict:
+    """Diagnostics at real 0.10 / 0.90 review thresholds; no XP decisions."""
+    summary = {
+        light: {
+            "total": 0, "correct_conclusive": 0, "unmeasured": 0,
+            "review": 0, "ng_as_conclusive_ok": 0,
+            "ok_as_conclusive_ng": 0,
+        }
+        for light in LIGHTS
+    }
+    for case in result["cases"]:
+        for light, view in case["per_light"].items():
+            entry = summary[light]
+            entry["total"] += 1
+            if "score" not in view:
+                entry["unmeasured"] += 1
+                continue
+            score = float(view["score"])
+            if not math.isfinite(score) or not 0 <= score <= 1:
+                raise ValueError("Score CNN inválido para limiares operacionais")
+            if .10 < score < .90:
+                entry["review"] += 1
+            elif (score <= .10 and case["label"] == "NG"):
+                entry["ng_as_conclusive_ok"] += 1
+            elif (score >= .90 and case["label"] == "OK"):
+                entry["ok_as_conclusive_ng"] += 1
+            else:
+                entry["correct_conclusive"] += 1
+    return summary
 
 
 def train_verified_archive(
@@ -404,7 +540,8 @@ def train_verified_archive(
         ),
         num_workers=0,
     )
-    # Garantir gradiente dos NG/OK históricos com erros, sem expor holdout.
+    # Baseline errors are the hardest NG. Keep the held-out images entirely
+    # outside both the ordinary sampler and the paired hard replay.
     baseline_train = _assess(champion, train, size, focus)
     forced = [
         event for event, case in zip(train, baseline_train["cases"])
@@ -412,14 +549,17 @@ def train_verified_archive(
             not view["correct"] for view in case["per_light"].values()
         )
     ]
-    # Não deixar centenas de fotos idênticas abafarem os NG difíceis:
-    # cada evento selecionado recebe um passo adicional por época.
-    forced_loader = (
-        DataLoader(PairDataset(forced, size, focus), batch_size=1,
-                   shuffle=False, num_workers=0) if forced else None
-    )
+    training_ids = {event["id"] for event in examples}
+    heldout_ids = {event["id"] for event in hold}
+    if training_ids & heldout_ids:
+        raise ValueError("Vazamento de holdout no replay")
+    anchors = historical + online + train
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=.02)
     history = []
+    best_state = None
+    best_score = None
+    best_epoch = None
+    # Never use the holdout for checkpoint/epoch selection.
     for epoch in range(1, epochs+1):
         model.train()
         running = 0.0
@@ -434,7 +574,23 @@ def train_verified_archive(
             nn.utils.clip_grad_norm_(model.parameters(), 2.)
             optimizer.step()
             running += float(loss.item())
-        if forced_loader is not None:
+
+        if archive_labels_experimental:
+            balanced, replay_counts = _balanced_hard_replay(
+                forced, anchors, model, size, focus,
+                seed=seed, epoch=epoch, epochs=epochs,
+            )
+        else:
+            # Original strict individually verified route stays unchanged.
+            balanced = forced
+            replay_counts = dict(Counter(e["label"] for e in forced))
+        if balanced:
+            forced_loader = DataLoader(
+                PairDataset(balanced, size, focus),
+                batch_size=2 if archive_labels_experimental else 1,
+                shuffle=False, num_workers=0,
+            )
+            model.train()
             for r, t, rf, tf, mask, truth in forced_loader:
                 logits, per_light = model(r, t, rf, tf, mask)
                 loss = _supervised_loss(logits, per_light, mask, truth,
@@ -445,17 +601,60 @@ def train_verified_archive(
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), 2.)
                 optimizer.step()
-        history.append({
-            "epoch": epoch, "training_loss": round(running/len(loader), 6)
-        })
-        print(f"FALTANDO VERIFIED {epoch}/{epochs} "
-              f"loss={running/len(loader):.6f}", flush=True)
 
+        epoch_entry = {
+            "epoch": epoch,
+            "training_loss": round(running/len(loader), 6),
+            "forced_replay_by_label": {
+                label: int(replay_counts.get(label, 0))
+                for label in ("NG", "OK")
+            },
+        }
+        if archive_labels_experimental:
+            assessment_hist = _assess(model, historical, size, focus)
+            assessment_online = _assess(model, online, size, focus)
+            assessment_train = _assess(model, train, size, focus)
+            score = _selection_score(
+                assessment_hist, assessment_online, assessment_train,
+            )
+            epoch_entry["selection_without_holdout"] = {
+                "historical_all_correct": assessment_hist["all_correct"],
+                "historical_ok_light_errors": _label_light_errors(
+                    assessment_hist, "OK"
+                ),
+                "online_ok_light_errors": _label_light_errors(
+                    assessment_online, "OK"
+                ),
+                "online_ng_false_ok": assessment_online["ng_false_ok"],
+                "train_ng_light_errors": _label_light_errors(
+                    assessment_train, "NG"
+                ),
+            }
+            if best_score is None or score < best_score:
+                best_score = score
+                best_epoch = epoch
+                best_state = deepcopy({
+                    key: value.detach().cpu()
+                    for key, value in model.state_dict().items()
+                })
+        history.append(epoch_entry)
+        print(f"FALTANDO VERIFIED {epoch}/{epochs} "
+              f"loss={running/len(loader):.6f} "
+              f"replay_NG={replay_counts.get('NG', 0)} "
+              f"replay_OK={replay_counts.get('OK', 0)}", flush=True)
+
+    if archive_labels_experimental:
+        if best_state is None:
+            raise ValueError("Nenhuma época candidata foi selecionada")
+        model.load_state_dict(best_state, strict=True)
+        print(f"Melhor época por âncoras de desenvolvimento: {best_epoch} "
+              "(sem consultar o holdout)", flush=True)
     new_hist = _assess(model, historical, size, focus)
     new_online = _assess(model, online, size, focus)
     new_hold = _assess(model, hold, size, focus)
     acceptance = candidate_acceptance(
         old_hist, new_hist, old_online, new_online, old_hold, new_hold,
+        minimum_holdout_accuracy=.97 if archive_labels_experimental else None,
     )
     when = datetime.now(timezone.utc)
     destination = ("archive_experiments" if archive_labels_experimental
@@ -497,6 +696,20 @@ def train_verified_archive(
         "holdout_event_ids": [e["id"] for e in hold],
         "train_forced_misclassified": [e["id"] for e in forced],
         "epochs": epochs, "learning_rate": lr, "history": history,
+        "selected_epoch": best_epoch if archive_labels_experimental else epochs,
+        "epoch_selection_uses_holdout": False,
+        "objective": (
+            {"target_accuracy": .98, "minimum_acceptable_accuracy": .97,
+             "evaluation_split": "holdout", "classification_threshold": .50}
+            if archive_labels_experimental else None
+        ),
+        "operational_threshold_diagnostics": (
+            {"old_holdout": _operational_light_summary(old_hold),
+             "new_holdout": _operational_light_summary(new_hold),
+             "old_historical": _operational_light_summary(old_hist),
+             "new_historical": _operational_light_summary(new_hist)}
+            if archive_labels_experimental else None
+        ),
         "old_historical": old_hist, "new_historical": new_hist,
         "old_online": old_online, "new_online": new_online,
         "old_holdout": old_hold, "new_holdout": new_hold,
