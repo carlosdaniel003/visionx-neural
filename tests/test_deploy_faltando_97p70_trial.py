@@ -60,10 +60,20 @@ class ControlledDeploymentTests(unittest.TestCase):
             "new_holdout": {"images": 87, "correct_images": 85, "ng_false_ok": 0},
             "new_historical": {
                 "images": 117, "correct_images": 98,
-                "cases": (
-                    [{"label": "OK", "predicted": "OK"} for _ in range(98)]
-                    + [{"label": "OK", "predicted": "NG"} for _ in range(19)]
-                ),
+                "cases": [
+                    {
+                        "label": "OK",
+                        "per_light": {
+                            light: {"correct": (sum(
+                                2 if j < 50 else 1 for j in range(index)
+                            ) + offset >= 19)}
+                            for offset, light in enumerate(
+                                ("SIDE", "TOP") if index < 50 else ("MID",)
+                            )
+                        },
+                    }
+                    for index in range(67)  # 50x2 + 17x1 = 117 luzes
+                ],
             },
         }
         report = self.root/deployment.ORIGINAL_REPORT
@@ -104,6 +114,39 @@ class ControlledDeploymentTests(unittest.TestCase):
                 deployment.main(["install", "--root", str(self.root)])
         self.assertEqual(before, sha256(self.source.read_bytes()).hexdigest())
         self.assertFalse((self.root/deployment.POINTER).exists())
+
+    def test_historical_evaluation_has_67_events_but_117_light_views(self):
+        report = json.loads((self.root/deployment.ORIGINAL_REPORT).read_text())
+        verified = deployment._validate_historical_light_regression(
+            report["new_holdout"], report["new_historical"],
+        )
+        self.assertEqual(verified["historical_events"], 67)
+        self.assertEqual(verified["historical_lights"], 117)
+        self.assertEqual(verified["historical_correct_lights"], 98)
+        self.assertEqual(verified["historical_ok_false_ng_lights"], 19)
+        self.assertEqual(verified["historical_ng_false_ok_lights"], 0)
+
+    def test_historical_event_count_cannot_fake_missing_light_reviews(self):
+        report = json.loads((self.root/deployment.ORIGINAL_REPORT).read_text())
+        report["new_historical"]["cases"][0]["per_light"].pop("TOP")
+        with self.assertRaisesRegex(ValueError, "117 luzes"):
+            deployment._validate_historical_light_regression(
+                report["new_holdout"], report["new_historical"],
+            )
+
+    def test_historical_ng_false_ok_not_accepted(self):
+        report = json.loads((self.root/deployment.ORIGINAL_REPORT).read_text())
+        # Swap one bad OK view for a bad NG view: aggregate 98/117
+        # remains unchanged but the original 19 OK false alarms contract
+        # must fail closed.
+        report["new_historical"]["cases"][0]["per_light"]["SIDE"]["correct"] = True
+        report["new_historical"]["cases"][10]["label"] = "NG"
+        # Event 10 has both lights correct; introduce one incorrect NG
+        report["new_historical"]["cases"][10]["per_light"]["SIDE"]["correct"] = False
+        with self.assertRaisesRegex(ValueError, "NG→OK=1"):
+            deployment._validate_historical_light_regression(
+                report["new_holdout"], report["new_historical"],
+            )
 
     def test_real_checkpoint_warmup_installs_and_rolls_back(self):
         pre, runtime_sha, baseline, bench = self._install_patches()
