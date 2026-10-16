@@ -1,3 +1,72 @@
+## Experimento solicitado: aceitar rótulos do arquivo em lote (16/10/2026)
+
+O operador confirmou que não fará 420 revisões individuais e autorizou usar
+os rótulos históricos de pasta para iniciar **um experimento de treinamento**.
+Isso **não** constitui revisão visual individual de gabarito/teste, nem prova
+de identidade física entre as 126 trincas propostas pelo nome. A rota rigorosa
+de revisão individual acima permanece disponível e inalterada.
+
+Após incorporar a PR desta funcionalidade à `central`, na estação que
+contém os recortes extraídos, execute **com o ODIN fechado**:
+
+```powershell
+cd C:\\visionx-neural-main
+git switch central
+git pull origin central
+
+python -X utf8 -m src.scripts.train_faltando_cnn_v2_verified_archive --root . --manifest "reports/faltando_neural/run_20261016T114234_996180Z/manifest.json" --epochs 5 --holdout 0.25 --seed 42 --archive-labels-experimental
+```
+
+A opção `--archive-labels-experimental` é o aceite explícito desta hipótese.
+Sem ela, o treinador **continua exigindo** `qualification.json` individual.
+
+Controles preservados:
+
+- Confere os hashes SHA-256 das **origens** com o manifesto, a presença e a
+  decodificação de cada recorte gabarito/teste. Arquivos incompletos, PNG alterado,
+  symlink de recorte, origem em pasta contrária, classe diferente de FALTANDO e
+  revisão individual `REJECTED` bloqueiam a execução. Revisões individuais
+  OK/NG já registradas, se houver, têm prioridade sobre o nome da pasta.
+- Detecta pares exatamente iguais em rótulos opostos e bloqueia o treino.
+  Duplicatas exatas do mesmo rótulo são descartadas. Mantém o agrupamento para
+  **split**, por nome (mesmo rótulo) ou event_id indicado, sem afirmar que sejam
+  um evento físico nem fundir três luzes na perda. Comparações visuais próximas
+  também não podem atravessar o treino/holdout. O mesmo Board/Parts não é,
+  sozinho, prova de que duas capturas OK e NG são da mesma peça.
+- Cada registro da rota em lote é um evento **monoluz provisório**, não uma
+  trinca humana confirmada. Atestado em lote fica somente como procedência do
+  experimento, com `individual_pair_review_complete=false`. O programa não
+  inventa `pair_inspected=true`, não cria `qualification.json` e não escreve
+  novos rótulos no acervo.
+- Mantém o checkpoint original, o journal KNN, os limiares, o XP e o apontador
+  `reports/neural_online/live_active.json` intocados. Bloqueia se esse
+  apontador já existe; a situação exige auditoria antes de experimentar.
+- Otimizador real AdamW; amostra OK/NG balanceadamente; força os erros de treino;
+  compara os pesos novos ao champion no histórico, no online e num holdout
+  separado do fine-tuning atual. Reprovação dos gates é documentada.
+- Grava somente em
+  `reports/faltando_neural/archive_experiments/<timestamp>/` os arquivos
+  `faltando_v2_archive_experimental_candidate.pt` e `training_report.json`.
+  Relatório inclui `qualification_mode=ARCHIVE_FOLDER_BULK_EXPERIMENT`,
+  `production_approval_eligible=false`, `candidate_only=true`,
+  `promoted=false` e `automatic_ok_authorized=false`.
+
+**Limites:** amostras sem conferência individual podem ter classe incorreta,
+recortes equivocados ou repetições da mesma peça física. O holdout resiste a
+imagens idênticas/quase idênticas e nomes de captura, mas não certifica
+independência física nem substitui inspeção com placas inéditas. Mesmo gates
+verdes do experimento **não** autorizam implantar o candidato. A CNN atende
+também DESLOCADO/INVERTIDO/EMBORCADO, que exigem testes independentes de
+regressão antes de qualquer promoção futura. Nenhum checkpoint com estes
+rótulos presumidos pode ser promovido diretamente por este fluxo.
+
+Arquivos desta rota:
+`src/services/faltando_neural_archive_experiment.py`,
+`src/scripts/train_faltando_cnn_v2_verified_archive.py`,
+`tests/test_faltando_archive_label_experiment.py`.
+
+---
+
 # CNN FALTANDO V2 — Fine-tuning REAL do acervo histórico qualificado
 
 ## Por que o ODIN ainda vota OK em ausências conhecidas
