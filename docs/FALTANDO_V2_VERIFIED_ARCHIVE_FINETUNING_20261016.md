@@ -1,3 +1,62 @@
+## 16/10/2026 — Segundo fine-tuning reprovado; análise de mistura de pesos offline
+
+**Resultado efetivamente observado com PR #49:** cinco épocas, replay balanceado
+32 NG + 32 OK por época, selecionada a **época 3** sem usar o holdout na escolha.
+O segundo candidato (`4daac722…`) acertou **77/87 = 88,51%** no holdout:
+58/68 NG e 19/19 OK; 10 NG→OK e nenhum OK→NG. No histórico preservou
+**116/117**, com um falso NG **conclusivo** (score 0,962921) no exemplo
+`public/ok_archive/2026-10-02_1542_FALTANDO.png` (SIDE). No online
+**317/357** iluminações, três NG errados por evento, e nenhum OK errado.
+**Gates reprovados**: `historical_replay_all_correct=false` e
+`holdout_accuracy_minimum=false`. O candidato anterior (`c13ca329…`)
+atingia 85/87 no holdout, porém errava 19 imagens OK históricas. As duas
+redes tiveram a mesma arquitetura, mesmo champion e mesmo split fixado.
+
+**Experimento a seguir (sem novo treinamento de cinco épocas):** comparar
+uma **interpolação dos tensores de pesos** dos dois checkpoints experimentais
+em uma grade discreta. Isso produz uma única CNN FALTANDO V2 com pesos
+próprios, **não** um roteador ou regra adicional de fusão de inferências.
+Não há garantia de que a mistura melhore a rede: a perda de reconhecimento
+pode ser não linear entre os checkpoints.
+
+O algoritmo:
+- Reabre relatórios/candidatos exclusivamente de
+  `reports/faltando_neural/archive_experiments`, verifica SHA dos pesos,
+  hashes da origem, arquitetura, pré-processamento, idênticos grupos de
+  treino/holdout e raiz champion. Se alterados, interrompe sem misturar.
+- Revalida a presença e hash do manifesto/p pares AOI e mantém os rótulos
+  de pasta como **provisórios**, sem criar confirmação humana falsa.
+- Avalia misturas em passos de 0,1 (de 0 = **preservador PR #49** até
+  1 = **agressivo PR #48**) usando apenas histórico, online e subconjunto
+  de treino. Seleciona a mistura com o menor número de regressões
+  históricas/OK e melhores NG online, sem consultar o holdout ao escolher
+  a combinação. Calcula o holdout somente para a combinação escolhida.
+- Aplica **todos** os gates anteriores, inclusive piso 97% e histórico
+  inteiro preservado; não promove a CNN, não altera o ponteiro ativo,
+  nem toca em KNN, OCR, máscaras, fusão ou XP.
+- Salva um candidato em `reports/faltando_neural/archive_blends/` e um
+  `blend_report.json` com todas as métricas, inclusive o aviso
+  `holdout_previously_examined_in_prior_experiments=true`.
+
+**Comando na estação, após integrar esta PR, com ODIN fechado:**
+
+```powershell
+cd C:\visionx-neural-main
+git switch central
+git pull origin central
+python -X utf8 -m src.scripts.faltando_cnn_v2_blend_candidates --root . --manifest "reports/faltando_neural/run_20261016T114234_996180Z/manifest.json" --conservative-report "reports/faltando_neural/archive_experiments/20261016T133533_270048Z_a2d89a/training_report.json" --aggressive-report "reports/faltando_neural/archive_experiments/20261016T125315_996834Z_c3e70a/training_report.json"
+```
+
+**Limite científico relevante:** os 87 pares do holdout já foram examinados
+em **duas rodadas anteriores**; obter 97–98% neles, neste ponto, não
+constitui estimativa independente de acurácia. A prova futura precisa
+reservar captura nova, preferencialmente com vínculo de peça física
+verificado, sem ajustar os pesos a partir de seus resultados. O modo
+`archive_blends` sempre coloca `production_approval_eligible=false`.
+Não rodar experimentos selecionando a melhor grade pelo próprio holdout.
+
+---
+
 ## 16/10/2026 — Correção experimental: preservar OK enquanto a CNN aprende NG
 
 **Treino real da PR #48 na estação, 5 épocas, 420 fontes (411 pares únicos: 294 NG,
