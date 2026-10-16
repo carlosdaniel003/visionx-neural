@@ -341,9 +341,11 @@ class KNNSpectrumWidget(QWidget):
 
         # Cabeçalho amplo, bem contrastado, sem fundo vazio.
         color = QColor("#4ade80" if state == "JA_VI" else
+                       "#58a6ff" if state == "VI_SEMELHANTE" else
                        "#f5c518" if state == "NUNCA_VI" else "#8da2b5")
         painter.setPen(QPen(color, 2))
         painter.setBrush(QColor("#14231d" if state == "JA_VI" else
+                                "#152634" if state == "VI_SEMELHANTE" else
                                 "#252012" if state == "NUNCA_VI" else "#182028"))
         painter.drawRoundedRect(QRectF(8, 8, w-16, 66), 9, 9)
         painter.setPen(color)
@@ -356,6 +358,8 @@ class KNNSpectrumWidget(QWidget):
         painter.setPen(QColor("#d6e5ed"))
         painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
         caption = (
+            f"{len(info.get('approximate_ng_lights', []))}/3 LUZES COM NG SEMELHANTE • NÃO EXATO"
+            if state == "VI_SEMELHANTE" else
             f"{len(known)}/3 ILUMINAÇÕES RECONHECIDAS NA MEMÓRIA KNN"
             if multilight and state else
             "PAR HUMANO EXATO RECUPERADO" if state == "JA_VI" else
@@ -394,11 +398,20 @@ class KNNSpectrumWidget(QWidget):
                 primary = "JÁ VI"
                 secondary = "KNN • PAR EXATO" + (
                     f" • {human_label.upper()}" if human_label.upper() in {"OK","NG"} else "")
+            elif state == "VI_SEMELHANTE" and light in info.get("approximate_ng_lights", []):
+                accent, fill = "#58a6ff", "#152634"
+                primary = "VI SEMELHANTE"
+                visual = (info.get("visual_rows") or {}).get(light) or {}
+                ng = visual.get("ng") or {}
+                best = ng.get("best_similarity")
+                secondary = "KNN NG VISUAL • SEM PAR EXATO"
+                if isinstance(best, (int, float)) and 0 <= best <= 1:
+                    secondary += f" • {best * 100:.2f}% SIMILAR"
             elif route in {"NEW_CNN", "NEW_EXPERTS"}:
                 accent, fill = "#f5c518", "#2a2418"
-                primary = "NUNCA VI"
+                primary = "SEM PAR EXATO"
                 secondary = "CNN FALTANDO v2" if route == "NEW_CNN" else "OUTRO ESPECIALISTA"
-                secondary += " • SEM MATCH EXATO"
+                secondary += " • SEM MEMÓRIA EXATA"
             else:
                 accent, fill = "#8093a3", "#19232a"
                 primary, secondary = "N/D", "SEM CONSULTA CONFIRMADA"
