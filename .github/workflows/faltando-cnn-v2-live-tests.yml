@@ -7,6 +7,8 @@ on:
       - "src/core/neural/faltando_live.py"
       - "src/services/inspection_warmup.py"
       - "src/core/neural/faltando_checkpoint_contract.py"
+      - "src/scripts/deploy_faltando_97p70_trial.py"
+      - "tests/test_deploy_faltando_97p70_trial.py"
       - "src/core/neural/faltando_preprocessing.py"
       - "src/scripts/train_faltando_cnn_v2.py"
       - "src/scripts/train_faltando_cnn_v2_online.py"
@@ -15,6 +17,7 @@ on:
       - "src/ui/control_panel.py"
       - "main.py"
       - "tests/test_faltando_cnn_v2_live.py"
+      - "src/ui/production_confidence_gate.py"
       - ".github/workflows/faltando-cnn-v2-live-tests.yml"
   pull_request:
     branches: [central]
@@ -22,11 +25,14 @@ on:
       - "src/core/neural/faltando_live.py"
       - "src/services/inspection_warmup.py"
       - "src/core/neural/faltando_checkpoint_contract.py"
+      - "src/scripts/deploy_faltando_97p70_trial.py"
+      - "tests/test_deploy_faltando_97p70_trial.py"
       - "src/core/neural/faltando_preprocessing.py"
       - "src/scripts/train_faltando_cnn_v2.py"
       - "src/scripts/train_faltando_cnn_v2_online.py"
       - "src/core/neural/faltando_inference_telemetry.py"
       - "tests/test_faltando_cnn_v2_live.py"
+      - "src/ui/production_confidence_gate.py"
       - ".github/workflows/faltando-cnn-v2-live-tests.yml"
   workflow_dispatch:
 
@@ -45,8 +51,8 @@ jobs:
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
           python -m pip install numpy opencv-python-headless scipy scikit-image
       - name: Compile code
-        run: python -m py_compile src/core/neural/faltando_checkpoint_contract.py src/core/neural/faltando_preprocessing.py src/core/neural/faltando_live.py src/core/neural/faltando_inference_telemetry.py src/ui/production_confidence_gate.py src/ui/control_panel.py main.py tests/test_faltando_cnn_v2_live.py
+        run: python -m py_compile src/core/neural/faltando_checkpoint_contract.py src/core/neural/faltando_preprocessing.py src/core/neural/faltando_live.py src/core/neural/faltando_inference_telemetry.py src/ui/production_confidence_gate.py src/ui/control_panel.py main.py tests/test_faltando_cnn_v2_live.py src/scripts/deploy_faltando_97p70_trial.py tests/test_deploy_faltando_97p70_trial.py
       - name: Test CNN v2 FALTANDO bypass, missing weights and Production gate
-        run: python -m unittest tests.test_faltando_cnn_v2_live -v
+        run: python -m unittest tests.test_faltando_cnn_v2_live tests.test_deploy_faltando_97p70_trial -v
       - name: Check existing production decision policy regression
         run: python -m unittest tests.test_production_confidence_gate.ProductionPolicyTests -v
