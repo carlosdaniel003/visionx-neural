@@ -1,0 +1,97 @@
+{
+  "schema": "visionx.faltando_v2_operator_contact_sheet_triage.v1",
+  "recorded_date": "2026-10-16",
+  "source": "OPERATOR_STATEMENTS_REVIEWING_5_CONTACT_SHEETS_IN_CHAT",
+  "manifest_sha256": "f39b0edb1af435c6dfa8db6c935d0e8164be96154ca4b4011dabe4b6d87e992f",
+  "audit_candidate_sha256": "58e8c50981fe30a25c04f8cf696dd78cacbefb5bc8a3536fb89fbb59326f622e",
+  "operator_review_scope": "ONLY_14_DIAGNOSTIC_SOURCE_PNGS",
+  "individual_qualification_file_created": false,
+  "production_training_approved": false,
+  "bulk_archive_labels_modified": false,
+  "cases": [
+    {
+      "source": "public/ok_archive/2026-10-02_1542_FALTANDO.png",
+      "source_sha256": "8cf53f7f021d6b152592e03fb9ba2340fa61ceb90f94fa39fd8837dd843cf886",
+      "visual_category": "IGNORAR",
+      "note": "Operador pediu ignorar o caso 1542; não implica OK ou NG certificado."
+    },
+    {
+      "source": "public/ng_archive/2026-10-14_0851_FALTANDO_MID.png",
+      "source_sha256": "7bb37769431a684e8dc00755cded7d33ddc3f76b0880dcc57dbf531bd957a466",
+      "visual_category": "INVERTIDO",
+      "note": "Bolinha da serigrafia no canto inferior esquerdo, não no superior direito."
+    },
+    {
+      "source": "public/ng_archive/2026-10-14_1513_FALTANDO_MID_2.png",
+      "source_sha256": "44a13a37d7a47bb9095dfddf7506d11f64c292857e66ad3400840f87d5614aee",
+      "visual_category": "FALTANDO",
+      "note": "Ausência física confirmada pelo operador na prancha."
+    },
+    {
+      "source": "public/ng_archive/2026-10-15_1437_FALTANDO_MID.png",
+      "source_sha256": "1cad5e4b0c29bb14fa7adc3cbd0e5a89be32c4bf11cdb93f1944ebec73e11fd5",
+      "visual_category": "INVERTIDO",
+      "note": "Bolinha da serigrafia invertida; corpo não muda visualmente."
+    },
+    {
+      "source": "public/ng_archive/2026-10-15_1540_FALTANDO_MID_2.png",
+      "source_sha256": "f913b0e9e43516ad42ecedc915fcd10dbc7e4d1fae3c62c18022dfe348854b0a",
+      "visual_category": "FALTANDO",
+      "note": "Ausência física confirmada pelo operador na prancha."
+    },
+    {
+      "source": "public/ng_archive/2026-10-14_0816_FALTANDO_SIDE.png",
+      "source_sha256": "5ee19e366e0ab10d261bbfb6e000068b46f02189d87458add9b111e2ec697251",
+      "visual_category": "FALTANDO",
+      "note": "Ausência física confirmada pelo operador na prancha."
+    },
+    {
+      "source": "public/ng_archive/2026-10-15_0831_FALTANDO_SIDE_2.png",
+      "source_sha256": "89fa5658cd0572e76db4e47e68189cdc2deda7c1aa7de31eff47ddf4a63790f3",
+      "visual_category": "FALTANDO",
+      "note": "Ausência física confirmada pelo operador na prancha."
+    },
+    {
+      "source": "public/ng_archive/2026-10-14_0851_FALTANDO_TOP.png",
+      "source_sha256": "9b054b70173d6886eb0a73197ebdcc86344b71d4c3e890e5cebb33614bffd8f9",
+      "visual_category": "INVERTIDO",
+      "note": "Bolinha de orientação invertida; TOP muito escuro, difícil de visualizar."
+    },
+    {
+      "source": "public/ng_archive/2026-10-15_1437_FALTANDO_TOP.png",
+      "source_sha256": "0b967ade0c28291dbe9a5e76c9bf5b0c9d9c10dc11aa540eca8abe0a76479104",
+      "visual_category": "INVERTIDO",
+      "note": "Bolinha de orientação invertida; TOP muito escuro, difícil de visualizar."
+    },
+    {
+      "source": "public/ng_archive/2026-10-14_1458_FALTANDO_MID_2.png",
+      "source_sha256": "9649ac2d40a8d6882bcb01ad1b729949fb66d936091ac4dcfc65e10b5d897290",
+      "visual_category": "FALTANDO",
+      "note": "Ausência física confirmada pelo operador na prancha."
+    },
+    {
+      "source": "public/ng_archive/2026-10-14_1532_FALTANDO_MID.png",
+      "source_sha256": "ab39e4ee47f051c68904424e8b8afc0c214c8d088489c4afda2011a95bf67ac9",
+      "visual_category": "FALTANDO",
+      "note": "Ausência física confirmada pelo operador na prancha."
+    },
+    {
+      "source": "public/ng_archive/2026-10-15_1513_FALTANDO_MID_3.png",
+      "source_sha256": "dadc73a360902b0ab469ff8eb1b2f4f10104ba384b451881ce4a6b1b3889a4b8",
+      "visual_category": "FALTANDO",
+      "note": "Ausência física confirmada pelo operador na prancha."
+    },
+    {
+      "source": "public/ng_archive/2026-10-15_1543_FALTANDO_MID.png",
+      "source_sha256": "aad1c7bc43303b094c99edf5460a756299a1ee7e150eaa4a562e7c9957209bc1",
+      "visual_category": "FALTANDO",
+      "note": "Ausência física confirmada pelo operador na prancha."
+    },
+    {
+      "source": "public/ng_archive/2026-10-15_1544_FALTANDO_MID_3.png",
+      "source_sha256": "6f578f340dbb77cd4e53221733123acf98301d22c9d4b2a847a42b7ad500cfe3",
+      "visual_category": "FALTANDO",
+      "note": "Ausência física confirmada pelo operador na prancha."
+    }
+  ]
+}
