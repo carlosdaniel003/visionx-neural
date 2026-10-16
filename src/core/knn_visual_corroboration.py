@@ -34,6 +34,13 @@ TREND_MIN_MARGIN = 0.04
 TREND_MIN_NG_EXAMPLES = 3
 TREND_MIN_MEAN_MARGIN = 0.05
 PARTIAL_CNN_MIN_NG_SCORE = 0.60
+# CNN com 3 OK pode contradizer a memoria NG em tres iluminacoes.
+# Esta rota APENAS classifica NG para operador; jamais autoriza XP.
+RECALL_MIN_NG_SIMILARITY = 0.995
+RECALL_MIN_NG_SUPPORT = 5
+RECALL_MIN_MARGIN_EACH = 0.04
+RECALL_MIN_MARGIN_MEAN = 0.075
+RECALL_MIN_TWO_STRONG_MARGINS = 0.09
 CROSS_CATEGORY_MIN_SIMILARITY = 0.97
 MAX_CANDIDATES_PER_LIGHT = 2500
 
@@ -345,6 +352,116 @@ def trusted_three_light_ng_trend(detail: dict) -> bool:
     return sum(margins)/3 >= TREND_MIN_MEAN_MARGIN - 1e-6
 
 
+def trusted_three_light_ng_recall(detail: dict) -> bool:
+    """NG de memória contra 3 votos CNN OK, sem comando automático.
+
+    Exige todos os três pares KNN locais NG>>OK, checkpoint CNN íntegro,
+    duas luzes com NG_SIMILAR, e a contraprova física executada nas três
+    luzes mas inconclusiva por aparagem geométrica mínima. A geometria
+    não é usada como prova de defeito: a conclusão é só visual/humana.
+    """
+    if not isinstance(detail, dict) or (
+        detail.get("multilight_category") != "FALTANDO"
+        or detail.get("recognition_route") != "NEW_CNN"
+        or detail.get("cnn_v2_consensus") != "OK"
+    ):
+        return False
+    diags = detail.get("cnn_v2_light_diagnostics")
+    if not isinstance(diags, dict) or set(diags) != set(LIGHTS):
+        return False
+    hashes = set()
+    for light in LIGHTS:
+        row = diags[light]
+        if not isinstance(row, dict):
+            return False
+        sha = row.get("checkpoint_sha256")
+        score = row.get("ng_score_uncalibrated")
+        if (
+            row.get("route") != "NEW_CNN"
+            or row.get("cnn_active") is not True
+            or row.get("cnn_status") != "INFERENCE_OK"
+            or row.get("checkpoint_verified") is not True
+            or row.get("verdict") != "FALHA FALSA"
+            or canonical_memory_category(row.get("category")) != "FALTANDO"
+            or not isinstance(sha, str) or len(sha) != 64
+            or any(c not in "0123456789abcdefABCDEF" for c in sha)
+            or isinstance(score, bool) or not isinstance(score, (float, int))
+            or not math.isfinite(score) or not 0.0 <= score <= 0.1
+        ):
+            return False
+        hashes.add(sha.lower())
+    if len(hashes) != 1:
+        return False
+
+    visual = detail.get("knn_visual_corroboration")
+    if not isinstance(visual, dict) or (
+        visual.get("status") != "NG_CORROBORATED"
+        or visual.get("category") != "FALTANDO"
+        or visual.get("auto_decision_authorized") is not False
+    ):
+        return False
+    trend = visual.get("trend_ng_lights")
+    strong = visual.get("strong_ng_lights")
+    rows = visual.get("lights")
+    if (
+        not isinstance(trend, list) or set(trend) != set(LIGHTS)
+        or not isinstance(strong, list) or len(set(strong)) < 2
+        or any(light not in LIGHTS for light in strong)
+        or not isinstance(rows, dict) or set(rows) != set(LIGHTS)
+    ):
+        return False
+    margins = []
+    for light in LIGHTS:
+        row = rows[light]
+        if not isinstance(row, dict) or row.get("cross_category_ng") is not False:
+            return False
+        if row.get("status") not in {"NG_SIMILAR", "NG_LEANING"}:
+            return False
+        if (light in strong) != (row.get("status") == "NG_SIMILAR"):
+            return False
+        ng, ok = row.get("ng"), row.get("ok")
+        if not isinstance(ng, dict) or not isinstance(ok, dict):
+            return False
+        a, b = ng.get("best_similarity"), ok.get("best_similarity")
+        support = row.get("ng_support")
+        if (
+            not isinstance(a, (int, float)) or isinstance(a, bool)
+            or not isinstance(b, (int, float)) or isinstance(b, bool)
+            or not math.isfinite(a) or not math.isfinite(b)
+            or not 0 <= a <= 1 or not 0 <= b <= 1
+            or a < RECALL_MIN_NG_SIMILARITY
+            or a - b < RECALL_MIN_MARGIN_EACH - 1e-6
+            or not isinstance(support, int) or isinstance(support, bool)
+            or support < RECALL_MIN_NG_SUPPORT
+            or not isinstance(ng.get("count"), int) or ng["count"] < support
+            or not isinstance(ok.get("count"), int) or ok["count"] < 1
+        ):
+            return False
+        margins.append(a - b)
+    if (
+        sum(m >= RECALL_MIN_TWO_STRONG_MARGINS - 1e-6 for m in margins) < 2
+        or sum(margins) / 3 < RECALL_MIN_MARGIN_MEAN - 1e-6
+    ):
+        return False
+
+    physical = detail.get("physical_missing_veto")
+    if not isinstance(physical, dict) or (
+        physical.get("status") != "GEOMETRY_REVIEW"
+        or physical.get("suspect_lights") != []
+        or physical.get("unavailable_lights") != []
+        or set(physical.get("geometry_review_lights", [])) != set(LIGHTS)
+    ):
+        return False
+    physical_rows = physical.get("lights")
+    if not isinstance(physical_rows, dict) or set(physical_rows) != set(LIGHTS):
+        return False
+    return all(
+        isinstance(physical_rows[light], dict)
+        and physical_rows[light].get("status") == "GEOMETRY_REVIEW"
+        for light in LIGHTS
+    )
+
+
 def apply_knn_visual_corroboration(
     fused: dict | None, samples: dict | None, category: str, knn,
 ) -> dict | None:
@@ -364,6 +481,33 @@ def apply_knn_visual_corroboration(
         return fused
     report = evaluate_knn_visual_corroboration(samples, category, knn)
     detail["knn_visual_corroboration"] = report
+    memory_recall = trusted_three_light_ng_recall(detail)
+    if memory_recall:
+        # Três iluminações com NG visual extremamente próximo e separado
+        # de OK. A CNN original errou em todas; o operador ainda confirma.
+        # GEOMETRY_REVIEW é uma limitação da prova física, não voto NG.
+        fused["verdict"] = "DEFEITO REAL"
+        fused["is_defect"] = True
+        fused["production_review_required"] = True
+        fused["eligible_for_final_decision"] = False
+        fused["confidence"] = 0.5
+        fused["reason"] = (
+            "NG POR MEMÓRIA VISUAL: SIDE/TOP/MID recuperaram vizinhos NG "
+            "extremamente semelhantes e separados de OK. CNN votou OK nas "
+            "três luzes e a contraprova física exige revisão geométrica. "
+            "Defeito visual provável; confirmação humana obrigatória, "
+            "sem autorização de comando XP automático."
+        )
+        detail["operator_review_required"] = True
+        detail["cnn_v2_supervised_auto_eligible"] = False
+        detail["fusion_rule"] = "knn_three_light_strong_ng_recall_vs_cnn_ok_v1"
+        detail["final_score"] = 0.5
+        trace = detail.get("decision_trace")
+        if isinstance(trace, dict):
+            trace["operator_review_required"] = True
+            trace["fusion_rule"] = detail["fusion_rule"]
+            trace["final_score"] = 0.5
+        return fused
     mixed_trend = trusted_three_light_ng_trend(detail)
     if mixed_trend:
         # Classificação visual NG (SEM COMANDO XP): três luzes KNN apontam NG
@@ -427,4 +571,5 @@ def apply_knn_visual_corroboration(
 __all__ = [
     "evaluate_knn_visual_corroboration", "apply_knn_visual_corroboration",
     "SCHEMA", "verified_partial_cnn_review", "trusted_three_light_ng_trend",
+    "trusted_three_light_ng_recall",
 ]
