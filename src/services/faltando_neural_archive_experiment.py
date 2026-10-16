@@ -22,6 +22,13 @@ def archive_labeled_experimental_events(manifest_path: Path) -> tuple[list[dict]
     physical component. Individually reviewed labels, if any, take precedence.
     """
     store = QualificationStore(Path(manifest_path))
+    if store.manifest.get("all_aoi_categories_preparation_only") is True:
+        raise ValueError(
+            "Acervo multcategoria é diagnóstico; categoria AOI NÃO prova "
+            "defeito físico. Não converter NG genérico em NG FALTANDO. "
+            "Qualifique tipos de defeito e construa novo protocolo de "
+            "treino universal antes de usar este manifesto."
+        )
     rows = []
     duplicates = 0
     human_cases = 0
