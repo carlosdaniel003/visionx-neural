@@ -263,7 +263,11 @@ def prepare_faltando(
                 continue
             records.append({
                 "label": label,
-                "id": key,
+                # O mesmo timestamp/nome pode existir em ok_archive e ng_archive.
+                # O ID do manifesto precisa distinguir classes; nome não
+                # estabelece vínculo humano entre eventos de luzes distintas.
+                "id": f"{label}::{key}",
+                "source_name_hint": key,
                 "paths": {mode: modes[mode][0] for mode in LIGHTS},
                 "status": (
                     "LINKED_BY_VERIFIED_MANIFEST" if confirmed
