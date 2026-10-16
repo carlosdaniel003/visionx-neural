@@ -159,10 +159,18 @@ def _install(root: Path) -> dict:
         raise ValueError("O checkpoint original não é o de 97,70%")
     hold = previous.get("new_holdout", {})
     hist = previous.get("new_historical", {})
+    hist_cases = hist.get("cases")
+    if not isinstance(hist_cases, list) or len(hist_cases) != 117:
+        raise ValueError("Casos individuais históricos não estão presentes")
+    historical_false_ng = sum(
+        item.get("label") == "OK" and item.get("predicted") == "NG"
+        for item in hist_cases
+    )
     if (
         hold.get("correct_images") != 85 or hold.get("images") != 87
         or hold.get("ng_false_ok") != 0 or hist.get("images") != 117
-        or hist.get("correct_images") != 98 or hist.get("ok_false_ng") != 19
+        or hist.get("correct_images") != 98
+        or historical_false_ng != 19
     ):
         raise ValueError("Gates originais não correspondem a 85/87 e 98/117")
     _read_benchmark(root)
