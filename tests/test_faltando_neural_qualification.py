@@ -135,6 +135,67 @@ class QualificationCoreTests(QualificationFixtures):
         store.review_group(name, "REJECTED", "Imagens não são a mesma peça")
         self.assertEqual(store.group_status(name), "REJECTED")
 
+    def test_legacy_manifest_same_name_ok_ng_opens_without_mixing_groups(self):
+        """Reproduz run_20261016 com trincas OK e NG do mesmo timestamp."""
+        name = "2026-10-08_0735_FALTANDO"
+        ng_paths = {}
+        for i, mode in enumerate(("SIDE", "TOP", "MID")):
+            ng_paths[mode] = self._add(
+                f"2026-10-08_0735_FALTANDO_{mode}.png",
+                "NG", mode, 35 + i,
+            )
+        self.manifest["name_only_triplet_candidates"].append({
+            "id": name, "label": "NG", "paths": ng_paths,
+            "status": "NAME_ONLY_NEEDS_HUMAN_QUALIFICATION",
+        })
+        self._write_manifest()
+        original_manifest = self.manifest_path.read_bytes()
+        store = self.store()
+        self.assertEqual(len(store.groups), 2)
+        self.assertEqual(set(store.groups), {f"OK::{name}", f"NG::{name}"})
+        self.assertEqual(store.groups[f"OK::{name}"]["paths"], self.group_paths)
+        self.assertEqual(store.groups[f"NG::{name}"]["paths"], ng_paths)
+        self.assertEqual(store.summary()["confirmed_groups"], 0)
+
+        # Dois grupos com nome parecido não constituem o mesmo evento:
+        # exigir confirmação humana de cada par e de cada vínculo.
+        with self.assertRaisesRegex(ValueError, "Confirme cada par"):
+            store.review_group(f"NG::{name}", "CONFIRMED_VISUAL_ASSOCIATION")
+        for light in ("SIDE", "TOP", "MID"):
+            store.review_case(self.group_paths[light], "CONFIRMED_OK")
+            store.review_case(ng_paths[light], "CONFIRMED_NG")
+        store.review_group(f"OK::{name}", "CONFIRMED_VISUAL_ASSOCIATION")
+        store.review_group(f"NG::{name}", "REJECTED",
+                           "NGs não são a mesma peça")
+        self.assertEqual(store.summary()["confirmed_groups"], 1)
+        self.assertEqual(
+            self.store().group_status(f"NG::{name}"), "REJECTED"
+        )
+        self.assertEqual(
+            self.store().group_status(f"OK::{name}"),
+            "CONFIRMED_VISUAL_ASSOCIATION",
+        )
+        self.assertEqual(self.manifest_path.read_bytes(), original_manifest)
+        self.assertEqual(len(store.case_reviews), 6)
+
+    def test_duplicate_id_and_label_remains_integrity_failure(self):
+        duplicate = dict(self.manifest["name_only_triplet_candidates"][0])
+        self.manifest["name_only_triplet_candidates"].append(duplicate)
+        self._write_manifest()
+        with self.assertRaisesRegex(ValueError, "mesmo rótulo"):
+            self.store()
+
+    def test_unique_legacy_id_and_existing_review_still_roundtrip(self):
+        store = self.store()
+        name = "2026-10-08_0735_FALTANDO"
+        self.assertEqual(list(store.groups), [name])
+        for light in ("SIDE", "TOP", "MID"):
+            store.review_case(self.group_paths[light], "CONFIRMED_OK")
+        store.review_group(name, "CONFIRMED_VISUAL_ASSOCIATION")
+        self.assertEqual(
+            self.store().group_status(name), "CONFIRMED_VISUAL_ASSOCIATION"
+        )
+
     def test_changed_source_blocks_approval(self):
         store = self.store()
         path = self.root / self.samples[0]["source_path"]
