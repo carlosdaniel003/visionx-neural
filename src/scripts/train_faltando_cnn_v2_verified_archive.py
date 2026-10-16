@@ -320,7 +320,9 @@ def candidate_acceptance(
         .5 < minimum_holdout_accuracy <= 1.
     ):
         raise ValueError("Meta mínima de acurácia fora dos limites")
-    holdout_images = int(new_holdout["images"])
+    holdout_images = int(new_holdout.get("images", sum(
+        len(case["per_light"]) for case in new_holdout["cases"]
+    )))
     accuracy = (
         new_holdout["correct_images"] / holdout_images
         if holdout_images else 0.
@@ -449,7 +451,7 @@ def _operational_light_summary(result: dict) -> dict:
     """Diagnostics at real 0.10 / 0.90 review thresholds; no XP decisions."""
     summary = {
         light: {
-            "total": 0, "correct_conclusive": 0,
+            "total": 0, "correct_conclusive": 0, "unmeasured": 0,
             "review": 0, "ng_as_conclusive_ok": 0,
             "ok_as_conclusive_ng": 0,
         }
@@ -459,6 +461,9 @@ def _operational_light_summary(result: dict) -> dict:
         for light, view in case["per_light"].items():
             entry = summary[light]
             entry["total"] += 1
+            if "score" not in view:
+                entry["unmeasured"] += 1
+                continue
             score = float(view["score"])
             if not math.isfinite(score) or not 0 <= score <= 1:
                 raise ValueError("Score CNN inválido para limiares operacionais")
