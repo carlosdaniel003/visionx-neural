@@ -17,6 +17,7 @@ on:
       - "tests/test_faltando_cnn_v2_candidate_blend.py"
       - "src/scripts/faltando_cnn_v2_guarded_light_repair.py"
       - "tests/test_faltando_cnn_v2_guarded_light_repair.py"
+      - "tests/test_faltando_cnn_v2_event_mil.py"
       - "tests/test_faltando_balanced_archive_replay.py"
       - "tests/test_faltando_verified_archive_finetuning.py"
       - "tests/test_faltando_cnn_v2_training.py"
@@ -34,6 +35,7 @@ on:
       - "tests/test_faltando_cnn_v2_candidate_blend.py"
       - "src/scripts/faltando_cnn_v2_guarded_light_repair.py"
       - "tests/test_faltando_cnn_v2_guarded_light_repair.py"
+      - "tests/test_faltando_cnn_v2_event_mil.py"
       - "tests/test_faltando_balanced_archive_replay.py"
       - "tests/test_faltando_verified_archive_finetuning.py"
       - "src/core/neural/faltando_checkpoint_contract.py"
@@ -57,8 +59,8 @@ jobs:
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
           python -m pip install numpy opencv-python-headless
       - name: Compile v2
-        run: python -m py_compile src/core/neural/faltando_checkpoint_contract.py src/core/neural/faltando_preprocessing.py src/core/neural/faltando_cnn_v2.py src/scripts/train_faltando_cnn_v2_online.py src/scripts/train_faltando_cnn_v2_verified_archive.py src/services/faltando_neural_archive_experiment.py src/scripts/train_faltando_cnn_v2.py tests/test_faltando_verified_archive_finetuning.py tests/test_faltando_archive_label_experiment.py tests/test_faltando_balanced_archive_replay.py tests/test_faltando_cnn_v2_candidate_blend.py src/scripts/faltando_cnn_v2_blend_candidates.py tests/test_faltando_cnn_v2_guarded_light_repair.py src/scripts/faltando_cnn_v2_guarded_light_repair.py tests/test_faltando_cnn_v2_training.py
+        run: python -m py_compile src/core/neural/faltando_checkpoint_contract.py src/core/neural/faltando_preprocessing.py src/core/neural/faltando_cnn_v2.py src/scripts/train_faltando_cnn_v2_online.py src/scripts/train_faltando_cnn_v2_verified_archive.py src/services/faltando_neural_archive_experiment.py src/scripts/train_faltando_cnn_v2.py tests/test_faltando_verified_archive_finetuning.py tests/test_faltando_archive_label_experiment.py tests/test_faltando_balanced_archive_replay.py tests/test_faltando_cnn_v2_candidate_blend.py src/scripts/faltando_cnn_v2_blend_candidates.py tests/test_faltando_cnn_v2_guarded_light_repair.py tests/test_faltando_cnn_v2_event_mil.py src/scripts/faltando_cnn_v2_guarded_light_repair.py tests/test_faltando_cnn_v2_training.py
       - name: Test multiscale training and integrity
-        run: python -m unittest tests.test_faltando_cnn_v2_training tests.test_faltando_verified_archive_finetuning tests.test_faltando_archive_label_experiment tests.test_faltando_balanced_archive_replay tests.test_faltando_cnn_v2_candidate_blend tests.test_faltando_cnn_v2_guarded_light_repair -v
+        run: python -m unittest tests.test_faltando_cnn_v2_training tests.test_faltando_verified_archive_finetuning tests.test_faltando_archive_label_experiment tests.test_faltando_balanced_archive_replay tests.test_faltando_cnn_v2_candidate_blend tests.test_faltando_cnn_v2_guarded_light_repair tests.test_faltando_cnn_v2_event_mil -v
       - name: Verify v1 regression tests
         run: python -m unittest tests.test_faltando_cnn_training -v
