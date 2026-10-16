@@ -30,6 +30,9 @@ from src.scripts.train_faltando_cnn_v2_online import (
 from src.services.faltando_neural_qualification import (
     QualificationStore, QUALIFICATION_SCHEMA,
 )
+from src.services.faltando_neural_archive_experiment import (
+    archive_labeled_experimental_events,
+)
 
 SCHEMA = "visionx.faltando_verified_archive_finetuning.v1"
 MIN_PER_LABEL_TRAIN = 2
@@ -208,7 +211,16 @@ def split_verified_events(
 
     cached = {}
     components = {}
+    split_groups = {}
     for index, event in enumerate(events):
+        split_group = event.get("split_group")
+        if split_group is not None:
+            if not isinstance(split_group, str) or not split_group:
+                raise ValueError("Grupo de separação inválido")
+            if split_group in split_groups:
+                union(index, split_groups[split_group])
+            else:
+                split_groups[split_group] = index
         component = event.get("component")
         if (isinstance(component, tuple) and len(component) == 2
                 and all(component)):
@@ -333,6 +345,7 @@ def candidate_acceptance(
 def train_verified_archive(
     root: Path, manifest: Path, *, epochs: int = 5, seed: int = 42,
     holdout: float = .25, lr: float = .00002,
+    archive_labels_experimental: bool = False,
 ) -> dict:
     """Produz SOMENTE checkpoint experimental sem ponteiro de ativação."""
     root = Path(root).resolve()
@@ -344,7 +357,11 @@ def train_verified_archive(
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    verified, provenance = qualified_archive_events(manifest)
+    # Folder-label opt-in is an experiment, NOT individual human verification.
+    verified, provenance = (
+        archive_labeled_experimental_events(manifest)
+        if archive_labels_experimental else qualified_archive_events(manifest)
+    )
     if Path(provenance["manifest"]).resolve().parents[2] != root / "reports":
         raise ValueError("Dataset qualificado pertence a outra instalação")
     train, hold, split = split_verified_events(verified, seed=seed, holdout=holdout)
@@ -441,24 +458,37 @@ def train_verified_archive(
         old_hist, new_hist, old_online, new_online, old_hold, new_hold,
     )
     when = datetime.now(timezone.utc)
-    out = (root / "reports/faltando_neural/verified_candidates" /
+    destination = ("archive_experiments" if archive_labels_experimental
+                   else "verified_candidates")
+    out = (root / "reports/faltando_neural" / destination /
            (when.strftime("%Y%m%dT%H%M%S_%fZ") + "_" + uuid4().hex[:6]))
     out.mkdir(parents=True, exist_ok=False)
-    checkpoint_out = out / "faltando_v2_verified_candidate.pt"
+    checkpoint_out = out / (
+        "faltando_v2_archive_experimental_candidate.pt"
+        if archive_labels_experimental else "faltando_v2_verified_candidate.pt"
+    )
     torch.save({
         **checkpoint,
         "state_dict": {k: v.detach().cpu().clone()
                        for k, v in model.state_dict().items()},
         "verified_archive_training_schema": SCHEMA,
         "experimental": True, "production_approved": False,
-        "verified_source_manifest_sha256": provenance["manifest_sha256"],
-        "verified_qualification_sha256": provenance["qualification_sha256"],
+        **({"provisional_archive_manifest_sha256": provenance["manifest_sha256"],
+            "individual_pair_review_complete": False,
+            "archive_labels_experimental": True}
+           if archive_labels_experimental else {
+            "verified_source_manifest_sha256": provenance["manifest_sha256"],
+            "verified_qualification_sha256": provenance["qualification_sha256"],
+           }),
         "source_champion_sha256": _digest(baseline_path),
     }, checkpoint_out)
     report = {
         "schema": SCHEMA, "created_at_utc": when.isoformat(),
         "candidate_only": True, "promoted": False,
         "automatic_ok_authorized": False,
+        "production_approval_eligible": False,
+        "qualification_mode": ("ARCHIVE_FOLDER_BULK_EXPERIMENT"
+                               if archive_labels_experimental else "INDIVIDUALLY_VERIFIED"),
         "base_checkpoint_sha256": _digest(baseline_path),
         "candidate_relative_path": checkpoint_out.relative_to(root).as_posix(),
         "candidate_sha256": _digest(checkpoint_out),
@@ -477,6 +507,11 @@ def train_verified_archive(
             "Avaliação de acurácia offline, não é aprovação de produção.",
             "Sem promoção automática de pesos: requer replay completo do "
             "acervo e autorização humana posterior.",
+            *(["Rótulos das pastas presumidos a pedido do operador; NÃO houve "
+               "revisão visual individual das imagens.",
+               "Não é possível usar este experimento como aprovação de "
+               "produção nem validar independência física sem auditoria.",]
+              if archive_labels_experimental else []),
         ],
     }
     (out / "training_report.json").write_text(
@@ -499,10 +534,16 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--holdout", type=float, default=.25)
     parser.add_argument("--lr", type=float, default=.00002)
+    parser.add_argument(
+        "--archive-labels-experimental", action="store_true",
+        help=("Aceita explicitamente rótulos OK/NG das pastas SEM revisão "
+              "individual, apenas para candidato OFFLINE NÃO PROMOVÍVEL"),
+    )
     args = parser.parse_args(argv)
     train_verified_archive(
         args.root, args.manifest, epochs=args.epochs,
         seed=args.seed, holdout=args.holdout, lr=args.lr,
+        archive_labels_experimental=args.archive_labels_experimental,
     )
     return 0
 
