@@ -32,7 +32,7 @@ class AllAOICategoriesPreparationTests(unittest.TestCase):
             ("INVERTIDO", "NG"),
             ("EMBORCADO", "OK"),
             ("DESLOCADO", "NG"),
-            ("MUITOADESIVO", "NG"),
+            ("MUITO_ADESIVO", "NG"),
             ("INCLASSIFICAVEL", "NG"),
         )
         for index, (category, label) in enumerate(categories):
@@ -55,7 +55,7 @@ class AllAOICategoriesPreparationTests(unittest.TestCase):
         self.assertEqual(result["summary"]["extracted"], 6)
         self.assertEqual(set(result["summary"]["by_aoi_category_hint"]), {
             "FALTANDO", "INVERTIDO", "EMBORCADO", "DESLOCADO",
-            "MUITOADESIVO", "UNKNOWN",
+            "MUITO ADESIVO", "UNKNOWN",
         })
         self.assertTrue(result["all_aoi_categories_preparation_only"])
         self.assertTrue(result["aoi_category_not_visual_defect_type"])
