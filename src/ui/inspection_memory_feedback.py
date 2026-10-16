@@ -20,6 +20,8 @@ def memory_feedback_state(analysis: dict | None) -> tuple[str, str, str]:
     memory = memory_seen_state(analysis)
     if memory["status"] == "JA_VI":
         return "JÁ VI", memory_panel_text(analysis)[1], "known"
+    if memory["status"] == "VI_SEMELHANTE":
+        return "VI SEMELHANTE", memory_panel_text(analysis)[1], "similar"
     if memory["status"] == "NUNCA_VI":
         return "NUNCA VI", memory_panel_text(analysis)[1], "new"
     return "", "", ""
@@ -101,7 +103,7 @@ class InspectionMemoryFeedbackOverlay(QFrame):
         self.title_label.setText(title)
         self.description_label.setText(explanation)
         color = {"known": "#4ade80", "new": "#f5c518",
-                 "mixed": "#58a6ff", "review": "#ff6262"}.get(tone, "#f5c518")
+                 "similar": "#58a6ff", "mixed": "#58a6ff", "review": "#ff6262"}.get(tone, "#f5c518")
         self.title_label.setStyleSheet(f"color:{color}; font-size:14px; font-weight:900;")
         self.setStyleSheet(
             "QFrame#inspectionMemoryFeedback {background:#131b23;"
@@ -110,7 +112,7 @@ class InspectionMemoryFeedbackOverlay(QFrame):
         )
         self.setToolTip(
             memory_panel_text(analysis)[1]
-            + "\nNOVO refere-se ao par exato gabarito/teste, não ao tipo físico de defeito."
+            + "\nPar exato e memória visual são diferentes; não implica treino CNN."
         )
         self.move(self._position())
         self.opacity.setOpacity(0.0)
