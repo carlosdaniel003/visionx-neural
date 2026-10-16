@@ -149,6 +149,58 @@ def _read_trial_pointer(root: Path) -> dict:
     return data
 
 
+def _validate_historical_light_regression(hold: dict, hist: dict) -> dict:
+    """Check 117 individual *lighting views*, not 117 event records.
+
+    _assess stores one case per event. A single event may hold SIDE, TOP
+    and MID, so len(cases) can be much smaller than hist["images"].
+    Each per_light.correct is the existing evaluation of that view, with
+    its original event quality label. Do not invent per-light labels.
+    """
+    cases = hist.get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("Casos históricos ausentes ou inválidos")
+    inspected = correct = ok_false_ng = ng_false_ok = 0
+    for event in cases:
+        if not isinstance(event, dict) or event.get("label") not in ("OK", "NG"):
+            raise ValueError("Rótulo histórico do evento inválido")
+        per_light = event.get("per_light")
+        if not isinstance(per_light, dict) or not per_light:
+            raise ValueError("Evento histórico sem observações por iluminação")
+        if not set(per_light).issubset({"SIDE", "TOP", "MID"}):
+            raise ValueError("Iluminação histórica desconhecida")
+        for view in per_light.values():
+            if not isinstance(view, dict) or type(view.get("correct")) is not bool:
+                raise ValueError("Resultado histórico por luz inválido")
+            inspected += 1
+            correct += int(view["correct"])
+            if not view["correct"]:
+                if event["label"] == "OK":
+                    ok_false_ng += 1
+                else:
+                    ng_false_ok += 1
+    if (
+        hold.get("correct_images") != 85 or hold.get("images") != 87
+        or hold.get("ng_false_ok") != 0
+        or hist.get("images") != 117
+        or hist.get("correct_images") != 98
+        or inspected != 117 or correct != 98
+        or ok_false_ng != 19 or ng_false_ok != 0
+    ):
+        raise ValueError(
+            "Gates históricos do candidato não correspondem às 117 luzes: "
+            f"avaliadas={inspected}, corretas={correct}, "
+            f"OK→NG={ok_false_ng}, NG→OK={ng_false_ok}"
+        )
+    return {
+        "historical_events": len(cases),
+        "historical_lights": inspected,
+        "historical_correct_lights": correct,
+        "historical_ok_false_ng_lights": ok_false_ng,
+        "historical_ng_false_ok_lights": ng_false_ok,
+    }
+
+
 def _install(root: Path) -> dict:
     pointer = _pointer_path(root)
     if pointer.exists() or pointer.is_symlink():
@@ -159,20 +211,7 @@ def _install(root: Path) -> dict:
         raise ValueError("O checkpoint original não é o de 97,70%")
     hold = previous.get("new_holdout", {})
     hist = previous.get("new_historical", {})
-    hist_cases = hist.get("cases")
-    if not isinstance(hist_cases, list) or len(hist_cases) != 117:
-        raise ValueError("Casos individuais históricos não estão presentes")
-    historical_false_ng = sum(
-        item.get("label") == "OK" and item.get("predicted") == "NG"
-        for item in hist_cases
-    )
-    if (
-        hold.get("correct_images") != 85 or hold.get("images") != 87
-        or hold.get("ng_false_ok") != 0 or hist.get("images") != 117
-        or hist.get("correct_images") != 98
-        or historical_false_ng != 19
-    ):
-        raise ValueError("Gates originais não correspondem a 85/87 e 98/117")
+    historical_regression = _validate_historical_light_regression(hold, hist)
     _read_benchmark(root)
     source = root/previous["candidate_relative_path"]
     target = root/TRIAL_97P70_CHECKPOINT
@@ -231,6 +270,7 @@ def _install(root: Path) -> dict:
         "manual_review_only": True,
         "automatic_ok_and_ng_disabled": True,
         "old_checkpoint_retained": True,
+        "historical_regression_checked_per_light": historical_regression,
     })
     print("CNN 97,70% ATIVA EM ENSAIO ASSISTIDO (requer reiniciar ODIN)")
     print("SHA:", TRIAL_97P70_SHA256)
