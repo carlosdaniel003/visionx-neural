@@ -59,7 +59,11 @@ class ControlledDeploymentTests(unittest.TestCase):
             "provenance": {"manifest_sha256": "b"*64},
             "new_holdout": {"images": 87, "correct_images": 85, "ng_false_ok": 0},
             "new_historical": {
-                "images": 117, "correct_images": 98, "ok_false_ng": 19,
+                "images": 117, "correct_images": 98,
+                "cases": (
+                    [{"label": "OK", "predicted": "OK"} for _ in range(98)]
+                    + [{"label": "OK", "predicted": "NG"} for _ in range(19)]
+                ),
             },
         }
         report = self.root/deployment.ORIGINAL_REPORT
