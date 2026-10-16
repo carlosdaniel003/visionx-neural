@@ -1,3 +1,67 @@
+## 16/10/2026 — Reparo por iluminação 93,10%; revisão da semântica de rótulos por luz
+
+A execução local de `faltando_cnn_v2_guarded_light_repair`, com
+`--epochs 4 --lr 0.00001 --per-light 12`, escolheu época **4**,
+`loss 1.746835→1.530089`. Candidato `539ff3b8…`:
+- **81/87 = 93,10%**, holdout: **62/68 NG**, **19/19 OK**; 6 NG→OK:
+  quatro recortes MID (scores `0,007786`, `0,013750`, `0,014852`,
+  `0,015386`), dois SIDE (scores `0,276075`, `0,311661`).
+  TOP não aparece entre os seis falsos OK do holdout.
+- Replay online: **119/119 eventos NG** reconhecidos, mas só
+  **330/357 imagens individuais** usando o rótulo do evento em cada luz.
+  Essas 27 discordâncias por luz **não são necessariamente NG não
+  reconhecidos**: o operador confirmou o *evento*, não cada iluminação
+  separadamente.
+- Histórico permanece **116/117**. O mesmo
+  `public/ok_archive/2026-10-02_1542_FALTANDO.png` é falso NG
+  SIDE com score `0,985854`.
+- Gates reprovados `historical_replay_all_correct=false` e
+  `holdout_accuracy_minimum=false`, meta mínima 97% (85/87).
+  Exatamente 85/87 corresponde a 97,70%; atingir esse número
+  **sem restaurar 117/117 históricos não basta**.
+
+**Achado metodológico:** o antigo replay forte fazia
+`BCE_event + 0,5 * BCE_per_light` com o rótulo **NG do evento**
+imposto a SIDE, TOP e MID. Um evento NG pode aparecer como OK numa
+iluminação sem evidência visual; portanto não é correto chamar
+automaticamente TODAS as três vistas de positivos NG. Isso pode treinar
+falsos NG e impede interpretação válida das métricas online por luz.
+
+Foi adicionado modo **opt-in** `--supervision-mode event_mil` no
+mesmo treinador experimental, preservando o modo anterior por padrão:
+1. Para **NG multilight online**, a perda é somente NG do *evento*
+   (max dos logits observados, multiple instance learning, MIL).
+   Não se inventa NG por iluminação. Mineração desse replay online usa
+   o score do evento, nunca o score da luz isolada.
+2. Para **OK multilight**, todas as luzes observadas recebem supervisão
+   OK, pois nenhuma deveria evidenciar defeito.
+3. Para **NG/OK single-view** do arquivo, somente a iluminação presente
+   recebe gradiente auxiliar com o rótulo provisório da pasta. O treino
+   inclui exemplos de cada iluminação; SHA e split seguem auditados.
+4. Metade dos passos OK do replay reserva explicitamente os OK
+   históricos difíceis. Seleção das épocas usa histórico e métricas
+   **por evento** online, não scores por luz com rótulo fraco.
+5. O modelo salvo nunca é promovido, e o holdout já visto continua sem
+   força de validação independente. Novo conjunto cego e regressão em
+   outras categorias permanecem requisitos para Produção.
+
+**Executar só depois de integrar esta PR à `central` (ODIN fechado):**
+
+```powershell
+cd C:\visionx-neural-main
+git switch central
+git pull origin central
+python -X utf8 -m src.scripts.faltando_cnn_v2_guarded_light_repair --root . --manifest "reports/faltando_neural/run_20261016T114234_996180Z/manifest.json" --start-report "reports/faltando_neural/archive_blends/20261016T140735_446262Z_6884b5/blend_report.json" --epochs 4 --lr 0.00001 --per-light 12 --supervision-mode event_mil
+```
+
+O relatório identifica `supervision_mode=event_mil` e guarda
+`holdout_used_for_selection=false`,
+`production_approval_eligible=false`. A hipótese pode falhar. Não
+selecionar outro experimento pelos 87 pares já examinados, nem afirmar
+97–98% real na linha sem novos eventos independentes.
+
+---
+
 ## 16/10/2026 — Blend 0,10 reprovado e reparo supervisionado por luz (experimental)
 
 O operador executou a PR #50 usando os dois checkpoints locais. O `blend_grid`
