@@ -29,7 +29,7 @@ class ControlledDeploymentTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        source = self.root/"reports/faltando_neural/archive_experiments/test"
+        source = (self.root/deployment.ORIGINAL_REPORT).parent
         source.mkdir(parents=True)
         self.source = source/"faltando_v2_archive_experimental_candidate.pt"
         torch.manual_seed(42)
