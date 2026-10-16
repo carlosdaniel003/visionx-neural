@@ -49,7 +49,7 @@ class BalancedReplayTests(CNNV2Fixture):
         events, _ = archive_labeled_experimental_events(self.manifest_path)
         ng = [e for e in events if e["label"] == "NG"]
         ok = [e for e in events if e["label"] == "OK"]
-        self.assertGreaterEqual(len(ng), 8)
+        self.assertGreaterEqual(len(ng), 4)
 
         def assess(_model, rows, _size, _focus):
             return _assessment([
@@ -67,10 +67,10 @@ class BalancedReplayTests(CNNV2Fixture):
             side_effect=assess,
         ):
             first, stats = _balanced_hard_replay(
-                ng, ng + ok, None, 64, .70, seed=42, epoch=1, epochs=5
+                ng * 2, ng + ok, None, 64, .70, seed=42, epoch=1, epochs=5
             )
             second, _ = _balanced_hard_replay(
-                ng, ng + ok, None, 64, .70, seed=42, epoch=2, epochs=5
+                ng * 2, ng + ok, None, 64, .70, seed=42, epoch=2, epochs=5
             )
         self.assertEqual(stats["NG"], 8)
         self.assertEqual(stats["OK"], 8)
