@@ -140,12 +140,11 @@ def cnn_panel_text(analysis: dict | None) -> dict:
 
 
 def memory_seen_state(analysis: dict | None) -> dict:
-    """Estado visual binário de registro humano, nunca 'meio termo'.
+    """Distingue memória KNN exata, visual semelhante e sem match.
 
-    JA_VI = pelo menos uma iluminação recuperada via KNOWN_KNN, com
-    par exato verificado; NUNCA_VI = consulta válida sem match exato.
-    Sem resultado de consulta, devolve None: não inventa 'nunca'.
-    Os rótulos tratam histórico de PARES, não tipos físicos de defeito.
+    JÁ VI exige um par humano exato; VI SEMELHANTE exige corroboração
+    KNN visual. Não confundir nenhuma dessas memórias com pesos da CNN.
+    Sem consulta verificada, não declarar que a peça nunca foi vista.
     """
     m = neural_summary(analysis)
     route = m["memory_route"]
@@ -173,13 +172,39 @@ def memory_seen_state(analysis: dict | None) -> dict:
         unrecognized = ["INSPEÇÃO"]
     known = bool(recognized)
     queried = known or bool(unrecognized)
-    status = "JA_VI" if known else "NUNCA_VI" if queried else None
     detail = ((analysis or {}).get("detail") or {}) if isinstance(analysis, dict) else {}
     detail = detail if isinstance(detail, dict) else {}
     visual = detail.get("knn_visual_corroboration") or {}
     visual = visual if isinstance(visual, dict) else {}
+    rows = visual.get("lights") or {}
+    rows = rows if isinstance(rows, dict) else {}
+    status_visual = visual.get("status")
+    # Não confiar apenas no texto 'NG_CORROBORATED': o resumo precisa
+    # indicar as luzes concretas que efetivamente recuperaram vizinhos.
+    strong = visual.get("strong_ng_lights")
+    trend = visual.get("trend_ng_lights")
+    strong = strong if isinstance(strong, list) else []
+    trend = trend if isinstance(trend, list) else []
+    approximate_lights = [
+        light for light in LIGHTS
+        if (
+            (light in strong and status_visual == "NG_CORROBORATED"
+             and _map(rows.get(light)).get("status") == "NG_SIMILAR")
+            or (light in trend and status_visual == "NG_TREND_THREE_LIGHTS"
+                and _map(rows.get(light)).get("status") in {"NG_LEANING", "NG_SIMILAR"})
+        )
+    ]
     similar_ng = bool(
-        not known and visual.get("status") in {"NG_CORROBORATED", "NG_TREND_THREE_LIGHTS"}
+        not known and (
+            (status_visual == "NG_CORROBORATED" and len(approximate_lights) >= 2)
+            or (status_visual == "NG_TREND_THREE_LIGHTS"
+                and len(approximate_lights) == 3)
+        )
+    )
+    status = (
+        "JA_VI" if known else
+        "VI_SEMELHANTE" if similar_ng else
+        "NUNCA_VI" if queried else None
     )
     return {
         "status": status,
@@ -189,6 +214,9 @@ def memory_seen_state(analysis: dict | None) -> dict:
             "NUNCA VI" if queried else ""
         ),
         "approximate_ng_seen": similar_ng,
+        "approximate_ng_lights": approximate_lights if similar_ng else [],
+        "visual_rows": rows if similar_ng else {},
+        "exact_pair_seen": known,
         "recognized_lights": recognized,
         "new_lights": unrecognized,
         "unreported_lights": unreported if any(light_routes.values()) else [],
@@ -221,24 +249,36 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
             f"Par humano registrado • Rótulo {memory['human_label'] or '?'}. "
             "Correspondência exata gabarito/teste.",
         )
+    if result == "VI_SEMELHANTE":
+        lights = memory["approximate_ng_lights"]
+        summaries = []
+        for light in lights:
+            row = _map(memory["visual_rows"].get(light))
+            ng = _map(row.get("ng"))
+            best = _finite_score(ng.get("best_similarity"))
+            count = row.get("ng_support")
+            count_str = f" ({count} NG)" if isinstance(count, int) and count > 0 else ""
+            score_str = f" {best * 100:.2f}%" if best is not None else ""
+            summaries.append(f"{light}{score_str}{count_str}")
+        return (
+            f"VI SEMELHANTE • KNN VISUAL NG • {len(lights)}/3 LUZES",
+            " | ".join(summaries)
+            + ". São exemplos visuais, não pares exatos nem prova de "
+              "retreinamento da CNN. Não autorizam 0/1 automático.",
+        )
     if result == "NUNCA_VI":
-        if memory.get("approximate_ng_seen"):
-            return (
-                "VI SEMELHANTE • KNN VISUAL NG",
-                "A KNN recuperou exemplos NG visualmente semelhantes em pelo "
-                "menos duas iluminações. O par NÃO é idêntico; a CNN pode "
-                "discordar. Não equivale a julgamento 0/1 automático.",
-            )
         if memory["has_multilight"]:
             return (
                 "NUNCA VI • KNN SEM MATCH EXATO",
-                "Nenhuma das iluminações consultadas tem par humano exato. Não existe similaridade KNN medida nesta recuperação. "
-                "Imagens analisadas pela CNN não equivalem a memória conhecida.",
+                "Nenhuma das iluminações consultadas tem par humano exato nem "
+                "vizinhos NG corroborados nesta inspeção. A CNN é um modelo "
+                "separado da memória KNN.",
             )
         return (
             "NUNCA VI • KNN SEM MATCH EXATO",
-            "KNN consultado: par humano exato não encontrado. Não existe similaridade KNN medida nesta recuperação. O ODIN pode reconhecer a "
-            "categoria visual, mas não recuperou esta imagem da memória.",
+            "KNN consultado: par humano exato não encontrado nem vizinhos NG "
+            "corroborados. Isso não significa que o tipo de defeito nunca "
+            "tenha sido salvo.",
         )
     if memory["memory_conflict"]:
         return (
