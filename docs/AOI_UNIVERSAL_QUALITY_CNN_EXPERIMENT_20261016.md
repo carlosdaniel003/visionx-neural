@@ -1,3 +1,86 @@
+## 16/10/2026 — Ativação local reversível do checkpoint 97,70% (ENSAIO ASSISTIDO)
+
+O operador solicitou **substituir a CNN atualmente usada** pelo primeiro
+checkpoint que obteve 85/87 (97,70%) no holdout experimental. A CNN
+original **reprovou a regressão histórica de 117 OK**, acertando
+somente 98/117 (19 falsos NG). Por isso a implementação permite
+**substituição efetiva dos pesos de INFERÊNCIA CNN**, mas SOMENTE com
+**revisão humana obrigatória**, sem decisões automáticas 0/1 do XP
+por esse checkpoint. Isso é um ensaio supervisionado em estação, NÃO
+aprovação de Produção. Não promete 97,70% de acurácia operacional:
+no mesmo teste de 106 imagens, teve 93/106, detectou 63/63 NG mas
+rejeitou 13/43 OK. No teste antigo 87, 29 imagens reaparecem no
+teste de 106. Validação independente permanece pendente.
+
+**Implementação:** `src.scripts.deploy_faltando_97p70_trial`. O
+instalador autentica a identidade SHA-256 do checkpoint original
+(`c13ca3296eee5e7741c58f29a6ef035296c0fe84a5651a9481462d72042b120c`)
+contra relatório original e benchmark local, valida o checkpoint
+original atual antes de instalar, copia os pesos experimentais
+sem alterá-los, executa **warmup no carregador real**, depois
+escreve atomicamente `reports/neural_online/live_active.json`
+no contrato `visionx.specialist_active_pointer.v1`.
+
+**Atenção:** a existência de um `live_active.json` qualquer causa
+bloqueio da instalação. Não é permitido sobrescrever ponteiro de
+treinamento online/implantações anteriores. Não renomear ou editar
+manualmente nenhum ponteiro. A transição exige **ODIN fechado** e
+reinício posterior, para impedir mistura de checkpoints no cache da
+sessão ou captura da mesma peça.
+
+**Comandos PowerShell (ODIN fechado, venv ativo):**
+
+```powershell
+cd C:\visionx-neural-main
+git switch central
+git pull origin central
+
+# Estado atual (também detecta ponteiro inválido)
+python -X utf8 -m src.scripts.deploy_faltando_97p70_trial status --root .
+
+# INSTALA / SUBSTITUI CNN na próxima inicialização, SEM AUTOMATISMO 0/1
+python -X utf8 -m src.scripts.deploy_faltando_97p70_trial install --root . --ack CONFIRMO_19_FALSOS_NG_E_REVISAO_MANUAL
+
+# Recomeçar o ODIN e conferir modo revisável, sem ativação automática
+python -X utf8 -m src.scripts.deploy_faltando_97p70_trial status --root .
+```
+
+Para reverter **com ODIN fechado**:
+
+```powershell
+python -X utf8 -m src.scripts.deploy_faltando_97p70_trial rollback --root .
+```
+
+Depois **reiniciar** o ODIN. O rollback move o ponteiro para
+`reports/neural_online/manual_trial_audits` e a CNN original fixada
+volta a ser escolhida por `FaltandoCNNLive`; os dois arquivos de peso
+são preservados para auditoria. Se o ponteiro tiver sido alterado
+ou for de outra implantação, o comando falha sem destruí-lo.
+
+**Trava produtiva implementada no nível final:** a política
+`production_decision_policy` bloqueia **auto-OK E auto-NG**
+para resultados gerados pelo hash desse ensaio, inclusive quando a
+fusão SIDE/TOP/MID sobrescreve `operator_review_required` da luz
+individual. A decisão só pode ser confirmada pelo operador, 0/OK
+ou 1/NG. `FaltandoCNNLive` também identifica cada inferência
+individual com `cnn_v2_trial_manual_only=true` e força
+`production_review_required=true` quando este checkpoint é carregado
+via ponteiro validado.
+
+**Não afetado:** memória KNN, OCR, XP, configuração de inspeção,
+máscaras, thresholds, modelos DESLOCADO/ADESIVO, pesos originais,
+dados brutos, aprendizado automático. Na falta de SHA, ponteiro
+inválido ou carregamento incompleto: falha para `REVISÃO
+OBRIGATÓRIA`, jamais OK silencioso.
+
+**Limite:** este modo ASSISTIDO ainda não prova que o modelo
+é mais seguro que a CNN base na linha. Após observar novas peças
+e uma regressão independente incluindo OK e NG de todas as
+categorias, decidir se é adequado promover o uso produtivo normal.
+Até lá, nenhuma automatização poderá se basear nesse candidato.
+
+---
+
 ## 16/10/2026 — Benchmark realizado: preservar o candidato de 97,70%
 
 **Decisão operacional de desenvolvimento:** parar a série de fine-tunings

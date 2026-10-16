@@ -20,7 +20,10 @@ from threading import RLock
 import numpy as np
 
 from src.core.neural.faltando_category_scope import uses_faltando_v2
-from src.core.neural.faltando_checkpoint_contract import POINTER_SCHEMA
+from src.core.neural.faltando_checkpoint_contract import (
+    POINTER_SCHEMA, TRIAL_97P70_MODE, TRIAL_97P70_SHA256,
+    TRIAL_97P70_CHECKPOINT,
+)
 from src.core.neural.faltando_inference_telemetry import (
     InferencePhaseProfile, elapsed_ms,
 )
@@ -102,6 +105,7 @@ class FaltandoCNNLive:
         self._last_load_did_reload = False
         self._error: tuple[str, str] | None = None
         self._online_pointer_seen = False
+        self._trial_review_only = False
         self._online_root = (
             Path(online_root).resolve() if online_root is not None
             else Path(__file__).resolve().parents[3]
@@ -129,6 +133,21 @@ class FaltandoCNNLive:
                 or candidate.suffix != ".pt"
                 or len(digest) != 64):
             raise ValueError("Ponteiro online não passou no contrato de segurança")
+        is_trial = (
+            digest == TRIAL_97P70_SHA256
+            or row.get("deployment_mode") == TRIAL_97P70_MODE
+            or row.get("checkpoint_relative_path") == TRIAL_97P70_CHECKPOINT
+        )
+        if is_trial and (
+            digest != TRIAL_97P70_SHA256
+            or row.get("deployment_mode") != TRIAL_97P70_MODE
+            or row.get("checkpoint_relative_path") != TRIAL_97P70_CHECKPOINT
+            or row.get("manual_review_required") is not True
+            or row.get("automatic_ok_authorized") is not False
+            or row.get("historical_ok_regression_acknowledged") is not True
+        ):
+            raise ValueError("Candidato 97,70% sem contrato de revisão humana obrigatório")
+        self._trial_review_only = is_trial
         self._online_pointer_seen = True
         if candidate != self.path or digest != self.expected_sha256:
             self.path = candidate
@@ -412,6 +431,11 @@ class FaltandoCNNLive:
 
         is_defect = ng_score >= .5
         review = REVIEW_LOW_NG < ng_score < REVIEW_HIGH_NG
+        trial_review_only = bool(
+            self._trial_review_only
+            and self.expected_sha256 == TRIAL_97P70_SHA256
+        )
+        operator_required = review or trial_review_only
         verdict = (
             "REVISÃO OBRIGATÓRIA" if review else
             "DEFEITO REAL" if is_defect else "FALHA FALSA"
@@ -423,7 +447,7 @@ class FaltandoCNNLive:
             "final_score": ng_score,
             "physical_score": 0.0,
             "cutoff": .5,
-            "operator_review_required": review,
+            "operator_review_required": operator_required,
             "confidence": max(ng_score, 1.0-ng_score),
             "weights": {"knn": 0.0, "physical": 0.0, "cnn": 1.0},
             "cnn_ng_score_uncalibrated": ng_score,
@@ -439,7 +463,7 @@ class FaltandoCNNLive:
                 "checkpoint verificado, KNN não consultado. "
                 "Validação independente ainda pendente."
             ),
-            "production_review_required": review,
+            "production_review_required": operator_required,
             "active_engines": ["faltando_cnn_v2.py"],
             "bounding_box": None,
             "all_boxes": {},
@@ -458,7 +482,9 @@ class FaltandoCNNLive:
                 "decision_cutoff": .5,
                 "dominant_engine": MODEL_KIND,
                 "fusion_rule": "cnn_v2_dualscale_direct",
-                "operator_review_required": review,
+                "operator_review_required": operator_required,
+                "cnn_v2_trial_manual_only": trial_review_only,
+                "cnn_v2_trial_historical_ok_false_ng": 19 if trial_review_only else None,
                 "decision_trace": trace,
                 "cnn_v2_session_inference_cache": False,
                 "cnn_v2_session_cache_is_training": False,

@@ -18,6 +18,7 @@ from typing import Any
 
 from src.core.corroborated_ng_verdict import corroborated_ng_verdict
 from src.core.neural.faltando_category_scope import uses_faltando_v2
+from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
 
 
 # Mantido por compatibilidade com imports antigos. Não participa mais da política.
@@ -83,6 +84,32 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     # Contraprova física independente: uma inconsistência ou ausência dos
     # pares visuais proíbe 0/OK até confirmação humana. Esse segundo gate
     # continua válido mesmo se uma tela intermediária mudar o veredito.
+    # O candidato com 97,70% detectou todos os NG do benchmark publicado,
+    # mas reprovou 19 OK no histórico. Mesmo quando a fusão multilight
+    # sobrescreve os flags de uma luz, um único SHA do ensaio força
+    # confirmação do operador. Sem qualquer caminho de auto-OK/auto-NG.
+    diagnostics = detail.get("cnn_v2_light_diagnostics")
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    trial_used = bool(
+        detail.get("cnn_v2_checkpoint_sha256") == TRIAL_97P70_SHA256
+        or detail.get("cnn_v2_trial_manual_only") is True
+        or any(
+            isinstance(data, dict) and (
+                data.get("checkpoint_sha256") == TRIAL_97P70_SHA256
+                or data.get("trial_manual_only") is True
+            ) for data in diagnostics.values()
+        )
+    )
+    if trial_used:
+        return {
+            "mode": "production", "confidence": confidence, "threshold": None,
+            "verdict": verdict if verdict == "DEFEITO REAL"
+                       else "REVISÃO OBRIGATÓRIA",
+            "auto_allowed": False, "operator_review_required": True,
+            "proposed_decision": "NG" if verdict == "DEFEITO REAL" else "",
+            "reason": "cnn_97p70_unqualified_operator_review_only",
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
     physical_veto = detail.get("physical_missing_veto", {})
     physical_veto = physical_veto if isinstance(physical_veto, dict) else {}
     # A apresentação de NG corroborado e a emissão 1/NG são dimensões
