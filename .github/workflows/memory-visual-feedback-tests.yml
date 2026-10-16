@@ -12,6 +12,8 @@ on:
       - "src/ui/decision_key_feedback.py"
       - "main.py"
       - "tests/test_memory_visual_feedback_v2.py"
+      - "tests/test_knn_visual_memory_feedback.py"
+      - "src/ui/widgets/knn_spectrum.py"
       - ".github/workflows/memory-visual-feedback-tests.yml"
   pull_request:
     branches: [central]
@@ -37,7 +39,7 @@ jobs:
           python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
       - name: Compile modified Python modules
         run: |
-          python -m py_compile src/ui/neural_telemetry_model.py src/ui/neural_influence_model.py src/ui/decision_panel.py src/ui/widgets/decision_influence.py src/ui/inspection_memory_feedback.py src/ui/decision_key_feedback.py tests/test_memory_visual_feedback_v2.py main.py
+          python -m py_compile src/ui/neural_telemetry_model.py src/ui/neural_influence_model.py src/ui/decision_panel.py src/ui/widgets/decision_influence.py src/ui/inspection_memory_feedback.py src/ui/decision_key_feedback.py tests/test_memory_visual_feedback_v2.py tests/test_knn_visual_memory_feedback.py src/ui/widgets/knn_spectrum.py main.py
       - name: Visual memory, CNN and production feedback regressions
         run: |
-          python -m unittest tests.test_memory_visual_feedback_v2 tests.test_neural_telemetry_panels tests.test_decision_influence_contract tests.test_decision_model tests.test_decision_key_feedback tests.test_decision_verdict_feedback tests.test_memory_ui tests.test_strict_category_memory -v
+          python -m unittest tests.test_memory_visual_feedback_v2 tests.test_knn_visual_memory_feedback tests.test_neural_telemetry_panels tests.test_decision_influence_contract tests.test_decision_model tests.test_decision_key_feedback tests.test_decision_verdict_feedback tests.test_memory_ui tests.test_strict_category_memory -v

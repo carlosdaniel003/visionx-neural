@@ -237,7 +237,8 @@ class ApproximateKNNConsensusTests(unittest.TestCase):
         self.assertTrue(all(x["fusion_weight"] == 0 for x in neighbor))
         self.assertTrue(all(x["ng_score_uncalibrated"] is None for x in neighbor))
         memory = memory_seen_state(entry)
-        self.assertEqual(memory["status"], "NUNCA_VI")  # Sem par exato.
+        self.assertEqual(memory["status"], "VI_SEMELHANTE")
+        self.assertFalse(memory["exact_pair_seen"])  # O roteador permanece NEW_CNN.
         self.assertTrue(memory["approximate_ng_seen"])
         self.assertEqual(memory["label"], "VI SEMELHANTE")
         self.assertIn("VI SEMELHANTE", memory_panel_text(entry)[0])

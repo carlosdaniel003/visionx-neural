@@ -94,7 +94,8 @@ class TelemetryModelTests(unittest.TestCase):
     def test_knn_new_case_does_not_fabricate_similarity_zero(self):
         header, description = memory_panel_text(combined())
         self.assertIn("KNN SEM MATCH EXATO", header)
-        self.assertIn("não existe similaridade knn medida", description.lower())
+        self.assertIn("nem vizinhos ng corroborados", description.lower())
+        self.assertNotIn("similaridade 0%", description.lower())
 
     def test_known_knn_label_is_not_a_cnn_score(self):
         known = {

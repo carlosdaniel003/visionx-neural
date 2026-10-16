@@ -17,6 +17,7 @@ on:
       - "src/ui/widgets/knn_spectrum.py"
       - "src/ui/decision_panel.py"
       - "tests/test_binary_knn_memory_dashboard.py"
+      - "tests/test_knn_visual_memory_feedback.py"
       - "tests/test_memory_visual_feedback_v2.py"
       - "tests/test_combined_verdict_memory_overlay.py"
       - ".github/workflows/binary-knn-memory-dashboard-tests.yml"
@@ -44,7 +45,7 @@ jobs:
           python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
       - name: Compile
         run: |
-          python -m py_compile src/ui/neural_telemetry_model.py src/ui/neural_influence_model.py src/core/corroborated_ng_verdict.py src/ui/decision_verdict_feedback.py src/services/capture_debug_payload.py src/ui/network_xp_debug.py tests/test_corroborated_ng_binary_verdict.py src/ui/widgets/decision_influence.py src/ui/inspection_memory_feedback.py src/ui/decision_verdict_feedback.py src/ui/widgets/knn_spectrum.py src/ui/decision_panel.py tests/test_binary_knn_memory_dashboard.py
+          python -m py_compile src/ui/neural_telemetry_model.py src/ui/neural_influence_model.py src/core/corroborated_ng_verdict.py src/ui/decision_verdict_feedback.py src/services/capture_debug_payload.py src/ui/network_xp_debug.py tests/test_corroborated_ng_binary_verdict.py src/ui/widgets/decision_influence.py src/ui/inspection_memory_feedback.py src/ui/decision_verdict_feedback.py src/ui/widgets/knn_spectrum.py src/ui/decision_panel.py tests/test_binary_knn_memory_dashboard.py tests/test_knn_visual_memory_feedback.py
       - name: Binary KNN, panels, production and debug UI regressions
         run: |
-          python -m unittest tests.test_binary_knn_memory_dashboard tests.test_memory_visual_feedback_v2 tests.test_combined_verdict_memory_overlay tests.test_neural_telemetry_panels tests.test_decision_verdict_feedback tests.test_decision_influence_contract tests.test_corroborated_ng_binary_verdict tests.test_decision_key_feedback tests.test_decision_model -v
+          python -m unittest tests.test_binary_knn_memory_dashboard tests.test_knn_visual_memory_feedback tests.test_memory_visual_feedback_v2 tests.test_combined_verdict_memory_overlay tests.test_neural_telemetry_panels tests.test_decision_verdict_feedback tests.test_decision_influence_contract tests.test_corroborated_ng_binary_verdict tests.test_decision_key_feedback tests.test_decision_model -v
