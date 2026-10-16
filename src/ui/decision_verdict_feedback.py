@@ -256,13 +256,15 @@ class AIVerdictFeedbackOverlay(QFrame):
         # Apenas dados efetivos do roteador KNN. Em rotas desconhecidas,
         # não declarar "primeira vez" nem inventar pesquisa na memória.
         memory_title, memory_explanation, memory_tone = memory_feedback_state(analysis)
-        subtitle = {"known": "JÁ VI", "new": "NUNCA VI"}.get(memory_tone, "")
+        subtitle = {
+            "known": "JÁ VI", "similar": "VI SEMELHANTE", "new": "NUNCA VI"
+        }.get(memory_tone, "")
         self.memory_state_label.setText(subtitle)
         self.memory_state_label.setVisible(bool(subtitle))
         if subtitle:
             self.setToolTip(
                 memory_title + "\n" + memory_explanation
-                + "\nNovo = sem par gabarito/teste exato na memória KNN."
+                + "\nMemória KNN exata e visual são distintas dos pesos CNN."
             )
         else:
             self.setToolTip("")
