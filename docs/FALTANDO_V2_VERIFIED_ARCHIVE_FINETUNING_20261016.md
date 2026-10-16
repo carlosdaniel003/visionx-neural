@@ -6,6 +6,22 @@ Os milhares de exemplos visuais importados em `public/ng_archive`/ `public/ok_ar
 
 Este trabalho acrescenta uma **rota de treinamento efetivo de pesos**, reutilizando a arquitetura `FaltandoCNNV2` e o checkpoint ativo, separada do ciclo XP. A saída é `faltando_v2_verified_candidate.pt` gerado com gradientes AdamW reais em CPU, mais relatório com scores NG por evento/luz. Não existe publicação automática em `live_active.json`.
 
+## Corrigido: manifesto antigo com IDs de trinca repetidos (16/10/2026)
+
+Uma execução real extraiu **420 pares** (295 NG e 125 OK), sem PNGs inválidos, mas ao abrir o painel recebeu `ValueError: IDs de trinca repetidos`. O motivo era o mesmo nome/timestamp de trinca em `ok_archive` e `ng_archive`, embora sejam **rótulos e associações independentes**.
+
+- A preparação nova usa `OK::<nome>` / `NG::<nome>` para os identificadores de grupo, preservando `source_name_hint`.
+- A qualificação aceita o **manifesto legado já criado**, normalizando IDs repetidos entre OK e NG **apenas em memória**, sem escrever no manifesto e sem solicitar nova extração de imagens. IDs duplicados do **mesmo rótulo** continuam rejeitados como ambíguos.
+- A revisão de associação SIDE/TOP/MID **continua manual**, mesmo quando nomes são iguais. Os rótulos de cada par também exigem confirmação individual.
+
+Com o ODIN fechado e a `central` atualizada para incluir esta correção, retome **o mesmo manifesto**:
+
+```powershell
+python -X utf8 -m src.ui.faltando_neural_review --manifest "reports/faltando_neural/run_20261016T114234_996180Z/manifest.json"
+```
+
+Não apague `reports/faltando_neural/run_20261016T114234_996180Z` nem reexecute a preparação para resolver apenas essa colisão. O painel salvará a qualificação em `qualification.json` na mesma pasta. Os 126 candidatos a trincas seguem **não confirmados**, e a CNN **ainda não foi treinada** com esses 420 pares até haver rótulos humanos suficientes e executar o treinador offline.
+
 ## Fontes de verdade e rótulos
 
 O nome das pastas `ok_archive` e `ng_archive` é uma etiqueta inicial, **não constitui confirmação humana individual**. O pipeline existente cria os recortes AOI sem adulterar os originais, e sua GUI `src.ui.faltando_neural_review` permite ao operador confirmar OK, NG ou rejeitar cada par. Guarda `qualification.json` com a identificação SHA-256 da fonte e `pair_inspected=true`.
