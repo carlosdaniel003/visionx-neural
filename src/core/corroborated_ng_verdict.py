@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.core.knn_visual_corroboration import trusted_three_light_ng_trend
+from src.core.knn_visual_corroboration import (
+    trusted_three_light_ng_trend, trusted_three_light_ng_recall,
+)
 
 LIGHTS = frozenset({"SIDE", "TOP", "MID"})
 FUSION_RULE = "knn_visual_cnn_physical_corroboration_v1"
@@ -34,6 +36,15 @@ def corroborated_ng_verdict(analysis: Any) -> bool:
         or detail.get("recognition_route") != "NEW_CNN"
     ):
         return False
+    # Terceira rota: CNN 3 OK contradita por memória visual extremamente
+    # forte em 3 luzes; o gate confirma evidências brutas em vez de confiar
+    # só no texto da regra. Nunca autoriza XP automaticamente.
+    recall_rule = "knn_three_light_strong_ng_recall_vs_cnn_ok_v1"
+    if (
+        detail.get("fusion_rule") == recall_rule
+        or trace.get("fusion_rule") == recall_rule
+    ):
+        return trusted_three_light_ng_recall(detail)
     # Segunda rota: CNN REVIEW em uma luz + KNN NG consistente nas três.
     # Este veredito visual continua humano-pendente e independe do flag
     # de revisão do XP, mas precisa de diagnósticos brutos verificáveis.
