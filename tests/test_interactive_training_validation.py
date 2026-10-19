@@ -114,6 +114,16 @@ class ArchiveValidationTests(unittest.TestCase):
             **kwargs,
         )
 
+    def test_category_only_ocr_can_validate_both_archives(self):
+        def current_ocr(label):
+            ref, test, info = self.extractor(label)
+            return ref, test, {**info, "category": "FALTANDO", "value": ""}
+
+        result = self.run_validation(extractor=current_ocr)
+        self.assertEqual(result["models"]["KNN_MEMORIA"]["passed"], 2)
+        self.assertEqual(result["models"]["CNN_FALTANDO_V2"]["passed"], 2)
+        self.assertTrue(result["complete"])
+
     def test_correct_all_and_save_json_txt_without_updating_memory(self):
         previous = self.memory.path.read_bytes()
         signals = []
