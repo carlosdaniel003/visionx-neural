@@ -3,7 +3,7 @@
 O nome do módulo é mantido por compatibilidade histórica. Em todo ciclo de rede
 com categoria AOI válida, SIDE, TOP e MID pertencem à mesma peça e ao mesmo
 event_id. Cada iluminação mantém sua análise independente para auditoria, e o
-julgamento final só é promovido depois que as três análises estão disponíveis.
+julgamento final usa três luzes, salvo quando SIDE atinge o gate de 97%.
 A categoria MUITO ADESIVO continua usando sua fusão física especializada.
 """
 
