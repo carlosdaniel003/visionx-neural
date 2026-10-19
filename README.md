@@ -1,3 +1,13 @@
+## 19/10/2026 — Encerramento antecipado pela SIDE com confiança reportada >=97% (em validação)
+
+- No fluxo de rede, após inspecionar SIDE, o ODIN conclui o ciclo **sem comandar/capturar TOP e MID** se o resultado for `DEFEITO REAL` ou `FALHA FALSA`, o score local estiver no intervalo `[0.97, 1.0]`, os campos `is_defect` e `verdict` concordarem, e não houver conflito, falha técnica ou exigência local de revisão.
+- Para `KNOWN_KNN`, é necessária correspondência exata verificada e rótulo consistente; para `NEW_CNN`, é necessária inferência `INFERENCE_OK` com checkpoint verificado, sem checkpoint experimental de revisão obrigatória. Sem elegibilidade, a sequência `SIDE → TOP → MID → SIDE` permanece inalterada.
+- A confiança é **score reportado pelo motor, não garantia estatística de 97% de acerto**. Como TOP/MID não corroboraram, o resultado antecipado é classificatório e **sempre exige confirmação humana em Modo Produção**; o controlador não recebe autorização para emitir `0/1` automaticamente. O Modo Sombra mantém a decisão humana no XP.
+- O mesmo `event_id`, os dados da SIDE e o tempo do ciclo são preservados. `detail.side_early_exit` (e `decision.side_early_exit` no debug) identifica regra, limiar, score, veredito, luz analisada e luzes dispensadas. Não inventar evidências TOP/MID.
+- Os testes novos cobrem limites, NG/OK, incerteza, memória exata, CNN verificada, captura dos três modos e impedimento de decisão automática. Necessário confirmar na AOI real, sobretudo casos NG difíceis e falsos OK, antes de considerar esse atalho operacionalmente validado.
+
+---
+
 ## 15/10/2026 — Lentidão progressiva de inspeções: correção operacional confirmada (PR #39 e #40)
 
 **Estado na estação ODIN (relato do operador em 15/10/2026): RESOLVIDO.** Após atualizar a branch `central` com o PR #40, o operador testou o programa e confirmou: **"deu certo"**. Essa é a confirmação operacional da correção da lentidão progressiva, não um benchmark cronometrado novo; o tempo médio, percentis e estabilidade em operação prolongada não foram informados.
