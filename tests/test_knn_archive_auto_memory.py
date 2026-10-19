@@ -119,6 +119,60 @@ class AutoArchiveTests(unittest.TestCase):
         self.assertEqual(result["imported"], 1)
         self.assertFalse(self.watcher.status()["pending_or_failed"])
 
+    def test_current_ocr_category_only_archives_ng_and_ok(self):
+        """OCR atual: value vazio e category válida não podem ser rejeitados."""
+        cases = [
+            (self.ng_dir / "2026-10-15_1540_FALTANDO_SIDE.png", "NG"),
+            (self.ok_dir / "2026-10-15_1541_FALTANDO_SIDE.png", "OK"),
+        ]
+        for path, label in cases:
+            synthetic_png(path, label)
+
+        def current_ocr(frame):
+            reference, test, info = fake_extractor(frame)
+            info["value"] = ""
+            return reference, test, info
+
+        self.watcher._extractor = current_ocr
+        self.watcher.scan_once(now=1.0)
+        result = self.watcher.scan_once(now=2.0)
+        self.assertEqual(result["imported"], 2)
+        self.assertEqual(result["errors"], 0)
+        self.assertEqual(len(self.store.records()), 2)
+        self.assertFalse(self.watcher.status()["pending_or_failed"])
+        self.assertFalse(self.watcher._rejections_path.is_file())
+
+    def test_old_false_rejections_are_ignored_after_contract_fix(self):
+        path = self.ng_dir / "2026-10-15_1238_FALTANDO_SIDE.png"
+        synthetic_png(path, "NG")
+        old_path = self.root / "data" / "knn_archive_memory" / "archive_rejections_v1.json"
+        old_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = path.stat()
+        old_path.write_text(json.dumps({
+            "schema": "visionx.knn_archive_rejections.v1",
+            "files": {
+                path.relative_to(self.root).as_posix(): {
+                    "stamp": [stamp.st_size, stamp.st_mtime_ns],
+                    "reason": "Categoria AOI 'UNKNOWN' não confere com nome 'FALTANDO'",
+                },
+            },
+        }), encoding="utf-8")
+
+        def current_ocr(frame):
+            ref, test, info = fake_extractor(frame)
+            info["value"] = ""
+            return ref, test, info
+
+        watcher = KNNArchiveAutoMemory(
+            self.root, store=self.store, extractor=current_ocr,
+            settle_seconds=0,
+        )
+        watcher.scan_once(now=1.0)
+        self.assertEqual(watcher.scan_once(now=2.0)["imported"], 1)
+        self.assertEqual(len(self.store.records()), 1)
+        self.assertTrue(old_path.is_file())
+        self.assertNotIn("UNKNOWN", str(watcher.status()["pending_or_failed"]))
+
     def test_unknown_category_is_cached_no_retries_or_terminal_spam(self):
         """A mesma imagem com OCR UNKNOWN não deve ser reprocessada para sempre."""
         path = self.ng_dir / "2026-10-15_1238_FALTANDO_SIDE.png"
@@ -128,6 +182,7 @@ class AutoArchiveTests(unittest.TestCase):
         def unknown_extractor(frame):
             calls.append(1)
             ref, test, info = fake_extractor(frame)
+            info["category"] = "Unknown"
             info["value"] = ""
             return ref, test, info
 
