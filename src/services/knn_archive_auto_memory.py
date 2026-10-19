@@ -13,6 +13,7 @@ pendentes com retentativa e mensagem explícita, sem promover a OK.
 from __future__ import annotations
 
 from hashlib import sha256
+import json
 import logging
 import os
 import sys
@@ -32,6 +33,13 @@ from src.services.startup_regression.archive_inventory import (
 from src.utils.text_normalizer import normalize_aoi_text
 
 LOG = logging.getLogger(__name__)
+REJECTED_ARCHIVE_SCHEMA = "visionx.knn_archive_rejections.v1"
+
+
+class ArchiveCategoryMismatch(ValueError):
+    """Categoria OCR inconsistente para um PNG imutável; não retentar em loop."""
+
+
 LABEL_DIRS = (("OK", "ok_archive"), ("NG", "ng_archive"))
 _active_lock = Lock()
 _active_monitor = None
@@ -84,7 +92,7 @@ def _extract_entry(root: Path, path: Path, label: str, *,
     cat = canonical_memory_category(category)
     expected = canonical_memory_category(filename_hints(path)["category_hint"])
     if not cat or cat in {"UNKNOWN", "UNKNOW"} or cat != expected:
-        raise ValueError(
+        raise ArchiveCategoryMismatch(
             f"Categoria AOI {cat!r} não confere com nome {expected!r}"
         )
     signature = build_anomaly_signature(
@@ -142,6 +150,14 @@ class KNNArchiveAutoMemory:
         self._completed: set[tuple[str, tuple[int, int]]] = set()
         self._attempts: dict[str, tuple[int, float, tuple[int, int]]] = {}
         self._errors: dict[str, str] = {}
+        # Rejeições determinísticas persistidas por tamanho+mtime; nunca
+        # viram exemplos KNN. Evita refazer OCR no mesmo PNG após reiniciar.
+        self._rejections_path = (
+            self.root / "data" / "knn_archive_memory" / "archive_rejections_v1.json"
+        )
+        self._rejections = self._load_rejections()
+        self._rejections_dirty = False
+        self._rejections_write_warned = False
         self._refresh_pending = False
         self._lock = Lock()
         self._total_added = 0
@@ -160,6 +176,63 @@ class KNNArchiveAutoMemory:
         self._inspection_priority = Event()
         self._deferred_scans = 0
         self._deferred_candidates = 0
+
+    def _load_rejections(self) -> dict[str, tuple[tuple[int, int], str]]:
+        """Lê apenas exclusões conservadoras. Cache inválido não autoriza OK."""
+        path = self._rejections_path
+        try:
+            if not path.is_file():
+                return {}
+            if path.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("Cache de rejeições excedeu o limite")
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or data.get("schema") != REJECTED_ARCHIVE_SCHEMA:
+                return {}
+            result = {}
+            rows = data.get("files", {})
+            if not isinstance(rows, dict):
+                return {}
+            for relative, row in rows.items():
+                if not isinstance(relative, str) or not isinstance(row, dict):
+                    continue
+                stamp = row.get("stamp")
+                reason = row.get("reason")
+                if (
+                    isinstance(stamp, list) and len(stamp) == 2
+                    and all(type(value) is int and value >= 0 for value in stamp)
+                    and isinstance(reason, str) and reason
+                ):
+                    result[relative] = ((stamp[0], stamp[1]), reason[:512])
+            return result
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            LOG.warning("KNN: cache de rejeições indisponível: %s", exc)
+            return {}
+
+    def _save_rejections(self) -> None:
+        if not self._rejections_dirty:
+            return
+        path = self._rejections_path
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            content = {
+                "schema": REJECTED_ARCHIVE_SCHEMA,
+                "files": {
+                    relative: {"stamp": list(stamp), "reason": reason}
+                    for relative, (stamp, reason) in self._rejections.items()
+                },
+            }
+            temporary = path.with_name(path.name + ".tmp")
+            temporary.write_text(
+                json.dumps(content, ensure_ascii=False, sort_keys=True),
+                encoding="utf-8",
+            )
+            os.replace(temporary, path)
+            self._rejections_dirty = False
+            self._rejections_write_warned = False
+        except (OSError, ValueError, TypeError) as exc:
+            if not self._rejections_write_warned:
+                LOG.warning("KNN: não foi possível persistir rejeições: %s", exc)
+                self._rejections_write_warned = True
 
     def _set_worker_phase(self, phase: str) -> None:
         with self._lock:
@@ -318,6 +391,7 @@ class KNNArchiveAutoMemory:
         live = set()
         pending = 0
         errors = 0
+        newly_rejected = 0
         for path, label in self._list_files():
             relative = path.relative_to(self.root).as_posix()
             live.add(relative)
@@ -329,6 +403,11 @@ class KNNArchiveAutoMemory:
                     self._errors[relative] = str(exc)
                 errors += 1
                 continue
+            rejected = self._rejections.get(relative)
+            if rejected is not None and rejected[0] != stamp:
+                self._rejections.pop(relative, None)
+                self._rejections_dirty = True
+                rejected = None
             previous = self._observed.get(relative)
             if previous is None or previous[0] != stamp:
                 self._observed[relative] = (stamp, instant)
@@ -342,6 +421,12 @@ class KNNArchiveAutoMemory:
                 pending += 1
                 continue
             if (relative, stamp) in self._completed:
+                continue
+            if rejected is not None:
+                with self._lock:
+                    self._errors.setdefault(
+                        relative, f"ArchiveCategoryMismatch: {rejected[1]}"
+                    )
                 continue
             attempts, due, previous_stamp = self._attempts.get(
                 relative, (0, 0.0, stamp)
@@ -385,6 +470,17 @@ class KNNArchiveAutoMemory:
                     continue
                 proposed.append(entry)
                 accepted.append((relative, stamp))
+            except ArchiveCategoryMismatch as exc:
+                # Categoria extraída dos pixels contradiz nome do arquivo.
+                # Mesmos bytes não alteram a evidência.
+                # Rejeitar até mudança da imagem ou reset do cache.
+                self._rejections[relative] = (stamp, str(exc))
+                self._rejections_dirty = True
+                self._attempts.pop(relative, None)
+                with self._lock:
+                    self._errors[relative] = f"ArchiveCategoryMismatch: {exc}"
+                newly_rejected += 1
+                errors += 1
             except Exception as exc:
                 attempts, _, _ = self._attempts.get(relative, (0, 0, stamp))
                 tries = attempts + 1
@@ -442,6 +538,21 @@ class KNNArchiveAutoMemory:
                            if p in live}
         self._attempts = {p: attempt for p, attempt in self._attempts.items()
                           if p in live}
+        obsolete = self._rejections.keys() - live
+        if obsolete:
+            for relative in obsolete:
+                self._rejections.pop(relative, None)
+                with self._lock:
+                    self._errors.pop(relative, None)
+            self._rejections_dirty = True
+        self._save_rejections()
+        if newly_rejected:
+            LOG.warning(
+                "KNN: %d PNG(s) com categoria OCR incompatível; "
+                "reprocessamento suspenso enquanto o arquivo não mudar. "
+                "Diagnóstico disponível em KNNArchiveAutoMemory.status().",
+                newly_rejected,
+            )
         with self._lock:
             self._total_added += newly_added
             self._last_pass = instant
