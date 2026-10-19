@@ -119,6 +119,71 @@ class AutoArchiveTests(unittest.TestCase):
         self.assertEqual(result["imported"], 1)
         self.assertFalse(self.watcher.status()["pending_or_failed"])
 
+    def test_unknown_category_is_cached_no_retries_or_terminal_spam(self):
+        """A mesma imagem com OCR UNKNOWN não deve ser reprocessada para sempre."""
+        path = self.ng_dir / "2026-10-15_1238_FALTANDO_SIDE.png"
+        synthetic_png(path, "NG")
+        calls = []
+
+        def unknown_extractor(frame):
+            calls.append(1)
+            ref, test, info = fake_extractor(frame)
+            info["value"] = ""
+            return ref, test, info
+
+        self.watcher._extractor = unknown_extractor
+        self.watcher.scan_once(now=1.0)
+        with self.assertLogs("src.services.knn_archive_auto_memory", level="WARNING") as logs:
+            attempt = self.watcher.scan_once(now=2.0)
+        self.assertEqual(attempt["errors"], 1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("1 PNG(s)", logs.output[0])
+        self.assertNotIn("2026-10-15", logs.output[0])
+        self.assertFalse(self.store.records())
+
+        # Backoff antigo tentaria 2, 4, 8, 16, 32 e 60 s.
+        for tick in (4, 8, 16, 32, 64, 1024):
+            self.assertEqual(self.watcher.scan_once(now=tick)["errors"], 0)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("UNKNOWN", str(self.watcher.status()["pending_or_failed"]))
+        self.assertTrue(self.watcher._rejections_path.is_file())
+
+        # A rejeição também impede novo OCR de mesmo PNG após reiniciar.
+        reopened = KNNArchiveAutoMemory(
+            self.root, store=self.store, extractor=unknown_extractor,
+            settle_seconds=0.0,
+        )
+        reopened.scan_once(now=1.0)
+        reopened.scan_once(now=2.0)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("UNKNOWN", str(reopened.status()["pending_or_failed"]))
+
+        # Mudou imagem/categoria OCR: liberar automaticamente a nova versão.
+        reopened._extractor = fake_extractor
+        stamp = path.stat()
+        import os
+        os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns + 2_000_000_000))
+        reopened.scan_once(now=3.0)
+        self.assertEqual(reopened.scan_once(now=4.0)["imported"], 1)
+        self.assertEqual(len(self.store.records()), 1)
+        self.assertEqual(reopened._rejections, {})
+        self.assertEqual(reopened.status()["pending_or_failed"], {})
+
+    def test_corrupt_rejections_cache_cannot_block_learning(self):
+        path = self.ok_dir / "2026-10-15_1400_FALTANDO_SIDE.png"
+        synthetic_png(path, "OK")
+        location = self.watcher._rejections_path
+        location.parent.mkdir(parents=True, exist_ok=True)
+        location.write_text("{invalid json", encoding="utf-8")
+        recovered = KNNArchiveAutoMemory(
+            self.root, store=self.store, extractor=fake_extractor,
+            settle_seconds=0.0,
+        )
+        recovered.scan_once(now=1.0)
+        self.assertEqual(recovered.scan_once(now=2.0)["imported"], 1)
+        self.assertEqual(len(self.store.records()), 1)
+
     def test_duplicate_source_is_idempotent_but_second_path_keeps_provenance(self):
         a = self.ok_dir / "2026-10-13_0911_FALTANDO.png"
         b = self.ok_dir / "2026-10-13_0912_FALTANDO.png"
