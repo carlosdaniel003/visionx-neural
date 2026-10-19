@@ -233,6 +233,45 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         self.assertFalse(panel.session_visible)
         self.assertEqual(controller.state, "idle")
 
+    def test_side_97_decides_only_after_presentation_and_once_per_cycle(self):
+        from src.core.side_early_decision import build_side_early_decision
+
+        for verdict, decision in (("FALHA FALSA", "OK"), ("DEFEITO REAL", "NG")):
+            with self.subTest(verdict=verdict):
+                panel = _Panel()
+                controller = ProductionAutonomyController(panel)
+                panel.combo_mode.setCurrentText("Modo Produção")
+                side = {
+                    "verdict": verdict,
+                    "is_defect": decision == "NG",
+                    "confidence": 0.98,
+                    "production_review_required": False,
+                    "detail": {
+                        "recognition_route": "NEW_EXPERTS",
+                        "decision_trace": {"operator_review_required": False},
+                    },
+                }
+                analysis = build_side_early_decision(side, "FALTANDO")
+                panel.current_analysis = analysis
+                controller.pending_analysis = analysis
+                controller.generation += 1
+                generation = controller.generation
+
+                controller._finish_presentation(generation)
+                self.assertEqual(controller.state, "auto_decision_pending")
+                self.assertEqual(panel.saved, [])
+                self.assertTrue(controller._stage_timer.isActive())
+                controller._stage_timer.stop()
+
+                controller._emit_auto_decision(generation, decision)
+                self.assertEqual(panel.saved, [(decision, "production_auto")])
+                self.assertEqual(panel.auto_records, [decision])
+                self.assertFalse(panel.production_review_pending)
+
+                # Even if an expired timer fires, never send the same command twice.
+                controller._emit_auto_decision(generation, decision)
+                self.assertEqual(panel.saved, [(decision, "production_auto")])
+
     def test_failed_auto_command_is_not_counted_and_requires_operator(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
