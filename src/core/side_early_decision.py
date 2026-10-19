@@ -1,7 +1,8 @@
 """Encerramento antecipado da captura multilight após SIDE confiável.
 
 A confiança exibida é um score do motor, não uma probabilidade calibrada.
-A política de Produção pode emitir OK/NG após a apresentação, se o gate\nindustrial revalidar o resultado. A confiança não é acurácia certificada.
+A política de Produção pode emitir OK/NG após a apresentação, se o gate
+industrial revalidar o resultado. A confiança não é acurácia certificada.
 """
 
 from __future__ import annotations
@@ -71,7 +72,6 @@ def _eligible_side_analysis(analysis: dict | None) -> bool:
             and detail.get("cnn_v2_trial_manual_only") is not True
         ):
             return False
-
 
     # Nunca promover o checkpoint experimental explicitamente bloqueado.
     if detail.get("cnn_v2_checkpoint_sha256") == TRIAL_97P70_SHA256:
