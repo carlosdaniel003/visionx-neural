@@ -545,7 +545,7 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
         if mode == "Modo Produção":
             if side_only:
                 panel.update_brain_status(
-                    "SIDE >=97%: resultado antecipado; requer confirmação humana.",
+                    "SIDE >=97%: decisão antecipada; apresentação automática em andamento.",
                     True,
                 )
             elif fused.get("production_review_required", False):
@@ -1180,7 +1180,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             _switch_inspection_view(self, True)
 
         # A primeira luz suficiente encerra a aquisição sem comandar TOP/MID.
-        # O resultado passa pela mesma publicação final, sem autorizar 0/1.
+        # O resultado passa pela política de Produção antes de eventual 0/1.
         if build_side_early_decision(
             self.adhesive_multilight_analyses["SIDE"], category
         ) is not None:
