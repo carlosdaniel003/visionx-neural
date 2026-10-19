@@ -193,6 +193,24 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "operator_shortcuts": {"0": "OK", "1": "NG"},
         }
 
+    # Um marcador SIDE existente, porém inconsistente, nunca pode cair
+    # no auto-OK legado nem ser reinterpretado como consenso tricolor.
+    if "side_early_exit" in detail:
+        return {
+            "mode": "production",
+            "confidence": confidence,
+            "threshold": SIDE_EARLY_EXIT_THRESHOLD,
+            "verdict": (
+                "DEFEITO REAL" if verdict == "DEFEITO REAL"
+                else "REVISÃO OBRIGATÓRIA"
+            ),
+            "auto_allowed": False,
+            "operator_review_required": True,
+            "proposed_decision": "NG" if verdict == "DEFEITO REAL" else "",
+            "reason": "side_early_exit_invalid_contract",
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
+
     # AUTO-OK ou AUTO-NG pela CNN experimental somente se TRÊS luzes
     # verificadas concordarem, com mesmo SHA de modelo e sem revisão.
     # Uma pontuação isolada, até extrema, não autoriza nenhum comando.
