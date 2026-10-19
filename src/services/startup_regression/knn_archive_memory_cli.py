@@ -20,11 +20,10 @@ from src.core.anomaly_signature import build_anomaly_signature
 from src.core.archive_persistent_memory import (
     PersistentArchiveKNN, make_record,
 )
-from src.core.strict_category_memory import canonical_memory_category
+from src.services.archive_aoi_category import resolve_archive_aoi_category
 from src.services.faltando_cross_category_audit import _archive_image
 from src.services.startup_regression.archive_inventory import inventory_archives
 from src.services.startup_regression.archive_inventory_report import _atomic_text
-from src.utils.text_normalizer import normalize_aoi_text
 
 SCHEMA = "visionx.knn_persistent_archive_learning.v1"
 
@@ -77,13 +76,9 @@ def synchronize_archive_knn(
             ref, test, info = extractor(frame)
             if not isinstance(info, dict):
                 raise ValueError("Metadados AOI inválidos")
-            observed, value = normalize_aoi_text(info.get("value", ""))
-            category = canonical_memory_category(observed)
-            hint = canonical_memory_category(row["category_hint"])
-            if not category or category in {"UNKNOWN", "UNKNOW"} or category != hint:
-                raise ValueError(
-                    f"Categoria do OCR {category!r} difere do arquivo {hint!r}"
-                )
+            category, value = resolve_archive_aoi_category(
+                info, row["category_hint"],
+            )
             # Não depende de OCR de board/parts para reter par visual exato,
             # mas guarda esses campos para auditoria. Sem categoria, não aprende.
             signature = build_anomaly_signature(

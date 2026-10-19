@@ -19,11 +19,10 @@ import time
 from typing import Callable
 
 from src.core.neural.faltando_category_scope import uses_faltando_v2
-from src.core.strict_category_memory import canonical_memory_category
+from src.services.archive_aoi_category import resolve_archive_aoi_category
 from src.services.faltando_cross_category_audit import _archive_image
 from src.services.startup_regression.archive_inventory import inventory_archives
 from src.services.startup_regression.archive_inventory_report import _atomic_text
-from src.utils.text_normalizer import normalize_aoi_text
 
 SCHEMA = "visionx.interactive_archive_validation.v1"
 MODELS = ("KNN_MEMORIA", "CNN_FALTANDO_V2")
@@ -159,15 +158,9 @@ def validate(
             reference, test, info = extractor(frame)
             if not isinstance(info, dict):
                 raise ValueError("Extrator AOI não devolveu metadados")
-            observed_category, normalized_value = normalize_aoi_text(
-                info.get("value", "")
+            actual, normalized_value = resolve_archive_aoi_category(
+                info, item.get("category_hint", ""),
             )
-            actual = canonical_memory_category(observed_category)
-            hinted = canonical_memory_category(item.get("category_hint"))
-            if not actual or actual in ("UNKNOWN", "UNKNOW") or actual != hinted:
-                raise ValueError(
-                    f"Categoria OCR {actual!r} difere do arquivo {hinted!r}"
-                )
             info = {
                 **info, "category": actual,
                 "value": normalized_value,
