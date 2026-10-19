@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 
+from src.core.side_early_decision import build_side_early_decision
 from src.ui.production_confidence_gate import (
     PRODUCTION_AUTO_CONFIDENCE_THRESHOLD,
     normalized_confidence,
@@ -27,6 +28,54 @@ class ProductionPolicyTests(unittest.TestCase):
         self.assertEqual(policy["proposed_decision"], "OK")
         self.assertEqual(policy["verdict"], "FALHA FALSA")
         self.assertIsNone(policy["threshold"])
+
+    def test_side_early_97_percent_allows_auto_ok_and_auto_ng(self):
+        for verdict, command in (
+            ("FALHA FALSA", "OK"),
+            ("DEFEITO REAL", "NG"),
+        ):
+            with self.subTest(verdict=verdict):
+                side = {
+                    "verdict": verdict,
+                    "is_defect": command == "NG",
+                    "confidence": 0.97,
+                    "production_review_required": False,
+                    "lighting_mode": "SIDE",
+                    "detail": {
+                        "recognition_route": "NEW_EXPERTS",
+                        "decision_trace": {"operator_review_required": False},
+                    },
+                }
+                final = build_side_early_decision(side, "FALTANDO")
+                self.assertIsNotNone(final)
+                policy = production_decision_policy(final)
+                self.assertTrue(policy["auto_allowed"])
+                self.assertFalse(policy["operator_review_required"])
+                self.assertEqual(policy["proposed_decision"], command)
+                self.assertEqual(policy["threshold"], 0.97)
+                self.assertTrue(policy["reason"].startswith("side_97pct_auto_"))
+
+                # Um flag forjado não pode autorizar o comando.
+                final["detail"]["side_early_exit"]["reported_confidence"] = 0.96
+                self.assertFalse(production_decision_policy(final)["auto_allowed"] or
+                                 (production_decision_policy(final)["proposed_decision"] == "NG"
+                                  and not production_decision_policy(final)["operator_review_required"]))
+
+    def test_side_early_rejected_if_status_requires_review(self):
+        side = {
+            "verdict": "DEFEITO REAL",
+            "is_defect": True,
+            "confidence": 0.99,
+            "production_review_required": False,
+            "lighting_mode": "SIDE",
+            "detail": {
+                "recognition_route": "NEW_EXPERTS",
+                "decision_trace": {"operator_review_required": False},
+            },
+        }
+        final = build_side_early_decision(side, "FALTANDO")
+        final["detail"]["decision_trace"]["operator_review_required"] = True
+        self.assertFalse(production_decision_policy(final)["auto_allowed"])
 
     def test_real_defect_always_requires_operator_in_v1(self):
         policy = production_decision_policy(
