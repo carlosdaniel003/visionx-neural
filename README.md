@@ -2,9 +2,9 @@
 
 - No fluxo de rede, após inspecionar SIDE, o ODIN conclui o ciclo **sem comandar/capturar TOP e MID** se o resultado for `DEFEITO REAL` ou `FALHA FALSA`, o score local estiver no intervalo `[0.97, 1.0]`, os campos `is_defect` e `verdict` concordarem, e não houver conflito, falha técnica ou exigência local de revisão.
 - Para `KNOWN_KNN`, é necessária correspondência exata verificada e rótulo consistente; para `NEW_CNN`, é necessária inferência `INFERENCE_OK` com checkpoint verificado, sem checkpoint experimental de revisão obrigatória. Sem elegibilidade, a sequência `SIDE → TOP → MID → SIDE` permanece inalterada.
-- A confiança é **score reportado pelo motor, não garantia estatística de 97% de acerto**. Como TOP/MID não corroboraram, o resultado antecipado é classificatório e **sempre exige confirmação humana em Modo Produção**; o controlador não recebe autorização para emitir `0/1` automaticamente. O Modo Sombra mantém a decisão humana no XP.
+- A confiança é **score reportado pelo motor, não garantia estatística de 97% de acerto**. Como TOP/MID não corroboraram, o resultado antecipado continua sem garantia estatística de acerto. No Modo Produção, quando o contrato SIDE antecipado é válido, o controlador preserva a apresentação com rolagem e pode enviar `0/OK` ou `1/NG` sem confirmação humana. Em conflito, revisão, checkpoint bloqueado ou marcador inconsistente, não envia decisão automática. O Modo Sombra mantém a decisão humana no XP.
 - O mesmo `event_id`, os dados da SIDE e o tempo do ciclo são preservados. `detail.side_early_exit` (e `decision.side_early_exit` no debug) identifica regra, limiar, score, veredito, luz analisada e luzes dispensadas. Não inventar evidências TOP/MID.
-- Os testes novos cobrem limites, NG/OK, incerteza, memória exata, CNN verificada, captura dos três modos e impedimento de decisão automática. Necessário confirmar na AOI real, sobretudo casos NG difíceis e falsos OK, antes de considerar esse atalho operacionalmente validado.
+- Os testes novos cobrem limites, NG/OK, incerteza, memória exata, CNN verificada, captura dos três modos e verificação da elegibilidade de decisão automática. Necessário confirmar na AOI real, sobretudo casos NG difíceis e falsos OK, antes de considerar esse atalho operacionalmente validado.
 
 ---
 
