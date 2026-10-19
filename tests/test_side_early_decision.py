@@ -1,6 +1,5 @@
 """Regressões do encerramento antecipado SIDE >= 97%."""
 
-import math
 import unittest
 
 from src.core.side_early_decision import (
