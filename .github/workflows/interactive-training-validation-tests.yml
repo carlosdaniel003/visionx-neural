@@ -12,6 +12,14 @@ on:
       - "tests/test_interactive_training_validation.py"
       - "tests/test_training_validation_panel.py"
       - ".github/workflows/interactive-training-validation-tests.yml"
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/services/archive_aoi_category.py"
+      - "src/services/startup_regression/interactive_training_validation.py"
+      - "tests/test_archive_aoi_category.py"
+      - "tests/test_interactive_training_validation.py"
+      - ".github/workflows/interactive-training-validation-tests.yml"
   workflow_dispatch:
 
 jobs:
