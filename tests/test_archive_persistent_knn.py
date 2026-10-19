@@ -156,7 +156,7 @@ class DurableMemoryTests(unittest.TestCase):
         }
         result = synchronize_archive_knn(
             self.root, inventory=inventory,
-            extractor=lambda label: images(label) + (info(),),
+            extractor=lambda label: images(label) + (info() | {"value": ""},),
             frame_loader=lambda _root, row: row["expected_label"],
             store=self.store,
         )
