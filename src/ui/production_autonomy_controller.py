@@ -4,7 +4,8 @@ Contrato:
 - análise continua sendo calculada normalmente;
 - apresentação automática e julgamento podem ser pausados pela barra de espaço;
 - FALHA FALSA -> 0/OK automático;
-- DEFEITO REAL/NG e REVISÃO OBRIGATÓRIA -> operador;
+- SIDE >=97% elegível -> 0/OK ou 1/NG automático;
+- demais DEFEITO REAL/NG e REVISÃO OBRIGATÓRIA -> operador;
 - métricas da sessão usam somente o tempo até o resultado final renderizado;
 - Modo Teste e Modo Sombra permanecem sem essa automação.
 """
@@ -40,6 +41,7 @@ class ProductionAutonomyController(QObject):
         self.generation = 0
         self.pending_analysis = None
         self.state = "idle"
+        self._auto_dispatch_started_generation = None
         self.paused = False
         self._in_production = False
         self._scroll_animation = None
@@ -545,7 +547,7 @@ class ProductionAutonomyController(QObject):
             self.state = "auto_decision_pending"
             try:
                 self.panel.update_brain_status(
-                    f"Modo Produção: decisão supervisionada {decision}. "
+                    f"Modo Produção: decisão automática {decision}. "
                     f"Preparando {command} automático; espaço para pausar...",
                     True,
                 )
@@ -581,7 +583,7 @@ class ProductionAutonomyController(QObject):
         self._emit_auto_decision(generation, "OK")
 
     def _emit_auto_ng(self, generation: int) -> None:
-        """Novo caminho: NG da CNN somente com consenso SIDE/TOP/MID."""
+        """Envia NG somente quando o gate de Produção autoriza."""
         self._emit_auto_decision(generation, "NG")
 
     def _emit_auto_decision(self, generation: int, decision: str) -> None:
@@ -603,6 +605,11 @@ class ProductionAutonomyController(QObject):
             self._finish_presentation(generation)
             return
 
+        # Uma geração só pode iniciar o envio uma vez, mesmo que uma
+        # chamada repetida ou um callback atrasado tente repetir 0/1.
+        if self._auto_dispatch_started_generation == generation:
+            return
+        self._auto_dispatch_started_generation = generation
         self.state = "emitting_auto_decision"
         presentation_mark(self.panel, "decision")
         self.panel.last_decision_command_success = None
