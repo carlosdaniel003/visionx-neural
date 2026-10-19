@@ -201,7 +201,7 @@ class AutoArchiveTests(unittest.TestCase):
         for tick in (4, 8, 16, 32, 64, 1024):
             self.assertEqual(self.watcher.scan_once(now=tick)["errors"], 0)
         self.assertEqual(len(calls), 1)
-        self.assertIn("UNKNOWN", str(self.watcher.status()["pending_or_failed"]))
+        self.assertIn("UNKNOWN", str(self.watcher.status()["pending_or_failed"]).upper())
         self.assertTrue(self.watcher._rejections_path.is_file())
 
         # A rejeição também impede novo OCR de mesmo PNG após reiniciar.
@@ -212,7 +212,7 @@ class AutoArchiveTests(unittest.TestCase):
         reopened.scan_once(now=1.0)
         reopened.scan_once(now=2.0)
         self.assertEqual(len(calls), 1)
-        self.assertIn("UNKNOWN", str(reopened.status()["pending_or_failed"]))
+        self.assertIn("UNKNOWN", str(reopened.status()["pending_or_failed"]).upper())
 
         # Mudou imagem/categoria OCR: liberar automaticamente a nova versão.
         reopened._extractor = fake_extractor
