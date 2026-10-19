@@ -364,9 +364,11 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
         multilight_module.install_adhesive_multilight_inspection(FakePanel)
         panel = FakePanel()
         pixels = np.full((64, 64, 3), 110, dtype=np.uint8)
-        with patch.object(multilight_module, "_store_view", return_value=True), \\
-                patch.object(multilight_module, "_sync_multilight_debug_controls"), \\
-                patch.object(multilight_module, "capture_debug_record", return_value=None):
+        with (
+            patch.object(multilight_module, "_store_view", return_value=True),
+            patch.object(multilight_module, "_sync_multilight_debug_controls"),
+            patch.object(multilight_module, "capture_debug_record", return_value=None),
+        ):
             result = panel.process_aoi_images(pixels, pixels.copy(), {"category": category})
             QApplication.processEvents()
         self.assertTrue(result)
