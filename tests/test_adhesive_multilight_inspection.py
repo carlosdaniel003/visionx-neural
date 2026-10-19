@@ -393,7 +393,7 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                         panel.current_analysis["detail"]["side_early_exit"]["skipped_lights"],
                         ["TOP", "MID"],
                     )
-                    self.assertFalse(production_decision_policy(panel.current_analysis)["auto_allowed"])
+                    self.assertTrue(production_decision_policy(panel.current_analysis)["auto_allowed"])
                     if mode == "Modo Produção":
                         panel.notify_production_analysis_ready.assert_called_once()
                     else:

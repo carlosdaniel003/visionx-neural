@@ -19,6 +19,7 @@ from typing import Any
 from src.core.corroborated_ng_verdict import corroborated_ng_verdict
 from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
+from src.core.side_early_decision import SIDE_EARLY_EXIT_THRESHOLD, side_automatic_decision
 
 
 # Mantido por compatibilidade com imports antigos. Não participa mais da política.
@@ -172,6 +173,41 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "auto_allowed": False, "operator_review_required": True,
             "proposed_decision": "",
             "reason": "cnn_knn_visual_ng_disagreement",
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
+
+    # A SIDE antecipada é uma alternativa explícita ao consenso tricolor.
+    # O contrato completo da SIDE deve ser validado novamente aqui; todos
+    # os vetos operacionais anteriores continuam tendo precedência.
+    early_decision = side_automatic_decision(analysis)
+    if early_decision in {"OK", "NG"}:
+        return {
+            "mode": "production",
+            "confidence": confidence,
+            "threshold": SIDE_EARLY_EXIT_THRESHOLD,
+            "verdict": verdict,
+            "auto_allowed": True,
+            "operator_review_required": False,
+            "proposed_decision": early_decision,
+            "reason": "side_97pct_auto_" + early_decision.lower(),
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
+
+    # Um marcador SIDE existente, porém inconsistente, nunca pode cair
+    # no auto-OK legado nem ser reinterpretado como consenso tricolor.
+    if "side_early_exit" in detail:
+        return {
+            "mode": "production",
+            "confidence": confidence,
+            "threshold": SIDE_EARLY_EXIT_THRESHOLD,
+            "verdict": (
+                "DEFEITO REAL" if verdict == "DEFEITO REAL"
+                else "REVISÃO OBRIGATÓRIA"
+            ),
+            "auto_allowed": False,
+            "operator_review_required": True,
+            "proposed_decision": "NG" if verdict == "DEFEITO REAL" else "",
+            "reason": "side_early_exit_invalid_contract",
             "operator_shortcuts": {"0": "OK", "1": "NG"},
         }
 

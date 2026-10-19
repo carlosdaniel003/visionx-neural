@@ -2,9 +2,11 @@
 
 import unittest
 
+from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
 from src.core.side_early_decision import (
     SIDE_EARLY_EXIT_THRESHOLD,
     build_side_early_decision,
+    side_automatic_decision,
 )
 
 
@@ -43,11 +45,47 @@ class SideEarlyDecisionTests(unittest.TestCase):
                 self.assertTrue(final["multilight_final"])
                 self.assertEqual(final["multilight_category"], "FALTANDO")
                 self.assertEqual(final["detail"]["side_early_exit"]["reported_confidence"], 0.97)
-                self.assertTrue(final["production_review_required"])
-                self.assertTrue(final["detail"]["operator_review_required"])
-                self.assertFalse(final["detail"]["side_early_exit"]["production_auto_allowed"])
+                self.assertFalse(final["production_review_required"])
+                self.assertFalse(final["detail"]["operator_review_required"])
+                self.assertTrue(final["detail"]["side_early_exit"]["production_auto_allowed"])
+                self.assertEqual(side_automatic_decision(final), "NG" if expected_ng else "OK")
                 self.assertFalse(original["production_review_required"])
                 self.assertNotIn("side_early_exit", original["detail"])
+
+    def test_marker_must_match_final_side_and_cannot_be_forged(self):
+        import copy
+
+        final = build_side_early_decision(_side("DEFEITO REAL", 0.99), "FALTANDO")
+        self.assertEqual(side_automatic_decision(final), "NG")
+        for mutation in (
+            lambda x: x.update(lighting_mode="TOP"),
+            lambda x: x.update(confidence=0.80),
+            lambda x: x.update(multilight_final=False),
+            lambda x: x.update(production_review_required=True),
+            lambda x: x["detail"].update(operator_review_required=True),
+            lambda x: x["detail"]["decision_trace"].update(operator_review_required=True),
+            lambda x: x["detail"]["side_early_exit"].update(reported_confidence=0.98),
+            lambda x: x["detail"]["side_early_exit"].update(rule="untrusted"),
+            lambda x: x["detail"]["side_early_exit"].update(production_auto_allowed=False),
+            lambda x: x["detail"]["side_early_exit"].update(skipped_lights=["TOP"]),
+            lambda x: x["detail"].update(multilight_category="DESLOCADO"),
+            lambda x: x.update(verdict="FALHA FALSA"),
+        ):
+            case = copy.deepcopy(final)
+            mutation(case)
+            with self.subTest(case=case):
+                self.assertIsNone(side_automatic_decision(case))
+
+    def test_blocked_trial_checkpoint_remains_ineligible(self):
+        source = _side(
+            "DEFEITO REAL", 0.99,
+            recognition_route="NEW_CNN",
+            cnn_v2_active=True,
+            cnn_v2_status="INFERENCE_OK",
+            cnn_v2_checkpoint_verified=True,
+            cnn_v2_checkpoint_sha256=TRIAL_97P70_SHA256,
+        )
+        self.assertIsNone(build_side_early_decision(source, "FALTANDO"))
 
     def test_lower_scores_never_skip_other_lights(self):
         for value in (0.0, 0.50, 0.96, 0.9699, float("nan"), float("inf"), -1.0, 1.01, None, "invalid"):
