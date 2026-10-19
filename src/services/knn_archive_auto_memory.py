@@ -25,15 +25,14 @@ from typing import Callable
 from src.config.settings import BASE_DIR
 from src.core.anomaly_signature import build_anomaly_signature
 from src.core.archive_persistent_memory import PersistentArchiveKNN, make_record
-from src.core.strict_category_memory import canonical_memory_category
+from src.services.archive_aoi_category import resolve_archive_aoi_category
 from src.services.faltando_cross_category_audit import _archive_image
 from src.services.startup_regression.archive_inventory import (
     _inspect_png, filename_hints,
 )
-from src.utils.text_normalizer import normalize_aoi_text
 
 LOG = logging.getLogger(__name__)
-REJECTED_ARCHIVE_SCHEMA = "visionx.knn_archive_rejections.v1"
+REJECTED_ARCHIVE_SCHEMA = "visionx.knn_archive_rejections.v2"
 
 
 class ArchiveCategoryMismatch(ValueError):
@@ -88,13 +87,12 @@ def _extract_entry(root: Path, path: Path, label: str, *,
     reference, test, info = extractor(frame)
     if not isinstance(info, dict):
         raise ValueError("AOI não extraiu metadados")
-    category, normalized_value = normalize_aoi_text(info.get("value", ""))
-    cat = canonical_memory_category(category)
-    expected = canonical_memory_category(filename_hints(path)["category_hint"])
-    if not cat or cat in {"UNKNOWN", "UNKNOW"} or cat != expected:
-        raise ArchiveCategoryMismatch(
-            f"Categoria AOI {cat!r} não confere com nome {expected!r}"
+    try:
+        cat, normalized_value = resolve_archive_aoi_category(
+            info, filename_hints(path)["category_hint"],
         )
+    except ValueError as exc:
+        raise ArchiveCategoryMismatch(str(exc)) from exc
     signature = build_anomaly_signature(
         reference, test, {}, {**info, "category": cat,
                               "value": normalized_value}
@@ -153,7 +151,7 @@ class KNNArchiveAutoMemory:
         # Rejeições determinísticas persistidas por tamanho+mtime; nunca
         # viram exemplos KNN. Evita refazer OCR no mesmo PNG após reiniciar.
         self._rejections_path = (
-            self.root / "data" / "knn_archive_memory" / "archive_rejections_v1.json"
+            self.root / "data" / "knn_archive_memory" / "archive_rejections_v2.json"
         )
         self._rejections = self._load_rejections()
         self._rejections_dirty = False
