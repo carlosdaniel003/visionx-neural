@@ -292,5 +292,123 @@ class AdhesiveSourceContractTests(unittest.TestCase):
         self.assertIn("set_auxiliary_image_mode", source)
 
 
+
+class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _run_capture(self, *, confidence, verdict, mode):
+        import time
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        category = "FALTANDO"
+        active_analysis = {
+            "verdict": verdict,
+            "is_defect": verdict == "DEFEITO REAL",
+            "confidence": confidence,
+            "production_review_required": False,
+            "detail": {
+                "recognition_route": "NEW_EXPERTS",
+                "decision_trace": {"operator_review_required": False},
+            },
+        }
+
+        class FakePanel:
+            def __init__(self):
+                self.combo_mode = SimpleNamespace(currentText=lambda: mode)
+                self.capture_cycle_source = "network"
+                self.capture_start_time = time.perf_counter()
+                self.capture_start_source = "network_payload_received"
+                self.current_aoi_info = {"category": category}
+                self.current_ng = np.zeros((64, 64, 3), dtype=np.uint8)
+                self.current_analysis = None
+                self.ui_builder = None
+                self.network_receiver = SimpleNamespace(
+                    set_auxiliary_image_mode=Mock()
+                )
+                self.adhesive_multilight_automation = SimpleNamespace(start=Mock())
+                self.adhesive_multilight_view = None
+                self.adhesive_multilight_analysis_view = None
+                self.lbl_verdict = SimpleNamespace(
+                    setText=Mock(), setStyleSheet=Mock()
+                )
+                self.lbl_reason = SimpleNamespace(setText=Mock())
+                self.lbl_timer = SimpleNamespace(setText=Mock(), setToolTip=Mock())
+                self.btn_start = SimpleNamespace(setEnabled=Mock())
+                self.btn_skip = SimpleNamespace(setEnabled=Mock())
+                self.btn_save_ok = SimpleNamespace(setEnabled=Mock())
+                self.btn_save_ng = SimpleNamespace(setEnabled=Mock())
+                self.update_network_status = Mock()
+                self.update_brain_status = Mock()
+                self.notify_production_analysis_ready = Mock()
+                self.send_command_to_xp = Mock()
+                self._update_confidence_panel = Mock()
+                self._update_reference_panel = Mock()
+
+            def handle_network_image(self, img, ip):
+                return True
+
+            def process_aoi_images(self, sample, test, info):
+                self.current_ng = test
+                self.current_analysis = active_analysis
+                return True
+
+            def save_label(self, *args, **kwargs):
+                return True
+
+            def skip_image(self, *args, **kwargs):
+                return True
+
+        multilight_module.install_adhesive_multilight_inspection(FakePanel)
+        panel = FakePanel()
+        pixels = np.full((64, 64, 3), 110, dtype=np.uint8)
+        with (
+            patch.object(multilight_module, "_store_view", return_value=True),
+            patch.object(multilight_module, "_sync_multilight_debug_controls"),
+            patch.object(multilight_module, "capture_debug_record", return_value=None),
+        ):
+            result = panel.process_aoi_images(pixels, pixels.copy(), {"category": category})
+            QApplication.processEvents()
+        self.assertTrue(result)
+        return panel
+
+    def test_97_percent_side_skips_top_mid_in_test_shadow_and_production(self):
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        for mode in ("Modo Teste", "Modo Sombra", "Modo Produção"):
+            for verdict in ("DEFEITO REAL", "FALHA FALSA"):
+                with self.subTest(mode=mode, verdict=verdict):
+                    panel = self._run_capture(
+                        confidence=0.97, verdict=verdict, mode=mode
+                    )
+                    panel.adhesive_multilight_automation.start.assert_not_called()
+                    panel.send_command_to_xp.assert_not_called()
+                    self.assertFalse(panel.adhesive_multilight_active)
+                    self.assertTrue(panel.adhesive_multilight_final_analysis["multilight_final"])
+                    self.assertEqual(panel.current_analysis["verdict"], verdict)
+                    self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
+                    self.assertEqual(
+                        panel.current_analysis["detail"]["side_early_exit"]["skipped_lights"],
+                        ["TOP", "MID"],
+                    )
+                    self.assertFalse(production_decision_policy(panel.current_analysis)["auto_allowed"])
+                    if mode == "Modo Produção":
+                        panel.notify_production_analysis_ready.assert_called_once()
+                    else:
+                        panel.notify_production_analysis_ready.assert_not_called()
+
+    def test_just_below_threshold_keeps_three_light_capture(self):
+        panel = self._run_capture(
+            confidence=0.9699, verdict="FALHA FALSA", mode="Modo Teste"
+        )
+        panel.adhesive_multilight_automation.start.assert_called_once()
+        self.assertTrue(panel.adhesive_multilight_active)
+        self.assertIsNone(panel.adhesive_multilight_final_analysis)
+        self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
+        panel.network_receiver.set_auxiliary_image_mode.assert_called_with(True)
+
+
 if __name__ == "__main__":
     unittest.main()
