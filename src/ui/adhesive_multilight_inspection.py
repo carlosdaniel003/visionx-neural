@@ -15,7 +15,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import QEventLoop, Qt
+from PyQt6.QtCore import QEventLoop, QTimer, Qt
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
@@ -33,6 +33,7 @@ from src.core.adhesive_multilight_analysis import (
     valid_image,
 )
 from src.core.multilight_fusion import fuse_multilight
+from src.core.side_early_decision import build_side_early_decision
 from src.services.capture_debug_payload import decision_record
 from src.services.inspection_timing import (
     finish_cycle, note_extraction, note_frame, note_steps,
@@ -422,43 +423,43 @@ def _sync_multilight_debug_controls(panel) -> None:
         print(f"Falha não fatal ao sincronizar debug multilight: {exc}")
 
 
-def _finalize_multilight_decision(panel) -> dict | None:
-    """Promove SIDE/TOP/MID a um único julgamento final da peça."""
+def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | None:
+    """Publica a SIDE antecipada ou o consenso SIDE/TOP/MID."""
     analyses = getattr(panel, "adhesive_multilight_analyses", {})
     category = category_from_aoi_info(
         getattr(panel, "current_aoi_info", None)
     )
-    fused = fuse_multilight(analyses, category)
+    if side_only:
+        fused = build_side_early_decision(analyses.get("SIDE"), category)
+    else:
+        fused = fuse_multilight(analyses, category)
     if not isinstance(fused, dict):
         try:
             panel.update_network_status(
-                "Fusão multilight não executada: SIDE/TOP/MID incompletos."
+                "Julgamento não concluído: SIDE inelegível ou TOP/MID incompletos."
             )
         except Exception:
             pass
         return None
 
-    # Contraprova física independente somente para consenso AUTO-OK da
-    # CNN FALTANDO. É veto de segurança; jamais muda OK em NG automático.
-    from src.core.physical_missing_veto import apply_physical_missing_veto
-    fused = apply_physical_missing_veto(
-        fused,
-        getattr(panel, "adhesive_multilight_learning_samples", None),
-        category,
-    )
+    if not side_only:
+        # A fusão completa mantém os vetos físicos e a corroboração KNN.
+        from src.core.physical_missing_veto import apply_physical_missing_veto
+        fused = apply_physical_missing_veto(
+            fused,
+            getattr(panel, "adhesive_multilight_learning_samples", None),
+            category,
+        )
 
-    # O roteador exato permanece intacto. A nova camada lê somente as
-    # assinaturas KNN já carregadas em RAM e verifica vizinhos por luz.
-    # Evidência próxima não é rótulo humano exato nem habilita comando XP.
-    from src.core.knn_visual_corroboration import apply_knn_visual_corroboration
-    orchestrator = getattr(panel, "orchestrator", None)
-    experts = getattr(orchestrator, "experts", None)
-    knn = experts.get("knn") if isinstance(experts, dict) else None
-    fused = apply_knn_visual_corroboration(
-        fused,
-        getattr(panel, "adhesive_multilight_learning_samples", None),
-        category, knn,
-    )
+        from src.core.knn_visual_corroboration import apply_knn_visual_corroboration
+        orchestrator = getattr(panel, "orchestrator", None)
+        experts = getattr(orchestrator, "experts", None)
+        knn = experts.get("knn") if isinstance(experts, dict) else None
+        fused = apply_knn_visual_corroboration(
+            fused,
+            getattr(panel, "adhesive_multilight_learning_samples", None),
+            category, knn,
+        )
 
     panel.current_analysis = fused
     panel.adhesive_multilight_final_analysis = fused
@@ -504,14 +505,18 @@ def _finalize_multilight_decision(panel) -> dict | None:
     )
     detail["analysis_time_contract"] = (
         "primeira imagem SIDE recebida/capturada -> "
-        "SIDE+TOP+MID analisadas e resultado multilight pintado"
+        + (
+            "decisão antecipada SIDE pintada (TOP/MID dispensadas)"
+            if side_only else
+            "SIDE+TOP+MID analisadas e resultado multilight pintado"
+        )
     )
 
     try:
         panel.lbl_timer.setText(f"{elapsed:.2f} s")
         panel.lbl_timer.setToolTip(
-            "Tempo real multilight: do recebimento da SIDE até "
-            "a conclusão das análises SIDE/TOP/MID e da fusão final."
+            "Tempo desde a SIDE até o resultado final exibido. "
+            + ("TOP/MID dispensadas." if side_only else "SIDE/TOP/MID analisadas.")
         )
     except Exception:
         pass
@@ -538,7 +543,12 @@ def _finalize_multilight_decision(panel) -> dict | None:
 
     try:
         if mode == "Modo Produção":
-            if fused.get("production_review_required", False):
+            if side_only:
+                panel.update_brain_status(
+                    "SIDE >=97%: resultado antecipado; requer confirmação humana.",
+                    True,
+                )
+            elif fused.get("production_review_required", False):
                 from src.core.corroborated_ng_verdict import corroborated_ng_verdict
                 status = (
                     "NG • DEFEITO REAL • aguardando confirmação humana."
@@ -553,14 +563,16 @@ def _finalize_multilight_decision(panel) -> dict | None:
                 )
         elif mode == "Modo Sombra":
             panel.update_brain_status(
-                "Fusão multilight concluída • aguardando decisão humana no XP.",
+                ("SIDE antecipada" if side_only else "Fusão multilight concluída")
+                + " • aguardando decisão humana no XP.",
                 True,
             )
             panel.btn_start.setEnabled(True)
             panel.btn_skip.setEnabled(True)
         else:
             panel.update_brain_status(
-                "Fusão multilight concluída • aguardando operador.",
+                ("SIDE antecipada" if side_only else "Fusão multilight concluída")
+                + " • aguardando operador.",
                 True,
             )
             panel.btn_start.setEnabled(True)
@@ -1066,6 +1078,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         self.adhesive_multilight_views = {}
         self.adhesive_multilight_analyses = {}
         self.adhesive_multilight_source_frames = {}
+        self.adhesive_multilight_learning_samples = {}
         self.adhesive_multilight_last_analyses = {}
         self.adhesive_multilight_last_source_frames = {}
         self.adhesive_multilight_last_category = category
@@ -1165,6 +1178,23 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
 
         if self.combo_mode.currentText() != "Modo Sombra":
             _switch_inspection_view(self, True)
+
+        # A primeira luz suficiente encerra a aquisição sem comandar TOP/MID.
+        # O resultado passa pela mesma publicação final, sem autorizar 0/1.
+        if build_side_early_decision(
+            self.adhesive_multilight_analyses["SIDE"], category
+        ) is not None:
+            finalize = getattr(self, "finalize_multilight_decision", None)
+            final = finalize(side_only=True) if callable(finalize) else None
+            if isinstance(final, dict):
+                self.adhesive_multilight_active = False
+                _set_receiver_auxiliary_mode(self, False)
+                if self.combo_mode.currentText() == "Modo Produção":
+                    notify = getattr(self, "notify_production_analysis_ready", None)
+                    if callable(notify):
+                        QTimer.singleShot(0, lambda analysis=final: notify(analysis))
+                return result
+
         _set_receiver_auxiliary_mode(self, True)
 
         # SIDE não é julgamento final em ciclos multilight. Até TOP/MID terminarem
