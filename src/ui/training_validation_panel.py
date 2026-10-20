@@ -700,8 +700,10 @@ class ArchiveTrainingPanel(QObject):
                 alt = experiment["shadow_candidate"]
                 base = metrics
                 new = experiment["results"]
+                consensus = experiment.get("consensus_candidate") or {}
+                sources = experiment.get("consensus_source_counts") or {}
                 lines.extend([
-                    "GEOMETRIA A/B (SOMENTE EXPERIMENTO, NÃO ATIVA):",
+                    "GEOMETRIA A/B/C (SOMENTE EXPERIMENTO, NÃO ATIVA):",
                     f"A visual: {base.get('correct', 0)}/{base.get('total', 0)} "
                     f"NG→OK {base.get('NG_as_OK', 0)} | conservadora "
                     f"{control.get('correct_suggestions', 0)}/"
@@ -712,7 +714,17 @@ class ArchiveTrainingPanel(QObject):
                     f"{alt.get('suggestions', 0)} | "
                     f"cobertura {alt.get('coverage', 0) * 100:.1f}% | "
                     f"NG→OK candidato {alt.get('NG_suggested_OK', 0)}",
-                    "A/B no mesmo acervo não comprova generalização.",
+                    f"C concordância: "
+                    f"{consensus.get('correct_suggestions', 0)}/"
+                    f"{consensus.get('suggestions', 0)} | "
+                    f"cobertura {100*consensus.get('coverage', 0):.1f}% | "
+                    f"revisão {consensus.get('reviews', 0)} | "
+                    f"NG→OK {consensus.get('NG_suggested_OK', 0)} | "
+                    f"meta 97% {consensus.get('target_97pct_met', False)}",
+                    f"Fontes C: {sources}",
+                    "C exige pelo menos uma sugestão seletiva e votos "
+                    "A/B concordantes; discordância = revisão.",
+                    "A/B/C no mesmo acervo não comprova generalização.",
                 ])
             lines.append(
                 "Por luz: " + " | ".join(
