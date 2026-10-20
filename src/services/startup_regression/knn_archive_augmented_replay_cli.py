@@ -39,6 +39,9 @@ def write_augmented_reports(report: dict, destination: Path) -> tuple[Path, Path
         f"Consultas: {report['expected_query_count']}",
         f"Concluído: {report['complete']} | interrompido: {report['canceled']}",
         f"Falhas de extração: {len(report['original_errors'])}",
+        f"Capturas alinhadas às dimensões do gabarito: "
+        f"{report.get('aligned_source_pairs', 0)} de "
+        f"{report['inventory_png_count']} imagens",
     ]
     def describe(name: str, basic: dict, selective: dict) -> None:
         rows = basic["by_label"]
