@@ -244,7 +244,11 @@ class ArchiveTrainingPanel(QObject):
         self.similarity_metric = QLabel(
             "KNN SIMILARIDADE | ainda não avaliada (somente diagnóstico)"
         )
-        for widget in (self.knn_metric, self.cnn_metric, self.similarity_metric):
+        self.shadow_candidate_metric = QLabel(
+            "KNN CANDIDATO SOMBRA | ainda não avaliado (revisão habilitada)"
+        )
+        for widget in (self.knn_metric, self.cnn_metric, self.similarity_metric,
+                       self.shadow_candidate_metric):
             widget.setObjectName("archiveTrainingMetric")
             widget.setTextFormat(Qt.TextFormat.RichText)
             widget.setWordWrap(True)
@@ -252,6 +256,7 @@ class ArchiveTrainingPanel(QObject):
         metrics.addWidget(self.knn_metric, 0, 0)
         metrics.addWidget(self.cnn_metric, 1, 0)
         metrics.addWidget(self.similarity_metric, 2, 0)
+        metrics.addWidget(self.shadow_candidate_metric, 3, 0)
         container.addLayout(metrics)
 
         self.details = QLabel("Relatórios: reports/startup_regression/")
@@ -353,6 +358,9 @@ class ArchiveTrainingPanel(QObject):
         self.status.setText("KNN similaridade: inventariando OK e NG...")
         self.similarity_metric.setText(
             "KNN SIMILARIDADE | processando imagens, sem alterar memória"
+        )
+        self.shadow_candidate_metric.setText(
+            "KNN CANDIDATO SOMBRA | avaliando sugestões e revisões"
         )
         self.details.setText(
             "Replay isolado por dia: sem compartilhar consulta e vizinhos "
@@ -608,6 +616,19 @@ class ArchiveTrainingPanel(QObject):
             metrics = packet.get("results") or {}
             self.similarity_metric.setText(
                 self._similarity_line("KNN POR SIMILARIDADE", metrics)
+            )
+            candidate = packet.get("shadow_candidate") or {}
+            ok_c = (candidate.get("by_label") or {}).get("OK") or {}
+            ng_c = (candidate.get("by_label") or {}).get("NG") or {}
+            self.shadow_candidate_metric.setText(
+                "<b>KNN CANDIDATO SOMBRA</b> | "
+                f'<span style="color:#4ade80">OK '
+                f'{ok_c.get("SUGERE_OK", 0)}/{ok_c.get("total", 0)}</span> • '
+                f'<span style="color:#ff7777">NG '
+                f'{ng_c.get("SUGERE_NG", 0)}/{ng_c.get("total", 0)}</span> • '
+                f'NG→OK {candidate.get("NG_suggested_OK", 0)} • '
+                f'OK→NG {candidate.get("OK_suggested_NG", 0)} • '
+                f'Revisão {candidate.get("reviews", 0)}'
             )
             cohorts = packet.get("by_capture_cohort") or {}
             lights = packet.get("by_lighting") or {}

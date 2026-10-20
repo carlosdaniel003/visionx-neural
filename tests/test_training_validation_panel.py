@@ -142,6 +142,33 @@ class TrainingPanelUITests(unittest.TestCase):
         ui._errors = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
         self.assertIn("NG 0/0", ui._live_metric_html("KNN_MEMORIA"))
 
+    def test_shadow_candidate_in_similarity_report_is_visible(self):
+        ui = install_training_validation_panel(self.window, root=self.root)
+        ui._finish_similarity(0, {
+            "complete": True, "canceled": False,
+            "json_path": "reports/result.json",
+            "txt_path": "reports/result.txt",
+            "results": {
+                "by_label": {
+                    "OK": {"total": 3, "correct": 2},
+                    "NG": {"total": 2, "correct": 1},
+                }, "NG_as_OK": 1, "target_98pct_met": False,
+            },
+            "shadow_candidate": {
+                "by_label": {
+                    "OK": {"total": 3, "SUGERE_OK": 1},
+                    "NG": {"total": 2, "SUGERE_NG": 1},
+                },
+                "NG_suggested_OK": 0,
+                "OK_suggested_NG": 0,
+                "reviews": 3,
+            },
+        })
+        self.assertIn("OK 1/3", ui.shadow_candidate_metric.text())
+        self.assertIn("NG 1/2", ui.shadow_candidate_metric.text())
+        self.assertIn("NG→OK 0", ui.shadow_candidate_metric.text())
+        self.assertIn("Revisão 3", ui.shadow_candidate_metric.text())
+
     def test_summary_independently_reports_ok_and_ng(self):
         text = format_model_line("CNN_FALTANDO_V2", {
             "by_label": {

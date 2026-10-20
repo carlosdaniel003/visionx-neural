@@ -23,6 +23,9 @@ from src.core.anomaly_signature import (
     build_anomaly_signature, compare_anomaly_signatures, valid_anomaly_signature,
 )
 from src.core.experts.knn_expert import KNNExpert
+from src.core.knn_similarity_shadow_candidate import (
+    select_shadow_candidate, summarize_shadow_candidates,
+)
 from src.core.strict_category_memory import canonical_memory_category
 from src.services.faltando_cross_category_audit import _archive_image
 from src.services.archive_aoi_category import resolve_archive_aoi_category
@@ -281,6 +284,35 @@ def replay_knn_archive_visual(
                 row["status"] = "NAO_ANALISADO"
                 row["prediction"] = None
 
+    # O candidato de shadow não altera o voto baseline nem o rótulo do acervo.
+    # Um NG/OK sem exemplares de OUTROS DIAS na mesma categoria/luz
+    # provoca abstenção, nunca sugestão OK por ausência de exemplos NG.
+    support_days = defaultdict(lambda: {"OK": set(), "NG": set()})
+    for row in rows:
+        if row["status"] not in {"INVALIDO", "NAO_ANALISADO"}:
+            support_days[(canonical_memory_category(row["ocr_observed_category"]),
+                          row["lighting_mode"])][row["expected_label"]].add(
+                              row["session_day_hint"]
+                          )
+    for row in rows:
+        if row["status"] in {"INVALIDO", "NAO_ANALISADO"}:
+            row["shadow_candidate"] = {
+                "status": "REVISAO", "reason": "IMAGEM_NAO_ELEGIVEL",
+                "diagnostic_only": True, "auto_decision_authorized": False,
+            }
+            continue
+        scope = support_days[(canonical_memory_category(row["ocr_observed_category"]),
+                              row["lighting_mode"])]
+        # Também retira o dia da própria consulta do denominador de cobertura.
+        days = {
+            label: len(values - {row["session_day_hint"]})
+            for label, values in scope.items()
+        }
+        row["shadow_candidate"] = select_shadow_candidate(
+            row["neighbors"], category=row["ocr_observed_category"],
+            lighting=row["lighting_mode"], scope_days=days,
+        )
+
     # Agrupamento conservador para DIAGNÓSTICO de cobertura: manifesto
     # autenticado quando existe, senão prefixo apenas como pista. Não usar
     # o agrupamento inferido como comprovação de peça/event_id real.
@@ -314,11 +346,24 @@ def replay_knn_archive_visual(
         result["target_98pct_met"] = False
     return {
         "complete": not canceled,
+        "shadow_candidate": summarize_shadow_candidates(rows),
+        "shadow_candidate_by_lighting": {
+            mode: summarize_shadow_candidates([r for r in rows
+                  if r["lighting_mode"] == mode])
+            for mode in ("SIDE", "TOP", "MID")
+        },
+        "shadow_candidate_by_category": {
+            name: summarize_shadow_candidates([r for r in rows
+                  if canonical_memory_category(r["category_hint"]) == name])
+            for name in sorted({canonical_memory_category(r["category_hint"])
+                                for r in rows})
+        },
         "canceled": canceled,
         "by_capture_cohort": {
             cohort: {
                 "capture_groups": counts[cohort],
                 "results": _measure(entries),
+                "shadow_candidate": summarize_shadow_candidates(entries),
             }
             for cohort, entries in cohorts.items()
         },
@@ -344,6 +389,7 @@ def replay_knn_archive_visual(
         "writes_memory_or_dataset": False,
         "is_production_verified_exact_knn_test": False,
         "is_production_approved": False,
+        "shadow_candidate_uses_only_archive_not_runtime_memory": True,
         "results": result,
         "by_category": {
             c: _measure([r for r in rows if canonical_memory_category(
