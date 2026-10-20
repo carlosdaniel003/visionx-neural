@@ -36,15 +36,14 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
         "KNN experimental por vizinhos de assinaturas visuais arquivadas.",
         "NÃO é o roteador KNN verificado por par exato da produção.",
         f"Protocolo: {report['protocol']} | k={report['k']}",
-        "Temporalidade: " + str(report.get("temporal_direction") or "N/D"),
+        "Critério: visual gabarito vs. captura, macro AOI e epicentro menor",
+        "Filtro por datas: NENHUM",
         f"Inventário total: {report['inventory_png_count']}",
         f"Acertos: {metrics['correct']}/{metrics['total']}",
         f"Meta KNN >=98% em OK E em NG: {metrics['target_98pct_met']}",
         f"Status: {metrics['status_counts']}",
         f"Completo: {report.get('complete', True)} | Cancelado: {report.get('canceled', False)}",
-        ("Só dias ANTERIORES como vizinhos; sem o mesmo dia nem dias futuros."
-         if report["protocol"] == "forward_day" else
-         "Outros dias podem incluir datas FUTURAS (avaliação retrospectiva)."),
+        "As mesmas datas são aceitas; mesmo arquivo/duplicata/evento não.",
         "",
         "CLASSES SEPARADAS:",
     ]
@@ -106,9 +105,9 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
         ng_c = (shadow.get("by_label") or {}).get("NG") or {}
         lines.extend([
             "",
-            "CANDIDATO KNN SELETIVO EM SOMBRA (NAO CONTROLA XP):",
-            "Limiar fixo experimental de similaridade >=0.94, cinco vizinhos; "
-            "OK exige contraprova NG em outros dias.",
+            "CANDIDATO KNN POR EPICENTRO (NAO CONTROLA XP):",
+            "Similaridade experimental de epicentro >=0.90; cinco vizinhos "
+            "visuais distintos. OK exige exemplos NG de contraprova visual.",
             f"OK sugerido corretamente: {ok_c.get('SUGERE_OK', 0)}/{ok_c.get('total', 0)}",
             f"NG sugerido corretamente: {ng_c.get('SUGERE_NG', 0)}/{ng_c.get('total', 0)}",
             f"NG sugeridos como OK (perigoso): {shadow.get('NG_suggested_OK', 0)}",
@@ -124,17 +123,14 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
                 f"NG certo={bucket['by_label']['NG']['SUGERE_NG']} "
                 f"NG->OK={bucket['NG_suggested_OK']} revisoes={bucket['reviews']}"
             )
-    if report.get("by_day"):
-        lines.extend(["", "POR DATA DE CONSULTA (OK/NG CORRETOS):"])
-        for day, stats in report["by_day"].items():
-            ok = stats["by_label"]["OK"]
-            ng = stats["by_label"]["NG"]
-            lines.append(
-                f"{day}: OK={ok['correct']}/{ok['total']} "
-                f"NG={ng['correct']}/{ng['total']} "
-                f"sem_decisao={ok['no_decision'] + ng['no_decision']} "
-                f"NG->OK={stats['NG_as_OK']}"
-            )
+    focus = report.get("focus_detection") or {}
+    lines.extend([
+        "", "DETECÇÃO DAS REGIÕES AOI:",
+        f"Caixa maior detectada: {focus.get('outer_detected', 0)}",
+        f"Epicentro menor detectado: {focus.get('inner_detected', 0)}",
+        f"Somente gabarito/teste global: {focus.get('global_only', 0)}",
+        "Molduras verdes removidas das máscaras de diferença visual.",
+    ])
     lines.extend(["", "POR ILUMINAÇÃO:"])
     for mode, stats in report["by_lighting"].items():
         lines.append(
@@ -178,9 +174,7 @@ def main(argv=None) -> int:
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument(
         "--protocol", choices=VALID_PROTOCOLS, default="leave_day_out",
-        help=("leave_day_out: outros dias (incluindo futuros); "
-              "forward_day: somente dias anteriores; "
-              "leave_one_out: diagnóstico menos restrito"),
+        help="visual_holdout: compara imagens do acervo pelo aspecto visual",
     )
     args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()
