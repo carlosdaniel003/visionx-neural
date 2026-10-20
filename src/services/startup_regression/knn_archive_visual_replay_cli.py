@@ -212,8 +212,24 @@ def main(argv=None) -> int:
         f"NG->OK: {stats['NG_as_OK']}",
         flush=True,
     )
+    candidate = report["shadow_candidate"]
     print(
-        f"META >=98% POR CLASSE: {stats['target_98pct_met']}",
+        "CANDIDATO CONSERVADOR: "
+        f"precisão entre sugestões {candidate['conditional_precision']:.2%} "
+        f"({candidate['correct_suggestions']}/{candidate['suggestions']}) | "
+        f"cobertura {candidate['coverage']:.2%} "
+        f"({candidate['suggestions']}/{candidate['total']}) | "
+        f"revisões {candidate['reviews']} | "
+        f"NG->OK {candidate['NG_suggested_OK']}",
+        flush=True,
+    )
+    print(
+        f"META CANDIDATO >=97% CONDICIONAL: {candidate['target_97pct_met']} "
+        "(somente diagnóstico, não aprova produção)",
+        flush=True,
+    )
+    print(
+        f"BASELINE: meta anterior de 98% por classe: {stats['target_98pct_met']}",
         flush=True,
     )
     print(f"JSON: {j}\nTXT: {t}", flush=True)
