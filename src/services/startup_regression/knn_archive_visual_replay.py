@@ -23,6 +23,9 @@ from typing import Callable
 from src.services.startup_regression.knn_archive_focus_signature import (
     build_focus_signature, compare_focus_signatures, valid_focus_signature,
 )
+from src.services.startup_regression.knn_archive_concordance_experiment import (
+    select_concordance_candidate,
+)
 from src.services.startup_regression.knn_archive_geometry_experiment import (
     build_geometry_signature, compare_geometry_hybrid,
 )
@@ -388,6 +391,11 @@ def replay_knn_archive_visual(
                     lighting=row["lighting_mode"],
                     scope_examples={label: len(ids) for label, ids in support.items()},
                 )
+            row["geometry_consensus_candidate"] = select_concordance_candidate(
+                row["shadow_candidate"], geo["shadow_candidate"],
+                visual_prediction=row["prediction"],
+                geometry_prediction=geo.get("prediction"),
+            )
 
 
     # Agrupamento conservador para DIAGNÓSTICO de cobertura: manifesto
@@ -437,6 +445,20 @@ def replay_knn_archive_visual(
                     "reason": "IMAGEM_NAO_ELEGIVEL",
                 },
             })
+        # C compara A e B no MESMO acervo: nunca usa o esperado na escolha.
+        # Rótulo esperado é copiado SOMENTE para métricas após a decisão.
+        consensus_rows = [
+            {
+                "expected_label": row["expected_label"],
+                "category_hint": row["category_hint"],
+                "lighting_mode": row["lighting_mode"],
+                "shadow_candidate": row.get("geometry_consensus_candidate")
+                or {
+                    "status": "REVISAO", "reason": "SEM_DOIS_VOTOS_KNN",
+                },
+            }
+            for row in rows
+        ]
         geometry_metrics = _measure(geo_rows)
         if canceled:
             geometry_metrics["target_98pct_met"] = False
@@ -447,6 +469,32 @@ def replay_knn_archive_visual(
             "visual_control": "knn_archive_aoi_focus.v1",
             "geometry_weight": 0.35,
             "results": geometry_metrics,
+            "consensus_candidate": summarize_shadow_candidates(
+                consensus_rows, complete=not canceled,
+            ),
+            "consensus_source_counts": dict(Counter(
+                (row.get("geometry_consensus_candidate") or {}).get(
+                    "source") or "REVISAO"
+                for row in rows
+            )),
+            "consensus_by_category": {
+                name: summarize_shadow_candidates(
+                    [v for v in consensus_rows
+                     if canonical_memory_category(v["category_hint"]) == name],
+                    complete=not canceled,
+                )
+                for name in sorted({
+                    canonical_memory_category(v["category_hint"])
+                    for v in consensus_rows
+                })
+            },
+            "consensus_by_lighting": {
+                light: summarize_shadow_candidates(
+                    [v for v in consensus_rows if v["lighting_mode"] == light],
+                    complete=not canceled,
+                )
+                for light in ("SIDE", "TOP", "MID")
+            },
             "shadow_candidate": summarize_shadow_candidates(
                 geo_rows, complete=not canceled,
             ),
