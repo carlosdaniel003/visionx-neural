@@ -80,6 +80,64 @@ class ShadowCandidatePolicyTests(unittest.TestCase):
         )
         self.assertEqual(out["reason"], "ESCOPO_OCR_OU_LUZ_INVALIDO")
 
+    def test_real_archive_false_ng_majority_is_reviewed_by_weight(self):
+        # Caso real do relatório 2026-10-20 14:47: OK 1231 FALTANDO
+        # com 3 NG distantes e dois OK mais próximos (votoNG ~0.2285).
+        near = [
+            ("OK", .96814430), ("OK", .79097875),
+            ("NG", .72231997), ("NG", .71974018), ("NG", .71794431),
+        ]
+        neighbors = [
+            {"label": label, "similarity": sim,
+             "source_pixel_sha256": f"distinct-{i}"}
+            for i, (label, sim) in enumerate(near)
+        ]
+        out = select_shadow_candidate(
+            neighbors, category="FALTANDO", lighting="SIDE",
+            scope_examples={"OK": 15, "NG": 45},
+        )
+        self.assertEqual(out["status"], "REVISAO")
+        self.assertEqual(out["reason"], "VOTO_PONDERADO_DISCORDA_DA_MAIORIA_NG")
+        self.assertLess(out["weighted_score_ng"], .5)
+        self.assertFalse(out["weighted_vote_agrees"])
+        self.assertFalse(out["auto_decision_authorized"])
+
+    def test_selective_precision_target_97_is_not_total_archive_accuracy(self):
+        # 97 decisões corretas de 100 sugestões, mais 100 revisões:
+        # precisão 97%, cobertura 50%, não acurácia 97% em 200 imagens.
+        cases = [
+            {"expected_label": "OK",
+             "shadow_candidate": {"status": "SUGERE_OK"}}
+            for _ in range(97)
+        ] + [
+            {"expected_label": "OK",
+             "shadow_candidate": {"status": "SUGERE_NG"}}
+            for _ in range(3)
+        ] + [
+            {"expected_label": "NG",
+             "shadow_candidate": {"status": "REVISAO"}}
+            for _ in range(100)
+        ]
+        stats = summarize_shadow_candidates(cases)
+        self.assertEqual(stats["correct_suggestions"], 97)
+        self.assertEqual(stats["suggestions"], 100)
+        self.assertEqual(stats["reviews"], 100)
+        self.assertEqual(stats["coverage"], .5)
+        self.assertEqual(stats["conditional_precision"], .97)
+        self.assertTrue(stats["target_97pct_met"])
+        self.assertFalse(summarize_shadow_candidates(
+            cases, complete=False)["target_97pct_met"])
+        cases[0]["shadow_candidate"]["status"] = "SUGERE_NG"
+        self.assertFalse(summarize_shadow_candidates(cases)["target_97pct_met"])
+        self.assertFalse(summarize_shadow_candidates([])["target_97pct_met"])
+        # Mesmo com precisão acima de 97%, qualquer NG classificado OK
+        # reprova o gate de auditoria.
+        ng_missed = [{"expected_label": "NG",
+                      "shadow_candidate": {"status": "SUGERE_OK"}}]
+        self.assertFalse(summarize_shadow_candidates(
+            [{"expected_label": "OK", "shadow_candidate": {"status": "SUGERE_OK"}}
+             for _ in range(99)] + ng_missed)["target_97pct_met"])
+
     def test_summary_separates_missed_ng_from_reviews(self):
         cases = [
             {"expected_label": "NG",
