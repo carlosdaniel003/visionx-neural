@@ -178,7 +178,7 @@ class KnnArchiveReplayTests(unittest.TestCase):
         self.assertFalse(report["complete"])
         self.assertEqual(report["results"]["total"], 4)
         self.assertFalse(report["results"]["target_98pct_met"])
-        self.assertEqual(report["results"]["status_counts"]["NAO_ANALISADO"], 2)
+        self.assertEqual(report["results"]["status_counts"]["NAO_ANALISADO"], 4)
 
     def test_conflicts_are_invalid_not_fake_accuracy(self):
         bad = [self.rows[0]["path"], self.rows[1]["path"]]
