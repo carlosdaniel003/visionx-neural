@@ -87,6 +87,42 @@ class AugmentedKNNReplayTests(unittest.TestCase):
         self.assertNotEqual(b_info["dx_both"], 0)
         self.assertNotEqual(b_info["dy_both"], 0)
 
+    def test_different_gabarito_and_capture_dimensions_are_supported(self):
+        reference, capture, _ = extract("OK")
+        # Muitos PNGs reais possuem as duas metades de tamanhos diferentes.
+        # O replay visual original já redimensiona a captura ao gabarito.
+        larger_capture = cv2.resize(
+            capture, (80, 96), interpolation=cv2.INTER_NEAREST
+        )
+        original_ref, original_capture = reference.copy(), larger_capture.copy()
+        for variation in (0, 1):
+            ref, varied, info = perturb_aoi_pair(
+                reference, larger_capture, "different-size-png", variation
+            )
+            self.assertEqual(ref.shape, (64, 64, 3))
+            self.assertEqual(varied.shape, (64, 64, 3))
+            self.assertTrue(info["capture_resized_to_reference"])
+            self.assertEqual(varied.dtype, np.uint8)
+        np.testing.assert_array_equal(reference, original_ref)
+        np.testing.assert_array_equal(larger_capture, original_capture)
+
+    def test_archive_with_mismatched_half_sizes_finishes_all_queries(self):
+        def different_sized_capture(label):
+            reference, capture, info = extract(label)
+            return (reference,
+                    cv2.resize(capture, (80, 96), interpolation=cv2.INTER_NEAREST),
+                    info)
+
+        report = self.execute(extractor=different_sized_capture)
+        self.assertTrue(report["complete"])
+        self.assertEqual(report["results"]["status_counts"].get("INVALIDO", 0), 0)
+        self.assertEqual(report["aligned_source_pairs"], 4)
+        self.assertEqual(report["queries_completed"], 8)
+        self.assertEqual(report["expected_query_count"], 8)
+        self.assertEqual(report["results"]["total"], 8)
+        self.assertEqual(report["geometry_experiment"]["consensus_candidate"]["total"], 8)
+        self.assertFalse(report["writes_memory_or_dataset"])
+
     def test_green_aoi_overlay_is_not_randomized(self):
         ref, test, _ = extract("OK")
         cv2.rectangle(test, (3, 4), (58, 59), (0, 255, 0), 2)
@@ -154,7 +190,9 @@ class AugmentedKNNReplayTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             perturb_aoi_pair(ref, test, "name", 2)
         with self.assertRaises(ValueError):
-            perturb_aoi_pair(ref, test[:, :-1], "name", 0)
+            perturb_aoi_pair(ref, test[:8, :8], "name", 0)
+        with self.assertRaises(ValueError):
+            perturb_aoi_pair(ref, test[:, :, :2], "name", 0)
         with self.assertRaises(ValueError):
             self.execute(variations=3)
 
