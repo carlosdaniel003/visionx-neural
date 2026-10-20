@@ -25,7 +25,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="KNN acervo: gabarito × captura e epicentros")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument("--cancel-file", type=Path, required=True)
-    parser.add_argument("--protocol", choices=VALID_PROTOCOLS, default="leave_day_out")
+    parser.add_argument("--protocol", choices=VALID_PROTOCOLS, default="visual_holdout")
     args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()
     cancel = args.cancel_file.expanduser().resolve()
