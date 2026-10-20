@@ -18,6 +18,7 @@ from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Qt
 from PyQt6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar,
     QPushButton, QSizePolicy, QVBoxLayout, QApplication, QMessageBox,
+    QComboBox,
 )
 
 from src.config.settings import BASE_DIR
@@ -202,12 +203,26 @@ class ArchiveTrainingPanel(QObject):
         action_row.addWidget(self.start_button)
         action_row.addWidget(self.similarity_button)
         action_row.addWidget(self.cancel_button)
+        self.similarity_protocol = QComboBox()
+        self.similarity_protocol.setObjectName("archiveSimilarityProtocol")
+        self.similarity_protocol.addItem(
+            "Dias diferentes (retrospectivo)", "leave_day_out"
+        )
+        self.similarity_protocol.addItem(
+            "Só dias anteriores (simula futuro)", "forward_day"
+        )
+        self.similarity_protocol.setToolTip(
+            "Usa somente PNGs arquivados. No modo cronológico, nenhuma "
+            "imagem posterior serve de vizinho para a consulta."
+        )
+        container.addWidget(self.similarity_protocol)
         container.addLayout(action_row)
 
         hint = QLabel(
             "Memória: correspondência exata KNN + CNN. Similaridade: KNN "
-            "experimental em dias distintos, com resultados para SIDE "
-            "isolada e grupos de 3 luzes. Nenhum teste treina ou libera XP."
+            "experimental com outros dias ou somente anteriores, com resultados "
+            "para SIDE isolada e grupos de 3 luzes. Não usa captura ao vivo, "
+            "não treina nem libera XP."
         )
         hint.setObjectName("archiveTrainingHint")
         hint.setWordWrap(True)
@@ -245,7 +260,7 @@ class ArchiveTrainingPanel(QObject):
             "KNN SIMILARIDADE | ainda não avaliada (somente diagnóstico)"
         )
         self.shadow_candidate_metric = QLabel(
-            "KNN CANDIDATO SOMBRA | ainda não avaliado (revisão habilitada)"
+            "KNN CANDIDATO ACERVO | ainda não avaliado (revisão habilitada)"
         )
         for widget in (self.knn_metric, self.cnn_metric, self.similarity_metric,
                        self.shadow_candidate_metric):
@@ -307,6 +322,7 @@ class ArchiveTrainingPanel(QObject):
         self._cancel_path.unlink(missing_ok=True)
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
+        self.similarity_protocol.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("Inventariando imagens OK/NG...")
         self.details.setText("Processo de diagnóstico isolado, prioridade baixa.")
@@ -330,6 +346,7 @@ class ArchiveTrainingPanel(QObject):
             "src.services.startup_regression.interactive_training_validation",
             "--root", str(self.root),
             "--cancel-file", str(self._cancel_path),
+            "--protocol", str(protocol),
         ])
         proc.readyReadStandardOutput.connect(self._read_stdout)
         proc.readyReadStandardError.connect(self._read_stderr)
@@ -354,17 +371,21 @@ class ArchiveTrainingPanel(QObject):
         self._cancel_path.unlink(missing_ok=True)
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
+        self.similarity_protocol.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("KNN similaridade: inventariando OK e NG...")
         self.similarity_metric.setText(
             "KNN SIMILARIDADE | processando imagens, sem alterar memória"
         )
         self.shadow_candidate_metric.setText(
-            "KNN CANDIDATO SOMBRA | avaliando sugestões e revisões"
+            "KNN CANDIDATO ACERVO | avaliando sugestões e revisões"
         )
+        protocol = self.similarity_protocol.currentData()
         self.details.setText(
-            "Replay isolado por dia: sem compartilhar consulta e vizinhos "
-            "do mesmo dia. Aguarde relatório por luz e grupo de capturas."
+            ("Simulação cronológica: a consulta vê somente dias anteriores."
+             if protocol == "forward_day" else
+             "Replay retrospectivo: outros dias, inclusive futuros.")
+            + " Aguarde relatório por classe, luz e grupo."
         )
         self.progress_bar.setRange(0, 0)
 
@@ -552,6 +573,7 @@ class ArchiveTrainingPanel(QObject):
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.start_button.setEnabled(True)
             self.similarity_button.setEnabled(True)
+        self.similarity_protocol.setEnabled(True)
             self.cancel_button.setEnabled(False)
             if not self._cancel_requested and self._last_finished is None:
                 self.status.setText("Não foi possível iniciar a validação.")
@@ -561,6 +583,7 @@ class ArchiveTrainingPanel(QObject):
         self._read_stderr()
         self.start_button.setEnabled(True)
         self.similarity_button.setEnabled(True)
+        self.similarity_protocol.setEnabled(True)
         self.cancel_button.setEnabled(False)
         result = self._last_finished
         if self._run_type == "similarity":
@@ -621,7 +644,7 @@ class ArchiveTrainingPanel(QObject):
             ok_c = (candidate.get("by_label") or {}).get("OK") or {}
             ng_c = (candidate.get("by_label") or {}).get("NG") or {}
             self.shadow_candidate_metric.setText(
-                "<b>KNN CANDIDATO SOMBRA</b> | "
+                "<b>KNN CANDIDATO ACERVO</b> | "
                 f'<span style="color:#4ade80">OK '
                 f'{ok_c.get("SUGERE_OK", 0)}/{ok_c.get("total", 0)}</span> • '
                 f'<span style="color:#ff7777">NG '
@@ -633,6 +656,11 @@ class ArchiveTrainingPanel(QObject):
             cohorts = packet.get("by_capture_cohort") or {}
             lights = packet.get("by_lighting") or {}
             lines = [
+                "Protocolo: " + (
+                    "somente dias anteriores (simula futuro)"
+                    if packet.get("protocol") == "forward_day"
+                    else "outros dias (retrospectivo)"
+                ),
                 "JSON: " + str(packet.get("json_path") or "-"),
                 "TXT: " + str(packet.get("txt_path") or "-"),
                 "Por grupo (apenas estimativa quando sem manifesto):",
