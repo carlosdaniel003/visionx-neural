@@ -1,10 +1,11 @@
 """Replay KNN visual EXCLUSIVAMENTE em public/ok_archive e ng_archive.
 
-Protocolo padrão: leave-one-DAY-out. Cada PNG é consultado, sem usar seu
-rótulo na predição; vizinhos vêm somente de OUTROS DIAS do mesmo arquivo
-visual, categoria e iluminação. O recorte AOI é extraído do PNG real.
-A assinatura e a comparação usam src.core.anomaly_signature, e o voto
-ponderado usa KNNExpert._weighted_vote (k=5, congelado).
+Protocolo visual_holdout: cada PNG é consultado e comparado com OUTROS
+pares AOI da mesma categoria e iluminação, sem qualquer regra de data.
+O comparador pesa o gabarito vs. captura em três escalas: imagem global,
+moldura maior e epicentro menor (quando marcados pela AOI).
+Mesmo evento/prefixo e conteúdo duplicado não são vizinhos.
+O voto ponderado usa KNNExpert._weighted_vote (k=5).
 
 Isto mede generalização de KNN construída TEMPORARIAMENTE sobre os PNGs
 arquivados. NÃO é o lookup de pares exatos da VerifiedKNNMemory em
@@ -19,8 +20,8 @@ import math
 import re
 from typing import Callable
 
-from src.core.anomaly_signature import (
-    build_anomaly_signature, compare_anomaly_signatures, valid_anomaly_signature,
+from src.services.startup_regression.knn_archive_focus_signature import (
+    build_focus_signature, compare_focus_signatures, valid_focus_signature,
 )
 from src.core.experts.knn_expert import KNNExpert
 from src.core.knn_similarity_shadow_candidate import (
@@ -32,7 +33,7 @@ from src.services.archive_aoi_category import resolve_archive_aoi_category
 from src.services.startup_regression.archive_inventory import inventory_archives
 
 SCHEMA = "visionx.knn_archive_visual_replay.v1"
-VALID_PROTOCOLS = ("leave_day_out", "leave_one_out", "forward_day")
+VALID_PROTOCOLS = ("visual_holdout",)
 DATE_PATTERN = re.compile(r"(?<!\d)(20\d{2}-[01]\d-[0-3]\d)(?!\d)")
 TRAILING_COPY = re.compile(r"_(?:[2-9]|[1-9]\d+)$", re.IGNORECASE)
 TRAILING_LIGHT = re.compile(r"_(SIDE|TOP|MID)$", re.IGNORECASE)
@@ -108,7 +109,7 @@ def _measure(rows: list[dict]) -> dict:
     }
 
 
-def _excluded(query: dict, candidate: dict, protocol: str) -> bool:
+def _excluded(query: dict, candidate: dict, protocol: str = "visual_holdout") -> bool:
     if query["source_path"] == candidate["source_path"]:
         return True
     if (query["source_file_sha256"]
@@ -122,20 +123,11 @@ def _excluded(query: dict, candidate: dict, protocol: str) -> bool:
     if (query["capture_prefix_hint"]
             and query["capture_prefix_hint"] == candidate["capture_prefix_hint"]):
         return True
-    if protocol == "forward_day":
-        # Simula o acervo disponível ANTES da peça do dia consultado:
-        # nem o mesmo dia nem exemplos futuros podem atuar como vizinhos.
-        query_day = query.get("session_day_hint")
-        neighbor_day = candidate.get("session_day_hint")
-        return (not query_day or not neighbor_day or neighbor_day >= query_day)
-    if (protocol == "leave_day_out" and query["session_day_hint"]
-            and query["session_day_hint"] == candidate["session_day_hint"]):
-        return True
     return False
 
 
 def replay_knn_archive_visual(
-    root: Path, *, k: int = 5, protocol: str = "leave_day_out",
+    root: Path, *, k: int = 5, protocol: str = "visual_holdout",
     inventory: dict | None = None,
     extractor: Callable | None = None,
     frame_loader: Callable | None = None,
@@ -186,8 +178,6 @@ def replay_knn_archive_visual(
                 raise ValueError("PNG inválido no inventário")
             if row["source_path"] in conflicting:
                 raise ValueError("Pixels idênticos com rótulos OK e NG")
-            if protocol in ("leave_day_out", "forward_day") and not row["session_day_hint"]:
-                raise ValueError("Data ausente no nome: sem isolamento por dia")
             frame = frame_loader(root, item)
             reference, test, info = extractor(frame)
             if not isinstance(info, dict):
@@ -196,14 +186,13 @@ def replay_knn_archive_visual(
                 info, row["category_hint"],
             )
             row["ocr_observed_category"] = category
-            signature = build_anomaly_signature(
-                reference, test, {}, {
-                    **info, "category": category, "value": normalized_value,
-                },
+            signature = build_focus_signature(reference, test)
+            if not valid_focus_signature(signature):
+                raise ValueError("Assinatura visual de gabarito/epicentro inválida")
+            row["focus"] = signature["focus"]
+            row["signature_map_peak"] = max(
+                max(r) for r in signature["global_map"]
             )
-            if not valid_anomaly_signature(signature):
-                raise ValueError("Assinatura KNN inválida")
-            row["signature_map_peak"] = signature["summary"]["map_peak"]
             signatures[row["source_path"]] = signature
             row["status"] = "PRONTO_PARA_KNN"
         except Exception as exc:
@@ -233,7 +222,7 @@ def replay_knn_archive_visual(
         )]:
             if _excluded(row, other, protocol):
                 continue
-            similarity, _breakdown = compare_anomaly_signatures(
+            similarity, _breakdown = compare_focus_signatures(
                 signatures[row["source_path"]], signatures[other["source_path"]]
             )
             if not math.isfinite(similarity):
@@ -262,6 +251,7 @@ def replay_knn_archive_visual(
         row["neighbors_ng"] = sum(n[1] == "NG" for n in neighbors)
         row["neighbors"] = [
             {"source_path": n[2]["source_path"], "label": n[1],
+             "source_pixel_sha256": n[2]["source_pixel_sha256"],
              "similarity": round(1.0 - n[0], 8)}
             for n in neighbors
         ]
@@ -290,16 +280,15 @@ def replay_knn_archive_visual(
                 row["status"] = "NAO_ANALISADO"
                 row["prediction"] = None
 
-    # O candidato de shadow não altera o voto baseline nem o rótulo do acervo.
-    # Um NG/OK sem exemplares de OUTROS DIAS na mesma categoria/luz
-    # provoca abstenção, nunca sugestão OK por ausência de exemplos NG.
-    support_days = defaultdict(lambda: {"OK": set(), "NG": set()})
+    # O candidato usa somente evidências visuais DISTINTAS. Rótulos das
+    # imagens consultadas nunca participam da seleção nem da predição.
+    examples = defaultdict(lambda: {"OK": set(), "NG": set()})
     for row in rows:
         if row["status"] not in {"INVALIDO", "NAO_ANALISADO"}:
-            support_days[(canonical_memory_category(row["ocr_observed_category"]),
-                          row["lighting_mode"])][row["expected_label"]].add(
-                              row["session_day_hint"]
-                          )
+            identity = row["source_pixel_sha256"] or row["source_file_sha256"]
+            if identity:
+                examples[(canonical_memory_category(row["ocr_observed_category"]),
+                          row["lighting_mode"])][row["expected_label"]].add(identity)
     for row in rows:
         if row["status"] in {"INVALIDO", "NAO_ANALISADO"}:
             row["shadow_candidate"] = {
@@ -307,22 +296,16 @@ def replay_knn_archive_visual(
                 "diagnostic_only": True, "auto_decision_authorized": False,
             }
             continue
-        scope = support_days[(canonical_memory_category(row["ocr_observed_category"]),
-                              row["lighting_mode"])]
-        # A cobertura também respeita o protocolo. O candidato não pode
-        # utilizar contagens futuras quando simula previsão cronológica.
-        days = {
-            label: len({
-                day for day in values
-                if day != row["session_day_hint"]
-                and (protocol != "forward_day" or
-                     (day and day < row["session_day_hint"]))
-            })
+        scope = examples[(canonical_memory_category(row["ocr_observed_category"]),
+                          row["lighting_mode"])]
+        query_id = row["source_pixel_sha256"] or row["source_file_sha256"]
+        support = {
+            label: len(values - ({query_id} if query_id else set()))
             for label, values in scope.items()
         }
         row["shadow_candidate"] = select_shadow_candidate(
             row["neighbors"], category=row["ocr_observed_category"],
-            lighting=row["lighting_mode"], scope_days=days,
+            lighting=row["lighting_mode"], scope_examples=support,
         )
 
     # Agrupamento conservador para DIAGNÓSTICO de cobertura: manifesto
@@ -392,11 +375,8 @@ def replay_knn_archive_visual(
         "root": str(root),
         "mode": "ARCHIVE_ONLY_TEMPORARY_KNN_VISUAL",
         "protocol": protocol,
-        "temporal_direction": (
-            "ONLY_EARLIER_DAYS" if protocol == "forward_day"
-            else "OTHER_DAYS_BOTH_DIRECTIONS" if protocol == "leave_day_out"
-            else "ALL_OTHER_IMAGES"
-        ),
+        "similarity_basis": "reference_vs_capture_global_outer_inner_epicenter",
+        "date_used_for_neighbor_selection": False,
         "k": k,
         "expected_retention_rate_by_label": 0.98,
         "inventory_png_count": len(items),
@@ -408,11 +388,6 @@ def replay_knn_archive_visual(
         "is_production_approved": False,
         "shadow_candidate_uses_only_archive_not_runtime_memory": True,
         "results": result,
-        "by_day": {
-            day: _measure([r for r in rows if r["session_day_hint"] == day])
-            for day in sorted({r["session_day_hint"] for r in rows
-                               if r["session_day_hint"]})
-        },
         "by_category": {
             c: _measure([r for r in rows if canonical_memory_category(
                 r["category_hint"]) == c])
@@ -425,23 +400,20 @@ def replay_knn_archive_visual(
         },
         "cases": rows,
         "limitations": (
-            "Avaliação da generalização da KNN com assinaturas da divergência "
-            "extraídas exclusivamente dos PNGs do arquivo: não equivale à "
-            "memória KNN verificada de produção, que exige par AOI humano "
-            "comprovado. O rótulo da pasta só é usado nos vizinhos e na "
-            "avaliação pós-predição; nunca na consulta. Na opção "
-            "leave_one_out pode haver correlação temporal; o protocolo "
-            "padrão leave_day_out remove do treino todas as imagens do "
-            "mesmo dia, mas USA dias futuros como vizinhos dos antigos. "
-            "forward_day usa somente imagens de dias ANTERIORES e simula "
-            "um acervo que cresce cronologicamente; casos antigos podem "
-            "ficar sem cobertura e nunca são confundidos com acertos. "
-            "Sem PNGs locais não é possível medir resultados. "
-            "Um acervo fechado com >98% não prova generalização futura. "
-            "Subgrupos SIDE apenas e 3 luzes são contagens por manifesto "
-            "verificado ou prefixo como pista, nunca confirmação automática "
-            "de event_id. Ausência de independência física entre placas ou "
-            "lotes impede inferir taxa real de futuras peças."
+            "Avaliação apenas dos PNGs do arquivo. Cada consulta usa gabarito "
+            "e captura reais, com regiões global, caixa maior e epicentro menor "
+            "quando os contornos verdes aninhados estão presentes. Não há "
+            "qualquer filtro por data. Sem epicentro menor comprovado, o "
+            "relatório informa ausência e compara apenas regiões existentes. "
+            "A consulta nunca usa seu próprio rótulo; vizinhos usam rótulos "
+            "humanos somente como referências. O mesmo arquivo, mesmo hash "
+            "e mesmo evento/prefixo são excluídos, mas outras imagens muito "
+            "semelhantes do mesmo lote ainda podem ser correlacionadas. "
+            "Reconhecimento de exemplos desse acervo não demonstra "
+            "generalização independente a novos componentes. Sem PNGs "
+            "locais não é possível medir novamente os resultados. "
+            "Os grupos multilight baseados só em prefixo NÃO são uma prova "
+            "de mesmo event_id. Não comanda XP nem escreve na memória."
         ),
     }
 
