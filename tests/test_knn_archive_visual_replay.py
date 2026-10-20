@@ -54,13 +54,13 @@ def extract(kind: str):
 
 
 def runner(rows, *, protocol="leave_day_out", k=1, conflicts=(),
-           extractor=extract):
+           extractor=extract, cancelled=None, progress=None):
     return replay_knn_archive_visual(
         Path("/not-a-real-odin-dataset"),
         inventory=inventory(rows, conflicts=conflicts),
         frame_loader=lambda _root, row: row["expected_label"],
         extractor=extractor,
-        protocol=protocol, k=k,
+        protocol=protocol, k=k, cancelled=cancelled, progress=progress,
     )
 
 
@@ -118,6 +118,67 @@ class KnnArchiveReplayTests(unittest.TestCase):
             pixel_sha256="different-pixels", file_sha256="different-file",
         )
         self.assertTrue(_excluded(_row(q), _row(second_light), "leave_one_out"))
+
+    def test_current_category_only_ocr_no_longer_marks_archive_invalid(self):
+        def category_only(frame):
+            reference, test, info = extract(frame)
+            info["value"] = ""
+            return reference, test, info
+
+        report = runner(self.rows, extractor=category_only)
+        self.assertEqual(report["results"]["by_label"]["OK"]["correct"], 2)
+        self.assertEqual(report["results"]["by_label"]["NG"]["correct"], 2)
+        self.assertTrue(report["complete"])
+        self.assertEqual(report["by_capture_cohort"]["side_only"]["capture_groups"], 4)
+        self.assertEqual(report["by_capture_cohort"]["three_lights"]["capture_groups"], 0)
+
+    def test_three_lights_and_one_side_only_reported_separately(self):
+        rows = []
+        for date in ("2026-10-02", "2026-10-03"):
+            for label in ("OK", "NG"):
+                triple = item(date, "0900", label, label)
+                triple["event_id"] = date + "-" + label
+                rows.append(triple)
+                for light in ("TOP", "MID"):
+                    other = dict(triple)
+                    other["path"] = triple["path"].replace("_SIDE.png", "_" + light + ".png")
+                    other["lighting_mode"] = light
+                    other["file_sha256"] += light
+                    other["pixel_sha256"] += light
+                    rows.append(other)
+                # Outro evento com somente SIDE no mesmo dia.
+                single = item(date, "1430", label, label)
+                single["event_id"] = date + "-" + label + "-single"
+                rows.append(single)
+
+        report = runner(rows)
+        triples = report["by_capture_cohort"]["three_lights"]
+        singles = report["by_capture_cohort"]["side_only"]
+        self.assertEqual(triples["capture_groups"], 4)
+        self.assertEqual(singles["capture_groups"], 4)
+        self.assertEqual(triples["results"]["total"], 12)
+        self.assertEqual(singles["results"]["total"], 4)
+        self.assertEqual(report["capture_grouping"]["manifest_verified_groups"], 8)
+        self.assertTrue(report["results"]["target_98pct_met"])
+        for case in report["cases"]:
+            for neighbor in case["neighbors"]:
+                self.assertNotEqual(
+                    neighbor["source_path"].split("/")[2][:10],
+                    case["source_path"].split("/")[2][:10],
+                )
+
+    def test_cancellation_keeps_all_denominators_and_does_not_pass(self):
+        called = []
+        report = runner(
+            self.rows,
+            progress=lambda i, total, path: called.append(i),
+            cancelled=lambda: len(called) >= 2,
+        )
+        self.assertTrue(report["canceled"])
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["results"]["total"], 4)
+        self.assertFalse(report["results"]["target_98pct_met"])
+        self.assertEqual(report["results"]["status_counts"]["NAO_ANALISADO"], 2)
 
     def test_conflicts_are_invalid_not_fake_accuracy(self):
         bad = [self.rows[0]["path"], self.rows[1]["path"]]
