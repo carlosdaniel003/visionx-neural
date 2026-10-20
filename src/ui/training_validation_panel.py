@@ -343,10 +343,7 @@ class ArchiveTrainingPanel(QObject):
             "src.services.startup_regression.interactive_training_validation",
             "--root", str(self.root),
             "--cancel-file", str(self._cancel_path),
-        ] + (
-            ["--geometry-experiment"]
-            if self.geometry_experiment_box.isChecked() else []
-        ))
+        ])
         proc.readyReadStandardOutput.connect(self._read_stdout)
         proc.readyReadStandardError.connect(self._read_stderr)
         proc.finished.connect(self._finished)
@@ -402,7 +399,10 @@ class ArchiveTrainingPanel(QObject):
             "src.services.startup_regression.knn_visual_panel_worker",
             "--root", str(self.root),
             "--cancel-file", str(self._cancel_path),
-        ])
+        ] + (
+            ["--geometry-experiment"]
+            if self.geometry_experiment_box.isChecked() else []
+        ))
         proc.readyReadStandardOutput.connect(self._read_stdout)
         proc.readyReadStandardError.connect(self._read_stderr)
         proc.finished.connect(self._finished)
