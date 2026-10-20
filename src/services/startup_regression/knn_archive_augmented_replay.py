@@ -213,8 +213,6 @@ def replay_augmented_archive(
                 "event_id": item.get("event_id"),
                 "capture_prefix_hint": _capture_group(path),
                 "category_hint": item.get("category_hint"),  # relatório APENAS
-                "reference": reference,
-                "capture": capture,
                 "focus_signature": focus,
                 "geometry_signature": geometry,
             })
@@ -224,12 +222,27 @@ def replay_augmented_archive(
             progress("extract", n, count, path)
 
     pools = defaultdict(list)
+    originals_by_path = {}
     for row in originals:
         pools[row["lighting_mode"]].append(row)
+        originals_by_path[row["source_path"]] = row
     rows = []
     completed_queries = 0
     for n, item in enumerate(items, 1):
-        src = next((r for r in originals if r["source_path"] == item.get("path")), None)
+        src = originals_by_path.get(item.get("path"))
+        pair = None
+        if src is not None and not interrupted:
+            try:
+                # Reabre o PNG autenticado sob demanda para não manter centenas
+                # de matrizes AOI na RAM durante a comparação KNN.
+                q_original_ref, q_original_test, _metadata = extractor(
+                    frame_loader(root, item)
+                )
+                pair = (q_original_ref, q_original_test)
+            except Exception as error:
+                failed_originals[item.get("path", "")] = (
+                    f"{type(error).__name__}: {error}"
+                )
         for variant in range(variations):
             if cancelled is not None and cancelled():
                 interrupted = True
@@ -250,12 +263,13 @@ def replay_augmented_archive(
                 },
                 "geometry_consensus_candidate": {"status": "REVISAO"},
             }
-            if src is None or interrupted:
+            if src is None or interrupted or pair is None:
+                row["error"] = failed_originals.get(item.get("path", ""))
                 rows.append(row)
                 continue
             try:
                 q_ref, q_test, details = perturb_aoi_pair(
-                    src["reference"], src["capture"], src["source_path"], variant
+                    pair[0], pair[1], src["source_path"], variant
                 )
                 q_focus = build_focus_signature(q_ref, q_test)
                 q_geo = build_geometry_signature(q_ref, q_test, q_focus["focus"])
