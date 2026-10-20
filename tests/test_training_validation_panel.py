@@ -176,6 +176,13 @@ class TrainingPanelUITests(unittest.TestCase):
                     "correct_suggestions": 3, "suggestions": 3,
                     "coverage": .75, "NG_suggested_OK": 0,
                 },
+                "consensus_candidate": {
+                    "correct_suggestions": 3, "suggestions": 3,
+                    "coverage": .75, "reviews": 1, "NG_suggested_OK": 0,
+                    "target_97pct_met": True,
+                },
+                "consensus_source_counts": {"A_E_B": 2, "B_COM_VOTO_A": 1,
+                                            "REVISAO": 1},
             },
             "by_lighting": {}, "by_capture_cohort": {},
             "focus_detection": {"total": 4},
@@ -183,6 +190,9 @@ class TrainingPanelUITests(unittest.TestCase):
         self.assertIn("GEOMETRIA A/B", ui.details.text())
         self.assertIn("B geometria: 4/4", ui.details.text())
         self.assertIn("cobertura 75.0%", ui.details.text())
+        self.assertIn("C concordância: 3/3", ui.details.text())
+        self.assertIn("B_COM_VOTO_A", ui.details.text())
+        self.assertIn("meta 97% True", ui.details.text())
         self.assertIn("NÃO ATIVA", ui.details.text())
 
     def test_shadow_candidate_in_similarity_report_is_visible(self):
