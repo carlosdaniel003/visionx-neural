@@ -34,7 +34,6 @@ from src.services.startup_regression.archive_inventory import inventory_archives
 
 SCHEMA = "visionx.knn_archive_visual_replay.v1"
 VALID_PROTOCOLS = ("visual_holdout",)
-DATE_PATTERN = re.compile(r"(?<!\d)(20\d{2}-[01]\d-[0-3]\d)(?!\d)")
 TRAILING_COPY = re.compile(r"_(?:[2-9]|[1-9]\d+)$", re.IGNORECASE)
 TRAILING_LIGHT = re.compile(r"_(SIDE|TOP|MID)$", re.IGNORECASE)
 
@@ -44,11 +43,6 @@ def _capture_group(path: str) -> str:
     stem = Path(path).stem.upper()
     stem = TRAILING_COPY.sub("", stem)
     return TRAILING_LIGHT.sub("", stem)
-
-
-def _day(path: str) -> str | None:
-    hit = DATE_PATTERN.search(Path(path).stem)
-    return hit.group(1) if hit else None
 
 
 def _row(item: dict) -> dict:
@@ -62,7 +56,6 @@ def _row(item: dict) -> dict:
         "lighting_mode": item.get("lighting_mode", "SIDE"),
         "lighting_source": item.get("lighting_source"),
         "event_id": item.get("event_id"),
-        "session_day_hint": _day(path),
         "capture_prefix_hint": _capture_group(path),
         "ocr_observed_category": None,
         "focus": None,
