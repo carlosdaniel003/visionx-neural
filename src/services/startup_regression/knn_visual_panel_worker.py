@@ -59,6 +59,7 @@ def main(argv=None) -> int:
             "json_path": str(jp),
             "txt_path": str(tp),
             "results": report["results"],
+            "shadow_candidate": report["shadow_candidate"],
             "by_lighting": report["by_lighting"],
             "by_capture_cohort": report["by_capture_cohort"],
             "capture_grouping": report["capture_grouping"],
