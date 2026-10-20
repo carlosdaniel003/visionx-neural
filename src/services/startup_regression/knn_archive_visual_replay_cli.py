@@ -113,8 +113,8 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
             f"NG sugeridos como OK (perigoso): {shadow.get('NG_suggested_OK', 0)}",
             f"OK sugeridos como NG: {shadow.get('OK_suggested_NG', 0)}",
             f"REVISAO/SEM COBERTURA: {shadow.get('reviews', 0)}",
-            "AVISO: comparacao retrospectiva leave_day_out, sem calibracao "
-            "independente por placa/lote e sem aprovacao para Produção.",
+            "AVISO: comparação visual independente do dia, mas imagens do "
+            "mesmo lote ainda podem ter correlação; não aprovado para Produção.",
         ])
         for category, bucket in (report.get("shadow_candidate_by_category") or {}).items():
             lines.append(
