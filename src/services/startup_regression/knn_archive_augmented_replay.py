@@ -74,6 +74,7 @@ def perturb_aoi_pair(reference: np.ndarray, capture: np.ndarray,
         )
     # Todas as transformações agora agem sobre o mesmo par alinhado.
     if variant == 0:
+        original_aligned_capture = test.copy()
         # Variação de exposição e ruído leve da câmera na captura somente.
         gain = float(rng.choice([0.985, 1.015]))
         bias = int(rng.choice([-3, 3]))
@@ -81,10 +82,8 @@ def perturb_aoi_pair(reference: np.ndarray, capture: np.ndarray,
         altered = np.clip(test.astype(np.float32) * gain + bias + noise, 0, 255)
         test = altered.astype(np.uint8)
         # A anotação verde da AOI não é iluminação física nem defeito.
-        green = _green_mask(test) > 0
-        test[green] = cv2.resize(
-            capture, (ref.shape[1], ref.shape[0]), interpolation=cv2.INTER_AREA,
-        )[green] if capture_resized else capture[green]
+        green = _green_mask(original_aligned_capture) > 0
+        test[green] = original_aligned_capture[green]
         settings = {"gain": gain, "bias": bias, "noise_sigma": 1.25}
     else:
         # Jitter de 1 px aplicado AO MESMO TEMPO aos dois lados.
