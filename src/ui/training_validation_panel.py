@@ -700,7 +700,7 @@ class ArchiveTrainingPanel(QObject):
             else:
                 self.status.setText(
                     "Candidato KNN: meta diagnóstica de 97% não atingida "
-                    "ou sem cobertura. Revisar NG→OK, erros e abstenções."
+                    "ou sem cobertura; revisar erros, NG→OK e abstenções."
                 )
         elif self._cancel_requested:
             self.status.setText(
