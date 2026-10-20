@@ -342,10 +342,13 @@ def replay_knn_archive_visual(
             for mode in ("SIDE", "TOP", "MID")
         },
         "shadow_candidate_by_category": {
-            name: summarize_shadow_candidates([r for r in rows
-                  if canonical_memory_category(r["category_hint"]) == name])
+            name: summarize_shadow_candidates(
+                [r for r in rows
+                 if canonical_memory_category(r["category_hint"]) == name],
+                complete=not canceled,
+            )
             for name in sorted({canonical_memory_category(r["category_hint"])
-                                for r in rows}), complete=not canceled)
+                                for r in rows})
         },
         "canceled": canceled,
         "by_capture_cohort": {
