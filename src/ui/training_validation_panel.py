@@ -66,6 +66,17 @@ QPushButton#archiveTrainingStart:hover {
 QPushButton#archiveTrainingStart:disabled {
   background-color: #333333; color: #777777; border-color: #484848;
 }
+QPushButton#archiveTrainingSimilarity {
+  min-height: 38px; font-weight: 800; font-size: 12px;
+  border: 1px solid #a78623; border-radius: 7px;
+  background-color: #252113; color: #f5d067; padding: 7px 12px;
+}
+QPushButton#archiveTrainingSimilarity:hover {
+  background-color: #36301b;
+}
+QPushButton#archiveTrainingSimilarity:disabled {
+  background-color: #222222; color: #777777; border-color: #444444;
+}
 QPushButton#archiveTrainingCancel {
   min-height: 38px; font-weight: 800; font-size: 12px;
   border: 1px solid #cc5858; border-radius: 7px;
@@ -185,10 +196,13 @@ class ArchiveTrainingPanel(QObject):
             "Compara imagens de dias diferentes para medir se a KNN pode "
             "reconhecer falhas e defeitos parecidos que ainda não viu."
         )
-        title_row.addWidget(self.start_button)
-        title_row.addWidget(self.similarity_button)
-        title_row.addWidget(self.cancel_button)
         container.addLayout(title_row)
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        action_row.addWidget(self.start_button)
+        action_row.addWidget(self.similarity_button)
+        action_row.addWidget(self.cancel_button)
+        container.addLayout(action_row)
 
         hint = QLabel(
             "Memória: correspondência exata KNN + CNN. Similaridade: KNN "
