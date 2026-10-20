@@ -172,6 +172,21 @@ O novo comando `python -X utf8 -m src.services.aoi_ocr_benchmark --images "publi
 - Exibição somente visual em Modo Teste e Produção: não modifica o julgamento, as ROIs dos especialistas, o fluxo de arquivos, o agente XP nem o caminho rápido sem pixmaps do Modo Sombra.
 - Testes em `tests/test_adhesive_multilight_inspection.py` cobrem as doze imagens (quatro por iluminação), associação correta dos frames, ausência segura e limpeza no próximo ciclo.
 
+## 20/10/2026 — Teste rápido de robustez: imagens levemente variadas, apenas OK/NG
+
+**Objetivo:** testar se uma KNN visual construída temporariamente com os arquivos originais `public/ok_archive/*.png` e `public/ng_archive/*.png` reconhece **novas capturas parecidas** após pequenas mudanças de iluminação, sensor e enquadramento. **Não é treinamento da KNN de produção e não é teste de defeitos inéditos.**
+
+```powershell
+git pull origin central
+python -m src.services.startup_regression.knn_archive_augmented_replay_cli --variations 2 --k 5
+```
+
+- Cada PNG OK/NG do inventário gera 2 consultas temporárias: **(1)** exposição ±1,5%, brilho ±3 níveis e ruído gaussiano s=1,25 apenas na captura; **(2)** deslocamento de ±1 pixel **idêntico** no gabarito e na captura, com desfoque leve apenas na captura. Molduras AOI verdes preservadas. Nenhum PNG gerado é gravado. **Não criar NG artificial** a partir de um OK movendo apenas o componente; isso mudaria a verdade física sem validação humana.
+- As referências são **somente os outros PNGs originais**. A imagem de origem, seu hash e seu mesmo evento/prefixo são excluídos dos vizinhos, inclusive quando a consulta varia. Nenhuma variação é adicionada à referência para facilitar o teste. Categorias e nomes de defeitos AOI são **ignorados para decisão e vizinhos**; rótulo OK/NG é o da pasta original. A iluminação (SIDE/TOP/MID) é mantida para evitar confusão entre configurações distintas.
+- Comparam-se KNN **A (visual)**, **B (visual + geometria)** e a seletiva **C (concordância)**; relatório por classe OK/NG, erros NG→OK, falsos NG, precisão condicional, revisões e cobertura, mais resultados separados para cada transformação. Resultados `reports/startup_regression/knn_archive_augmented_*.json/.txt`. Após 569 PNGs válidos, serão até 1.138 consultas simuladas e os **569 originais permanecem inalterados**.
+- A detecção de caixa/epicentro nos PNGs é uma **reconstrução offline de contornos**, NÃO o mesmo estado nem as coordenadas registradas pelo julgador AOI durante a captura. Ausência da moldura menor nessa reconstrução **não significa** que a AOI não a detectou ou não julgou a peça. Não usar essa contagem como falha da AOI.
+- **Limites e segurança:** algumas imagens OK/NG limítrofes podem não preservar o rótulo sob qualquer transformação; por isso as variações são pequenas e o resultado precisa de revisão humana antes de inferir segurança em eventos futuros. A KNN é de vizinhos (não uma rede neural), e **avaliar as consultas simuladas não treina nem melhora por si só a KNN de produção**. Replay não escreve memória, dataset, XP 0/1, CNN ou gates. O alvo >=97% continua sendo **precisão entre sugestões** com cobertura relatada separadamente e zero NG→OK no acervo, não acurácia 97% de todas as imagens.
+
 ## 20/10/2026 — Candidato C OFFLINE: concordância de A e B sem alterar a KNN de produção
 
 A análise **pareada do relatório real `knn_archive_visual_20261020_171454_539491.json`** (569 imagens) mostrou: A visual v3 = 351/351 sugestões corretas, cobertura **61,69%** (218 revisões); B geométrica = 311/311 corretas, cobertura **54,66%** (258 revisões). Ambas tiveram zero NG→OK **entre sugestões**, mas os baselines gerais A/B mantiveram 13 NG→OK cada; B corrigiu 9 erros OK→NG e 1 NG→OK, introduziu 3 OK→NG e 1 novo NG→OK. **Não substituir A por B.**
