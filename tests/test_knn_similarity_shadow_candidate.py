@@ -12,13 +12,14 @@ from src.core.knn_similarity_shadow_candidate import (
 def neigh(label, day, number, sim=.96):
     return {
         "label": label, "similarity": sim,
+        "source_pixel_sha256": f"distinct-{label}-{day}-{number}",
         "source_path": f"public/{'ng' if label == 'NG' else 'ok'}_archive/"
                        f"{day}_143{number}_FALTANDO_SIDE.png",
     }
 
 
 class ShadowCandidatePolicyTests(unittest.TestCase):
-    def test_all_ok_with_ng_counterexamples_across_days(self):
+    def test_all_ok_with_independent_ng_visual_counterexamples(self):
         nearest = [
             neigh("OK", "2026-10-03", 0),
             neigh("OK", "2026-10-03", 1),
@@ -28,53 +29,54 @@ class ShadowCandidatePolicyTests(unittest.TestCase):
         ]
         result = select_shadow_candidate(
             nearest, category="FALTANDO", lighting="SIDE",
-            scope_days={"OK": 2, "NG": 2},
+            scope_examples={"OK": 2, "NG": 2},
         )
         self.assertEqual(result["status"], "SUGERE_OK")
         self.assertFalse(result["auto_decision_authorized"])
         self.assertIsNone(result["xp_command"])
         missing = select_shadow_candidate(
             nearest, category="FALTANDO", lighting="SIDE",
-            scope_days={"OK": 2, "NG": 0},
+            scope_examples={"OK": 2, "NG": 0},
         )
         self.assertEqual(missing["status"], "REVISAO")
         scarce = select_shadow_candidate(
             nearest, category="FALTANDO", lighting="SIDE",
-            scope_days={"OK": 2, "NG": 1},
+            scope_examples={"OK": 2, "NG": 1},
         )
-        self.assertEqual(scarce["reason"], "NG_SEM_COBERTURA_INDEPENDENTE")
+        self.assertEqual(scarce["reason"], "NG_SEM_CONTRAPROVA_VISUAL")
 
-    def test_three_ng_across_days_supports_ng_suggestion_only(self):
+    def test_three_ng_distinct_images_can_support_ng_same_day(self):
         nearest = [
-            neigh("NG", "2026-10-14", 0),
+            neigh("NG", "2026-10-15", 0),
             neigh("NG", "2026-10-15", 1),
             neigh("NG", "2026-10-15", 2),
-            neigh("OK", "2026-10-08", 3),
-            neigh("OK", "2026-10-08", 4),
+            neigh("OK", "2026-10-15", 3),
+            neigh("OK", "2026-10-15", 4),
         ]
         out = select_shadow_candidate(
             nearest, category="INVERTIDO", lighting="TOP",
-            scope_days={"OK": 1, "NG": 2},
+            scope_examples={"OK": 2, "NG": 3},
         )
         self.assertEqual(out["status"], "SUGERE_NG")
-        single_day = [dict(n, source_path=n["source_path"].replace(
-            "2026-10-14", "2026-10-15")) for n in nearest]
+        # Cinco entradas idênticas não contam como cinco votos.
+        duplicated = [dict(n, source_pixel_sha256="same-pixels")
+                      for n in nearest]
         self.assertEqual(select_shadow_candidate(
-            single_day, category="INVERTIDO", lighting="TOP",
-            scope_days={"OK": 1, "NG": 1},
+            duplicated, category="INVERTIDO", lighting="TOP",
+            scope_examples={"OK": 2, "NG": 3},
         )["status"], "REVISAO")
 
     def test_invalid_coverage_and_weak_similarity_fail_closed(self):
-        rows = [neigh("OK", "2026-10-03", x, .93) for x in range(5)]
+        rows = [neigh("OK", "2026-10-03", x, .79) for x in range(5)]
         for support in (None, {}, {"OK": 3, "NG": 2}):
             out = select_shadow_candidate(
                 rows, category="FALTANDO", lighting="SIDE",
-                scope_days=support,
+                scope_examples=support,
             )
             self.assertEqual(out["status"], "REVISAO")
         out = select_shadow_candidate(
             rows, category="FALTANDO", lighting="WRONG",
-            scope_days={"OK": 2, "NG": 2},
+            scope_examples={"OK": 2, "NG": 2},
         )
         self.assertEqual(out["reason"], "ESCOPO_OCR_OU_LUZ_INVALIDO")
 
