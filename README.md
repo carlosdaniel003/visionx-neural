@@ -172,6 +172,10 @@ O novo comando `python -X utf8 -m src.services.aoi_ocr_benchmark --images "publi
 - Exibição somente visual em Modo Teste e Produção: não modifica o julgamento, as ROIs dos especialistas, o fluxo de arquivos, o agente XP nem o caminho rápido sem pixmaps do Modo Sombra.
 - Testes em `tests/test_adhesive_multilight_inspection.py` cobrem as doze imagens (quatro por iluminação), associação correta dos frames, ausência segura e limpeza no próximo ciclo.
 
+## 20/10/2026 — Correção do replay aumentado: gabarito e captura com resoluções distintas
+
+O primeiro teste `knn_archive_augmented_20261020_184112_973702` executou 1.138 consultas, mas **968 foram INVALIDO** (`Par AOI inválido para variação de captura`), correspondendo a **484 PNGs** cujos pares de gabarito e captura possuem dimensões diferentes. O comparador original de assinaturas AOI já ajustava a captura à resolução do gabarito; apenas o gerador de variações exigia dimensões idênticas, indevidamente. A correção redimensiona **apenas a cópia da captura na RAM** para as dimensões do gabarito antes da perturbação, mantendo ambos sincronizados no jitter. Preserva molduras verdes e todos os PNGs originais. O TXT informa a contagem de capturas alinhadas. Foram adicionados testes de pares de dimensões diferentes, inclusive replay ponta a ponta completo. **Números do teste incompleto não permitem concluir a precisão das 1.138 consultas**; executar novamente após atualizar. Não altera categorias, limiares, treinamento nem produção.
+
 ## 20/10/2026 — Teste rápido de robustez: imagens levemente variadas, apenas OK/NG
 
 **Objetivo:** testar se uma KNN visual construída temporariamente com os arquivos originais `public/ok_archive/*.png` e `public/ng_archive/*.png` reconhece **novas capturas parecidas** após pequenas mudanças de iluminação, sensor e enquadramento. **Não é treinamento da KNN de produção e não é teste de defeitos inéditos.**
