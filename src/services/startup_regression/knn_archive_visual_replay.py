@@ -65,6 +65,7 @@ def _row(item: dict) -> dict:
         "session_day_hint": _day(path),
         "capture_prefix_hint": _capture_group(path),
         "ocr_observed_category": None,
+        "focus": None,
         "signature_map_peak": None,
         "knn_score_ng": None,
         "prediction": None,
@@ -388,6 +389,18 @@ def replay_knn_archive_visual(
         "is_production_approved": False,
         "shadow_candidate_uses_only_archive_not_runtime_memory": True,
         "results": result,
+        "focus_detection": {
+            "total": len(rows),
+            "outer_detected": sum(bool((r.get("focus") or {}).get(
+                "outer_detected")) for r in rows),
+            "inner_detected": sum(bool((r.get("focus") or {}).get(
+                "inner_detected")) for r in rows),
+            "global_only": sum(
+                r["status"] not in {"INVALIDO", "NAO_ANALISADO"}
+                and not (r.get("focus") or {}).get("outer_detected")
+                for r in rows
+            ),
+        },
         "by_category": {
             c: _measure([r for r in rows if canonical_memory_category(
                 r["category_hint"]) == c])
