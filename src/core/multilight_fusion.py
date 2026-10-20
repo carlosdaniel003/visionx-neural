@@ -18,6 +18,7 @@ from copy import deepcopy
 from typing import Any
 
 from src.core.adhesive_multilight_fusion import fuse_adhesive_multilight
+from src.core.knn_c_multilight_gate import gate_knn_c_multilight
 from src.core.neural.faltando_multilight_consensus import summarize_cnn_multilight
 from src.utils.text_normalizer import normalize_aoi_text
 
@@ -406,7 +407,9 @@ def fuse_multilight(
         fused = fuse_adhesive_multilight(source)
         if not isinstance(fused, dict):
             return None
-        return _augment_adhesive_aliases(fused, canonical_category)
+        return gate_knn_c_multilight(
+            _augment_adhesive_aliases(fused, canonical_category), source
+        )
 
     evidence = {
         mode: _lighting_evidence(mode, source[mode])
@@ -666,7 +669,7 @@ def fuse_multilight(
             "weights": {"physical": 0.0, "knn": 0.0},
         }
     )
-    return dominant_analysis
+    return gate_knn_c_multilight(dominant_analysis, source)
 
 
 __all__ = [
