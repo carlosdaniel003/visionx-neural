@@ -55,6 +55,60 @@ class TrainingPanelUITests(unittest.TestCase):
         self.assertIn("#4ade80", self.window.archive_training_frame.styleSheet())
         self.assertIn("#ff7777", self.window.archive_training_frame.styleSheet())
 
+    def test_correction_button_removed_similarity_test_available(self):
+        from PyQt6.QtWidgets import QPushButton
+        ui = install_training_validation_panel(self.window, root=self.root)
+        buttons = self.window.archive_training_frame.findChildren(QPushButton)
+        labels = [button.text() for button in buttons]
+        self.assertNotIn("Corrigir julgamento", labels)
+        self.assertFalse(hasattr(ui, "correction_button"))
+        self.assertEqual(ui.similarity_button.text(), "Testar KNN por similaridade")
+        self.assertTrue(ui.similarity_button.isEnabled())
+        self.assertFalse(hasattr(ui, "open_correction_mode"))
+
+    def test_similarity_summary_shows_ng_missed_and_capture_groups(self):
+        ui = install_training_validation_panel(self.window, root=self.root)
+        ui._run_type = "similarity"
+        ui._handle({"event": "started", "images": 4, "total": 4})
+        ui._handle({
+            "event": "progress", "done": 2, "total": 4,
+            "path": "public/ng_archive/test_SIDE.png",
+        })
+        self.assertEqual(self.window.training_progress_bar.value(), 2)
+        ui._finish_similarity(0, {
+            "complete": True,
+            "canceled": False,
+            "json_path": "reports/x.json",
+            "txt_path": "reports/x.txt",
+            "results": {
+                "by_label": {
+                    "OK": {"total": 2, "correct": 2},
+                    "NG": {"total": 2, "correct": 1},
+                },
+                "NG_as_OK": 1,
+                "target_98pct_met": False,
+            },
+            "by_capture_cohort": {
+                "side_only": {
+                    "capture_groups": 2,
+                    "results": {"correct": 1, "total": 2},
+                },
+                "three_lights": {
+                    "capture_groups": 1,
+                    "results": {"correct": 2, "total": 3},
+                },
+            },
+            "by_lighting": {
+                "SIDE": {"correct": 2, "total": 3},
+                "TOP": {"correct": 1, "total": 1},
+            },
+        })
+        self.assertIn("NG 1/2", ui.similarity_metric.text())
+        self.assertIn("NG→OK 1", ui.similarity_metric.text())
+        self.assertIn("Somente SIDE", ui.details.text())
+        self.assertIn("SIDE + TOP + MID", ui.details.text())
+        self.assertIn("revisar erros", ui.status.text())
+
     def test_progress_includes_both_engines_and_can_show_counts(self):
         ui = install_training_validation_panel(self.window, root=self.root)
         ui._handle({"event": "started", "images": 212, "total": 414})
