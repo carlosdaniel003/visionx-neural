@@ -171,12 +171,20 @@ class TrainingPanelUITests(unittest.TestCase):
                 "NG_suggested_OK": 0,
                 "OK_suggested_NG": 0,
                 "reviews": 3,
+                "correct_suggestions": 2,
+                "suggestions": 2,
+                "conditional_precision": 1.0,
+                "coverage": 0.4,
+                "target_97pct_met": True,
             },
         })
         self.assertIn("OK 1/3", ui.shadow_candidate_metric.text())
         self.assertIn("NG 1/2", ui.shadow_candidate_metric.text())
         self.assertIn("NG→OK 0", ui.shadow_candidate_metric.text())
         self.assertIn("Revisão 3", ui.shadow_candidate_metric.text())
+        self.assertIn("Precisão nas sugestões 100.00%", ui.shadow_candidate_metric.text())
+        self.assertIn("Cobertura 40.0%", ui.shadow_candidate_metric.text())
+        self.assertIn("meta diagnóstica de 97%", ui.status.text())
 
     def test_summary_independently_reports_ok_and_ng(self):
         text = format_model_line("CNN_FALTANDO_V2", {
