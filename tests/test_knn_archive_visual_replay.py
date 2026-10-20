@@ -88,11 +88,22 @@ class KnnArchiveReplayTests(unittest.TestCase):
         self.assertEqual(experiment["geometry_failures"], 0)
         self.assertEqual(experiment["results"]["total"], 4)
         self.assertEqual(experiment["shadow_candidate"]["total"], 4)
+        self.assertEqual(experiment["consensus_candidate"]["total"], 4)
+        self.assertFalse(experiment["consensus_candidate"]["production_approved"])
+        self.assertEqual(
+            sum(experiment["consensus_source_counts"].values()), 4,
+        )
+        self.assertIn("FALTANDO", experiment["consensus_by_category"])
+        self.assertEqual(experiment["consensus_by_lighting"]["SIDE"]["total"], 4)
         self.assertEqual(len(dual["cases"]), 4)
         self.assertFalse(dual["writes_memory_or_dataset"])
         for case in dual["cases"]:
             self.assertIn("geometry_experiment", case)
             self.assertIn("shadow_candidate", case["geometry_experiment"])
+            self.assertIn("geometry_consensus_candidate", case)
+            self.assertFalse(case["geometry_consensus_candidate"]["auto_decision_authorized"])
+            self.assertFalse(case["geometry_consensus_candidate"]["uses_expected_label"])
+            self.assertIsNone(case["geometry_consensus_candidate"]["xp_command"])
 
     def test_cancelled_geometry_ab_cannot_meet_97pct(self):
         calls = []
@@ -104,6 +115,9 @@ class KnnArchiveReplayTests(unittest.TestCase):
         self.assertFalse(result["geometry_experiment"]["complete"])
         self.assertFalse(
             result["geometry_experiment"]["shadow_candidate"]["target_97pct_met"]
+        )
+        self.assertFalse(
+            result["geometry_experiment"]["consensus_candidate"]["target_97pct_met"]
         )
         self.assertEqual(result["geometry_experiment"]["results"]["total"], 4)
 
