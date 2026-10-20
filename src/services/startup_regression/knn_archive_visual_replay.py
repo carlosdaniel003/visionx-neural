@@ -23,6 +23,9 @@ from typing import Callable
 from src.services.startup_regression.knn_archive_focus_signature import (
     build_focus_signature, compare_focus_signatures, valid_focus_signature,
 )
+from src.services.startup_regression.knn_archive_geometry_experiment import (
+    build_geometry_signature, compare_geometry_hybrid,
+)
 from src.core.experts.knn_expert import KNNExpert
 from src.core.knn_similarity_shadow_candidate import (
     select_shadow_candidate, summarize_shadow_candidates,
@@ -125,6 +128,7 @@ def replay_knn_archive_visual(
     inventory: dict | None = None,
     extractor: Callable | None = None,
     frame_loader: Callable | None = None,
+    geometry_experiment: bool = False,
     progress: Callable | None = None,
     cancelled: Callable[[], bool] | None = None,
 ) -> dict:
@@ -160,6 +164,7 @@ def replay_knn_archive_visual(
     # que imagens restantes desapareçam das estatísticas como acertos.
     rows = [_row(item) for item in items]
     signatures = {}
+    geometry_signatures = {}
     canceled = False
     for i, (item, row) in enumerate(zip(items, rows), 1):
         if cancelled is not None and cancelled():
@@ -188,6 +193,16 @@ def replay_knn_archive_visual(
                 max(r) for r in signature["global_map"]
             )
             signatures[row["source_path"]] = signature
+            if geometry_experiment:
+                try:
+                    geometry_signatures[row["source_path"]] = (
+                        build_geometry_signature(reference, test, signature["focus"])
+                    )
+                except Exception as geometry_error:
+                    # Erros do experimento não invalidam o controle v3.
+                    row["geometry_error"] = (
+                        f"{type(geometry_error).__name__}: {geometry_error}"
+                    )
             row["status"] = "PRONTO_PARA_KNN"
         except Exception as exc:
             row["status"] = "INVALIDO"
@@ -210,6 +225,7 @@ def replay_knn_archive_visual(
         if row["status"] != "PRONTO_PARA_KNN":
             continue
         selected = []
+        geometry_selected = []
         for other in pools[(
             canonical_memory_category(row["ocr_observed_category"]),
             row["lighting_mode"],
@@ -224,6 +240,18 @@ def replay_knn_archive_visual(
                 row["error"] = "Similaridade não finita"
                 break
             selected.append((1.0 - similarity, other["expected_label"], other))
+            if (geometry_experiment
+                    and row["source_path"] in geometry_signatures
+                    and other["source_path"] in geometry_signatures):
+                hybrid, _parts = compare_geometry_hybrid(
+                    signatures[row["source_path"]], signatures[other["source_path"]],
+                    geometry_signatures[row["source_path"]],
+                    geometry_signatures[other["source_path"]],
+                )
+                if math.isfinite(hybrid):
+                    geometry_selected.append(
+                        (1.0 - hybrid, other["expected_label"], other)
+                    )
         if row["status"] == "INVALIDO":
             continue
         selected.sort(key=lambda item: (item[0], item[2]["source_path"]))
@@ -266,6 +294,48 @@ def replay_knn_archive_visual(
             "PASSOU" if row["prediction"] == row["expected_label"]
             else "REGRESSAO"
         )
+        if geometry_experiment:
+            # Ranking B independente. Nunca substitui o ranking/resultado A.
+            geometry_selected.sort(key=lambda v: (v[0], v[2]["source_path"]))
+            seen_geo = set()
+            neighbors_geo = []
+            for distance, label, other in geometry_selected:
+                identity = other["source_pixel_sha256"] or other["source_file_sha256"]
+                if identity and identity in seen_geo:
+                    continue
+                if identity:
+                    seen_geo.add(identity)
+                neighbors_geo.append((distance, label, other))
+                if len(neighbors_geo) >= k:
+                    break
+            geo = {
+                "status": "SEM_COBERTURA", "prediction": None,
+                "knn_score_ng": None, "neighbors": [],
+                "best_similarity": None,
+                "shadow_candidate": {
+                    "status": "REVISAO", "reason": "SEM_COBERTURA_GEOMETRICA",
+                    "diagnostic_only": True, "auto_decision_authorized": False,
+                },
+            }
+            if neighbors_geo:
+                score_geo = KNNExpert._weighted_vote([
+                    (dist, label) for dist, label, _other in neighbors_geo
+                ])
+                if math.isfinite(score_geo):
+                    geo["knn_score_ng"] = round(float(score_geo), 8)
+                    geo["prediction"] = "NG" if score_geo > 0.5 else "OK"
+                    geo["status"] = (
+                        "PASSOU" if geo["prediction"] == row["expected_label"]
+                        else "REGRESSAO"
+                    )
+                    geo["best_similarity"] = round(1 - neighbors_geo[0][0], 8)
+                    geo["neighbors"] = [
+                        {"source_path": other["source_path"],
+                         "source_pixel_sha256": other["source_pixel_sha256"],
+                         "label": label, "similarity": round(1 - distance, 8)}
+                        for distance, label, other in neighbors_geo
+                    ]
+            row["geometry_experiment"] = geo
 
     if canceled:
         # Não alegar que uma execução incompleta atingiu a meta.
@@ -301,6 +371,24 @@ def replay_knn_archive_visual(
             lighting=row["lighting_mode"],
             scope_examples={label: len(ids) for label, ids in support.items()},
         )
+        if geometry_experiment:
+            geo = row.get("geometry_experiment")
+            if geo is None:
+                geo = row["geometry_experiment"] = {
+                    "status": "NAO_ANALISADO", "prediction": None, "neighbors": [],
+                }
+            if geo["status"] in {"NAO_ANALISADO", "INVALIDO", "SEM_COBERTURA"}:
+                geo["shadow_candidate"] = {
+                    "status": "REVISAO", "reason": "SEM_COBERTURA_GEOMETRICA",
+                    "diagnostic_only": True, "auto_decision_authorized": False,
+                }
+            else:
+                geo["shadow_candidate"] = select_shadow_candidate(
+                    geo["neighbors"], category=row["ocr_observed_category"],
+                    lighting=row["lighting_mode"],
+                    scope_examples={label: len(ids) for label, ids in support.items()},
+                )
+
 
     # Agrupamento conservador para DIAGNÓSTICO de cobertura: manifesto
     # autenticado quando existe, senão prefixo apenas como pista. Não usar
@@ -331,10 +419,76 @@ def replay_knn_archive_visual(
         counts[cohort] += 1
 
     result = _measure(rows)
+    geometry_report = None
+    if geometry_experiment:
+        # O mesmo conjunto de consultas e rótulos é utilizado no A/B.
+        # Sem JPEG/PNG de teste externos, não demonstrar generalização.
+        geo_rows = []
+        for row in rows:
+            geo = row.get("geometry_experiment") or {}
+            geo_rows.append({
+                "expected_label": row["expected_label"],
+                "category_hint": row["category_hint"],
+                "lighting_mode": row["lighting_mode"],
+                "prediction": geo.get("prediction"),
+                "status": geo.get("status", "NAO_ANALISADO"),
+                "shadow_candidate": geo.get("shadow_candidate") or {
+                    "status": "REVISAO",
+                    "reason": "IMAGEM_NAO_ELEGIVEL",
+                },
+            })
+        geometry_metrics = _measure(geo_rows)
+        if canceled:
+            geometry_metrics["target_98pct_met"] = False
+        geometry_report = {
+            "experimental_only": True, "production_approved": False,
+            "complete": not canceled,
+            "name": "comparacao_geometrica_arestas_ausentes_e_adicionadas",
+            "visual_control": "knn_archive_aoi_focus.v1",
+            "geometry_weight": 0.35,
+            "results": geometry_metrics,
+            "shadow_candidate": summarize_shadow_candidates(
+                geo_rows, complete=not canceled,
+            ),
+            "by_category": {
+                name: {
+                    "results": _measure([
+                        v for v in geo_rows
+                        if canonical_memory_category(v["category_hint"]) == name
+                    ]),
+                    "shadow_candidate": summarize_shadow_candidates(
+                        [v for v in geo_rows
+                         if canonical_memory_category(v["category_hint"]) == name],
+                        complete=not canceled,
+                    ),
+                }
+                for name in sorted({
+                    canonical_memory_category(v["category_hint"])
+                    for v in geo_rows
+                })
+            },
+            "by_lighting": {
+                light: {
+                    "results": _measure([
+                        v for v in geo_rows if v["lighting_mode"] == light
+                    ]),
+                    "shadow_candidate": summarize_shadow_candidates(
+                        [v for v in geo_rows if v["lighting_mode"] == light],
+                        complete=not canceled,
+                    ),
+                }
+                for light in ("SIDE", "TOP", "MID")
+            },
+            "geometry_failures": sum(
+                bool(r.get("geometry_error")) for r in rows
+            ),
+            "case_count": len(geo_rows),
+        }
     if canceled:
         result["target_98pct_met"] = False
     return {
         "complete": not canceled,
+        "geometry_experiment": geometry_report,
         "shadow_candidate": summarize_shadow_candidates(rows, complete=not canceled),
         "shadow_candidate_by_lighting": {
             mode: summarize_shadow_candidates([r for r in rows
