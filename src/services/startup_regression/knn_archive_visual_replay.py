@@ -32,7 +32,7 @@ from src.services.archive_aoi_category import resolve_archive_aoi_category
 from src.services.startup_regression.archive_inventory import inventory_archives
 
 SCHEMA = "visionx.knn_archive_visual_replay.v1"
-VALID_PROTOCOLS = ("leave_day_out", "leave_one_out")
+VALID_PROTOCOLS = ("leave_day_out", "leave_one_out", "forward_day")
 DATE_PATTERN = re.compile(r"(?<!\d)(20\d{2}-[01]\d-[0-3]\d)(?!\d)")
 TRAILING_COPY = re.compile(r"_(?:[2-9]|[1-9]\d+)$", re.IGNORECASE)
 TRAILING_LIGHT = re.compile(r"_(SIDE|TOP|MID)$", re.IGNORECASE)
@@ -122,6 +122,12 @@ def _excluded(query: dict, candidate: dict, protocol: str) -> bool:
     if (query["capture_prefix_hint"]
             and query["capture_prefix_hint"] == candidate["capture_prefix_hint"]):
         return True
+    if protocol == "forward_day":
+        # Simula o acervo disponível ANTES da peça do dia consultado:
+        # nem o mesmo dia nem exemplos futuros podem atuar como vizinhos.
+        query_day = query.get("session_day_hint")
+        neighbor_day = candidate.get("session_day_hint")
+        return (not query_day or not neighbor_day or neighbor_day >= query_day)
     if (protocol == "leave_day_out" and query["session_day_hint"]
             and query["session_day_hint"] == candidate["session_day_hint"]):
         return True
@@ -180,7 +186,7 @@ def replay_knn_archive_visual(
                 raise ValueError("PNG inválido no inventário")
             if row["source_path"] in conflicting:
                 raise ValueError("Pixels idênticos com rótulos OK e NG")
-            if protocol == "leave_day_out" and not row["session_day_hint"]:
+            if protocol in ("leave_day_out", "forward_day") and not row["session_day_hint"]:
                 raise ValueError("Data ausente no nome: sem isolamento por dia")
             frame = frame_loader(root, item)
             reference, test, info = extractor(frame)
@@ -303,9 +309,15 @@ def replay_knn_archive_visual(
             continue
         scope = support_days[(canonical_memory_category(row["ocr_observed_category"]),
                               row["lighting_mode"])]
-        # Também retira o dia da própria consulta do denominador de cobertura.
+        # A cobertura também respeita o protocolo. O candidato não pode
+        # utilizar contagens futuras quando simula previsão cronológica.
         days = {
-            label: len(values - {row["session_day_hint"]})
+            label: len({
+                day for day in values
+                if day != row["session_day_hint"]
+                and (protocol != "forward_day" or
+                     (day and day < row["session_day_hint"]))
+            })
             for label, values in scope.items()
         }
         row["shadow_candidate"] = select_shadow_candidate(
@@ -380,6 +392,11 @@ def replay_knn_archive_visual(
         "root": str(root),
         "mode": "ARCHIVE_ONLY_TEMPORARY_KNN_VISUAL",
         "protocol": protocol,
+        "temporal_direction": (
+            "ONLY_EARLIER_DAYS" if protocol == "forward_day"
+            else "OTHER_DAYS_BOTH_DIRECTIONS" if protocol == "leave_day_out"
+            else "ALL_OTHER_IMAGES"
+        ),
         "k": k,
         "expected_retention_rate_by_label": 0.98,
         "inventory_png_count": len(items),
@@ -391,6 +408,11 @@ def replay_knn_archive_visual(
         "is_production_approved": False,
         "shadow_candidate_uses_only_archive_not_runtime_memory": True,
         "results": result,
+        "by_day": {
+            day: _measure([r for r in rows if r["session_day_hint"] == day])
+            for day in sorted({r["session_day_hint"] for r in rows
+                               if r["session_day_hint"]})
+        },
         "by_category": {
             c: _measure([r for r in rows if canonical_memory_category(
                 r["category_hint"]) == c])
@@ -410,7 +432,11 @@ def replay_knn_archive_visual(
             "avaliação pós-predição; nunca na consulta. Na opção "
             "leave_one_out pode haver correlação temporal; o protocolo "
             "padrão leave_day_out remove do treino todas as imagens do "
-            "mesmo dia. Sem PNGs locais não é possível medir resultados. "
+            "mesmo dia, mas USA dias futuros como vizinhos dos antigos. "
+            "forward_day usa somente imagens de dias ANTERIORES e simula "
+            "um acervo que cresce cronologicamente; casos antigos podem "
+            "ficar sem cobertura e nunca são confundidos com acertos. "
+            "Sem PNGs locais não é possível medir resultados. "
             "Um acervo fechado com >98% não prova generalização futura. "
             "Subgrupos SIDE apenas e 3 luzes são contagens por manifesto "
             "verificado ou prefixo como pista, nunca confirmação automática "

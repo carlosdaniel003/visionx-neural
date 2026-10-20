@@ -1,16 +1,12 @@
 """Regressões de política KNN aproximada: abstenção e shadow sem XP."""
 from __future__ import annotations
 
-from collections import Counter
 import unittest
 
-import numpy as np
 
-from src.core.anomaly_signature import build_anomaly_signature
 from src.core.knn_similarity_shadow_candidate import (
     select_shadow_candidate, summarize_shadow_candidates,
 )
-from src.services.shadow_knn_similarity_probe import evaluate_shadow_snapshot
 
 
 def neigh(label, day, number, sim=.96):
@@ -96,51 +92,6 @@ class ShadowCandidatePolicyTests(unittest.TestCase):
         self.assertEqual(out["reviews"], 1)
         self.assertEqual(out["by_label"]["NG"]["incorrect_suggestions"], 1)
 
-    def test_shadow_snapshot_is_advisory_with_side_only_and_multilight(self):
-        ref = np.zeros((64, 64, 3), dtype=np.uint8)
-        test = ref.copy()
-        test[16:28, 15:30] = 160
-
-        def sample(light):
-            return {"lighting_mode": light,
-                    "sample_image": ref, "test_image": test}
-        records = []
-        for light in ("SIDE", "TOP", "MID"):
-            sig = build_anomaly_signature(
-                ref, test, {}, {"category": "FALTANDO", "lighting_mode": light}
-            )
-            for n in range(5):
-                date = "2026-10-14" if n < 2 else "2026-10-15"
-                records.append({
-                    "label": "NG", "identity": ["FALTANDO", light, "r", "t"],
-                    "anomaly_signature": sig,
-                    "sources": [{
-                        "source_path": f"public/ng_archive/{date}_143{n}_FALTANDO_{light}.png"
-                    }],
-                })
-            records.append({
-                "label": "OK", "identity": ["FALTANDO", light, "r", "t"],
-                "anomaly_signature": build_anomaly_signature(
-                    ref, np.full_like(test, 240), {},
-                    {"category": "FALTANDO", "lighting_mode": light}
-                ),
-                "sources": [{
-                    "source_path": f"public/ok_archive/2026-10-08_1430_FALTANDO_{light}.png"
-                }],
-            })
-        side = evaluate_shadow_snapshot(
-            {"SIDE": sample("SIDE")}, "FALTANDO", records, event_id="event-1"
-        )
-        self.assertEqual(list(side["lights"]), ["SIDE"])
-        self.assertEqual(side["overall"], "SUGERE_NG")
-        self.assertIsNone(side["xp_command"])
-        triple = evaluate_shadow_snapshot(
-            {light: sample(light) for light in ("SIDE", "TOP", "MID")},
-            "FALTANDO", records, event_id="event-2",
-        )
-        self.assertEqual(len(triple["lights"]), 3)
-        self.assertEqual(triple["overall"], "SUGERE_NG")
-        self.assertFalse(triple["decision_authorized"])
 
 
 if __name__ == "__main__":

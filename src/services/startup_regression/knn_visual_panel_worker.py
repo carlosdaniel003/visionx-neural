@@ -14,7 +14,7 @@ from src.services.startup_regression.interactive_training_validation import (
     configure_low_priority,
 )
 from src.services.startup_regression.knn_archive_visual_replay import (
-    replay_knn_archive_visual,
+    replay_knn_archive_visual, VALID_PROTOCOLS,
 )
 from src.services.startup_regression.knn_archive_visual_replay_cli import (
     write_knn_archive_reports,
@@ -25,6 +25,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="KNN similaridade, replay por dia")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument("--cancel-file", type=Path, required=True)
+    parser.add_argument("--protocol", choices=VALID_PROTOCOLS, default="leave_day_out")
     args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()
     cancel = args.cancel_file.expanduser().resolve()
@@ -48,13 +49,15 @@ def main(argv=None) -> int:
     try:
         emit({"event": "phase", "phase": "Preparando replay KNN por similaridade..."})
         report = replay_knn_archive_visual(
-            root, k=5, protocol="leave_day_out",
+            root, k=5, protocol=args.protocol,
             progress=progress, cancelled=cancel.exists,
         )
         jp, tp = write_knn_archive_reports(report, report_dir)
         emit({
             "event": "finished",
             "complete": report["complete"],
+            "protocol": report["protocol"],
+            "temporal_direction": report["temporal_direction"],
             "canceled": report["canceled"],
             "json_path": str(jp),
             "txt_path": str(tp),

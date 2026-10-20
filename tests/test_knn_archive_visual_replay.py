@@ -113,6 +113,41 @@ class KnnArchiveReplayTests(unittest.TestCase):
         self.assertEqual(report["results"]["by_label"]["OK"]["correct"], 0)
         self.assertEqual(report["results"]["by_label"]["NG"]["correct"], 0)
 
+    def test_forward_day_only_uses_earlier_archive_images(self):
+        report = runner(self.rows, protocol="forward_day")
+        self.assertEqual(report["temporal_direction"], "ONLY_EARLIER_DAYS")
+        self.assertEqual(report["by_day"]["2026-10-02"]["status_counts"],
+                         {"SEM_COBERTURA": 2})
+        # O segundo dia pode aprender apenas com exemplares do primeiro.
+        self.assertEqual(report["by_day"]["2026-10-03"]["correct"], 2)
+        self.assertEqual(report["results"]["by_label"]["OK"]["correct"], 1)
+        self.assertEqual(report["results"]["by_label"]["NG"]["correct"], 1)
+        for case in report["cases"]:
+            for neighbor in case["neighbors"]:
+                self.assertLess(
+                    neighbor["source_path"].split("/")[-1][:10],
+                    case["session_day_hint"],
+                )
+
+    def test_forward_day_never_uses_future_to_decide_ng_as_ok(self):
+        # Antes do primeiro NG, dia 2 não tem vizinho NG e deve ser
+        # SEM_COBERTURA, não uma falsa predição retrospectiva.
+        rows = [
+            item("2026-10-02", "0900", "NG", "NG"),
+            item("2026-10-03", "0900", "OK", "OK"),
+            item("2026-10-04", "0900", "OK", "OK"),
+        ]
+        report = runner(rows, protocol="forward_day")
+        earliest = next(c for c in report["cases"]
+                        if c["session_day_hint"] == "2026-10-02")
+        self.assertEqual(earliest["status"], "SEM_COBERTURA")
+        self.assertIsNone(earliest["prediction"])
+        self.assertEqual(earliest["shadow_candidate"]["status"], "REVISAO")
+        self.assertTrue(all(
+            neighbor["source_path"].split("/")[-1][:10] < case["session_day_hint"]
+            for case in report["cases"] for neighbor in case["neighbors"]
+        ))
+
     def test_leave_one_out_is_separate_less_strict_diagnostic(self):
         report = runner(self.rows[:2], protocol="leave_one_out")
         self.assertEqual(report["protocol"], "leave_one_out")
