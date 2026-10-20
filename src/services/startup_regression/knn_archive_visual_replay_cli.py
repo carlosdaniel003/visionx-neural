@@ -97,6 +97,30 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
             "Sem manifesto, grupos são estimados por nome; "
             "não comprovaram vínculo físico de evento."
         )
+    shadow = report.get("shadow_candidate") or {}
+    if shadow:
+        ok_c = (shadow.get("by_label") or {}).get("OK") or {}
+        ng_c = (shadow.get("by_label") or {}).get("NG") or {}
+        lines.extend([
+            "",
+            "CANDIDATO KNN SELETIVO EM SOMBRA (NAO CONTROLA XP):",
+            "Limiar fixo experimental de similaridade >=0.94, cinco vizinhos; "
+            "OK exige contraprova NG em outros dias.",
+            f"OK sugerido corretamente: {ok_c.get('SUGERE_OK', 0)}/{ok_c.get('total', 0)}",
+            f"NG sugerido corretamente: {ng_c.get('SUGERE_NG', 0)}/{ng_c.get('total', 0)}",
+            f"NG sugeridos como OK (perigoso): {shadow.get('NG_suggested_OK', 0)}",
+            f"OK sugeridos como NG: {shadow.get('OK_suggested_NG', 0)}",
+            f"REVISAO/SEM COBERTURA: {shadow.get('reviews', 0)}",
+            "AVISO: comparacao retrospectiva leave_day_out, sem calibracao "
+            "independente por placa/lote e sem aprovacao para Produção.",
+        ])
+        for category, bucket in (report.get("shadow_candidate_by_category") or {}).items():
+            lines.append(
+                f"  {category}: OK certo="
+                f"{bucket['by_label']['OK']['SUGERE_OK']} "
+                f"NG certo={bucket['by_label']['NG']['SUGERE_NG']} "
+                f"NG->OK={bucket['NG_suggested_OK']} revisoes={bucket['reviews']}"
+            )
     lines.extend(["", "POR ILUMINAÇÃO:"])
     for mode, stats in report["by_lighting"].items():
         lines.append(
