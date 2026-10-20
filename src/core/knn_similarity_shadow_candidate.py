@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import math
 
-SCHEMA = "visionx.knn_archive_visual_candidate.v2"
+SCHEMA = "visionx.knn_archive_visual_candidate.v3"
+TARGET_CONDITIONAL_PRECISION = 0.97
 K = 5
 # Similaridade do novo descritor global/moldura/epicentro; valor provisório.
 MIN_SIMILARITY = .90
@@ -27,7 +28,8 @@ def select_shadow_candidate(
         "similarity_is_probability": False, "category": str(category),
         "lighting_mode": str(lighting), "status": "REVISAO",
         "reason": "EVIDENCIA_INSUFICIENTE", "best_similarity": None,
-        "neighbors_considered": 0,
+        "neighbors_considered": 0, "weighted_score_ng": None,
+        "weighted_vote_agrees": False,
     }
     if str(lighting).upper() not in LIGHTS or not str(category).strip():
         result["reason"] = "ESCOPO_OCR_OU_LUZ_INVALIDO"
@@ -69,6 +71,13 @@ def select_shadow_candidate(
         result["reason"] = "SIMILARIDADE_VISUAL_INSUFICIENTE"
         return result
 
+    # Mesmo voto do KNNExpert._weighted_vote: pesos 1/(1 - similaridade).
+    # A maioria SIMPLES de NG não pode ignorar exemplos OK MUITO mais próximos.
+    weights = [1.0 / max(1.0 - sim, 0.0001) for sim, _label, _id in ranked]
+    weighted_ng = sum(weight for weight, neighbor in zip(weights, ranked)
+                      if neighbor[1] == "NG") / sum(weights)
+    result["weighted_score_ng"] = round(weighted_ng, 8)
+
     ok = [r for r in ranked if r[1] == "OK"]
     ng = [r for r in ranked if r[1] == "NG"]
     if len(ok) == K:
@@ -79,21 +88,35 @@ def select_shadow_candidate(
         else:
             result["status"] = "SUGERE_OK"
             result["reason"] = "CINCO_OK_VISUALMENTE_CONCORDANTES"
+            result["weighted_vote_agrees"] = weighted_ng < 0.5
     elif len(ng) >= 3 and int(scope_examples.get("NG") or 0) >= MIN_INDEPENDENT_COUNTEREXAMPLES:
-        result["status"] = "SUGERE_NG"
-        result["reason"] = "MAIORIA_NG_VISUAL"
+        if weighted_ng > 0.5:
+            result["status"] = "SUGERE_NG"
+            result["reason"] = "MAIORIA_E_VOTO_PONDERADO_NG_CONCORDAM"
+            result["weighted_vote_agrees"] = True
+        else:
+            result["reason"] = "VOTO_PONDERADO_DISCORDA_DA_MAIORIA_NG"
     else:
         result["reason"] = "VIZINHOS_VISUAIS_DIVERGENTES"
     return result
 
 
-def summarize_shadow_candidates(cases: list[dict]) -> dict:
+def summarize_shadow_candidates(
+    cases: list[dict], *, complete: bool = True,
+) -> dict:
+    """Meta 97% mede precisão DAS SUGESTÕES; cobertura é outra métrica.
+
+    Nunca usa a classificação real para escolher vizinhos, limiares ou
+    sugestões. O rótulo real entra SOMENTE nesta função de relatório.
+    """
     by_label = {}
     for label in ("OK", "NG"):
         rows = [r for r in cases if r.get("expected_label") == label]
-        selections = {k: sum(r.get("shadow_candidate", {}).get("status") == k
-                             for r in rows)
-                      for k in ("SUGERE_OK", "SUGERE_NG", "REVISAO")}
+        selections = {
+            key: sum((r.get("shadow_candidate") or {}).get("status") == key
+                     for r in rows)
+            for key in ("SUGERE_OK", "SUGERE_NG", "REVISAO")
+        }
         by_label[label] = {
             "total": len(rows), **selections,
             "correct_suggestions": selections["SUGERE_" + label],
@@ -101,13 +124,41 @@ def summarize_shadow_candidates(cases: list[dict]) -> dict:
                 "SUGERE_" + ("NG" if label == "OK" else "OK")
             ],
         }
+    suggestions = sum(
+        by_label[label]["SUGERE_OK"] + by_label[label]["SUGERE_NG"]
+        for label in ("OK", "NG")
+    )
+    correct = sum(by_label[label]["correct_suggestions"]
+                  for label in ("OK", "NG"))
+    errors = suggestions - correct
+    total = sum(by_label[label]["total"] for label in ("OK", "NG"))
+    precision = correct / suggestions if suggestions else 0.0
+    coverage = suggestions / total if total else 0.0
+    ng_as_ok = by_label["NG"]["SUGERE_OK"]
+    # Meta diagnóstica: precisão condicional + nenhum NG->OK encontrado.
+    # Isso NÃO prova probabilidade de falha zero em peças novas.
+    target_met = bool(
+        complete and suggestions and precision >= TARGET_CONDITIONAL_PRECISION
+        and ng_as_ok == 0
+    )
     return {
+        "schema": SCHEMA,
         "by_label": by_label,
-        "NG_suggested_OK": by_label["NG"]["SUGERE_OK"],
+        "total": total, "suggestions": suggestions,
+        "correct_suggestions": correct, "incorrect_suggestions": errors,
+        "conditional_precision": round(precision, 6),
+        "coverage": round(coverage, 6),
+        "target_precision": TARGET_CONDITIONAL_PRECISION,
+        "target_97pct_met": target_met,
+        "NG_suggested_OK": ng_as_ok,
         "OK_suggested_NG": by_label["OK"]["SUGERE_NG"],
-        "reviews": (by_label["OK"]["REVISAO"] + by_label["NG"]["REVISAO"]),
+        "reviews": total - suggestions,
+        "complete": bool(complete),
         "diagnostic_only": True, "production_approved": False,
     }
 
 
-__all__ = ["select_shadow_candidate", "summarize_shadow_candidates", "SCHEMA"]
+__all__ = [
+    "select_shadow_candidate", "summarize_shadow_candidates",
+    "SCHEMA", "TARGET_CONDITIONAL_PRECISION",
+]
