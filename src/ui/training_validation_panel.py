@@ -18,6 +18,7 @@ from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Qt
 from PyQt6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar,
     QPushButton, QSizePolicy, QVBoxLayout, QApplication, QMessageBox,
+    QCheckBox,
 )
 
 from src.config.settings import BASE_DIR
@@ -203,6 +204,16 @@ class ArchiveTrainingPanel(QObject):
         action_row.addWidget(self.similarity_button)
         action_row.addWidget(self.cancel_button)
         container.addLayout(action_row)
+        self.geometry_experiment_box = QCheckBox(
+            "Comparar geometria de bordas (experimental, somente acervo)"
+        )
+        self.geometry_experiment_box.setToolTip(
+            "Executa duas KNNs offline sobre as MESMAS imagens: "
+            "visual v3 intacta e candidato geométrico A/B. "
+            "Não habilita produção nem muda memória."
+        )
+        self.geometry_experiment_box.setChecked(False)
+        container.addWidget(self.geometry_experiment_box)
 
         hint = QLabel(
             "Memória: correspondência exata KNN + CNN. Similaridade: KNN "
@@ -308,6 +319,7 @@ class ArchiveTrainingPanel(QObject):
         self._cancel_path.unlink(missing_ok=True)
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
+        self.geometry_experiment_box.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("Inventariando imagens OK/NG...")
         self.details.setText("Processo de diagnóstico isolado, prioridade baixa.")
@@ -331,7 +343,10 @@ class ArchiveTrainingPanel(QObject):
             "src.services.startup_regression.interactive_training_validation",
             "--root", str(self.root),
             "--cancel-file", str(self._cancel_path),
-        ])
+        ] + (
+            ["--geometry-experiment"]
+            if self.geometry_experiment_box.isChecked() else []
+        ))
         proc.readyReadStandardOutput.connect(self._read_stdout)
         proc.readyReadStandardError.connect(self._read_stderr)
         proc.finished.connect(self._finished)
@@ -355,6 +370,7 @@ class ArchiveTrainingPanel(QObject):
         self._cancel_path.unlink(missing_ok=True)
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
+        self.geometry_experiment_box.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("KNN similaridade: inventariando OK e NG...")
         self.similarity_metric.setText(
@@ -554,6 +570,7 @@ class ArchiveTrainingPanel(QObject):
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.start_button.setEnabled(True)
             self.similarity_button.setEnabled(True)
+            self.geometry_experiment_box.setEnabled(True)
             self.cancel_button.setEnabled(False)
             if not self._cancel_requested and self._last_finished is None:
                 self.status.setText("Não foi possível iniciar a validação.")
@@ -563,6 +580,7 @@ class ArchiveTrainingPanel(QObject):
         self._read_stderr()
         self.start_button.setEnabled(True)
         self.similarity_button.setEnabled(True)
+        self.geometry_experiment_box.setEnabled(True)
         self.cancel_button.setEnabled(False)
         result = self._last_finished
         if self._run_type == "similarity":
@@ -676,6 +694,26 @@ class ArchiveTrainingPanel(QObject):
                 f"{focus.get('inner_detected', 0)}/"
                 f"{focus.get('total', 0)}"
             )
+            experiment = packet.get("geometry_experiment")
+            if experiment:
+                control = candidate
+                alt = experiment["shadow_candidate"]
+                base = metrics
+                new = experiment["results"]
+                lines.extend([
+                    "GEOMETRIA A/B (SOMENTE EXPERIMENTO, NÃO ATIVA):",
+                    f"A visual: {base.get('correct', 0)}/{base.get('total', 0)} "
+                    f"NG→OK {base.get('NG_as_OK', 0)} | conservadora "
+                    f"{control.get('correct_suggestions', 0)}/"
+                    f"{control.get('suggestions', 0)}",
+                    f"B geometria: {new.get('correct', 0)}/{new.get('total', 0)} "
+                    f"NG→OK {new.get('NG_as_OK', 0)} | conservadora "
+                    f"{alt.get('correct_suggestions', 0)}/"
+                    f"{alt.get('suggestions', 0)} | "
+                    f"cobertura {alt.get('coverage', 0) * 100:.1f}% | "
+                    f"NG→OK candidato {alt.get('NG_suggested_OK', 0)}",
+                    "A/B no mesmo acervo não comprova generalização.",
+                ])
             lines.append(
                 "Por luz: " + " | ".join(
                     f"{light}: {m.get('correct', 0)}/{m.get('total', 0)}"
