@@ -73,6 +73,19 @@ class KnnArchiveReplayTests(unittest.TestCase):
             item("2026-10-03", "1000", "NG", "NG"),
         ]
 
+    def test_shadow_candidate_is_separate_from_baseline_and_never_commands_xp(self):
+        report = runner(self.rows)
+        self.assertIn("shadow_candidate", report)
+        self.assertTrue(report["shadow_candidate"]["diagnostic_only"])
+        self.assertFalse(report["shadow_candidate"]["production_approved"])
+        self.assertEqual(report["results"]["correct"], 4)
+        for case in report["cases"]:
+            self.assertIn(
+                case["shadow_candidate"]["status"],
+                ("SUGERE_OK", "SUGERE_NG", "REVISAO"),
+            )
+            self.assertFalse(case["shadow_candidate"]["auto_decision_authorized"])
+
     def test_two_classes_match_with_another_day_and_never_self(self):
         report = runner(self.rows)
         self.assertEqual(report["inventory_png_count"], 4)
