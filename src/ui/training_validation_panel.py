@@ -66,6 +66,17 @@ QPushButton#archiveTrainingStart:hover {
 QPushButton#archiveTrainingStart:disabled {
   background-color: #333333; color: #777777; border-color: #484848;
 }
+QPushButton#archiveTrainingSimilarity {
+  min-height: 38px; font-weight: 800; font-size: 12px;
+  border: 1px solid #a78623; border-radius: 7px;
+  background-color: #252113; color: #f5d067; padding: 7px 12px;
+}
+QPushButton#archiveTrainingSimilarity:hover {
+  background-color: #36301b;
+}
+QPushButton#archiveTrainingSimilarity:disabled {
+  background-color: #222222; color: #777777; border-color: #444444;
+}
 QPushButton#archiveTrainingCancel {
   min-height: 38px; font-weight: 800; font-size: 12px;
   border: 1px solid #cc5858; border-radius: 7px;
@@ -124,6 +135,7 @@ class ArchiveTrainingPanel(QObject):
         self._stdout = ""
         self._stderr = ""
         self._last_finished = None
+        self._run_type = "exact"
         self._cancel_requested = False
         self._cancel_path: Path | None = None
         self._count = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
@@ -178,20 +190,24 @@ class ArchiveTrainingPanel(QObject):
         self.cancel_button.setObjectName("archiveTrainingCancel")
         self.cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_button.setEnabled(False)
-        self.correction_button = QPushButton("Corrigir julgamento")
-        self.correction_button.setObjectName("archiveTrainingCancel")
-        self.correction_button.setToolTip(
-            "Encerra o ODIN e abre o modo manutenção para corrigir 9 "
-            "capturas OK classificadas incorretamente."
+        self.similarity_button = QPushButton("Testar KNN por similaridade")
+        self.similarity_button.setObjectName("archiveTrainingSimilarity")
+        self.similarity_button.setToolTip(
+            "Compara imagens de dias diferentes para medir se a KNN pode "
+            "reconhecer falhas e defeitos parecidos que ainda não viu."
         )
-        title_row.addWidget(self.start_button)
-        title_row.addWidget(self.cancel_button)
-        title_row.addWidget(self.correction_button)
         container.addLayout(title_row)
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        action_row.addWidget(self.start_button)
+        action_row.addWidget(self.similarity_button)
+        action_row.addWidget(self.cancel_button)
+        container.addLayout(action_row)
 
         hint = QLabel(
-            "Executa somente replay KNN + CNN FALTANDO V2 de ok_archive/ng_archive. "
-            "Não treina pesos, não altera memória e não interrompe a inspeção."
+            "Memória: correspondência exata KNN + CNN. Similaridade: KNN "
+            "experimental em dias distintos, com resultados para SIDE "
+            "isolada e grupos de 3 luzes. Nenhum teste treina ou libera XP."
         )
         hint.setObjectName("archiveTrainingHint")
         hint.setWordWrap(True)
@@ -225,13 +241,17 @@ class ArchiveTrainingPanel(QObject):
         metrics.setVerticalSpacing(6)
         self.knn_metric = QLabel("KNN MEMÓRIA | ainda não avaliado")
         self.cnn_metric = QLabel("CNN FALTANDO V2 | ainda não avaliada")
-        for widget in (self.knn_metric, self.cnn_metric):
+        self.similarity_metric = QLabel(
+            "KNN SIMILARIDADE | ainda não avaliada (somente diagnóstico)"
+        )
+        for widget in (self.knn_metric, self.cnn_metric, self.similarity_metric):
             widget.setObjectName("archiveTrainingMetric")
             widget.setTextFormat(Qt.TextFormat.RichText)
             widget.setWordWrap(True)
             widget.setMinimumWidth(0)
         metrics.addWidget(self.knn_metric, 0, 0)
         metrics.addWidget(self.cnn_metric, 1, 0)
+        metrics.addWidget(self.similarity_metric, 2, 0)
         container.addLayout(metrics)
 
         self.details = QLabel("Relatórios: reports/startup_regression/")
@@ -244,7 +264,7 @@ class ArchiveTrainingPanel(QObject):
 
         self.start_button.clicked.connect(self.start)
         self.cancel_button.clicked.connect(self.cancel)
-        self.correction_button.clicked.connect(self.open_correction_mode)
+        self.similarity_button.clicked.connect(self.start_similarity)
 
         layout = self.panel.content_layout
         target = getattr(self.panel, "network_debug_frame", None)
@@ -258,57 +278,6 @@ class ArchiveTrainingPanel(QObject):
         self.panel.btn_cancel_training = self.cancel_button
         self.panel.training_progress_bar = self.progress_bar
 
-    def open_correction_mode(self):
-        """Reinicia em manutenção para impedir watcher/treino no processo da AOI."""
-        if self._active() or bool(getattr(self.panel, "is_locked", False)):
-            QMessageBox.warning(
-                self.panel, "ODIN ocupado",
-                "Finalize a inspeção e qualquer validação antes da manutenção."
-            )
-            return
-        if bool(getattr(self.panel, "adhesive_multilight_active", False)):
-            QMessageBox.warning(
-                self.panel, "Coleta ativa",
-                "Encerre a coleta SIDE/TOP/MID antes de corrigir rótulos."
-            )
-            return
-        for queue_name in ("_decision_persistence_queue", "_ok_archive_queue",
-                           "_ng_archive_queue"):
-            pending = getattr(getattr(self.panel, queue_name, None),
-                              "pending_count", None)
-            if callable(pending) and pending():
-                QMessageBox.warning(
-                    self.panel, "Gravações pendentes",
-                    "Aguarde todas as filas de persistência terminarem."
-                )
-                return
-        answer = QMessageBox.question(
-            self.panel, "Modo manutenção",
-            "O ODIN será encerrado para impedir que o monitor de arquivos "
-            "importe registros durante a correção. Abrir o corretor agora?\n\n"
-            "Confirme que as imagens e o histórico já possuem backup externo.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-        ok, _pid = QProcess.startDetached(
-            sys.executable,
-            [str(self.root / "main.py"), "--corrigir-rotulos",
-             "--wait-parent", str(os.getpid())],
-            str(self.root),
-        )
-        if not ok:
-            QMessageBox.critical(
-                self.panel, "Não iniciado",
-                "Falha ao abrir o corretor. O ODIN continua em operação."
-            )
-            return
-        # closeEvent encerra explicitamente o NetworkReceiver QThread.
-        # Quit isolado não garante que closeEvent será emitido.
-        self.panel.close()
-        QApplication.instance().quit()
-
     def _active(self) -> bool:
         return (self.process is not None
                 and self.process.state() != QProcess.ProcessState.NotRunning)
@@ -316,6 +285,7 @@ class ArchiveTrainingPanel(QObject):
     def start(self):
         if self._active():
             return
+        self._run_type = "exact"
         self._stdout = ""
         self._stderr = ""
         self._last_finished = None
@@ -331,6 +301,7 @@ class ArchiveTrainingPanel(QObject):
         )
         self._cancel_path.unlink(missing_ok=True)
         self.start_button.setEnabled(False)
+        self.similarity_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("Inventariando imagens OK/NG...")
         self.details.setText("Processo de diagnóstico isolado, prioridade baixa.")
@@ -361,6 +332,100 @@ class ArchiveTrainingPanel(QObject):
         proc.errorOccurred.connect(self._process_error)
         proc.start()
 
+    def start_similarity(self):
+        """Segundo teste: somente avaliação de vizinhos KNN, sem aprendizado."""
+        if self._active():
+            return
+        self._run_type = "similarity"
+        self._stdout = ""
+        self._stderr = ""
+        self._last_finished = None
+        self._cancel_requested = False
+        reports = self.root / "reports" / "startup_regression"
+        reports.mkdir(parents=True, exist_ok=True)
+        self._cancel_path = reports / (
+            "knn_similarity_" + uuid4().hex + ".cancel"
+        )
+        self._cancel_path.unlink(missing_ok=True)
+        self.start_button.setEnabled(False)
+        self.similarity_button.setEnabled(False)
+        self.cancel_button.setEnabled(True)
+        self.status.setText("KNN similaridade: inventariando OK e NG...")
+        self.similarity_metric.setText(
+            "KNN SIMILARIDADE | processando imagens, sem alterar memória"
+        )
+        self.details.setText(
+            "Replay isolado por dia: sem compartilhar consulta e vizinhos "
+            "do mesmo dia. Aguarde relatório por luz e grupo de capturas."
+        )
+        self.progress_bar.setRange(0, 0)
+
+        proc = QProcess(self)
+        self.process = proc
+        env = QProcessEnvironment.systemEnvironment()
+        for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+            env.insert(key, "1")
+        env.insert("PYTHONUNBUFFERED", "1")
+        env.insert("PYTHONIOENCODING", "utf-8")
+        env.insert("PYTHONUTF8", "1")
+        proc.setProcessEnvironment(env)
+        proc.setWorkingDirectory(str(self.root))
+        proc.setProgram(sys.executable)
+        proc.setArguments([
+            "-u", "-m",
+            "src.services.startup_regression.knn_visual_panel_worker",
+            "--root", str(self.root),
+            "--cancel-file", str(self._cancel_path),
+        ])
+        proc.readyReadStandardOutput.connect(self._read_stdout)
+        proc.readyReadStandardError.connect(self._read_stderr)
+        proc.finished.connect(self._finished)
+        proc.errorOccurred.connect(self._process_error)
+        proc.start()
+
+    def _handle_similarity(self, packet: dict):
+        event = packet.get("event")
+        if event == "phase":
+            self.status.setText(str(packet.get("phase") or "Comparando KNN"))
+        elif event == "started":
+            total = max(1, int(packet.get("total") or 0))
+            self.progress_bar.setRange(0, total)
+            self.progress_bar.setValue(0)
+            self.progress_bar.setFormat(f"%p% • %v/{total} PNGs")
+        elif event == "progress":
+            done = int(packet.get("done") or 0)
+            total = max(1, int(packet.get("total") or 1))
+            self.progress_bar.setRange(0, total)
+            self.progress_bar.setValue(min(done, total))
+            if not self._cancel_requested:
+                self.status.setText(
+                    f"Extraindo assinaturas KNN: {done}/{total} • "
+                    + escape(Path(str(packet.get("path") or "")).name)
+                )
+        elif event == "finished":
+            self._last_finished = packet
+        elif event == "error":
+            self.status.setText(
+                "Falha na similaridade: "
+                + str(packet.get("message") or "")[:350]
+            )
+
+    @staticmethod
+    def _similarity_line(title: str, metrics: dict) -> str:
+        by = metrics.get("by_label", {})
+        def label_stat(label):
+            row = by.get(label) or {}
+            total = int(row.get("total") or 0)
+            correct = int(row.get("correct") or 0)
+            pct = f"{100 * correct / total:.1f}%" if total else "N/D"
+            return f"{label} {correct}/{total} ({pct})"
+        return (
+            f"<b>{escape(title)}</b> | "
+            f'<span style="color:#4ade80">{label_stat("OK")}</span> • '
+            f'<span style="color:#ff7777">{label_stat("NG")}</span> • '
+            f"NG→OK {int(metrics.get('NG_as_OK') or 0)}"
+        )
+
     def _read_stdout(self):
         if self.process is None:
             return
@@ -386,6 +451,9 @@ class ArchiveTrainingPanel(QObject):
         )[-3000:]
 
     def _handle(self, packet: dict):
+        if self._run_type == "similarity":
+            self._handle_similarity(packet)
+            return
         event = packet.get("event")
         if event == "phase":
             self.status.setText(str(packet.get("phase") or "Preparando"))
@@ -475,6 +543,7 @@ class ArchiveTrainingPanel(QObject):
             return
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.start_button.setEnabled(True)
+            self.similarity_button.setEnabled(True)
             self.cancel_button.setEnabled(False)
             if not self._cancel_requested and self._last_finished is None:
                 self.status.setText("Não foi possível iniciar a validação.")
@@ -483,8 +552,17 @@ class ArchiveTrainingPanel(QObject):
         self._read_stdout()
         self._read_stderr()
         self.start_button.setEnabled(True)
+        self.similarity_button.setEnabled(True)
         self.cancel_button.setEnabled(False)
         result = self._last_finished
+        if self._run_type == "similarity":
+            self._finish_similarity(code, result)
+            if self._cancel_path is not None:
+                self._cancel_path.unlink(missing_ok=True)
+            if self.process is not None:
+                self.process.deleteLater()
+            self.process = None
+            return
         if result is not None:
             for model, target in (("KNN_MEMORIA", self.knn_metric),
                                   ("CNN_FALTANDO_V2", self.cnn_metric)):
@@ -524,6 +602,66 @@ class ArchiveTrainingPanel(QObject):
         if self.process is not None:
             self.process.deleteLater()
         self.process = None
+
+    def _finish_similarity(self, code: int, packet: dict | None) -> None:
+        if packet is not None:
+            metrics = packet.get("results") or {}
+            self.similarity_metric.setText(
+                self._similarity_line("KNN POR SIMILARIDADE", metrics)
+            )
+            cohorts = packet.get("by_capture_cohort") or {}
+            lights = packet.get("by_lighting") or {}
+            lines = [
+                "JSON: " + str(packet.get("json_path") or "-"),
+                "TXT: " + str(packet.get("txt_path") or "-"),
+                "Por grupo (apenas estimativa quando sem manifesto):",
+            ]
+            for key, label in (
+                ("side_only", "Somente SIDE"),
+                ("three_lights", "SIDE + TOP + MID"),
+                ("partial_other", "Outros conjuntos"),
+            ):
+                cohort = cohorts.get(key) or {}
+                m = cohort.get("results") or {}
+                lines.append(
+                    f"{label}: "
+                    f"{m.get('correct', 0)}/{m.get('total', 0)} "
+                    f"({cohort.get('capture_groups', 0)} grupos)"
+                )
+            lines.append(
+                "Por luz: " + " | ".join(
+                    f"{light}: {m.get('correct', 0)}/{m.get('total', 0)}"
+                    for light, m in sorted(lights.items())
+                )
+            )
+            lines.append(
+                "Grupos não verificados são pistas de nome, "
+                "não evidência física de um mesmo evento."
+            )
+            self.details.setText("\n".join(lines))
+            if packet.get("canceled") or self._cancel_requested:
+                self.status.setText(
+                    "Similaridade cancelada • relatório parcial salvo."
+                )
+            elif metrics.get("target_98pct_met"):
+                self.status.setText(
+                    "Replay por dia concluído • OK/NG >=98% no acervo. "
+                    "Isto não valida futuras peças nem libera produção."
+                )
+            else:
+                self.status.setText(
+                    "Replay por dia concluído • revisar erros, lacunas "
+                    "e NG classificados como OK no relatório."
+                )
+        elif self._cancel_requested:
+            self.status.setText(
+                "Similaridade cancelada; relatório parcial pode não existir."
+            )
+        else:
+            self.status.setText(
+                f"Similaridade terminou com erro (código {code}). "
+                + self._stderr[-350:]
+            )
 
     def shutdown(self, *_args):
         if self.process is not None and self._active():

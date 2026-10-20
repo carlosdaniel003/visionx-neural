@@ -25,8 +25,8 @@ from src.core.anomaly_signature import (
 from src.core.experts.knn_expert import KNNExpert
 from src.core.strict_category_memory import canonical_memory_category
 from src.services.faltando_cross_category_audit import _archive_image
+from src.services.archive_aoi_category import resolve_archive_aoi_category
 from src.services.startup_regression.archive_inventory import inventory_archives
-from src.utils.text_normalizer import normalize_aoi_text
 
 SCHEMA = "visionx.knn_archive_visual_replay.v1"
 VALID_PROTOCOLS = ("leave_day_out", "leave_one_out")
@@ -131,6 +131,7 @@ def replay_knn_archive_visual(
     extractor: Callable | None = None,
     frame_loader: Callable | None = None,
     progress: Callable | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> dict:
     """Avalia todos os PNGs, com vizinhos SEM a própria consulta.
 
@@ -160,11 +161,15 @@ def replay_knn_archive_visual(
         path for conflict in inv.get("cross_label_conflicts", [])
         for path in conflict.get("paths", [])
     }
-    rows = []
+    # Inicializa os denominadores antes do replay; cancelamento não permite
+    # que imagens restantes desapareçam das estatísticas como acertos.
+    rows = [_row(item) for item in items]
     signatures = {}
-    for i, item in enumerate(items, 1):
-        row = _row(item)
-        rows.append(row)
+    canceled = False
+    for i, (item, row) in enumerate(zip(items, rows), 1):
+        if cancelled is not None and cancelled():
+            canceled = True
+            break
         try:
             if row["expected_label"] not in ("OK", "NG"):
                 raise ValueError("Rótulo fora das pastas OK/NG")
@@ -178,16 +183,10 @@ def replay_knn_archive_visual(
             reference, test, info = extractor(frame)
             if not isinstance(info, dict):
                 raise ValueError("Extrator AOI não informou metadados")
-            observed_category, normalized_value = normalize_aoi_text(
-                info.get("value", "")
+            category, normalized_value = resolve_archive_aoi_category(
+                info, row["category_hint"],
             )
-            category = canonical_memory_category(observed_category)
-            hint = canonical_memory_category(row["category_hint"])
             row["ocr_observed_category"] = category
-            if not category or category in {"UNKNOWN", "UNKNOW"}:
-                raise ValueError("Categoria OCR não reconhecida")
-            if not hint or hint in {"UNKNOWN", "UNKNOW"} or category != hint:
-                raise ValueError(f"Categoria OCR {category!r} != arquivo {hint!r}")
             signature = build_anomaly_signature(
                 reference, test, {}, {
                     **info, "category": category, "value": normalized_value,
@@ -213,6 +212,9 @@ def replay_knn_archive_visual(
             )].append(row)
 
     for row in rows:
+        if cancelled is not None and cancelled():
+            canceled = True
+            break
         if row["status"] != "PRONTO_PARA_KNN":
             continue
         selected = []
@@ -272,8 +274,62 @@ def replay_knn_archive_visual(
             else "REGRESSAO"
         )
 
+    if canceled:
+        # Não alegar que uma execução incompleta atingiu a meta.
+        for row in rows:
+            if row["status"] == "PRONTO_PARA_KNN":
+                row["status"] = "NAO_ANALISADO"
+                row["prediction"] = None
+
+    # Agrupamento conservador para DIAGNÓSTICO de cobertura: manifesto
+    # autenticado quando existe, senão prefixo apenas como pista. Não usar
+    # o agrupamento inferido como comprovação de peça/event_id real.
+    groups = defaultdict(list)
+    for row in rows:
+        key = (
+            ("manifest", row["event_id"])
+            if row.get("event_id") else
+            ("prefix_hint", row["capture_prefix_hint"])
+        )
+        groups[key].append(row)
+    cohorts = {"side_only": [], "three_lights": [], "partial_other": []}
+    verified_groups = 0
+    inferred_groups = 0
+    counts = {"side_only": 0, "three_lights": 0, "partial_other": 0}
+    for (kind, _group), entries in groups.items():
+        verified_groups += int(kind == "manifest")
+        inferred_groups += int(kind == "prefix_hint")
+        lights = {entry["lighting_mode"] for entry in entries}
+        if lights == {"SIDE"}:
+            cohort = "side_only"
+        elif lights == {"SIDE", "TOP", "MID"}:
+            cohort = "three_lights"
+        else:
+            cohort = "partial_other"
+        cohorts[cohort].extend(entries)
+        counts[cohort] += 1
+
     result = _measure(rows)
+    if canceled:
+        result["target_98pct_met"] = False
     return {
+        "complete": not canceled,
+        "canceled": canceled,
+        "by_capture_cohort": {
+            cohort: {
+                "capture_groups": counts[cohort],
+                "results": _measure(entries),
+            }
+            for cohort, entries in cohorts.items()
+        },
+        "capture_grouping": {
+            "manifest_verified_groups": verified_groups,
+            "prefix_hint_groups_unverified": inferred_groups,
+            "interpretation": (
+                "Prefixos apenas estimam conjunto de iluminação; "
+                "não comprovam mesma peça, event_id nem consenso."
+            ),
+        },
         "schema": SCHEMA,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "root": str(root),
@@ -309,7 +365,11 @@ def replay_knn_archive_visual(
             "leave_one_out pode haver correlação temporal; o protocolo "
             "padrão leave_day_out remove do treino todas as imagens do "
             "mesmo dia. Sem PNGs locais não é possível medir resultados. "
-            "Um acervo fechado com >98% não prova generalização futura."
+            "Um acervo fechado com >98% não prova generalização futura. "
+            "Subgrupos SIDE apenas e 3 luzes são contagens por manifesto "
+            "verificado ou prefixo como pista, nunca confirmação automática "
+            "de event_id. Ausência de independência física entre placas ou "
+            "lotes impede inferir taxa real de futuras peças."
         ),
     }
 
