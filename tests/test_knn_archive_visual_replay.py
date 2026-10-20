@@ -53,7 +53,7 @@ def extract(kind: str):
     return reference, test, info
 
 
-def runner(rows, *, protocol="leave_day_out", k=1, conflicts=(),
+def runner(rows, *, protocol="visual_holdout", k=1, conflicts=(),
            extractor=extract, cancelled=None, progress=None):
     return replay_knn_archive_visual(
         Path("/not-a-real-odin-dataset"),
@@ -86,7 +86,7 @@ class KnnArchiveReplayTests(unittest.TestCase):
             )
             self.assertFalse(case["shadow_candidate"]["auto_decision_authorized"])
 
-    def test_two_classes_match_with_another_day_and_never_self(self):
+    def test_two_classes_match_by_visual_appearance_and_never_self(self):
         report = runner(self.rows)
         self.assertEqual(report["inventory_png_count"], 4)
         self.assertEqual(report["results"]["by_label"]["OK"]["correct"], 2)
@@ -101,71 +101,48 @@ class KnnArchiveReplayTests(unittest.TestCase):
             self.assertNotEqual(
                 case["neighbors"][0]["source_path"], case["source_path"]
             )
-            self.assertNotEqual(
-                case["neighbors"][0]["source_path"].split("/")[2][:10],
-                case["source_path"].split("/")[2][:10],
-            )
+            self.assertFalse(report["date_used_for_neighbor_selection"])
+            self.assertEqual(report["similarity_basis"],
+                             "reference_vs_capture_global_outer_inner_epicenter")
 
-    def test_single_day_cannot_recycle_same_day(self):
+
+    def test_same_day_independent_visual_examples_are_valid_neighbors(self):
+        # Duas capturas de mesmo dia, mas não da mesma peça/evento.
         report = runner(self.rows[:2])
-        self.assertFalse(report["results"]["target_98pct_met"])
-        self.assertEqual(report["results"]["status_counts"], {"SEM_COBERTURA": 2})
-        self.assertEqual(report["results"]["by_label"]["OK"]["correct"], 0)
-        self.assertEqual(report["results"]["by_label"]["NG"]["correct"], 0)
-
-    def test_forward_day_only_uses_earlier_archive_images(self):
-        report = runner(self.rows, protocol="forward_day")
-        self.assertEqual(report["temporal_direction"], "ONLY_EARLIER_DAYS")
-        self.assertEqual(report["by_day"]["2026-10-02"]["status_counts"],
-                         {"SEM_COBERTURA": 2})
-        # O segundo dia pode aprender apenas com exemplares do primeiro.
-        self.assertEqual(report["by_day"]["2026-10-03"]["correct"], 2)
-        self.assertEqual(report["results"]["by_label"]["OK"]["correct"], 1)
-        self.assertEqual(report["results"]["by_label"]["NG"]["correct"], 1)
+        self.assertEqual(report["results"]["status_counts"], {"REGRESSAO": 2})
         for case in report["cases"]:
-            for neighbor in case["neighbors"]:
-                self.assertLess(
-                    neighbor["source_path"].split("/")[-1][:10],
-                    case["session_day_hint"],
-                )
+            self.assertEqual(case["neighbors_count"], 1)
+            self.assertEqual(case["source_path"].split("/")[-1][:10],
+                case["neighbors"][0]["source_path"].split("/")[-1][:10])
 
-    def test_forward_day_never_uses_future_to_decide_ng_as_ok(self):
-        # Antes do primeiro NG, dia 2 não tem vizinho NG e deve ser
-        # SEM_COBERTURA, não uma falsa predição retrospectiva.
-        rows = [
-            item("2026-10-02", "0900", "NG", "NG"),
-            item("2026-10-03", "0900", "OK", "OK"),
-            item("2026-10-04", "0900", "OK", "OK"),
-        ]
-        report = runner(rows, protocol="forward_day")
-        earliest = next(c for c in report["cases"]
-                        if c["session_day_hint"] == "2026-10-02")
-        self.assertEqual(earliest["status"], "SEM_COBERTURA")
-        self.assertIsNone(earliest["prediction"])
-        self.assertEqual(earliest["shadow_candidate"]["status"], "REVISAO")
-        self.assertTrue(all(
-            neighbor["source_path"].split("/")[-1][:10] < case["session_day_hint"]
-            for case in report["cases"] for neighbor in case["neighbors"]
-        ))
+    def test_visual_holdout_excludes_only_self_and_same_event(self):
+        from src.services.startup_regression.knn_archive_visual_replay import _row
+        a = item("2026-10-02", "0900", "OK", "A")
+        b = item("2026-10-02", "0901", "OK", "B")
+        self.assertFalse(_excluded(_row(a), _row(b)))
+        self.assertTrue(_excluded(_row(a), _row(a)))
+        b["event_id"] = "real-event-1"
+        a["event_id"] = "real-event-1"
+        self.assertTrue(_excluded(_row(a), _row(b)))
 
-    def test_leave_one_out_is_separate_less_strict_diagnostic(self):
-        report = runner(self.rows[:2], protocol="leave_one_out")
-        self.assertEqual(report["protocol"], "leave_one_out")
-        self.assertEqual(report["results"]["total"], 2)
-        self.assertNotEqual(report["results"]["status_counts"], {"SEM_COBERTURA": 2})
+    def test_one_valid_image_has_no_coverage(self):
+        report = runner([self.rows[0]])
+        self.assertEqual(report["results"]["status_counts"],
+                         {"SEM_COBERTURA": 1})
+        self.assertEqual(report["results"]["by_label"]["OK"]["correct"], 0)
 
     def test_exact_duplicate_and_same_prefix_never_become_neighbors(self):
         q = self.rows[0]
         same = dict(self.rows[2], pixel_sha256=q["pixel_sha256"])
         from src.services.startup_regression.knn_archive_visual_replay import _row
-        self.assertTrue(_excluded(_row(q), _row(same), "leave_one_out"))
+        self.assertTrue(_excluded(_row(q), _row(same), "visual_holdout"))
         second_light = dict(
             self.rows[2],
             path="public/ok_archive/2026-10-02_0900_FALTANDO_TOP.png",
             lighting_mode="TOP",
             pixel_sha256="different-pixels", file_sha256="different-file",
         )
-        self.assertTrue(_excluded(_row(q), _row(second_light), "leave_one_out"))
+        self.assertTrue(_excluded(_row(q), _row(second_light), "visual_holdout"))
 
     def test_current_category_only_ocr_no_longer_marks_archive_invalid(self):
         def category_only(frame):
@@ -210,10 +187,8 @@ class KnnArchiveReplayTests(unittest.TestCase):
         self.assertTrue(report["results"]["target_98pct_met"])
         for case in report["cases"]:
             for neighbor in case["neighbors"]:
-                self.assertNotEqual(
-                    neighbor["source_path"].split("/")[2][:10],
-                    case["source_path"].split("/")[2][:10],
-                )
+                self.assertNotEqual(neighbor["source_path"], case["source_path"])
+
 
     def test_cancellation_keeps_all_denominators_and_does_not_pass(self):
         called = []
