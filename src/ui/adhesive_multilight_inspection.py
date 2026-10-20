@@ -469,6 +469,17 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
         getattr(getattr(panel, "combo_mode", None), "currentText", lambda:"")()
         == "Modo Sombra"
     )
+    if shadow:
+        # Sonda exclusivamente informativa, execução em fila de UMA thread
+        # e sem espera. Nunca escreve em fused/verdict nem altera comandos XP.
+        from src.services.shadow_knn_similarity_probe import enqueue_shadow_candidate
+        from src.config.settings import BASE_DIR
+        enqueue_shadow_candidate(
+            getattr(panel, "adhesive_multilight_learning_samples", None),
+            category,
+            str(getattr(panel, "adhesive_multilight_primary_event_id", "") or ""),
+            BASE_DIR,
+        )
     # No caminho rápido, apenas OK/NG no painel: sem reconstruções,
     # seis QPixmaps, Grad-CAM nem QApplication.processEvents bloqueante.
     if shadow:
@@ -1042,12 +1053,23 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         )
         if not network_cycle or not is_multilight_category(aoi_info):
             _reset_session(self, show_normal=True)
-            return original_process_aoi_images(
-                self,
-                sample_crop,
-                ng_crop,
-                aoi_info,
+            outcome = original_process_aoi_images(
+                self, sample_crop, ng_crop, aoi_info,
             )
+            if self.combo_mode.currentText() == "Modo Sombra":
+                from src.services.shadow_knn_similarity_probe import enqueue_shadow_candidate
+                from src.config.settings import BASE_DIR
+                enqueue_shadow_candidate(
+                    {"SIDE": {
+                        "lighting_mode": "SIDE",
+                        "sample_image": sample_crop,
+                        "test_image": ng_crop,
+                    }},
+                    category,
+                    str(getattr(self, "network_intake_last_image_event_id", "") or ""),
+                    BASE_DIR,
+                )
+            return outcome
 
         # A primeira imagem SIDE continua usando o pipeline atual integralmente.
         # A iluminação também entra no aoi_info para manter a memória KNN
