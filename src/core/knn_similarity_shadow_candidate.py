@@ -14,13 +14,13 @@ SCHEMA = "visionx.knn_shadow_similarity_candidate.v1"
 K = 5
 MIN_SIMILARITY = 0.94
 MIN_DAYS_SAME_CLASS = 2
-DATE = re.compile(r"(20\d{2}[-_]?[01]\d[-_]?[0-3]\d)")
+DATE = re.compile(r"(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)")
 LIGHTS = frozenset(("SIDE", "TOP", "MID"))
 
 
 def _day(source: str) -> str | None:
     hit = DATE.search(Path(str(source)).name)
-    return hit.group(1).replace("_", "-") if hit else None
+    return "-".join(hit.groups()) if hit else None
 
 
 def select_shadow_candidate(
