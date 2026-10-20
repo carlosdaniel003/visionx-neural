@@ -153,8 +153,26 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
             f"NG->OK {gc['NG_suggested_OK']} | "
             f"meta 97% {gc['target_97pct_met']}",
             f"Falhas na extração geométrica: {geo['geometry_failures']}",
+            "C = sugestões seletivas A ou B, SOMENTE se os votos "
+            "KNN A e B concordam; conflitos -> REVISÃO. "
+            "C é somente diagnóstico.",
+            f"C conservadora: "
+            f"{geo['consensus_candidate']['correct_suggestions']}/"
+            f"{geo['consensus_candidate']['suggestions']} | "
+            f"cobertura {100*geo['consensus_candidate']['coverage']:.2f}% "
+            f"| revisões {geo['consensus_candidate']['reviews']} "
+            f"| NG->OK {geo['consensus_candidate']['NG_suggested_OK']} "
+            f"| meta 97% {geo['consensus_candidate']['target_97pct_met']}",
+            f"Fontes C: {geo['consensus_source_counts']}",
             "Métricas do mesmo acervo; NÃO comprova generalização.",
         ])
+        for cat, metric in geo["consensus_by_category"].items():
+            lines.append(
+                f"  C {cat}: sugestões={metric['suggestions']} "
+                f"acertos={metric['correct_suggestions']} "
+                f"revisões={metric['reviews']} "
+                f"NG->OK={metric['NG_suggested_OK']}"
+            )
         for category, entry in geo["by_category"].items():
             summary = entry["shadow_candidate"]
             lines.append(
@@ -277,6 +295,15 @@ def main(argv=None) -> int:
             f"{gc['correct_suggestions']}/{gc['suggestions']} "
             f"| cobertura {gc['coverage']:.2%} "
             f"| meta 97% {gc['target_97pct_met']}",
+            flush=True,
+        )
+    if geom:
+        cc = geom["consensus_candidate"]
+        print(
+            f"CONCORDANCIA C (OFFLINE): {cc['correct_suggestions']}/"
+            f"{cc['suggestions']} sugestões | cobertura {cc['coverage']:.2%} "
+            f"| NG->OK {cc['NG_suggested_OK']} "
+            f"| meta 97% {cc['target_97pct_met']}",
             flush=True,
         )
     print(f"JSON: {j}\nTXT: {t}", flush=True)
