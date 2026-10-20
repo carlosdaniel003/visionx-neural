@@ -149,7 +149,7 @@ class TrainingPanelUITests(unittest.TestCase):
         self.assertFalse(hasattr(ui, "similarity_protocol"))
         self.assertIn("Testar KNN por similaridade", ui.similarity_button.text())
         self.assertIn("epicentro menor", ui.similarity_button.toolTip())
-        self.assertIn("sem filtrar datas", ui.similarity_button.toolTip())
+        self.assertIn("sem filtrar por datas", ui.similarity_button.toolTip())
 
     def test_shadow_candidate_in_similarity_report_is_visible(self):
         ui = install_training_validation_panel(self.window, root=self.root)
