@@ -132,6 +132,37 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
                 f"NG certo={bucket['by_label']['NG']['SUGERE_NG']} "
                 f"NG->OK={bucket['NG_suggested_OK']} revisoes={bucket['reviews']}"
             )
+    geo = report.get("geometry_experiment")
+    if geo:
+        gm, gc = geo["results"], geo["shadow_candidate"]
+        lines.extend([
+            "",
+            "COMPARAÇÃO A/B DE GEOMETRIA (EXPERIMENTAL; SEM PROMOÇÃO):",
+            "A = KNN v3 original; B = bordas desaparecidas/adicionadas "
+            "nas regiões AOI (peso geométrico de 35%).",
+            f"A acertos: {metrics['correct']}/{metrics['total']} | "
+            f"NG->OK {metrics['NG_as_OK']}",
+            f"B acertos: {gm['correct']}/{gm['total']} | "
+            f"NG->OK {gm['NG_as_OK']}",
+            f"A conservadora: {shadow.get('correct_suggestions', 0)}/"
+            f"{shadow.get('suggestions', 0)} | cobertura "
+            f"{100 * shadow.get('coverage', 0):.2f}%",
+            f"B conservadora: {gc['correct_suggestions']}/"
+            f"{gc['suggestions']} | cobertura "
+            f"{100 * gc['coverage']:.2f}% | "
+            f"NG->OK {gc['NG_suggested_OK']} | "
+            f"meta 97% {gc['target_97pct_met']}",
+            f"Falhas na extração geométrica: {geo['geometry_failures']}",
+            "Métricas do mesmo acervo; NÃO comprova generalização.",
+        ])
+        for category, entry in geo["by_category"].items():
+            summary = entry["shadow_candidate"]
+            lines.append(
+                f"  B {category}: sugestões={summary['suggestions']} "
+                f"acertos={summary['correct_suggestions']} "
+                f"revisões={summary['reviews']} "
+                f"NG->OK={summary['NG_suggested_OK']}"
+            )
     focus = report.get("focus_detection") or {}
     lines.extend([
         "", "DETECÇÃO DAS REGIÕES AOI:",
@@ -184,6 +215,10 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument(
+        "--geometry-experiment", action="store_true",
+        help="A/B: descritor visual v3 versus geometria do gabarito e captura.",
+    )
+    parser.add_argument(
         "--protocol", choices=VALID_PROTOCOLS, default="visual_holdout",
         help="visual_holdout: compara imagens do acervo pelo aspecto visual",
     )
@@ -199,7 +234,8 @@ def main(argv=None) -> int:
             print(f"[{n}/{total}] {path}", flush=True)
 
     report = replay_knn_archive_visual(
-        root, k=args.k, protocol=args.protocol, progress=progress
+        root, k=args.k, protocol=args.protocol,
+        geometry_experiment=args.geometry_experiment, progress=progress
     )
     j, t = write_knn_archive_reports(
         report, root / "reports" / "startup_regression"
@@ -232,6 +268,17 @@ def main(argv=None) -> int:
         f"BASELINE: meta anterior de 98% por classe: {stats['target_98pct_met']}",
         flush=True,
     )
+    geom = report.get("geometry_experiment")
+    if geom:
+        gm, gc = geom["results"], geom["shadow_candidate"]
+        print(
+            f"GEOMETRIA B: acertos {gm['correct']}/{gm['total']} "
+            f"NG->OK {gm['NG_as_OK']} | conservadora "
+            f"{gc['correct_suggestions']}/{gc['suggestions']} "
+            f"| cobertura {gc['coverage']:.2%} "
+            f"| meta 97% {gc['target_97pct_met']}",
+            flush=True,
+        )
     print(f"JSON: {j}\nTXT: {t}", flush=True)
     print("Sem qualquer alteração na memória ou política produtiva.", flush=True)
     return 0
