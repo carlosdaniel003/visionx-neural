@@ -1,102 +1,89 @@
-"""Classificador seletivo KNN aproximado, EXCLUSIVO para shadow/diagnóstico.
+"""KNN visual seletiva para replay OFFLINE do acervo, sem critério temporal.
 
-Nunca modifica a decisão da linha, o verificador de pares exatos ou o XP.
-Usa somente os vizinhos da mesma categoria+iluminação preparados pelo
-chamador e não recebe o rótulo da consulta.
+Todos os vizinhos são pares gabarito/captura da mesma categoria+iluminação,
+desduplicados por identidade visual e com o próprio evento excluído.
+Somente diagnóstico: não participa da KNN exata, fusão ou comandos XP.
 """
 from __future__ import annotations
 
 import math
-from pathlib import Path
-import re
 
-SCHEMA = "visionx.knn_shadow_similarity_candidate.v1"
+SCHEMA = "visionx.knn_archive_visual_candidate.v2"
 K = 5
-MIN_SIMILARITY = 0.94
-MIN_DAYS_SAME_CLASS = 2
-DATE = re.compile(r"(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)")
+# Similaridade do novo descritor global/moldura/epicentro; valor provisório.
+MIN_SIMILARITY = .90
+MIN_INDEPENDENT_COUNTEREXAMPLES = 2
 LIGHTS = frozenset(("SIDE", "TOP", "MID"))
-
-
-def _day(source: str) -> str | None:
-    hit = DATE.search(Path(str(source)).name)
-    return "-".join(hit.groups()) if hit else None
 
 
 def select_shadow_candidate(
     neighbors: list[dict], *, category: str, lighting: str,
-    scope_days: dict[str, int] | None = None,
+    scope_examples: dict[str, int] | None = None,
 ) -> dict:
-    """Sugere OK/NG ou abstém; nunca gera KNOWN nem autorização automática.
-
-    scope_days conta datas distintas com OK e NG na categoria+iluminação.
-    Para sugerir OK, exige contraprova NG disponível na memória, mesmo que
-    os cinco vizinhos mais próximos sejam OK. Sem scope comprovado: revisão.
-    """
+    """Retorna SUGERE_OK, SUGERE_NG ou REVISAO sem consultar o rótulo real."""
     result = {
         "schema": SCHEMA, "diagnostic_only": True,
         "auto_decision_authorized": False, "xp_command": None,
         "similarity_is_probability": False, "category": str(category),
         "lighting_mode": str(lighting), "status": "REVISAO",
-        "reason": "EVIDENCIA_INSUFICIENTE",
-        "best_similarity": None, "neighbors_considered": 0,
+        "reason": "EVIDENCIA_INSUFICIENTE", "best_similarity": None,
+        "neighbors_considered": 0,
     }
     if str(lighting).upper() not in LIGHTS or not str(category).strip():
         result["reason"] = "ESCOPO_OCR_OU_LUZ_INVALIDO"
         return result
-    if not isinstance(neighbors, list) or not isinstance(scope_days, dict):
-        result["reason"] = "SEM_MEMORIA_DAS_DUAS_CLASSES"
+    if not isinstance(neighbors, list) or not isinstance(scope_examples, dict):
+        result["reason"] = "SEM_CONTRAPROVA_VISUAL"
         return result
-    if min(int(scope_days.get(x) or 0) for x in ("OK", "NG")) < 1:
-        result["reason"] = "SEM_MEMORIA_DAS_DUAS_CLASSES"
+    if min(int(scope_examples.get(x) or 0) for x in ("OK", "NG")) < 1:
+        result["reason"] = "SEM_CONTRAPROVA_VISUAL"
         return result
 
     ranked = []
+    seen = set()
     for item in neighbors:
         if not isinstance(item, dict):
             continue
         label = str(item.get("label") or "").upper()
         sim = item.get("similarity")
-        source = item.get("source_path") or item.get("source") or ""
+        fingerprint = item.get("source_pixel_sha256") or item.get("source_path")
         if label not in ("OK", "NG") or not isinstance(sim, (int, float)):
             continue
         if not math.isfinite(float(sim)) or not 0 <= float(sim) <= 1:
             continue
-        day = _day(str(source))
-        if not day:
+        if not fingerprint or fingerprint in seen:
             continue
-        ranked.append((float(sim), label, day, str(source)))
-    ranked.sort(key=lambda r: (-r[0], r[3]))
+        seen.add(fingerprint)
+        ranked.append((float(sim), label, str(fingerprint)))
+    ranked.sort(key=lambda r: (-r[0], r[2]))
     ranked = ranked[:K]
     result["neighbors_considered"] = len(ranked)
     if not ranked:
-        result["reason"] = "SEM_VIZINHOS_VALIDOS"
+        result["reason"] = "SEM_VIZINHOS_VISUAIS"
         return result
     result["best_similarity"] = round(ranked[0][0], 8)
     if len(ranked) < K:
-        result["reason"] = "MENOS_DE_CINCO_VIZINHOS"
+        result["reason"] = "MENOS_DE_CINCO_EXEMPLOS_VISUAIS"
         return result
     if ranked[0][0] < MIN_SIMILARITY:
-        result["reason"] = "SIMILARIDADE_INSUFICIENTE"
+        result["reason"] = "SIMILARIDADE_VISUAL_INSUFICIENTE"
         return result
 
-    ng = [r for r in ranked if r[1] == "NG"]
     ok = [r for r in ranked if r[1] == "OK"]
+    ng = [r for r in ranked if r[1] == "NG"]
     if len(ok) == K:
-        # Sem exemplos NG em pelo menos dois dias, a semelhança com OK
-        # NÃO é base para liberar uma possível peça NG inédita.
-        if int(scope_days.get("NG") or 0) < MIN_DAYS_SAME_CLASS:
-            result["reason"] = "NG_SEM_COBERTURA_INDEPENDENTE"
-        elif len({r[2] for r in ok}) < MIN_DAYS_SAME_CLASS:
-            result["reason"] = "OK_SEM_DIVERSIDADE_DE_DIAS"
+        # Mesmo cinco OK semelhantes não justificam ignorar NG se a
+        # categoria/iluminação não tem contraprovas visuais suficientes.
+        if int(scope_examples.get("NG") or 0) < MIN_INDEPENDENT_COUNTEREXAMPLES:
+            result["reason"] = "NG_SEM_CONTRAPROVA_VISUAL"
         else:
             result["status"] = "SUGERE_OK"
-            result["reason"] = "CINCO_OK_CONCORDANTES_COM_CONTRAPROVA_NG"
-    elif len(ng) >= 3 and len({r[2] for r in ng}) >= MIN_DAYS_SAME_CLASS:
+            result["reason"] = "CINCO_OK_VISUALMENTE_CONCORDANTES"
+    elif len(ng) >= 3 and int(scope_examples.get("NG") or 0) >= MIN_INDEPENDENT_COUNTEREXAMPLES:
         result["status"] = "SUGERE_NG"
-        result["reason"] = "MAIORIA_NG_EM_DIAS_DISTINTOS"
+        result["reason"] = "MAIORIA_NG_VISUAL"
     else:
-        result["reason"] = "VIZINHOS_DIVERGENTES_OU_POUCO_DIVERSOS"
+        result["reason"] = "VIZINHOS_VISUAIS_DIVERGENTES"
     return result
 
 
