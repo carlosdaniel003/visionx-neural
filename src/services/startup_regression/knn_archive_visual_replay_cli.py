@@ -106,13 +106,22 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
         lines.extend([
             "",
             "CANDIDATO KNN POR EPICENTRO (NAO CONTROLA XP):",
-            "Similaridade experimental de epicentro >=0.90; cinco vizinhos "
-            "visuais distintos. OK exige exemplos NG de contraprova visual.",
+            "Meta >=97% de PRECISAO ENTRE SUGESTOES (nao de todo o acervo).",
+            "Cobertura conta TODAS as imagens, inclusive as enviadas a revisao.",
+            "Similaridade experimental >=0.90; cinco vizinhos distintos. "
+            "OK exige cinco OK e contraprova NG; NG exige >=3 NG e voto "
+            "ponderado NG >0.5, sem divergencia entre voto e maioria.",
+            f"Precisao condicional: {100*shadow.get('conditional_precision', 0):.2f}% "
+            f"({shadow.get('correct_suggestions', 0)}/{shadow.get('suggestions', 0)} sugestoes)",
+            f"Cobertura: {100*shadow.get('coverage', 0):.2f}% "
+            f"({shadow.get('suggestions', 0)}/{shadow.get('total', 0)} imagens)",
+            f"Meta 97% + zero NG->OK observados: {shadow.get('target_97pct_met', False)}",
             f"OK sugerido corretamente: {ok_c.get('SUGERE_OK', 0)}/{ok_c.get('total', 0)}",
             f"NG sugerido corretamente: {ng_c.get('SUGERE_NG', 0)}/{ng_c.get('total', 0)}",
             f"NG sugeridos como OK (perigoso): {shadow.get('NG_suggested_OK', 0)}",
             f"OK sugeridos como NG: {shadow.get('OK_suggested_NG', 0)}",
             f"REVISAO/SEM COBERTURA: {shadow.get('reviews', 0)}",
+            f"Erros entre sugestoes: {shadow.get('incorrect_suggestions', 0)}",
             "AVISO: comparação visual independente do dia, mas imagens do "
             "mesmo lote ainda podem ter correlação; não aprovado para Produção.",
         ])
@@ -151,6 +160,8 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
             f"votoNG={case['knn_score_ng']} | "
             f"sim={case['best_similarity']} | "
             f"vizinhosOK={case['neighbors_ok']} NG={case['neighbors_ng']} | "
+            f"candidato={case.get('shadow_candidate', {}).get('status', 'N/D')} | "
+            f"motivo={case.get('shadow_candidate', {}).get('reason', 'N/D')} | "
             f"{case['error'] or ''}"
         )
     lines.extend([
@@ -201,8 +212,24 @@ def main(argv=None) -> int:
         f"NG->OK: {stats['NG_as_OK']}",
         flush=True,
     )
+    candidate = report["shadow_candidate"]
     print(
-        f"META >=98% POR CLASSE: {stats['target_98pct_met']}",
+        "CANDIDATO CONSERVADOR: "
+        f"precisão entre sugestões {candidate['conditional_precision']:.2%} "
+        f"({candidate['correct_suggestions']}/{candidate['suggestions']}) | "
+        f"cobertura {candidate['coverage']:.2%} "
+        f"({candidate['suggestions']}/{candidate['total']}) | "
+        f"revisões {candidate['reviews']} | "
+        f"NG->OK {candidate['NG_suggested_OK']}",
+        flush=True,
+    )
+    print(
+        f"META CANDIDATO >=97% CONDICIONAL: {candidate['target_97pct_met']} "
+        "(somente diagnóstico, não aprova produção)",
+        flush=True,
+    )
+    print(
+        f"BASELINE: meta anterior de 98% por classe: {stats['target_98pct_met']}",
         flush=True,
     )
     print(f"JSON: {j}\nTXT: {t}", flush=True)

@@ -274,15 +274,9 @@ def replay_knn_archive_visual(
                 row["status"] = "NAO_ANALISADO"
                 row["prediction"] = None
 
-    # O candidato usa somente evidências visuais DISTINTAS. Rótulos das
-    # imagens consultadas nunca participam da seleção nem da predição.
-    examples = defaultdict(lambda: {"OK": set(), "NG": set()})
-    for row in rows:
-        if row["status"] not in {"INVALIDO", "NAO_ANALISADO"}:
-            identity = row["source_pixel_sha256"] or row["source_file_sha256"]
-            if identity:
-                examples[(canonical_memory_category(row["ocr_observed_category"]),
-                          row["lighting_mode"])][row["expected_label"]].add(identity)
+    # O candidato só usa vizinhos admissíveis da MESMA categoria/luz.
+    # A cobertura de contraprova também exclui o próprio par, duplicatas
+    # e eventos conhecidos, e nunca usa o rótulo da imagem consultada.
     for row in rows:
         if row["status"] in {"INVALIDO", "NAO_ANALISADO"}:
             row["shadow_candidate"] = {
@@ -290,16 +284,22 @@ def replay_knn_archive_visual(
                 "diagnostic_only": True, "auto_decision_authorized": False,
             }
             continue
-        scope = examples[(canonical_memory_category(row["ocr_observed_category"]),
-                          row["lighting_mode"])]
-        query_id = row["source_pixel_sha256"] or row["source_file_sha256"]
-        support = {
-            label: len(values - ({query_id} if query_id else set()))
-            for label, values in scope.items()
-        }
+        eligible = (
+            other for other in pools[(
+                canonical_memory_category(row["ocr_observed_category"]),
+                row["lighting_mode"],
+            )]
+            if not _excluded(row, other, protocol)
+        )
+        support = {"OK": set(), "NG": set()}
+        for other in eligible:
+            ident = other["source_pixel_sha256"] or other["source_file_sha256"]
+            if ident and other["expected_label"] in support:
+                support[other["expected_label"]].add(ident)
         row["shadow_candidate"] = select_shadow_candidate(
             row["neighbors"], category=row["ocr_observed_category"],
-            lighting=row["lighting_mode"], scope_examples=support,
+            lighting=row["lighting_mode"],
+            scope_examples={label: len(ids) for label, ids in support.items()},
         )
 
     # Agrupamento conservador para DIAGNÓSTICO de cobertura: manifesto
@@ -335,15 +335,18 @@ def replay_knn_archive_visual(
         result["target_98pct_met"] = False
     return {
         "complete": not canceled,
-        "shadow_candidate": summarize_shadow_candidates(rows),
+        "shadow_candidate": summarize_shadow_candidates(rows, complete=not canceled),
         "shadow_candidate_by_lighting": {
             mode: summarize_shadow_candidates([r for r in rows
-                  if r["lighting_mode"] == mode])
+                  if r["lighting_mode"] == mode], complete=not canceled)
             for mode in ("SIDE", "TOP", "MID")
         },
         "shadow_candidate_by_category": {
-            name: summarize_shadow_candidates([r for r in rows
-                  if canonical_memory_category(r["category_hint"]) == name])
+            name: summarize_shadow_candidates(
+                [r for r in rows
+                 if canonical_memory_category(r["category_hint"]) == name],
+                complete=not canceled,
+            )
             for name in sorted({canonical_memory_category(r["category_hint"])
                                 for r in rows})
         },
@@ -352,7 +355,7 @@ def replay_knn_archive_visual(
             cohort: {
                 "capture_groups": counts[cohort],
                 "results": _measure(entries),
-                "shadow_candidate": summarize_shadow_candidates(entries),
+                "shadow_candidate": summarize_shadow_candidates(entries, complete=not canceled),
             }
             for cohort, entries in cohorts.items()
         },
@@ -373,6 +376,7 @@ def replay_knn_archive_visual(
         "date_used_for_neighbor_selection": False,
         "k": k,
         "expected_retention_rate_by_label": 0.98,
+        "candidate_target_conditional_precision": 0.97,
         "inventory_png_count": len(items),
         "memory_source": ["public/ok_archive", "public/ng_archive"],
         "uses_legacy_memory_json": False,

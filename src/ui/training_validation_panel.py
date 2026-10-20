@@ -622,19 +622,35 @@ class ArchiveTrainingPanel(QObject):
             candidate = packet.get("shadow_candidate") or {}
             ok_c = (candidate.get("by_label") or {}).get("OK") or {}
             ng_c = (candidate.get("by_label") or {}).get("NG") or {}
+            precise = candidate.get("conditional_precision")
+            precision_text = (
+                f"{100 * float(precise):.2f}%"
+                if precise is not None else "N/D"
+            )
+            coverage = candidate.get("coverage")
+            coverage_text = (
+                f"{100 * float(coverage):.1f}%"
+                if coverage is not None else "N/D"
+            )
             self.shadow_candidate_metric.setText(
-                "<b>KNN CANDIDATO ACERVO</b> | "
+                "<b>KNN CANDIDATO ACERVO • META 97%</b> | "
                 f'<span style="color:#4ade80">OK '
                 f'{ok_c.get("SUGERE_OK", 0)}/{ok_c.get("total", 0)}</span> • '
                 f'<span style="color:#ff7777">NG '
                 f'{ng_c.get("SUGERE_NG", 0)}/{ng_c.get("total", 0)}</span> • '
                 f'NG→OK {candidate.get("NG_suggested_OK", 0)} • '
                 f'OK→NG {candidate.get("OK_suggested_NG", 0)} • '
-                f'Revisão {candidate.get("reviews", 0)}'
+                f'Revisão {candidate.get("reviews", 0)} • '
+                f'Precisão nas sugestões {precision_text} '
+                f'({candidate.get("correct_suggestions", 0)}/'
+                f'{candidate.get("suggestions", 0)}) • '
+                f'Cobertura {coverage_text}'
             )
             cohorts = packet.get("by_capture_cohort") or {}
             lights = packet.get("by_lighting") or {}
             lines = [
+                "Candidato: meta 97% APENAS ENTRE SUGESTÕES; "
+                "revisões ficam fora da precisão mas dentro da cobertura.",
                 "Critério: diferença visual gabarito/captura + epicentros",
                 "JSON: " + str(packet.get("json_path") or "-"),
                 "TXT: " + str(packet.get("txt_path") or "-"),
@@ -675,15 +691,16 @@ class ArchiveTrainingPanel(QObject):
                 self.status.setText(
                     "Similaridade cancelada • relatório parcial salvo."
                 )
-            elif metrics.get("target_98pct_met"):
+            elif candidate.get("target_97pct_met"):
                 self.status.setText(
-                    "Replay por dia concluído • OK/NG >=98% no acervo. "
-                    "Isto não valida futuras peças nem libera produção."
+                    "Candidato KNN atingiu meta diagnóstica de 97% "
+                    "ENTRE SUGESTÕES do acervo, com zero NG→OK observado. "
+                    "Não libera produção; confira a cobertura."
                 )
             else:
                 self.status.setText(
-                    "Replay por dia concluído • revisar erros, lacunas "
-                    "e NG classificados como OK no relatório."
+                    "Candidato KNN: meta diagnóstica de 97% não atingida "
+                    "ou sem cobertura; revisar erros, NG→OK e abstenções."
                 )
         elif self._cancel_requested:
             self.status.setText(
