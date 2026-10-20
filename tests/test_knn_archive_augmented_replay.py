@@ -63,7 +63,7 @@ class AugmentedKNNReplayTests(unittest.TestCase):
             Path("/fake-root"), inventory=inventory(
                 self.images, conflicts=kwargs.pop("conflicts", ())
             ),
-            extractor=extract,
+            extractor=kwargs.pop("extractor", extract),
             frame_loader=lambda _root, img: img["expected_label"],
             variations=variations, k=1, **kwargs,
         )
