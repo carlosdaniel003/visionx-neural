@@ -53,9 +53,9 @@ def perturb_aoi_pair(reference: np.ndarray, capture: np.ndarray,
             or not isinstance(capture, np.ndarray)
             or reference.dtype != np.uint8 or capture.dtype != np.uint8
             or reference.ndim != 3 or capture.ndim != 3
-            or reference.shape != capture.shape
-            or reference.shape[2] != 3
-            or min(reference.shape[:2]) < 12):
+            or reference.shape[2] != 3 or capture.shape[2] != 3
+            or min(reference.shape[:2]) < 12
+            or min(capture.shape[:2]) < 12):
         raise ValueError("Par AOI inválido para variação de captura")
     seed = int.from_bytes(
         sha256(f"{source_path}|{variant}|knn_aug_v1".encode()).digest()[:8],
@@ -63,7 +63,18 @@ def perturb_aoi_pair(reference: np.ndarray, capture: np.ndarray,
     )
     rng = np.random.default_rng(seed)
     ref, test = reference.copy(), capture.copy()
+    # Os PNGs reais frequentemente têm gabarito e captura com TAMANHOS
+    # diferentes. Os descritores de replay já alinham a captura ao
+    # gabarito; as pequenas variações devem fazer o MESMO, não rejeitar o par.
+    # Jamais modifica os pixels do PNG arquivado.
+    capture_resized = ref.shape[:2] != test.shape[:2]
+    if capture_resized:
+        test = cv2.resize(
+            test, (ref.shape[1], ref.shape[0]), interpolation=cv2.INTER_AREA,
+        )
+    # Todas as transformações agora agem sobre o mesmo par alinhado.
     if variant == 0:
+        original_aligned_capture = test.copy()
         # Variação de exposição e ruído leve da câmera na captura somente.
         gain = float(rng.choice([0.985, 1.015]))
         bias = int(rng.choice([-3, 3]))
@@ -71,7 +82,8 @@ def perturb_aoi_pair(reference: np.ndarray, capture: np.ndarray,
         altered = np.clip(test.astype(np.float32) * gain + bias + noise, 0, 255)
         test = altered.astype(np.uint8)
         # A anotação verde da AOI não é iluminação física nem defeito.
-        test[_green_mask(capture) > 0] = capture[_green_mask(capture) > 0]
+        green = _green_mask(original_aligned_capture) > 0
+        test[green] = original_aligned_capture[green]
         settings = {"gain": gain, "bias": bias, "noise_sigma": 1.25}
     else:
         # Jitter de 1 px aplicado AO MESMO TEMPO aos dois lados.
@@ -79,19 +91,23 @@ def perturb_aoi_pair(reference: np.ndarray, capture: np.ndarray,
         dx = int(rng.choice([-1, 1]))
         dy = int(rng.choice([-1, 1]))
         affine = np.float32([[1, 0, dx], [0, 1, dy]])
-        h, w = reference.shape[:2]
+        h, w = ref.shape[:2]
         ref = cv2.warpAffine(
-            reference, affine, (w, h), borderMode=cv2.BORDER_REFLECT_101,
+            ref, affine, (w, h), borderMode=cv2.BORDER_REFLECT_101,
         )
         test = cv2.warpAffine(
-            capture, affine, (w, h), borderMode=cv2.BORDER_REFLECT_101,
+            test, affine, (w, h), borderMode=cv2.BORDER_REFLECT_101,
         )
         original_marks = _green_mask(test) > 0
         blurred = cv2.GaussianBlur(test, (3, 3), .55)
         blurred[original_marks] = test[original_marks]
         test = blurred
         settings = {"dx_both": dx, "dy_both": dy, "blur_sigma_capture": .55}
-    return ref, test, {"name": TRANSFORMS[variant], **settings}
+    return ref, test, {
+        "name": TRANSFORMS[variant],
+        "capture_resized_to_reference": bool(capture_resized),
+        **settings,
+    }
 
 
 def _neighbors(query_focus: dict, query_geometry: dict,
@@ -348,6 +364,11 @@ def replay_augmented_archive(
         "variations_per_original": variations,
         "expected_query_count": count * variations,
         "queries_completed": completed_queries,
+        "aligned_source_pairs": sum(
+            bool(r.get("variation_details", {}).get("capture_resized_to_reference"))
+            for r in rows
+            if r["variation"] == TRANSFORMS[0] and r.get("variation_details")
+        ),
         "category_used_for_selection": False,
         "same_lighting_only": True,
         "excludes_source_and_same_event": True,
