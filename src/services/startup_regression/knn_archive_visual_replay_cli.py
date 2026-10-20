@@ -173,7 +173,7 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument(
-        "--protocol", choices=VALID_PROTOCOLS, default="leave_day_out",
+        "--protocol", choices=VALID_PROTOCOLS, default="visual_holdout",
         help="visual_holdout: compara imagens do acervo pelo aspecto visual",
     )
     args = parser.parse_args(argv)
