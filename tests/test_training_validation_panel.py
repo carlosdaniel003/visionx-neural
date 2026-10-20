@@ -147,9 +147,43 @@ class TrainingPanelUITests(unittest.TestCase):
     def test_visual_similarity_has_no_day_selector(self):
         ui = install_training_validation_panel(self.window, root=self.root)
         self.assertFalse(hasattr(ui, "similarity_protocol"))
+        self.assertFalse(ui.geometry_experiment_box.isChecked())
+        self.assertIn("somente acervo", ui.geometry_experiment_box.text())
         self.assertIn("Testar KNN por similaridade", ui.similarity_button.text())
         self.assertIn("epicentro menor", ui.similarity_button.toolTip())
         self.assertIn("sem filtrar por datas", ui.similarity_button.toolTip())
+
+    def test_geometry_ab_is_optional_and_shows_a_and_b(self):
+        ui = install_training_validation_panel(self.window, root=self.root)
+        ui._finish_similarity(0, {
+            "complete": True, "canceled": False,
+            "results": {
+                "correct": 3, "total": 4, "NG_as_OK": 1,
+                "by_label": {"OK": {"total": 2, "correct": 2},
+                             "NG": {"total": 2, "correct": 1}},
+            },
+            "shadow_candidate": {
+                "by_label": {"OK": {"total": 2, "SUGERE_OK": 1},
+                             "NG": {"total": 2, "SUGERE_NG": 1}},
+                "correct_suggestions": 2, "suggestions": 2,
+                "conditional_precision": 1.0, "coverage": .5,
+                "reviews": 2, "target_97pct_met": True,
+                "NG_suggested_OK": 0, "OK_suggested_NG": 0,
+            },
+            "geometry_experiment": {
+                "results": {"correct": 4, "total": 4, "NG_as_OK": 0},
+                "shadow_candidate": {
+                    "correct_suggestions": 3, "suggestions": 3,
+                    "coverage": .75, "NG_suggested_OK": 0,
+                },
+            },
+            "by_lighting": {}, "by_capture_cohort": {},
+            "focus_detection": {"total": 4},
+        })
+        self.assertIn("GEOMETRIA A/B", ui.details.text())
+        self.assertIn("B geometria: 4/4", ui.details.text())
+        self.assertIn("cobertura 75.0%", ui.details.text())
+        self.assertIn("NÃO ATIVA", ui.details.text())
 
     def test_shadow_candidate_in_similarity_report_is_visible(self):
         ui = install_training_validation_panel(self.window, root=self.root)
