@@ -40,6 +40,8 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
         f"Acertos: {metrics['correct']}/{metrics['total']}",
         f"Meta KNN >=98% em OK E em NG: {metrics['target_98pct_met']}",
         f"Status: {metrics['status_counts']}",
+        f"Completo: {report.get('complete', True)} | Cancelado: {report.get('canceled', False)}",
+        "Validação por dia; sem compartilhar capturas da mesma data.",
         "",
         "CLASSES SEPARADAS:",
     ]
@@ -64,6 +66,36 @@ def write_knn_archive_reports(report: dict, output_dir: Path) -> tuple[Path, Pat
             f"NG={stats['by_label']['NG']['correct']}/"
             f"{stats['by_label']['NG']['total']}; "
             f"status={stats['status_counts']}"
+        )
+    cohort = report.get("by_capture_cohort") or {}
+    if cohort:
+        lines.extend(["", "COBERTURA DE CAPTURAS SIDE / TRÊS LUZES:"])
+        for key, title in (
+            ("side_only", "SOMENTE SIDE"),
+            ("three_lights", "SIDE+TOP+MID"),
+            ("partial_other", "PARCIAL/OUTROS"),
+        ):
+            data = cohort.get(key) or {}
+            stats = data.get("results") or {}
+            by = stats.get("by_label") or {}
+            ok = by.get("OK") or {}
+            ng = by.get("NG") or {}
+            lines.append(
+                f"{title}: grupos={data.get('capture_groups', 0)} "
+                f"OK={ok.get('correct', 0)}/{ok.get('total', 0)} "
+                f"NG={ng.get('correct', 0)}/{ng.get('total', 0)} "
+                f"NG->OK={stats.get('NG_as_OK', 0)}"
+            )
+        grouping = report.get("capture_grouping") or {}
+        lines.append(
+            "Manifestos verificados: "
+            + str(grouping.get("manifest_verified_groups", 0))
+            + "; prefixos não verificados: "
+            + str(grouping.get("prefix_hint_groups_unverified", 0))
+        )
+        lines.append(
+            "Sem manifesto, grupos são estimados por nome; "
+            "não comprovaram vínculo físico de evento."
         )
     lines.extend(["", "POR ILUMINAÇÃO:"])
     for mode, stats in report["by_lighting"].items():
