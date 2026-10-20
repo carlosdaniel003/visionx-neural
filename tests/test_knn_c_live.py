@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from src.core.knn_c_live import LiveKNNStrategyC, install_live_knn_strategy_c
+from src.ui.production_confidence_gate import production_decision_policy
 
 
 def sample(path, label, num, light="SIDE"):
@@ -146,6 +147,9 @@ class KNNCLiveTests(unittest.TestCase):
         self.assertTrue(res["detail"]["knn_c"]["conflicts_with_existing_verdict"])
         self.assertEqual(res["detail"]["knn_c"]["proposed_label"], "NG")
         self.assertEqual(res["confidence"], .5)
+        policy = production_decision_policy(res)
+        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["operator_review_required"])
 
     def test_ok_cannot_override_original_ng(self):
         res, calls = self.call("DEFEITO REAL", proposed="SUGERE_OK")
@@ -159,6 +163,9 @@ class KNNCLiveTests(unittest.TestCase):
         self.assertEqual(res["verdict"], "FALHA FALSA")
         self.assertTrue(res["production_review_required"])
         self.assertEqual(res["detail"]["knn_c"]["proposed_label"], "OK")
+        policy = production_decision_policy(res)
+        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["operator_review_required"])
 
     def test_review_does_not_force_a_verdict(self):
         res, _ = self.call("FALHA FALSA", proposed="REVISAO")
