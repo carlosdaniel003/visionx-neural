@@ -88,6 +88,7 @@ class TrainingPanelUITests(unittest.TestCase):
                 "NG_as_OK": 1,
                 "target_98pct_met": False,
             },
+            "focus_detection": {"total": 4, "outer_detected": 4, "inner_detected": 3},
             "by_capture_cohort": {
                 "side_only": {
                     "capture_groups": 2,
@@ -106,6 +107,7 @@ class TrainingPanelUITests(unittest.TestCase):
         self.assertIn("NG 1/2", ui.similarity_metric.text())
         self.assertIn("NG→OK 1", ui.similarity_metric.text())
         self.assertIn("Somente SIDE", ui.details.text())
+        self.assertIn("caixa menor 3/4", ui.details.text())
         self.assertIn("SIDE + TOP + MID", ui.details.text())
         self.assertIn("revisar erros", ui.status.text())
 
@@ -142,14 +144,12 @@ class TrainingPanelUITests(unittest.TestCase):
         ui._errors = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
         self.assertIn("NG 0/0", ui._live_metric_html("KNN_MEMORIA"))
 
-    def test_offline_temporal_protocol_choices(self):
+    def test_visual_similarity_has_no_day_selector(self):
         ui = install_training_validation_panel(self.window, root=self.root)
-        self.assertEqual(ui.similarity_protocol.currentData(), "leave_day_out")
-        self.assertEqual(ui.similarity_protocol.count(), 2)
-        ui.similarity_protocol.setCurrentIndex(1)
-        self.assertEqual(ui.similarity_protocol.currentData(), "forward_day")
-        self.assertIn("simula futuro", ui.similarity_protocol.currentText())
-        self.assertFalse(hasattr(ui, "live_probe"))
+        self.assertFalse(hasattr(ui, "similarity_protocol"))
+        self.assertIn("Testar KNN por similaridade", ui.similarity_button.text())
+        self.assertIn("epicentro menor", ui.similarity_button.toolTip())
+        self.assertIn("sem filtrar por datas", ui.similarity_button.toolTip())
 
     def test_shadow_candidate_in_similarity_report_is_visible(self):
         ui = install_training_validation_panel(self.window, root=self.root)

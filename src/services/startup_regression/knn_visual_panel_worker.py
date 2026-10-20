@@ -22,10 +22,10 @@ from src.services.startup_regression.knn_archive_visual_replay_cli import (
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="KNN similaridade, replay por dia")
+    parser = argparse.ArgumentParser(description="KNN acervo: gabarito × captura e epicentros")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument("--cancel-file", type=Path, required=True)
-    parser.add_argument("--protocol", choices=VALID_PROTOCOLS, default="leave_day_out")
+    parser.add_argument("--protocol", choices=VALID_PROTOCOLS, default="visual_holdout")
     args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()
     cancel = args.cancel_file.expanduser().resolve()
@@ -57,7 +57,8 @@ def main(argv=None) -> int:
             "event": "finished",
             "complete": report["complete"],
             "protocol": report["protocol"],
-            "temporal_direction": report["temporal_direction"],
+            "similarity_basis": report["similarity_basis"],
+            "focus_detection": report["focus_detection"],
             "canceled": report["canceled"],
             "json_path": str(jp),
             "txt_path": str(tp),

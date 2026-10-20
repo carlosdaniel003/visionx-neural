@@ -26,8 +26,14 @@ on:
     paths:
       - "src/services/archive_aoi_category.py"
       - "src/services/startup_regression/interactive_training_validation.py"
+      - "src/services/startup_regression/knn_archive_visual_replay.py"
+      - "src/services/startup_regression/knn_archive_focus_signature.py"
+      - "src/services/startup_regression/knn_visual_panel_worker.py"
+      - "src/ui/training_validation_panel.py"
+      - "src/core/knn_similarity_shadow_candidate.py"
       - "tests/test_archive_aoi_category.py"
       - "tests/test_interactive_training_validation.py"
+      - "tests/test_training_validation_panel.py"
       - ".github/workflows/interactive-training-validation-tests.yml"
   workflow_dispatch:
 

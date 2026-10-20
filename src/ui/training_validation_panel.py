@@ -18,7 +18,6 @@ from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Qt
 from PyQt6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar,
     QPushButton, QSizePolicy, QVBoxLayout, QApplication, QMessageBox,
-    QComboBox,
 )
 
 from src.config.settings import BASE_DIR
@@ -194,8 +193,8 @@ class ArchiveTrainingPanel(QObject):
         self.similarity_button = QPushButton("Testar KNN por similaridade")
         self.similarity_button.setObjectName("archiveTrainingSimilarity")
         self.similarity_button.setToolTip(
-            "Compara imagens de dias diferentes para medir se a KNN pode "
-            "reconhecer falhas e defeitos parecidos que ainda não viu."
+            "Compara pares AOI gabarito/captura por diferenças visuais, "
+            "usando caixa maior e epicentro menor sem filtrar por datas."
         )
         container.addLayout(title_row)
         action_row = QHBoxLayout()
@@ -203,26 +202,13 @@ class ArchiveTrainingPanel(QObject):
         action_row.addWidget(self.start_button)
         action_row.addWidget(self.similarity_button)
         action_row.addWidget(self.cancel_button)
-        self.similarity_protocol = QComboBox()
-        self.similarity_protocol.setObjectName("archiveSimilarityProtocol")
-        self.similarity_protocol.addItem(
-            "Dias diferentes (retrospectivo)", "leave_day_out"
-        )
-        self.similarity_protocol.addItem(
-            "Só dias anteriores (simula futuro)", "forward_day"
-        )
-        self.similarity_protocol.setToolTip(
-            "Usa somente PNGs arquivados. No modo cronológico, nenhuma "
-            "imagem posterior serve de vizinho para a consulta."
-        )
-        container.addWidget(self.similarity_protocol)
         container.addLayout(action_row)
 
         hint = QLabel(
             "Memória: correspondência exata KNN + CNN. Similaridade: KNN "
-            "experimental com outros dias ou somente anteriores, com resultados "
-            "para SIDE isolada e grupos de 3 luzes. Não usa captura ao vivo, "
-            "não treina nem libera XP."
+            "por diferença entre gabarito e captura, com caixa maior e "
+            "epicentro menor. Usa somente acervo OK/NG, sem filtrar datas "
+            "e sem comandar o XP."
         )
         hint.setObjectName("archiveTrainingHint")
         hint.setWordWrap(True)
@@ -322,7 +308,6 @@ class ArchiveTrainingPanel(QObject):
         self._cancel_path.unlink(missing_ok=True)
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
-        self.similarity_protocol.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("Inventariando imagens OK/NG...")
         self.details.setText("Processo de diagnóstico isolado, prioridade baixa.")
@@ -346,7 +331,6 @@ class ArchiveTrainingPanel(QObject):
             "src.services.startup_regression.interactive_training_validation",
             "--root", str(self.root),
             "--cancel-file", str(self._cancel_path),
-            "--protocol", str(protocol),
         ])
         proc.readyReadStandardOutput.connect(self._read_stdout)
         proc.readyReadStandardError.connect(self._read_stderr)
@@ -371,7 +355,6 @@ class ArchiveTrainingPanel(QObject):
         self._cancel_path.unlink(missing_ok=True)
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
-        self.similarity_protocol.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("KNN similaridade: inventariando OK e NG...")
         self.similarity_metric.setText(
@@ -380,12 +363,10 @@ class ArchiveTrainingPanel(QObject):
         self.shadow_candidate_metric.setText(
             "KNN CANDIDATO ACERVO | avaliando sugestões e revisões"
         )
-        protocol = self.similarity_protocol.currentData()
         self.details.setText(
-            ("Simulação cronológica: a consulta vê somente dias anteriores."
-             if protocol == "forward_day" else
-             "Replay retrospectivo: outros dias, inclusive futuros.")
-            + " Aguarde relatório por classe, luz e grupo."
+            "Comparação visual gabarito × captura: imagem global, região "
+            "maior e epicentro menor quando marcado pela AOI. "
+            "Sem seleção por data. Aguarde relatório por classe e luz."
         )
         self.progress_bar.setRange(0, 0)
 
@@ -573,7 +554,6 @@ class ArchiveTrainingPanel(QObject):
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.start_button.setEnabled(True)
             self.similarity_button.setEnabled(True)
-            self.similarity_protocol.setEnabled(True)
             self.cancel_button.setEnabled(False)
             if not self._cancel_requested and self._last_finished is None:
                 self.status.setText("Não foi possível iniciar a validação.")
@@ -583,7 +563,6 @@ class ArchiveTrainingPanel(QObject):
         self._read_stderr()
         self.start_button.setEnabled(True)
         self.similarity_button.setEnabled(True)
-        self.similarity_protocol.setEnabled(True)
         self.cancel_button.setEnabled(False)
         result = self._last_finished
         if self._run_type == "similarity":
@@ -656,11 +635,7 @@ class ArchiveTrainingPanel(QObject):
             cohorts = packet.get("by_capture_cohort") or {}
             lights = packet.get("by_lighting") or {}
             lines = [
-                "Protocolo: " + (
-                    "somente dias anteriores (simula futuro)"
-                    if packet.get("protocol") == "forward_day"
-                    else "outros dias (retrospectivo)"
-                ),
+                "Critério: diferença visual gabarito/captura + epicentros",
                 "JSON: " + str(packet.get("json_path") or "-"),
                 "TXT: " + str(packet.get("txt_path") or "-"),
                 "Por grupo (apenas estimativa quando sem manifesto):",
@@ -677,6 +652,14 @@ class ArchiveTrainingPanel(QObject):
                     f"{m.get('correct', 0)}/{m.get('total', 0)} "
                     f"({cohort.get('capture_groups', 0)} grupos)"
                 )
+            focus = packet.get("focus_detection") or {}
+            lines.append(
+                "Epicentros AOI: caixa maior "
+                f"{focus.get('outer_detected', 0)}/"
+                f"{focus.get('total', 0)} • caixa menor "
+                f"{focus.get('inner_detected', 0)}/"
+                f"{focus.get('total', 0)}"
+            )
             lines.append(
                 "Por luz: " + " | ".join(
                     f"{light}: {m.get('correct', 0)}/{m.get('total', 0)}"
