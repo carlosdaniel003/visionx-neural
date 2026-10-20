@@ -554,7 +554,7 @@ class ArchiveTrainingPanel(QObject):
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.start_button.setEnabled(True)
             self.similarity_button.setEnabled(True)
-                self.cancel_button.setEnabled(False)
+            self.cancel_button.setEnabled(False)
             if not self._cancel_requested and self._last_finished is None:
                 self.status.setText("Não foi possível iniciar a validação.")
 
