@@ -88,6 +88,7 @@ class TrainingPanelUITests(unittest.TestCase):
                 "NG_as_OK": 1,
                 "target_98pct_met": False,
             },
+            "focus_detection": {"total": 4, "outer_detected": 4, "inner_detected": 3},
             "by_capture_cohort": {
                 "side_only": {
                     "capture_groups": 2,
@@ -106,6 +107,7 @@ class TrainingPanelUITests(unittest.TestCase):
         self.assertIn("NG 1/2", ui.similarity_metric.text())
         self.assertIn("NG→OK 1", ui.similarity_metric.text())
         self.assertIn("Somente SIDE", ui.details.text())
+        self.assertIn("caixa menor 3/4", ui.details.text())
         self.assertIn("SIDE + TOP + MID", ui.details.text())
         self.assertIn("revisar erros", ui.status.text())
 
@@ -147,10 +149,7 @@ class TrainingPanelUITests(unittest.TestCase):
         self.assertFalse(hasattr(ui, "similarity_protocol"))
         self.assertIn("Testar KNN por similaridade", ui.similarity_button.text())
         self.assertIn("epicentro menor", ui.similarity_button.toolTip())
-        self.assertIn("Sem seleção por data", (
-            "Sem seleção por data"
-            if not hasattr(ui, "similarity_protocol") else ""
-        ))
+        self.assertIn("sem filtrar datas", ui.similarity_button.toolTip())
 
     def test_shadow_candidate_in_similarity_report_is_visible(self):
         ui = install_training_validation_panel(self.window, root=self.root)
