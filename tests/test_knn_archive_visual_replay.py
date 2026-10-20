@@ -54,13 +54,15 @@ def extract(kind: str):
 
 
 def runner(rows, *, protocol="visual_holdout", k=1, conflicts=(),
-           extractor=extract, cancelled=None, progress=None):
+           extractor=extract, cancelled=None, progress=None,
+           geometry_experiment=False):
     return replay_knn_archive_visual(
         Path("/not-a-real-odin-dataset"),
         inventory=inventory(rows, conflicts=conflicts),
         frame_loader=lambda _root, row: row["expected_label"],
         extractor=extractor,
         protocol=protocol, k=k, cancelled=cancelled, progress=progress,
+        geometry_experiment=geometry_experiment,
     )
 
 
@@ -72,6 +74,38 @@ class KnnArchiveReplayTests(unittest.TestCase):
             item("2026-10-03", "0900", "OK", "OK"),
             item("2026-10-03", "1000", "NG", "NG"),
         ]
+
+    def test_optional_geometry_ab_preserves_original_visual_results(self):
+        visual = runner(self.rows)
+        dual = runner(self.rows, geometry_experiment=True)
+        self.assertEqual(visual["results"], dual["results"])
+        self.assertEqual(visual["shadow_candidate"], dual["shadow_candidate"])
+        self.assertIsNone(visual["geometry_experiment"])
+        experiment = dual["geometry_experiment"]
+        self.assertTrue(experiment["experimental_only"])
+        self.assertFalse(experiment["production_approved"])
+        self.assertEqual(experiment["case_count"], 4)
+        self.assertEqual(experiment["geometry_failures"], 0)
+        self.assertEqual(experiment["results"]["total"], 4)
+        self.assertEqual(experiment["shadow_candidate"]["total"], 4)
+        self.assertEqual(len(dual["cases"]), 4)
+        self.assertFalse(dual["writes_memory_or_dataset"])
+        for case in dual["cases"]:
+            self.assertIn("geometry_experiment", case)
+            self.assertIn("shadow_candidate", case["geometry_experiment"])
+
+    def test_cancelled_geometry_ab_cannot_meet_97pct(self):
+        calls = []
+        result = runner(
+            self.rows, geometry_experiment=True,
+            progress=lambda *_: calls.append(True),
+            cancelled=lambda: len(calls) >= 2,
+        )
+        self.assertFalse(result["geometry_experiment"]["complete"])
+        self.assertFalse(
+            result["geometry_experiment"]["shadow_candidate"]["target_97pct_met"]
+        )
+        self.assertEqual(result["geometry_experiment"]["results"]["total"], 4)
 
     def test_shadow_candidate_is_separate_from_baseline_and_never_commands_xp(self):
         report = runner(self.rows)

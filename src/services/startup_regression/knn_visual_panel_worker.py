@@ -26,6 +26,10 @@ def main(argv=None) -> int:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument("--cancel-file", type=Path, required=True)
     parser.add_argument("--protocol", choices=VALID_PROTOCOLS, default="visual_holdout")
+    parser.add_argument(
+        "--geometry-experiment", action="store_true",
+        help="Comparação offline A/B visual vs. geométrica",
+    )
     args = parser.parse_args(argv)
     root = args.root.expanduser().resolve()
     cancel = args.cancel_file.expanduser().resolve()
@@ -50,6 +54,7 @@ def main(argv=None) -> int:
         emit({"event": "phase", "phase": "Preparando replay KNN por similaridade..."})
         report = replay_knn_archive_visual(
             root, k=5, protocol=args.protocol,
+            geometry_experiment=args.geometry_experiment,
             progress=progress, cancelled=cancel.exists,
         )
         jp, tp = write_knn_archive_reports(report, report_dir)
@@ -64,6 +69,7 @@ def main(argv=None) -> int:
             "txt_path": str(tp),
             "results": report["results"],
             "shadow_candidate": report["shadow_candidate"],
+            "geometry_experiment": report.get("geometry_experiment"),
             "by_lighting": report["by_lighting"],
             "by_capture_cohort": report["by_capture_cohort"],
             "capture_grouping": report["capture_grouping"],
