@@ -26,6 +26,7 @@ from src.core.dual_scale_memory import install_dual_scale_memory
 from src.core.full_frame_memory import install_full_frame_memory
 from src.core.neural.faltando_live import install_faltando_cnn_live
 from src.core.verified_memory_router import install_memory_first_router
+from src.core.knn_c_live import install_live_knn_strategy_c
 from src.core.experts.knn_expert import KNNExpert
 from src.core.experts.missing_component_expert import MissingComponentExpert
 from src.core.experts.semantic_calibration import (
@@ -189,6 +190,8 @@ def main():
     # Consulta primeiro apenas memória humana KNN de par EXATO. Para casos
     # novos ignoram voto KNN aproximado e seguem CNN ou especialista.
     install_memory_first_router(MoEOrchestrator)
+    # Casos NOVOS: estratégia C OK/NG em consulta visual A/B, sem XP automático.
+    install_live_knn_strategy_c(MoEOrchestrator)
 
     # Ordem dos wrappers operacionais:
     # 1. aprendizado humano;
