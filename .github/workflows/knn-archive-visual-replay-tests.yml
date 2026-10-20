@@ -5,6 +5,12 @@ on:
     branches: [central]
     paths:
       - "src/services/startup_regression/knn_archive_visual_replay.py"
+      - "src/core/knn_c_live.py"
+      - "src/core/knn_c_multilight_gate.py"
+      - "src/core/multilight_fusion.py"
+      - "tests/test_knn_c_multilight_gate.py"
+      - "tests/test_knn_c_live.py"
+      - "main.py"
       - "src/services/startup_regression/knn_archive_focus_signature.py"
       - "src/services/startup_regression/knn_archive_geometry_experiment.py"
       - "src/services/startup_regression/knn_archive_concordance_experiment.py"
@@ -24,6 +30,12 @@ on:
     branches: [central]
     paths:
       - "src/services/startup_regression/knn_archive_visual_replay.py"
+      - "src/core/knn_c_live.py"
+      - "src/core/knn_c_multilight_gate.py"
+      - "src/core/multilight_fusion.py"
+      - "tests/test_knn_c_multilight_gate.py"
+      - "tests/test_knn_c_live.py"
+      - "main.py"
       - "src/services/startup_regression/knn_archive_focus_signature.py"
       - "src/services/startup_regression/knn_archive_geometry_experiment.py"
       - "src/services/startup_regression/knn_archive_concordance_experiment.py"
@@ -56,6 +68,6 @@ jobs:
         run: python -m pip install numpy opencv-python-headless scipy scikit-image
       - name: Compile
         run: |
-          python -m py_compile src/services/startup_regression/knn_archive_augmented_replay.py src/services/startup_regression/knn_archive_augmented_replay_cli.py tests/test_knn_archive_augmented_replay.py src/services/startup_regression/knn_archive_concordance_experiment.py tests/test_knn_archive_concordance_experiment.py src/services/startup_regression/knn_archive_geometry_experiment.py tests/test_knn_archive_geometry_experiment.py src/services/startup_regression/knn_archive_focus_signature.py tests/test_knn_archive_focus_signature.py src/core/knn_similarity_shadow_candidate.py tests/test_knn_similarity_shadow_candidate.py src/services/startup_regression/knn_visual_panel_worker.py src/services/startup_regression/knn_archive_visual_replay.py src/services/startup_regression/knn_archive_visual_replay_cli.py tests/test_knn_archive_visual_replay.py
+          python -m py_compile src/core/knn_c_multilight_gate.py tests/test_knn_c_multilight_gate.py src/core/knn_c_live.py tests/test_knn_c_live.py src/services/startup_regression/knn_archive_augmented_replay.py src/services/startup_regression/knn_archive_augmented_replay_cli.py tests/test_knn_archive_augmented_replay.py src/services/startup_regression/knn_archive_concordance_experiment.py tests/test_knn_archive_concordance_experiment.py src/services/startup_regression/knn_archive_geometry_experiment.py tests/test_knn_archive_geometry_experiment.py src/services/startup_regression/knn_archive_focus_signature.py tests/test_knn_archive_focus_signature.py src/core/knn_similarity_shadow_candidate.py tests/test_knn_similarity_shadow_candidate.py src/services/startup_regression/knn_visual_panel_worker.py src/services/startup_regression/knn_archive_visual_replay.py src/services/startup_regression/knn_archive_visual_replay_cli.py tests/test_knn_archive_visual_replay.py
       - name: Test archive-only KNN protocol
-        run: python -m unittest tests.test_knn_archive_augmented_replay tests.test_knn_archive_concordance_experiment tests.test_knn_archive_geometry_experiment tests.test_knn_archive_focus_signature tests.test_knn_archive_visual_replay tests.test_knn_similarity_shadow_candidate -v
+        run: python -m unittest tests.test_knn_c_multilight_gate tests.test_knn_c_live tests.test_knn_archive_augmented_replay tests.test_knn_archive_concordance_experiment tests.test_knn_archive_geometry_experiment tests.test_knn_archive_focus_signature tests.test_knn_archive_visual_replay tests.test_knn_similarity_shadow_candidate -v
