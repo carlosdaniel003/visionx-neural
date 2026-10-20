@@ -195,6 +195,10 @@ def install_live_knn_strategy_c(orchestrator_cls, *, strategy=None):
         return
     original = orchestrator_cls.inspect
     bank = strategy if strategy is not None else LiveKNNStrategyC()
+    # A memória começa a ser preparada na inicialização, não espera a
+    # primeira peça passar na AOI. Nunca bloqueia a abertura do ODIN.
+    if strategy is None:
+        bank.start()
 
     def inspect(self, full_gab, full_test, raw_anomalies,
                 aoi_info, global_box_info, aoi_epicenters):
