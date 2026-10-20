@@ -652,6 +652,14 @@ class ArchiveTrainingPanel(QObject):
                     f"{m.get('correct', 0)}/{m.get('total', 0)} "
                     f"({cohort.get('capture_groups', 0)} grupos)"
                 )
+            focus = packet.get("focus_detection") or {}
+            lines.append(
+                "Epicentros AOI: caixa maior "
+                f"{focus.get('outer_detected', 0)}/"
+                f"{focus.get('total', 0)} • caixa menor "
+                f"{focus.get('inner_detected', 0)}/"
+                f"{focus.get('total', 0)}"
+            )
             lines.append(
                 "Por luz: " + " | ".join(
                     f"{light}: {m.get('correct', 0)}/{m.get('total', 0)}"
