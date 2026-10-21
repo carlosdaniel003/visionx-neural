@@ -84,7 +84,15 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
     # controla o comando XP. Não apagar DEFEITO REAL por causa desse flag.
     if corroborated_ng_verdict(analysis):
         return "DEFEITO REAL", "ng"
-    # Revisões sem prova suficiente continuam distintas de um NG.
+    # A revisão controla a autorização do XP, sem apagar um julgamento NG
+    # coerente entre o veredito final e o marcador binário da inspeção.
+    if (
+        analysis.get("is_defect") is True
+        and str(analysis.get("verdict", "")).strip().upper()
+        in {"DEFEITO REAL", "DEFEITO"}
+    ):
+        return "DEFEITO REAL", "ng"
+    # Revisão sem classificação NG conclusiva continua explícita.
     if review_required:
         return "REVISÃO OBRIGATÓRIA", "ng"
 

@@ -50,7 +50,7 @@ class AIVerdictFeedbackStateTests(unittest.TestCase):
             ("REVISÃO OBRIGATÓRIA", "ng"),
         )
 
-    def test_effective_review_overrides_stale_binary_verdict_text(self):
+    def test_ng_final_remains_visible_while_operator_confirmation_is_pending(self):
         analysis = {
             "is_defect": True,
             "verdict": "DEFEITO REAL",
@@ -60,6 +60,18 @@ class AIVerdictFeedbackStateTests(unittest.TestCase):
                     "operator_review_required": True,
                 }
             },
+        }
+        self.assertEqual(
+            verdict_feedback_state(analysis),
+            ("DEFEITO REAL", "ng"),
+        )
+
+    def test_conflicting_ng_text_and_binary_marker_keeps_mandatory_review(self):
+        analysis = {
+            "is_defect": False,
+            "verdict": "DEFEITO REAL",
+            "production_review_required": True,
+            "detail": {"operator_review_required": True},
         }
         self.assertEqual(
             verdict_feedback_state(analysis),

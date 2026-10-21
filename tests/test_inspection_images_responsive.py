@@ -1,13 +1,15 @@
 import os
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QStackedWidget, QWidget
 
-from src.ui.control_panel_ui import _ResponsivePixmapLabel
+from src.ui.control_panel_ui import ControlPanelUI, _ResponsivePixmapLabel
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,6 +57,48 @@ class ResponsiveInspectionImageTests(unittest.TestCase):
         self.assertEqual(label._source_pixmap.size(), source.size())
         self.assertLessEqual(label.pixmap().width(), 400)
         self.assertLessEqual(label.pixmap().height(), 200)
+
+
+class MultilightScrollStabilityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_same_breakpoint_resize_does_not_rebuild_layout(self):
+        builder = ControlPanelUI()
+        builder._active_profile_name = "wide"
+        # Falha se a função tentar acessar geometria ou grids do painel.
+        builder.apply_layout_profile(object(), 1920)
+
+    def test_repeated_light_updates_do_not_force_multilight_relayout(self):
+        builder = ControlPanelUI()
+        normal, multilight = QWidget(), QWidget()
+        stack = QStackedWidget()
+        stack.addWidget(normal)
+        stack.addWidget(multilight)
+        stack.setCurrentWidget(multilight)
+        window = SimpleNamespace(
+            _multilight_inspection_mode=True,
+            _adhesive_inspection_mode=True,
+            inspection_view_stack=stack,
+            normal_inspection_view=normal,
+            adhesive_multilight_view=multilight,
+        )
+        builder.apply_layout_profile = Mock()
+        for _ in ("SIDE", "TOP", "MID"):
+            builder.set_multilight_inspection_mode(window, True)
+        builder.apply_layout_profile.assert_not_called()
+        self.assertIs(stack.currentWidget(), multilight)
+
+    def test_vertical_scroll_reserves_stable_viewport_width(self):
+        source = (ROOT / "src" / "ui" / "control_panel_ui.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "window.root_scroll.setVerticalScrollBarPolicy("
+            "Qt.ScrollBarPolicy.ScrollBarAlwaysOn)",
+            source,
+        )
 
 
 class ResponsiveInspectionSourceContractTests(unittest.TestCase):

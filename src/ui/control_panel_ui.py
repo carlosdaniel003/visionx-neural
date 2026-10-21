@@ -175,7 +175,9 @@ class ControlPanelUI:
         window.root_scroll.setMinimumWidth(0)
         window.root_scroll.setFrameShape(QFrame.Shape.NoFrame)
         window.root_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        window.root_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # Reservar a largura da barra permanentemente evita o ciclo
+        # aparece/desaparece -> muda viewport -> redimensiona imagens.
+        window.root_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         window.root_scroll.viewport().setObjectName("rootViewport")
 
         window.root_content = QWidget()
@@ -1214,16 +1216,22 @@ class ControlPanelUI:
     def set_multilight_inspection_mode(self, window, enabled: bool) -> None:
         """Alterna imagens e especialistas entre visual normal e multilight."""
         enabled = bool(enabled)
+        stack = getattr(window, "inspection_view_stack", None)
+        target = (
+            window.adhesive_multilight_view
+            if enabled else window.normal_inspection_view
+        ) if stack is not None else None
+        # SIDE, TOP e MID chamam esta rotina no mesmo ciclo. Não reconstruir
+        # os grids nem recalcular sizeHints se a página já está ativa.
+        if (
+            getattr(window, "_multilight_inspection_mode", False) == enabled
+            and (stack is None or stack.currentWidget() is target)
+        ):
+            return
         window._multilight_inspection_mode = enabled
         # Alias legado usado por testes/extensões existentes.
         window._adhesive_inspection_mode = enabled
-        stack = getattr(window, "inspection_view_stack", None)
-        if stack is not None:
-            target = (
-                window.adhesive_multilight_view
-                if enabled
-                else window.normal_inspection_view
-            )
+        if stack is not None and stack.currentWidget() is not target:
             stack.setCurrentWidget(target)
 
         viewport = getattr(
@@ -1241,6 +1249,10 @@ class ControlPanelUI:
     def apply_layout_profile(self, window, width: int, force: bool = False) -> None:
         width = max(int(width), 1)
         profile = profile_for_width(width)
+        # QScrollArea e janela recebem Resize durante o próprio relayout.
+        # Sem troca de breakpoint não há nada para reaplicar.
+        if not force and profile.name == self._active_profile_name:
+            return
         profile_changed = force or profile.name != self._active_profile_name
         self._active_profile_name = profile.name
         compact = profile.name == "compact"
