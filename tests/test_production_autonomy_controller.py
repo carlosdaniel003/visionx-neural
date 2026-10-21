@@ -13,6 +13,7 @@ from src.ui.production_autonomy_controller import (
     RENDER_SETTLE_MS,
     SCROLL_DURATION_MS,
     TOP_HOLD_MS,
+    TRIAL_SIDE_AUTO_DELAY_MS,
     ProductionAutonomyController,
 )
 
@@ -271,6 +272,66 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
                 # Even if an expired timer fires, never send the same command twice.
                 controller._emit_auto_decision(generation, decision)
                 self.assertEqual(panel.saved, [(decision, "production_auto")])
+
+    def test_trial_side_ok_and_ng_await_delay_and_send_only_once(self):
+        from src.core.side_early_decision import build_side_early_decision
+        from tests.test_side_early_decision import SideEarlyDecisionTests
+
+        for decision in ("OK", "NG"):
+            with self.subTest(decision=decision):
+                panel = _Panel()
+                controller = ProductionAutonomyController(panel)
+                panel.combo_mode.setCurrentText("Modo Produção")
+                side = SideEarlyDecisionTests._trial_ng_side()
+                if decision == "OK":
+                    side.update(
+                        verdict="FALHA FALSA", is_defect=False, confidence=.9997)
+                    side["detail"]["cnn_v2_ng_score_uncalibrated"] = .0003
+                final = build_side_early_decision(side, "FALTANDO")
+                panel.current_analysis = final
+                controller.pending_analysis = final
+                controller.generation += 1
+                generation = controller.generation
+
+                controller._finish_presentation(generation)
+                self.assertEqual(controller.state, "auto_decision_pending")
+                self.assertEqual(controller._stage_remaining_ms, TRIAL_SIDE_AUTO_DELAY_MS)
+                self.assertEqual(TRIAL_SIDE_AUTO_DELAY_MS, 5_000)
+                self.assertEqual(panel.saved, [])
+                controller._stage_timer.stop()
+
+                controller._emit_auto_decision(generation, decision)
+                self.assertEqual(panel.saved, [(decision, "production_auto")])
+                self.assertEqual(panel.auto_records, [decision])
+                controller._emit_auto_decision(generation, decision)
+                self.assertEqual(panel.saved, [(decision, "production_auto")])
+
+    def test_trial_side_pause_or_changed_score_blocks_pending_command(self):
+        from src.core.side_early_decision import build_side_early_decision
+        from tests.test_side_early_decision import SideEarlyDecisionTests
+
+        for change in ("pause", "alter_score", "mode"):
+            with self.subTest(change=change):
+                panel = _Panel()
+                controller = ProductionAutonomyController(panel)
+                panel.combo_mode.setCurrentText("Modo Produção")
+                final = build_side_early_decision(
+                    SideEarlyDecisionTests._trial_ng_side(), "FALTANDO")
+                panel.current_analysis = final
+                controller.pending_analysis = final
+                controller.generation += 1
+                generation = controller.generation
+                controller._finish_presentation(generation)
+                controller._stage_timer.stop()
+                if change == "pause":
+                    controller.toggle_pause()
+                elif change == "alter_score":
+                    final["detail"]["cnn_v2_ng_score_uncalibrated"] = .2
+                else:
+                    panel.combo_mode.setCurrentText("Modo Teste")
+                controller._emit_auto_decision(generation, "NG")
+                self.assertEqual(panel.saved, [])
+                self.assertEqual(panel.auto_records, [])
 
     def test_failed_auto_command_is_not_counted_and_requires_operator(self):
         panel = _Panel()
