@@ -1,3 +1,11 @@
+## 21/10/2026 — Encerramento SIDE independente do nome do defeito AOI
+
+- Corrigida a elegibilidade da SIDE experimental: a CNN FALTANDO V2 já era compartilhada por **FALTANDO, INVERTIDO, EMBORCADO e DESLOCADO**, mas `_eligible_trial_side_for_review` e o gate de revalidação de Produção exigiam literalmente `FALTANDO`. Agora o escopo é verificado por `uses_faltando_v2` e a categoria AOI observada deve coincidir com a categoria registrada pela CNN (aliases canônicos).
+- Evento real reproduzido: `7f3e2cfb61f944e0b9c50dafe9ae0170`, categoria AOI `INVERTIDO`, SIDE NG `0.9999839067459106`, mas aguardou TOP/MID. Agora um resultado elegível pode terminar em SIDE e gravar `skipped_lights=[TOP,MID]`, sem inventar capturas das outras luzes.
+- A categoria emitida pela AOI é contexto de roteamento, não rótulo de defeito verdadeiro. Continua exigido checkpoint trial verificado, inferência OK, score e veredito binário coerentes e ausência de conflitos. Em Modo Produção a política já existente autoriza `0/OK` ou `1/NG` após apresentação, revalidação e tempo de pausa; Teste/Sombra não transmitem 0/1. **MUITO ADESIVO e categorias fora dessa CNN não herdam a exceção trial.**
+
+---
+
 ## 21/10/2026 — Decisão automática seletiva do checkpoint experimental SIDE
 
 - A regra de Produção pode autorizar **0/OK ou 1/NG** para o checkpoint CNN FALTANDO V2 experimental identificado por SHA somente quando uma captura SIDE terminou antecipadamente e a inferência local, o score reportado (>=97% para a classe escolhida), o veredito binário, o marcador SIDE, a categoria e a ausência de conflitos são revalidados integralmente. A marca de revisão herdada do ensaio permanece na telemetria, mas não bloqueia esta exceção específica da política de Produção.
