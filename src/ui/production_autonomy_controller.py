@@ -31,6 +31,7 @@ NO_SCROLL_REVIEW_MS = 1_200
 POST_SCROLL_PAUSE_MS = 900
 AUTO_DECISION_DELAY_MS = 2_000
 KNN_C_SUPERVISED_DELAY_MS = 5_000
+TRIAL_SIDE_NG_DELAY_MS = 5_000
 
 
 class ProductionAutonomyController(QObject):
@@ -557,6 +558,7 @@ class ProductionAutonomyController(QObject):
             is_knn_c = str(policy.get("reason", "")).startswith(
                 "knn_c_supervised_three_light_"
             )
+            is_trial_side_ng = policy.get("reason") == "side_trial_high_ng_auto"
             if is_knn_c and not self.knn_c_supervised_armed:
                 self.state = "operator_review"
                 enter_production_review(self.panel, analysis)
@@ -566,13 +568,19 @@ class ProductionAutonomyController(QObject):
                 self.panel.update_brain_status(
                     f"Modo Produção: decisão automática {decision}. "
                     f"Preparando {command} automático; espaço para pausar... "
-                    + ("KNN C supervisionada (5s)." if is_knn_c else ""),
+                    + (
+                        "KNN C supervisionada (5s)." if is_knn_c
+                        else "SIDE NG trial validada (5s)." if is_trial_side_ng
+                        else ""
+                    ),
                     True,
                 )
             except Exception:
                 pass
             self._schedule_stage(
-                KNN_C_SUPERVISED_DELAY_MS if is_knn_c else AUTO_DECISION_DELAY_MS,
+                KNN_C_SUPERVISED_DELAY_MS if is_knn_c
+                else TRIAL_SIDE_NG_DELAY_MS if is_trial_side_ng
+                else AUTO_DECISION_DELAY_MS,
                 lambda g=generation, d=decision: self._emit_auto_decision(g, d),
             )
             return

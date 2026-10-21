@@ -16,6 +16,9 @@ from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
 SIDE_EARLY_EXIT_THRESHOLD = 0.97
 SIDE_EARLY_EXIT_RULE = "side_confidence_early_exit_v1"
 SIDE_TRIAL_NG_REVIEW_RULE = "side_trial_ng_human_review_v1"
+# Seletivo para o NG explicitamente autorizado pelo operador, não é acurácia
+# calibrada nem qualificação geral do checkpoint com 19 falsos NG históricos.
+SIDE_TRIAL_AUTO_NG_THRESHOLD = 0.9999
 
 
 def _eligible_side_analysis(analysis: dict | None) -> bool:
@@ -152,7 +155,9 @@ def build_side_early_decision(analysis: dict | None, category: str) -> dict | No
     final["reason"] = (
         f"SIDE: encerramento antecipado com confiança reportada de "
         f"{confidence:.1%}; TOP e MID dispensadas. "
-        + ("Checkpoint experimental: confirmar NG no operador. " if manual_trial_ng else "")
+        + ("Checkpoint experimental: autorização de comando depende do gate "
+           "estrito de Produção; Teste/Sombra permanecem humanos. "
+           if manual_trial_ng else "")
         + str(analysis.get("reason", "") or "")
     )
     final["lighting_mode"] = "SIDE"
@@ -177,6 +182,52 @@ def build_side_early_decision(analysis: dict | None, category: str) -> dict | No
         "operator_review_required": manual_trial_ng,
     }
     return final
+
+
+def side_trial_auto_ng_decision(analysis: dict | None) -> str | None:
+    """Revalida a SIDE NG trial antes de permitir somente 1/NG em Produção.
+
+    Nunca habilita 0/OK com a CNN experimental. A política de Produção e o
+    controlador ainda verificam estado, pausa, peça atual e envio único.
+    """
+    if not isinstance(analysis, dict):
+        return None
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict):
+        return None
+    marker = detail.get("side_early_exit")
+    if not isinstance(marker, dict):
+        return None
+    category = analysis.get("multilight_category")
+    if not _eligible_trial_ng_for_review(analysis, category):
+        return None
+    try:
+        reported = float(marker["reported_confidence"])
+        score = float(detail["cnn_v2_ng_score_uncalibrated"])
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+    if not (
+        analysis.get("multilight_final") is True
+        and analysis.get("eligible_for_final_decision") is True
+        and detail.get("multilight_final") is True
+        and detail.get("eligible_for_final_decision") is True
+        and category == "FALTANDO"
+        and detail.get("multilight_category") == category
+        and marker.get("rule") == SIDE_TRIAL_NG_REVIEW_RULE
+        and marker.get("threshold") == SIDE_EARLY_EXIT_THRESHOLD
+        and marker.get("verdict") == "DEFEITO REAL"
+        and marker.get("analyzed_lights") == ["SIDE"]
+        and marker.get("skipped_lights") == ["TOP", "MID"]
+        and marker.get("production_auto_allowed") is False
+        and marker.get("operator_review_required") is True
+        and isfinite(reported)
+        and isfinite(score)
+        and reported == float(analysis["confidence"])
+        and SIDE_TRIAL_AUTO_NG_THRESHOLD <= reported <= 1.0
+        and SIDE_TRIAL_AUTO_NG_THRESHOLD <= score <= 1.0
+    ):
+        return None
+    return "NG"
 
 
 def side_automatic_decision(analysis: dict | None) -> str | None:
@@ -224,6 +275,8 @@ __all__ = [
     "SIDE_EARLY_EXIT_THRESHOLD",
     "SIDE_EARLY_EXIT_RULE",
     "SIDE_TRIAL_NG_REVIEW_RULE",
+    "SIDE_TRIAL_AUTO_NG_THRESHOLD",
+    "side_trial_auto_ng_decision",
     "build_side_early_decision",
     "side_automatic_decision",
 ]

@@ -6,6 +6,8 @@ from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
 from src.core.side_early_decision import (
     SIDE_EARLY_EXIT_THRESHOLD,
     SIDE_TRIAL_NG_REVIEW_RULE,
+    SIDE_TRIAL_AUTO_NG_THRESHOLD,
+    side_trial_auto_ng_decision,
     build_side_early_decision,
     side_automatic_decision,
 )
@@ -130,10 +132,49 @@ class SideEarlyDecisionTests(unittest.TestCase):
                          ["TOP", "MID"])
         self.assertEqual(side_automatic_decision(final), None)
         policy = production_decision_policy(final)
-        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(side_trial_auto_ng_decision(final), "NG")
+        self.assertTrue(policy["auto_allowed"])
         self.assertEqual(policy["proposed_decision"], "NG")
-        self.assertTrue(policy["operator_review_required"])
+        self.assertFalse(policy["operator_review_required"])
+        self.assertEqual(policy["reason"], "side_trial_high_ng_auto")
         self.assertNotIn("side_early_exit", original["detail"])
+
+    def test_trial_automatic_gate_rejects_lower_score_and_forged_markers(self):
+        import copy
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        base = build_side_early_decision(self._trial_ng_side(), "FALTANDO")
+        self.assertEqual(SIDE_TRIAL_AUTO_NG_THRESHOLD, .9999)
+        self.assertEqual(side_trial_auto_ng_decision(base), "NG")
+        alterations = (
+            lambda a: a["detail"]["side_early_exit"].update(rule="fake"),
+            lambda a: a["detail"]["side_early_exit"].update(analyzed_lights=["SIDE", "TOP"]),
+            lambda a: a["detail"]["side_early_exit"].update(production_auto_allowed=True),
+            lambda a: a["detail"]["side_early_exit"].update(reported_confidence=.92),
+            lambda a: a["detail"].update(cnn_v2_checkpoint_sha256="fake"),
+            lambda a: a["detail"].update(cnn_v2_trial_manual_only=False),
+            lambda a: a["detail"].update(cnn_v2_status="ERROR"),
+            lambda a: a["detail"].update(memory_conflict=True),
+            lambda a: a["detail"].update(knn_c={"status": "SUGERE_OK"}),
+            lambda a: a.update(is_defect=False),
+            lambda a: a.update(lighting_mode="MID"),
+            lambda a: a.update(multilight_final=False),
+            lambda a: a.update(production_review_required=False),
+            lambda a: a.update(confidence=.9998),
+        )
+        for alter in alterations:
+            sample = copy.deepcopy(base)
+            alter(sample)
+            with self.subTest(sample=sample):
+                self.assertIsNone(side_trial_auto_ng_decision(sample))
+                self.assertFalse(production_decision_policy(sample)["auto_allowed"])
+        weaker = self._trial_ng_side()
+        weaker["confidence"] = .9998
+        weaker["detail"]["cnn_v2_ng_score_uncalibrated"] = .9998
+        final = build_side_early_decision(weaker, "FALTANDO")
+        self.assertIsNotNone(final)
+        self.assertIsNone(side_trial_auto_ng_decision(final))
+        self.assertFalse(production_decision_policy(final)["auto_allowed"])
 
     def test_trial_shortcut_requires_valid_local_ng_and_no_conflicting_c(self):
         import copy

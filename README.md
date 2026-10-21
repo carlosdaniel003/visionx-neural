@@ -1,3 +1,11 @@
+## 21/10/2026 — SIDE NG autônoma seletiva e cópia adaptativa de evidências
+
+- Em **Modo Produção**, o NG experimental FALTANDO encerrado antecipadamente na SIDE pode emitir apenas `1/NG` de forma automática quando a regra `side_trial_high_ng_auto` revalidar checkpoint exato, SHA, inferência, marcação SIDE, sem conflito, status de revisão herdado do ensaio e score NG não calibrado **>=0,9999**. `0/OK` continua proibido por esse checkpoint. Score elevado não é prova de acurácia; os 19 falsos NG históricos persistem como limitação. Outros vetos e modelos continuam funcionando como antes.
+- A decisão automática é transmitida somente após a apresentação do controlador e **5 segundos adicionais** de possibilidade de pausa com Space. O gate reavalia a mesma peça antes do envio único, sem alterar o agente XP; Teste e Sombra continuam humanos.
+- **Copiar imagem** produz o frame original SIDE quando o evento final terminou antecipadamente e realmente só capturou SIDE. Para eventos completos, mantém o composto SIDE/TOP/MID. Sem finalização, sem frame ou com evento divergente, não mistura evidências e não habilita a cópia.
+
+---
+
 ## 21/10/2026 — SIDE NG experimental com revisão, e estabilidade do viewport
 
 - A captura pode terminar já na SIDE para um NG conclusivo do checkpoint experimental FALTANDO v2 (97,70%), quando a inferência local foi válida, o score NG reportado é >=97%, o veredito é consistente, a revisão decorre do próprio checkpoint e não há conflito KNN. TOP/MID são dispensadas **somente como captura**, não se atribuem evidências dessas luzes.

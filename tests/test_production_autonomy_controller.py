@@ -13,6 +13,7 @@ from src.ui.production_autonomy_controller import (
     RENDER_SETTLE_MS,
     SCROLL_DURATION_MS,
     TOP_HOLD_MS,
+    TRIAL_SIDE_NG_DELAY_MS,
     ProductionAutonomyController,
 )
 
@@ -271,6 +272,48 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
                 # Even if an expired timer fires, never send the same command twice.
                 controller._emit_auto_decision(generation, decision)
                 self.assertEqual(panel.saved, [(decision, "production_auto")])
+
+    def test_trial_ng_side_sends_only_after_delayed_revalidation(self):
+        from tests.test_side_early_decision import SideEarlyDecisionTests
+        from src.core.side_early_decision import build_side_early_decision
+
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        side = SideEarlyDecisionTests._trial_ng_side()
+        final = build_side_early_decision(side, "FALTANDO")
+        panel.current_analysis = final
+        controller.pending_analysis = final
+        controller.generation += 1
+        generation = controller.generation
+
+        controller._finish_presentation(generation)
+        self.assertEqual(controller.state, "auto_decision_pending")
+        self.assertTrue(controller._stage_timer.isActive())
+        self.assertEqual(controller._stage_remaining_ms, TRIAL_SIDE_NG_DELAY_MS)
+        self.assertEqual(TRIAL_SIDE_NG_DELAY_MS, 5000)
+        self.assertEqual(panel.saved, [])
+        controller._stage_timer.stop()
+
+        # Se o score mudar antes do envio, não emite comando.
+        original_score = final["detail"]["cnn_v2_ng_score_uncalibrated"]
+        final["detail"]["cnn_v2_ng_score_uncalibrated"] = .1
+        controller._emit_auto_decision(generation, "NG")
+        self.assertEqual(panel.saved, [])
+        self.assertTrue(panel.production_review_pending)
+        controller.cancel_current()
+
+        panel.production_review_pending = False
+        final["detail"]["cnn_v2_ng_score_uncalibrated"] = original_score
+        panel.current_analysis = final
+        controller.pending_analysis = final
+        controller.generation += 1
+        generation = controller.generation
+        controller._emit_auto_decision(generation, "NG")
+        self.assertEqual(panel.saved, [("NG", "production_auto")])
+        self.assertEqual(panel.auto_records, ["NG"])
+        controller._emit_auto_decision(generation, "NG")
+        self.assertEqual(panel.saved, [("NG", "production_auto")])
 
     def test_failed_auto_command_is_not_counted_and_requires_operator(self):
         panel = _Panel()

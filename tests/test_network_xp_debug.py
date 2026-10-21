@@ -1280,6 +1280,51 @@ class AdhesiveMultiLightDebugTests(unittest.TestCase):
         self.assertEqual(copied.width(), 82)
         self.assertEqual(copied.height(), 54)
 
+    def test_side_only_complete_event_can_copy_original_side(self):
+        panel = self._panel("single-side-event")
+        final = panel.adhesive_multilight_last_final_analysis
+        final.update(multilight_final=True, lighting_mode="SIDE")
+        final["detail"]["side_early_exit"] = {
+            "analyzed_lights": ["SIDE"], "skipped_lights": ["TOP", "MID"],
+        }
+        panel.adhesive_multilight_last_analyses = {
+            "SIDE": panel.adhesive_multilight_last_analyses["SIDE"],
+        }
+        panel.adhesive_multilight_last_source_frames = {
+            "SIDE": panel.adhesive_multilight_last_source_frames["SIDE"],
+        }
+
+        sync_network_debug_controls(panel)
+        self.assertTrue(network_debug_image_available(panel))
+        self.assertTrue(panel.btn_copy_network_image.isEnabled())
+        self.assertEqual(panel.btn_copy_network_image.text(), "Copiar imagem SIDE")
+        self.assertIsNotNone(network_debug_image_snapshot(panel))
+        self.assertEqual(network_debug_image_snapshot(panel).shape, (54, 20, 3))
+        self.assertTrue(copy_network_image_to_clipboard(panel))
+        copied = QApplication.clipboard().image()
+        self.assertEqual((copied.width(), copied.height()), (20, 54))
+        pixel = copied.pixelColor(0, 44)
+        self.assertEqual((pixel.blue(), pixel.green(), pixel.red()), (10, 20, 30))
+
+    def test_side_only_stale_or_unfinished_event_does_not_copy(self):
+        panel = self._panel("partial-side-event")
+        panel.adhesive_multilight_last_analyses = {
+            "SIDE": panel.adhesive_multilight_last_analyses["SIDE"],
+        }
+        panel.adhesive_multilight_last_source_frames = {
+            "SIDE": panel.adhesive_multilight_last_source_frames["SIDE"],
+        }
+        self.assertIsNone(multilight_copy_image_snapshot(panel))
+        panel.adhesive_multilight_last_final_analysis.update(
+            multilight_final=True, lighting_mode="SIDE",
+        )
+        panel.adhesive_multilight_last_final_analysis["detail"]["side_early_exit"] = {
+            "analyzed_lights": ["SIDE"], "skipped_lights": ["TOP", "MID"],
+        }
+        panel.adhesive_multilight_last_event_id = "old-event"
+        self.assertFalse(network_debug_image_available(panel))
+        self.assertFalse(copy_network_image_to_clipboard(panel))
+
     def test_incomplete_adhesive_set_disables_copy_image(self):
         panel = self._panel()
         panel.adhesive_multilight_last_source_frames.pop("MID")

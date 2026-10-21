@@ -20,7 +20,12 @@ from src.core.corroborated_ng_verdict import corroborated_ng_verdict
 from src.core.knn_c_supervised_policy import supervised_knn_c_decision
 from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
-from src.core.side_early_decision import SIDE_EARLY_EXIT_THRESHOLD, side_automatic_decision
+from src.core.side_early_decision import (
+    SIDE_EARLY_EXIT_THRESHOLD,
+    SIDE_TRIAL_AUTO_NG_THRESHOLD,
+    side_automatic_decision,
+    side_trial_auto_ng_decision,
+)
 
 
 # Mantido por compatibilidade com imports antigos. Não participa mais da política.
@@ -102,6 +107,20 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             ) for data in diagnostics.values()
         )
     )
+    # Exceção pontual autorizada: SIDE NG extremamente alta do checkpoint
+    # trial pode enviar somente 1/NG, após apresentação e revalidação.
+    # O restante dos 19 falsos NG históricos continua não qualificado;
+    # score alto isolado não é suficiente sem o contrato íntegro da SIDE.
+    if trial_used and side_trial_auto_ng_decision(analysis) == "NG":
+        return {
+            "mode": "production", "confidence": confidence,
+            "threshold": SIDE_TRIAL_AUTO_NG_THRESHOLD,
+            "verdict": "DEFEITO REAL",
+            "auto_allowed": True, "operator_review_required": False,
+            "proposed_decision": "NG",
+            "reason": "side_trial_high_ng_auto",
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
     if trial_used:
         return {
             "mode": "production", "confidence": confidence, "threshold": None,
