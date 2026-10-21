@@ -159,7 +159,7 @@ class ArchivePresenceFeedbackTests(unittest.TestCase):
         self.assertEqual(memory_feedback_state(a)[0], "JÁ VI")
 
     def test_controller_rejects_stale_or_decided_events_without_repainting(self):
-        app = QApplication.instance() or QApplication([])
+        self._qt_app = QApplication.instance() or QApplication([])
         class Panel(QWidget):
             def __init__(self):
                 super().__init__()
