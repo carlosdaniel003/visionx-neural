@@ -211,7 +211,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
         "label": (
             "JÁ VI" if known else
             "VI SEMELHANTE" if similar_ng else
-            "NUNCA VI" if queried else ""
+            "SEM PAR EXATO" if queried else ""
         ),
         "approximate_ng_seen": similar_ng,
         "approximate_ng_lights": approximate_lights if similar_ng else [],
@@ -269,14 +269,14 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
     if result == "NUNCA_VI":
         if memory["has_multilight"]:
             return (
-                "NUNCA VI • KNN SEM MATCH EXATO",
+                "SEM PAR EXATO • KNN",
                 "Nenhuma das iluminações consultadas tem par humano exato nem "
                 "vizinhos NG corroborados nesta inspeção. A CNN é um modelo "
                 "separado da memória KNN. Isso não significa que o tipo "
                 "de defeito nunca foi registrado.",
             )
         return (
-            "NUNCA VI • KNN SEM MATCH EXATO",
+            "SEM PAR EXATO • KNN",
             "KNN consultado: par humano exato não encontrado nem vizinhos NG "
             "corroborados. Isso não significa que o tipo de defeito nunca "
             "tenha sido salvo.",

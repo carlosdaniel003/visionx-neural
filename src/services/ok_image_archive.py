@@ -23,6 +23,7 @@ from src.services.capture_evidence import (
 from src.services.image_archive_candidates import archive_image_candidates
 from src.services.knn_archive_auto_memory import notify_archive_image_saved
 from src.services.image_archive_dedup import (
+    ArchiveVisualIndex,
     image_fingerprint,
     load_archive_fingerprints,
     unique_archive_target,
@@ -56,6 +57,7 @@ class OKImageArchiveQueue:
         self.output_dir = Path(output_dir or settings.OK_ARCHIVE_DIR)
         self._queue: Queue[tuple[np.ndarray, str, datetime] | None] = Queue()
         self._seen_fingerprints: set[str] = set()
+        self._visual_index = ArchiveVisualIndex()
         self._fingerprints_loaded = False
         self._worker = Thread(
             target=self._run,
@@ -93,7 +95,7 @@ class OKImageArchiveQueue:
             return
 
         self._seen_fingerprints.update(
-            load_archive_fingerprints(self.output_dir)
+            load_archive_fingerprints(self.output_dir, visual_index=self._visual_index)
         )
         self._fingerprints_loaded = True
 
@@ -113,6 +115,10 @@ class OKImageArchiveQueue:
                 fingerprint = ok_image_fingerprint(image)
                 if fingerprint and fingerprint in self._seen_fingerprints:
                     continue
+                # Imagem quase igual de OUTRO evento não precisa ocupar mais
+                # espaço nem provocar reimportação KNN. Nunca compara OK x NG.
+                if self._visual_index.contains_similar(image, category):
+                    continue
 
                 self.output_dir.mkdir(parents=True, exist_ok=True)
                 target = unique_archive_target(
@@ -127,6 +133,7 @@ class OKImageArchiveQueue:
 
                 if fingerprint:
                     self._seen_fingerprints.add(fingerprint)
+                self._visual_index.register(image, category)
                 # Apenas notifica. OCR e KNN são assíncronos e não bloqueiam
                 # a confirmação do operador nem a captura XP.
                 notify_archive_image_saved(target)
