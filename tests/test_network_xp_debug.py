@@ -113,11 +113,16 @@ class AnalysisTimingContractTests(unittest.TestCase):
             "time.time() - self.capture_start_time",
             panel_source,
         )
-        self.assertIn(
-            'latency_title = QLabel("TEMPO DE ANÁLISE")',
-            ui_source,
-        )
-        self.assertIn('window.lbl_timer = QLabel("0.00 s")', ui_source)
+        # O contrato temporal permanece; apenas a exibição mudou para
+        # um terceiro cartão temporário, sem duplicação no cabeçalho.
+        overlay_source = open(
+            "src/ui/analysis_time_feedback.py", encoding="utf-8"
+        ).read()
+        self.assertNotIn('latency_title = QLabel("TEMPO DE ANÁLISE")', ui_source)
+        self.assertNotIn('window.lbl_timer', ui_source)
+        self.assertIn('QLabel("TEMPO DE ANÁLISE")', overlay_source)
+        self.assertIn('detail["analysis_time_seconds"]', overlay_source)
+        self.assertIn("show_analysis_time_feedback", panel_source)
 
     def test_decision_debug_carries_analysis_time_contract(self):
         analysis = {

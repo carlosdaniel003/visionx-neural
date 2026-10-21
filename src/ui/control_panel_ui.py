@@ -279,31 +279,12 @@ class ControlPanelUI:
         mode_layout.addWidget(mode_label)
         mode_layout.addWidget(window.combo_mode)
 
-        latency_card = QFrame()
-        latency_card.setObjectName("latencyCard")
-        latency_card.setMinimumWidth(0)
-        latency_layout = QVBoxLayout(latency_card)
-        latency_layout.setContentsMargins(12, 7, 12, 7)
-        latency_layout.setSpacing(3)
-        latency_title = QLabel("TEMPO DE ANÁLISE")
-        latency_title.setObjectName("fieldLabel")
-        window.lbl_timer = QLabel("0.00 s")
-        window.lbl_timer.setObjectName("latencyLabel")
-        window.lbl_timer.setToolTip(
-            "Do recebimento/captura do frame até o resultado estar pintado "
-            "na interface."
-        )
-        window.lbl_timer.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        latency_layout.addWidget(latency_title)
-        latency_layout.addWidget(window.lbl_timer)
-
-        self.header_widgets = [title_block, mode_card, latency_card]
+        # A duração final é exibida em overlay; não ocupa o cabeçalho.
+        self.header_widgets = [title_block, mode_card]
         self.header_layout.addWidget(title_block, 0, 0)
         self.header_layout.addWidget(mode_card, 0, 1)
-        self.header_layout.addWidget(latency_card, 0, 2)
         self.header_layout.setColumnStretch(0, 1)
         self.header_layout.setColumnStretch(1, 0)
-        self.header_layout.setColumnStretch(2, 0)
         parent_layout.addWidget(header)
 
     def _create_info_card(self, title: str, value_label: QLabel, accent: bool = False) -> QFrame:
@@ -1123,19 +1104,13 @@ class ControlPanelUI:
             widget.setMinimumWidth(0)
 
         if compact:
-            self.header_layout.addWidget(self.header_widgets[0], 0, 0, 1, 2)
+            self.header_layout.addWidget(self.header_widgets[0], 0, 0)
             self.header_layout.addWidget(self.header_widgets[1], 1, 0)
-            self.header_layout.addWidget(self.header_widgets[2], 1, 1)
-            self.header_layout.setColumnStretch(0, 1)
-            self.header_layout.setColumnStretch(1, 1)
-            self.header_layout.setColumnStretch(2, 0)
         else:
             self.header_layout.addWidget(self.header_widgets[0], 0, 0)
             self.header_layout.addWidget(self.header_widgets[1], 0, 1)
-            self.header_layout.addWidget(self.header_widgets[2], 0, 2)
-            self.header_layout.setColumnStretch(0, 1)
-            self.header_layout.setColumnStretch(1, 0)
-            self.header_layout.setColumnStretch(2, 0)
+        self.header_layout.setColumnStretch(0, 1)
+        self.header_layout.setColumnStretch(1, 0)
 
     def _layout_status_bar(self, window, compact: bool) -> None:
         while self.status_layout.count():
