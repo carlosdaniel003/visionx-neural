@@ -5,6 +5,9 @@ on:
     branches: [central]
     paths:
       - "src/services/image_archive_dedup.py"
+      - "src/services/archive_visual_presence.py"
+      - "src/ui/archive_visual_presence_feedback.py"
+      - "tests/test_archive_visual_presence.py"
       - "src/services/ng_image_archive.py"
       - "src/services/ok_image_archive.py"
       - "tests/test_image_archive_near_duplicates.py"
@@ -13,6 +16,9 @@ on:
     branches: [central]
     paths:
       - "src/services/image_archive_dedup.py"
+      - "src/services/archive_visual_presence.py"
+      - "src/ui/archive_visual_presence_feedback.py"
+      - "tests/test_archive_visual_presence.py"
       - "src/services/ng_image_archive.py"
       - "src/services/ok_image_archive.py"
       - "src/ui/neural_telemetry_model.py"
@@ -42,5 +48,5 @@ jobs:
           python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" PyQt6 scipy scikit-image
       - name: Validate modules and queue behavior
         run: |
-          python -m py_compile src/services/image_archive_dedup.py src/services/ng_image_archive.py src/services/ok_image_archive.py src/ui/neural_telemetry_model.py src/ui/inspection_memory_feedback.py src/ui/decision_verdict_feedback.py
-          python -m unittest tests.test_image_archive_near_duplicates tests.test_ng_image_archive tests.test_ok_image_archive tests.test_memory_visual_feedback_v2 tests.test_knn_visual_memory_feedback tests.test_combined_verdict_memory_overlay -v
+          python -m py_compile src/services/image_archive_dedup.py src/services/archive_visual_presence.py src/services/ng_image_archive.py src/services/ok_image_archive.py src/ui/archive_visual_presence_feedback.py src/ui/neural_telemetry_model.py src/ui/inspection_memory_feedback.py src/ui/decision_verdict_feedback.py
+          python -m unittest tests.test_archive_visual_presence tests.test_image_archive_near_duplicates tests.test_ng_image_archive tests.test_ok_image_archive tests.test_memory_visual_feedback_v2 tests.test_knn_visual_memory_feedback tests.test_combined_verdict_memory_overlay -v

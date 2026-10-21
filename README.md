@@ -1,3 +1,13 @@
+## 21/10/2026 — SIDE reconhece imagens semelhantes já arquivadas
+
+- Na SIDE antecipada, o roteador KNN consultava apenas pares gabarito/teste **pixel-idênticos** e nunca executava a busca visual multilight. No evento `bc6ad9a1a1c54ff0a36a53c35134e1ad`, havia 2.800 registros indexados, nenhum par exato e nenhum resultado de consulta visual aproximada.
+- `src/services/archive_visual_presence.py` lê os PNGs completos de `public/ng_archive` e `public/ok_archive` através de worker assíncrono e reutiliza as **mesmas assinaturas conservadoras** da deduplicação visual já existente. Compara categoria/iluminação, mantém índice em RAM, incorpora novos PNGs sem reler os antigos e suporta nomes históricos com sufixo `_2`/`_3`.
+- O veredito SIDE é publicado sem aguardar o arquivo. Enquanto a consulta ocorre, o cartão exibe **CONSULTANDO ACERVO**; se só uma classe contiver imagem semelhante, **VI SEMELHANTE**, indicando NG ou OK; se ambas contiverem imagens semelhantes, **ACERVO AMBÍGUO**; sem match, **SEM PAR EXATO**. Atualização Qt é vinculada ao evento ainda ativo para nunca contaminar a próxima peça ou um evento já julgado.
+- A identificação é **visual do arquivo PNG**, não identidade KNN exata e nem rótulo humano validado. O arquivo pode conter rótulos incorretos. A consulta não modifica classificação, CNN, pesos, memória persistente, política de produção, comando 0/1, julgamento do XP ou captura de TOP/MID.
+- A leitura é limitada a uma thread Win32 de prioridade de background, sem bloquear o julgamento. Testes incluem NG conhecido, PNG com pequena variação, concorrência OK/NG, outra categoria/luz, foco visual distinto, arquivos novos, ausência do acervo e prevenção de resultado atrasado após decisão.
+
+---
+
 ## 21/10/2026 — Acervo visual seletivo: não repetir quase a mesma imagem
 
 - Arquivos OK/NG são preservados **somente para capturas novas**: além da igualdade SHA-256, os workers agora aplicam deduplicação visual conservadora por mesma categoria AOI e iluminação, exigindo semelhança simultânea de tela, gabarito, teste e mapa de diferenças. A verificação ocorre apenas na fila assíncrona, sobre os PNGs originais completos. Não bloqueia recebimento de imagens nem decisão XP e não cruza os acervos OK e NG.

@@ -22,6 +22,10 @@ def memory_feedback_state(analysis: dict | None) -> tuple[str, str, str]:
         return "JÁ VI", memory_panel_text(analysis)[1], "known"
     if memory["status"] == "VI_SEMELHANTE":
         return "VI SEMELHANTE", memory_panel_text(analysis)[1], "similar"
+    if memory["status"] == "CONSULTANDO_ACERVO":
+        return "CONSULTANDO ACERVO", memory_panel_text(analysis)[1], "pending"
+    if memory["status"] == "ACERVO_AMBIGUO":
+        return "ACERVO AMBÍGUO", memory_panel_text(analysis)[1], "review"
     if memory["status"] == "NUNCA_VI":
         return "SEM PAR EXATO", memory_panel_text(analysis)[1], "new"
     return "", "", ""
