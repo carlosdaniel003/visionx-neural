@@ -30,6 +30,7 @@ HORIZONTAL_SCROLL_DURATION_MS = 2_800
 NO_SCROLL_REVIEW_MS = 1_200
 POST_SCROLL_PAUSE_MS = 900
 AUTO_DECISION_DELAY_MS = 2_000
+KNN_C_SUPERVISED_DELAY_MS = 5_000
 
 
 class ProductionAutonomyController(QObject):
@@ -43,6 +44,7 @@ class ProductionAutonomyController(QObject):
         self.state = "idle"
         self._auto_dispatch_started_generation = None
         self.paused = False
+        self.knn_c_supervised_armed = False
         self._in_production = False
         self._scroll_animation = None
         self.pause_shortcut = None
@@ -162,6 +164,7 @@ class ProductionAutonomyController(QObject):
         if production and not self._in_production:
             self._cancel_pending()
             self.paused = False
+            self.knn_c_supervised_armed = False
             self.panel.production_autonomy_paused = False
 
             restore_daily = getattr(
@@ -189,6 +192,7 @@ class ProductionAutonomyController(QObject):
         if not production and self._in_production:
             self._cancel_pending()
             self.paused = False
+            self.knn_c_supervised_armed = False
             self.panel.production_autonomy_paused = False
             self._in_production = False
 
@@ -274,6 +278,12 @@ class ProductionAutonomyController(QObject):
 
         self.cycle_started()
         self._record_analysis_metrics(analysis)
+        detail = analysis.get("detail")
+        if isinstance(detail, dict):
+            # Armamento da sessão deve preceder a apresentação da peça.
+            detail["knn_c_supervised_armed"] = bool(
+                self.knn_c_supervised_armed and not self.paused
+            )
 
         self._cancel_pending()
         self.pending_analysis = analysis
@@ -544,17 +554,25 @@ class ProductionAutonomyController(QObject):
         ):
             decision = policy["proposed_decision"]
             command = "0" if decision == "OK" else "1"
+            is_knn_c = str(policy.get("reason", "")).startswith(
+                "knn_c_supervised_three_light_"
+            )
+            if is_knn_c and not self.knn_c_supervised_armed:
+                self.state = "operator_review"
+                enter_production_review(self.panel, analysis)
+                return
             self.state = "auto_decision_pending"
             try:
                 self.panel.update_brain_status(
                     f"Modo Produção: decisão automática {decision}. "
-                    f"Preparando {command} automático; espaço para pausar...",
+                    f"Preparando {command} automático; espaço para pausar... "
+                    + ("KNN C supervisionada (5s)." if is_knn_c else ""),
                     True,
                 )
             except Exception:
                 pass
             self._schedule_stage(
-                AUTO_DECISION_DELAY_MS,
+                KNN_C_SUPERVISED_DELAY_MS if is_knn_c else AUTO_DECISION_DELAY_MS,
                 lambda g=generation, d=decision: self._emit_auto_decision(g, d),
             )
             return
@@ -598,6 +616,12 @@ class ProductionAutonomyController(QObject):
             return
 
         policy = production_decision_policy(self.pending_analysis)
+        if (
+            str(policy.get("reason", "")).startswith("knn_c_supervised_three_light_")
+            and not self.knn_c_supervised_armed
+        ):
+            self._finish_presentation(generation)
+            return
         if not (
             policy.get("auto_allowed", False)
             and policy.get("proposed_decision") == decision
@@ -691,14 +715,44 @@ class ProductionAutonomyController(QObject):
         if callable(hide_session):
             hide_session()
 
+    def toggle_knn_c_supervised(self) -> bool:
+        """Ctrl+Shift+C arma/desarma C somente ENTRE peças em Produção."""
+        if not self.is_production():
+            return False
+        if self.pending_analysis is not None:
+            try:
+                self.panel.update_brain_status(
+                    "KNN C: altere o armamento somente entre inspeções.", True,
+                )
+            except Exception:
+                pass
+            return self.knn_c_supervised_armed
+        self.knn_c_supervised_armed = not self.knn_c_supervised_armed
+        try:
+            self.panel.update_brain_status(
+                "KNN C SUPERVISIONADA ARMADA • somente 3 luzes concordantes "
+                "• XP 0/1 após 5s • espaço desarma e pausa."
+                if self.knn_c_supervised_armed
+                else "KNN C desarmada: sugestões continuam manuais.",
+                True,
+            )
+        except Exception:
+            pass
+        return self.knn_c_supervised_armed
+
     def toggle_pause(self) -> bool:
-        """Espaço pausa/retoma somente a automação do Modo Produção."""
+        """Espaço pausa/retoma; pausa SEMPRE desarma KNN C."""
         if not self.is_production():
             return False
 
         self.paused = not self.paused
 
         if self.paused:
+            self.knn_c_supervised_armed = False
+            if isinstance(self.pending_analysis, dict):
+                detail = self.pending_analysis.get("detail")
+                if isinstance(detail, dict):
+                    detail["knn_c_supervised_armed"] = False
             self._stop_pending_stage()
             if self._scroll_animation is not None:
                 try:
@@ -708,7 +762,8 @@ class ProductionAutonomyController(QObject):
 
             try:
                 self.panel.update_brain_status(
-                    "MODO PRODUÇÃO PAUSADO • pressione espaço para continuar.",
+                    "MODO PRODUÇÃO PAUSADO • KNN C DESARMADA. "
+                    "Pressione espaço para continuar.",
                     True,
                 )
             except Exception:
@@ -788,6 +843,13 @@ def install_production_autonomy_controller(panel) -> None:
         return
 
     controller = ProductionAutonomyController(panel)
+
+    knn_c_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), panel)
+    knn_c_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+    knn_c_shortcut.setAutoRepeat(False)
+    knn_c_shortcut.activated.connect(controller.toggle_knn_c_supervised)
+    panel.production_knn_c_supervised_shortcut = knn_c_shortcut
+    panel.toggle_knn_c_supervised = controller.toggle_knn_c_supervised
 
     shortcut = QShortcut(QKeySequence("Space"), panel)
     shortcut.setContext(Qt.ShortcutContext.WindowShortcut)

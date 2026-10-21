@@ -227,6 +227,21 @@ def install_live_knn_strategy_c(orchestrator_cls, *, strategy=None):
         label = "OK" if selected == "SUGERE_OK" else "NG"
         # C entra no fluxo REAL como recomendação para revisão. A validação
         # offline não confere autoridade para transmitir comandos 0/1.
+        # Guardar o julgamento e a revisão pré-C para impedir que um gate
+        # posterior confunda revisão por C com revisão física/CNN prévia.
+        original_detail_review = bool(detail.get("operator_review_required"))
+        original_trace = detail.get("decision_trace")
+        original_trace_review = bool(
+            isinstance(original_trace, dict)
+            and original_trace.get("operator_review_required")
+        )
+        original_review = bool(
+            result.get("production_review_required")
+            or original_detail_review or original_trace_review
+        )
+        diagnosis["pre_c_review_required"] = original_review
+        diagnosis["pre_c_verdict"] = str(result.get("verdict", "")).upper()
+        diagnosis["pre_c_is_defect"] = result.get("is_defect")
         diagnosis["requires_human_confirmation"] = True
         diagnosis["proposed_label"] = label
         current = str(result.get("verdict", "")).upper()
