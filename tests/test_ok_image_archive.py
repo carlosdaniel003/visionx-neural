@@ -410,7 +410,8 @@ class OKArchiveSourceContractTests(unittest.TestCase):
         self.assertNotIn("archive_image = self.current_ng.copy()", archive_source)
         self.assertIn("ok_image_fingerprint", archive_source)
         self.assertIn("_load_existing_fingerprints", archive_source)
-        self.assertIn('self.output_dir.glob("*.png")', archive_source)
+        self.assertIn("visual_index=self._visual_index", archive_source)
+        self.assertIn("ArchiveVisualIndex", archive_source)
 
     def test_ui_places_ok_toggle_after_ng_toggle_and_enabled_by_default(self):
         source = Path("src/ui/control_panel_ui.py").read_text(encoding="utf-8")
