@@ -76,8 +76,7 @@ QFrame#infoCard,
 QFrame#footerCard,
 QFrame#imageCard,
 QFrame#debugCard,
-QFrame#modeCard,
-QFrame#latencyCard {{
+QFrame#modeCard {{
     background-color: {SURFACE_RAISED};
     border: 1px solid {BORDER};
     border-radius: 8px;
@@ -124,8 +123,7 @@ QLabel#fieldValue {{
     font-weight: 700;
 }}
 
-QLabel#accentValue,
-QLabel#latencyLabel {{
+QLabel#accentValue {{
     color: {ACCENT};
     font-size: 13px;
     font-weight: 800;
