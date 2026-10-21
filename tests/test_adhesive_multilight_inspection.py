@@ -318,12 +318,11 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def _run_capture(self, *, confidence, verdict, mode, side_analysis=None):
+    def _run_capture(self, *, confidence, verdict, mode, side_analysis=None, category="FALTANDO"):
         import time
         from types import SimpleNamespace
         from unittest.mock import Mock
 
-        category = "FALTANDO"
         active_analysis = {
             "verdict": verdict,
             "is_defect": verdict == "DEFEITO REAL",
@@ -472,6 +471,59 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                 self.assertFalse(policy["operator_review_required"])
                 self.assertEqual(policy["proposed_decision"], "NG")
                 self.assertEqual(policy["reason"], "side_trial_verified_auto_ng")
+                if mode == "Modo Produção":
+                    panel.notify_production_analysis_ready.assert_called_once()
+                else:
+                    panel.notify_production_analysis_ready.assert_not_called()
+
+    def test_trial_invertido_ng_finishes_after_side_in_all_modes(self):
+        from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        for mode in ("Modo Teste", "Modo Sombra", "Modo Produção"):
+            side = {
+                "verdict": "DEFEITO REAL",
+                "is_defect": True,
+                "confidence": .9999839067459106,
+                "lighting_mode": "SIDE",
+                "production_review_required": True,
+                "detail": {
+                    "recognition_route": "NEW_CNN",
+                    "operator_review_required": True,
+                    "cnn_v2_active": True,
+                    "cnn_v2_experimental": True,
+                    "cnn_v2_status": "INFERENCE_OK",
+                    "cnn_v2_aoi_category": "INVERTIDO",
+                    "cnn_v2_lighting_mode": "SIDE",
+                    "cnn_v2_checkpoint_verified": True,
+                    "cnn_v2_checkpoint_sha256": TRIAL_97P70_SHA256,
+                    "cnn_v2_trial_manual_only": True,
+                    "cnn_v2_ng_score_uncalibrated": .9999839067459106,
+                    "decision_trace": {
+                        "operator_review_required": True,
+                        "fusion_rule": "cnn_v2_dualscale_direct",
+                    },
+                    "knn_c": {"status": "REVISAO", "bank_status": "LOADING"},
+                },
+            }
+            with self.subTest(mode=mode):
+                panel = self._run_capture(
+                    confidence=side["confidence"], verdict="DEFEITO REAL",
+                    mode=mode, side_analysis=side, category="INVERTIDO",
+                )
+                panel.adhesive_multilight_automation.start.assert_not_called()
+                panel.network_receiver.set_auxiliary_image_mode.assert_called_with(False)
+                panel.send_command_to_xp.assert_not_called()
+                self.assertFalse(panel.adhesive_multilight_active)
+                self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
+                self.assertEqual(panel.current_analysis["multilight_category"], "INVERTIDO")
+                self.assertEqual(
+                    panel.current_analysis["detail"]["side_early_exit"]["skipped_lights"],
+                    ["TOP", "MID"],
+                )
+                policy = production_decision_policy(panel.current_analysis)
+                self.assertEqual(policy["proposed_decision"], "NG")
+                self.assertTrue(policy["auto_allowed"])
                 if mode == "Modo Produção":
                     panel.notify_production_analysis_ready.assert_called_once()
                 else:

@@ -140,6 +140,50 @@ class SideEarlyDecisionTests(unittest.TestCase):
         # Não altera retroativamente o resultado local de origem.
         self.assertNotIn("side_early_exit", original["detail"])
 
+    def test_trial_side_routes_all_supported_aoi_categories_without_changing_defect_label(self):
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        # Categoria emitida pela AOI é apenas um contexto de roteamento;
+        # a CNN de inspeção de qualidade é compartilhada entre as quatro.
+        for category in ("FALTANDO", "INVERTIDO", "EMBORCADO", "DESLOCADO"):
+            with self.subTest(category=category):
+                source = self._trial_ng_side()
+                source["detail"]["cnn_v2_aoi_category"] = category
+                if category == "INVERTIDO":
+                    # Evento XP 7f3e2cfb, SIDE 13:52 em 21/10/2026.
+                    source["confidence"] = .9999839067459106
+                    source["detail"]["cnn_v2_ng_score_uncalibrated"] = .9999839067459106
+                final = build_side_early_decision(source, category)
+                self.assertIsNotNone(final)
+                self.assertEqual(final["verdict"], "DEFEITO REAL")
+                self.assertTrue(final["is_defect"])
+                self.assertEqual(final["multilight_category"], category)
+                self.assertEqual(final["detail"]["side_early_exit"]["analyzed_lights"], ["SIDE"])
+                self.assertEqual(final["detail"]["side_early_exit"]["skipped_lights"], ["TOP", "MID"])
+                self.assertEqual(side_trial_automatic_decision(final), "NG")
+                policy = production_decision_policy(final)
+                self.assertTrue(policy["auto_allowed"])
+                self.assertEqual(policy["proposed_decision"], "NG")
+                self.assertEqual(policy["reason"], "side_trial_verified_auto_ng")
+                self.assertNotIn("side_early_exit", source["detail"])
+
+    def test_trial_side_aoi_scope_never_accepts_mismatched_or_other_engines(self):
+        import copy
+        source = self._trial_ng_side()
+        source["detail"]["cnn_v2_aoi_category"] = "INVERTIDO"
+        for category in ("MUITO ADESIVO", "UNKNOWN", "RANDOM", ""):
+            with self.subTest(category=category):
+                self.assertIsNone(build_side_early_decision(source, category))
+        # Não confundir a categoria declarada pela AOI com o escopo em que
+        # o modelo realmente inferiu (proteção contra evento/categoria trocada).
+        self.assertIsNone(build_side_early_decision(source, "DESLOCADO"))
+        mismatched = copy.deepcopy(source)
+        mismatched["detail"]["cnn_v2_aoi_category"] = "FALTANDO"
+        self.assertIsNone(build_side_early_decision(mismatched, "INVERTIDO"))
+        missing = copy.deepcopy(source)
+        missing["detail"]["cnn_v2_aoi_category"] = ""
+        self.assertIsNone(build_side_early_decision(missing, "INVERTIDO"))
+
     def test_trial_ok_side_allows_zero_when_raw_score_and_verdict_agree(self):
         from src.ui.production_confidence_gate import production_decision_policy
 
@@ -159,6 +203,19 @@ class SideEarlyDecisionTests(unittest.TestCase):
         self.assertFalse(policy["operator_review_required"])
         self.assertEqual(policy["proposed_decision"], "OK")
         self.assertEqual(policy["reason"], "side_trial_verified_auto_ok")
+
+    def test_trial_ok_side_also_supports_invertido_routing(self):
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        side = self._trial_ng_side()
+        side.update(verdict="FALHA FALSA", is_defect=False, confidence=.9997)
+        side["detail"]["cnn_v2_ng_score_uncalibrated"] = .0003
+        side["detail"]["cnn_v2_aoi_category"] = "INVERTIDO"
+        final = build_side_early_decision(side, "INVERTIDO")
+        self.assertIsNotNone(final)
+        self.assertEqual(side_trial_automatic_decision(final), "OK")
+        self.assertEqual(production_decision_policy(final)["proposed_decision"], "OK")
+        self.assertTrue(production_decision_policy(final)["auto_allowed"])
 
     def test_trial_automatic_gate_rechecks_integrity_and_opposition(self):
         import copy

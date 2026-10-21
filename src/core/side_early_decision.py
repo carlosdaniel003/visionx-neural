@@ -11,6 +11,8 @@ from copy import deepcopy
 from math import isfinite
 
 from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
+from src.core.neural.faltando_category_scope import uses_faltando_v2
+from src.core.strict_category_memory import canonical_memory_category
 
 
 SIDE_EARLY_EXIT_THRESHOLD = 0.97
@@ -89,8 +91,12 @@ def _eligible_trial_side_for_review(
     A exigência herdada de revisão é preservada para auditoria. Autorizar
     envio ao XP é responsabilidade exclusiva do gate de Produção.
     """
-    if not isinstance(analysis, dict) or str(category).strip().upper() != "FALTANDO":
+    # Categoria AOI indica o roteamento, não o tipo real do defeito.
+    # O checkpoint é compartilhado por FALTANDO/INVERTIDO/EMBORCADO/
+    # DESLOCADO; nunca limitar o encerramento à palavra "FALTANDO".
+    if not isinstance(analysis, dict) or not uses_faltando_v2(category):
         return False
+    category_scope = canonical_memory_category(category)
     detail = analysis.get("detail")
     if not isinstance(detail, dict):
         return False
@@ -111,7 +117,7 @@ def _eligible_trial_side_for_review(
         and detail.get("cnn_v2_checkpoint_verified") is True
         and detail.get("cnn_v2_trial_manual_only") is True
         and detail.get("cnn_v2_checkpoint_sha256") == TRIAL_97P70_SHA256
-        and detail.get("cnn_v2_aoi_category") == "FALTANDO"
+        and canonical_memory_category(detail.get("cnn_v2_aoi_category")) == category_scope
         and detail.get("cnn_v2_lighting_mode") == "SIDE"
         and trace.get("fusion_rule") == "cnn_v2_dualscale_direct"
         and detail.get("memory_conflict") is not True
@@ -184,7 +190,8 @@ def build_side_early_decision(analysis: dict | None, category: str) -> dict | No
     final["multilight_final"] = True
     final["multilight_category"] = str(category or "").strip().upper()
     final["eligible_for_final_decision"] = True
-    # A apresentação é final, mas o modelo experimental NÃO autoriza XP.
+    # Preservar a revisão herdada como evidência do checkpoint experimental.
+    # A autorização real 0/1 continua exclusiva da política de Produção.
     final["production_review_required"] = trial_review
 
     final_detail["multilight_final"] = True
@@ -238,7 +245,10 @@ def side_trial_automatic_decision(analysis: dict | None) -> str | None:
         and analysis.get("eligible_for_final_decision") is True
         and detail.get("multilight_final") is True
         and detail.get("eligible_for_final_decision") is True
-        and detail.get("multilight_category") == category == "FALTANDO"
+        and detail.get("multilight_category") == category
+        and uses_faltando_v2(category)
+        and canonical_memory_category(detail.get("cnn_v2_aoi_category"))
+            == canonical_memory_category(category)
         and marker.get("rule") == expected_rule
         and marker.get("threshold") == SIDE_EARLY_EXIT_THRESHOLD
         and marker.get("verdict") == analysis.get("verdict")
