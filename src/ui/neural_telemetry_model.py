@@ -194,6 +194,16 @@ def memory_seen_state(analysis: dict | None) -> dict:
                 and _map(rows.get(light)).get("status") in {"NG_LEANING", "NG_SIMILAR"})
         )
     ]
+    archive = detail.get("side_archive_visual_presence")
+    archive = archive if isinstance(archive, dict) else {}
+    archive_status = str(archive.get("status", "") or "")
+    archive_label = str(archive.get("label", "") or "")
+    archive_matched = bool(
+        archive_status == "SIMILAR"
+        and archive_label in {"OK", "NG"}
+        and archive.get("diagnostic_only") is True
+        and archive.get("decision_authorized") is False
+    )
     similar_ng = bool(
         not known and (
             (status_visual == "NG_CORROBORATED" and len(approximate_lights) >= 2)
@@ -203,16 +213,23 @@ def memory_seen_state(analysis: dict | None) -> dict:
     )
     status = (
         "JA_VI" if known else
-        "VI_SEMELHANTE" if similar_ng else
+        "VI_SEMELHANTE" if similar_ng or archive_matched else
+        "CONSULTANDO_ACERVO" if archive_status == "PENDING" else
+        "ACERVO_AMBIGUO" if archive_status == "AMBIGUOUS" else
         "NUNCA_VI" if queried else None
     )
     return {
         "status": status,
         "label": (
             "JÁ VI" if known else
-            "VI SEMELHANTE" if similar_ng else
+            "VI SEMELHANTE" if similar_ng or archive_matched else
+            "CONSULTANDO ACERVO" if archive_status == "PENDING" else
+            "ACERVO AMBÍGUO" if archive_status == "AMBIGUOUS" else
             "SEM PAR EXATO" if queried else ""
         ),
+        "archive_visual_seen": archive_matched,
+        "archive_label": archive_label if archive_matched else "",
+        "archive_visual_status": archive_status,
         "approximate_ng_seen": similar_ng,
         "approximate_ng_lights": approximate_lights if similar_ng else [],
         "visual_rows": rows if similar_ng else {},
@@ -248,6 +265,28 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
             "JÁ VI • KNN EXATO",
             f"Par humano registrado • Rótulo {memory['human_label'] or '?'}. "
             "Correspondência exata gabarito/teste.",
+        )
+    if result == "VI_SEMELHANTE" and memory["archive_visual_seen"]:
+        label = memory["archive_label"]
+        return (
+            f"VI SEMELHANTE • ARQUIVO {label} • SIDE",
+            "Uma imagem visualmente semelhante à captura XP foi localizada "
+            f"em public/{'ng_archive' if label == 'NG' else 'ok_archive'}. "
+            "É um rótulo de arquivo, não confirmação física ou par exato. "
+            "Esta consulta não altera a CNN, o julgamento nem o comando XP.",
+        )
+    if result == "CONSULTANDO_ACERVO":
+        return (
+            "CONSULTANDO ACERVO • SIDE",
+            "A comparação visual com os PNGs OK/NG está em andamento, "
+            "em segundo plano; o julgamento não espera pelo resultado.",
+        )
+    if result == "ACERVO_AMBIGUO":
+        return (
+            "ACERVO AMBÍGUO • OK E NG",
+            "Capturas visualmente semelhantes existem nos dois arquivos. "
+            "Não atribuir classe confiável a partir desses rótulos. "
+            "O julgamento da CNN permanece independente.",
         )
     if result == "VI_SEMELHANTE":
         lights = memory["approximate_ng_lights"]
