@@ -106,7 +106,7 @@ def _render_panel(panel, analysis: dict | None) -> None:
     display_verdict, _ = verdict_feedback_state(analysis)
     verdict_color = (
         "#ff6262" if display_verdict == "DEFEITO REAL"
-        else "#f5c518" if display_verdict == "REVISÃO OBRIGATÓRIA" or review_required
+        else "#f5c518" if display_verdict == "REVISÃO OBRIGATÓRIA"
         else "#ff6262" if is_defect
         else "#4ade80"
     )

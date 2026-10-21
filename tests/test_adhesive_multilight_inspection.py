@@ -466,8 +466,12 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                     ["TOP", "MID"],
                 )
                 policy = production_decision_policy(panel.current_analysis)
-                self.assertFalse(policy["auto_allowed"])
+                # Somente o controlador de Produção pode enviar a decisão;
+                # a captura não transmite tecla nem em Teste/Sombra.
+                self.assertTrue(policy["auto_allowed"])
+                self.assertFalse(policy["operator_review_required"])
                 self.assertEqual(policy["proposed_decision"], "NG")
+                self.assertEqual(policy["reason"], "side_trial_verified_auto_ng")
                 if mode == "Modo Produção":
                     panel.notify_production_analysis_ready.assert_called_once()
                 else:

@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.corroborated_ng_verdict import corroborated_ng_verdict
+from src.core.side_early_decision import side_trial_automatic_decision
 from src.ui.decision_key_feedback import FEEDBACK_FADE_OUT_MS
 from src.ui.inspection_memory_feedback import memory_feedback_state
 from src.ui.theme import ACCENT, DANGER, SUCCESS, SURFACE
@@ -92,7 +93,11 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
         in {"DEFEITO REAL", "DEFEITO"}
     ):
         return "DEFEITO REAL", "ng"
-    # Revisão sem classificação NG conclusiva continua explícita.
+    # No ensaio SIDE cuja política admite 0/OK, exibir a classe verificada,
+    # sem transformar o flag histórico de revisão em julgamento visual.
+    if side_trial_automatic_decision(analysis) == "OK":
+        return "FALHA FALSA", "ok"
+    # Revisão sem classificação conclusiva continua explícita.
     if review_required:
         return "REVISÃO OBRIGATÓRIA", "ng"
 

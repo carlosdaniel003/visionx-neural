@@ -6,8 +6,10 @@ from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
 from src.core.side_early_decision import (
     SIDE_EARLY_EXIT_THRESHOLD,
     SIDE_TRIAL_NG_REVIEW_RULE,
+    SIDE_TRIAL_OK_REVIEW_RULE,
     build_side_early_decision,
     side_automatic_decision,
+    side_trial_automatic_decision,
 )
 
 
@@ -113,7 +115,7 @@ class SideEarlyDecisionTests(unittest.TestCase):
         result["lighting_mode"] = "SIDE"
         return result
 
-    def test_trial_ng_side_skips_extra_lights_but_never_authorizes_xp(self):
+    def test_trial_ng_side_skips_extra_lights_and_authorizes_only_valid_production(self):
         from src.ui.production_confidence_gate import production_decision_policy
 
         original = self._trial_ng_side()
@@ -129,11 +131,81 @@ class SideEarlyDecisionTests(unittest.TestCase):
         self.assertEqual(final["detail"]["side_early_exit"]["skipped_lights"],
                          ["TOP", "MID"])
         self.assertEqual(side_automatic_decision(final), None)
+        self.assertEqual(side_trial_automatic_decision(final), "NG")
         policy = production_decision_policy(final)
-        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["auto_allowed"])
         self.assertEqual(policy["proposed_decision"], "NG")
-        self.assertTrue(policy["operator_review_required"])
+        self.assertFalse(policy["operator_review_required"])
+        self.assertEqual(policy["reason"], "side_trial_verified_auto_ng")
+        # Não altera retroativamente o resultado local de origem.
         self.assertNotIn("side_early_exit", original["detail"])
+
+    def test_trial_ok_side_allows_zero_when_raw_score_and_verdict_agree(self):
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        side = self._trial_ng_side()
+        side.update(verdict="FALHA FALSA", is_defect=False, confidence=.9997)
+        side["detail"]["cnn_v2_ng_score_uncalibrated"] = .0003
+        final = build_side_early_decision(side, "FALTANDO")
+        self.assertIsNotNone(final)
+        self.assertEqual(final["detail"]["side_early_exit"]["rule"],
+                         SIDE_TRIAL_OK_REVIEW_RULE)
+        self.assertEqual(final["detail"]["side_early_exit"]["analyzed_lights"],
+                         ["SIDE"])
+        self.assertEqual(side_trial_automatic_decision(final), "OK")
+        self.assertIsNone(side_automatic_decision(final))
+        policy = production_decision_policy(final)
+        self.assertTrue(policy["auto_allowed"])
+        self.assertFalse(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "OK")
+        self.assertEqual(policy["reason"], "side_trial_verified_auto_ok")
+
+    def test_trial_automatic_gate_rechecks_integrity_and_opposition(self):
+        import copy
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        ng = build_side_early_decision(self._trial_ng_side(), "FALTANDO")
+        ok_source = self._trial_ng_side()
+        ok_source.update(verdict="FALHA FALSA", is_defect=False, confidence=.9997)
+        ok_source["detail"]["cnn_v2_ng_score_uncalibrated"] = .0003
+        ok = build_side_early_decision(ok_source, "FALTANDO")
+        for final in (ng, ok):
+            self.assertIsNotNone(side_trial_automatic_decision(final))
+            opposing = "SUGERE_OK" if final["is_defect"] else "SUGERE_NG"
+            mutations = (
+                lambda x: x.update(lighting_mode="TOP"),
+                lambda x: x.update(multilight_final=False),
+                lambda x: x.update(eligible_for_final_decision=False),
+                lambda x: x.update(production_review_required=False),
+                lambda x: x.update(is_defect=not x["is_defect"]),
+                lambda x: x.update(verdict="REVISÃO OBRIGATÓRIA"),
+                lambda x: x.update(confidence=.95),
+                lambda x: x["detail"].update(cnn_v2_status="ERROR"),
+                lambda x: x["detail"].update(cnn_v2_checkpoint_verified=False),
+                lambda x: x["detail"].update(cnn_v2_checkpoint_sha256="other"),
+                lambda x: x["detail"].update(cnn_v2_trial_manual_only=False),
+                lambda x: x["detail"].update(memory_conflict=True),
+                lambda x: x["detail"].update(knn_c={"status": opposing}),
+                lambda x: x["detail"]["side_early_exit"].update(rule="forged"),
+                lambda x: x["detail"]["side_early_exit"].update(
+                    analyzed_lights=["SIDE", "TOP"]),
+                lambda x: x["detail"]["side_early_exit"].update(
+                    production_auto_allowed=True),
+                lambda x: x["detail"]["side_early_exit"].update(
+                    reported_confidence=.80),
+            )
+            for mutate in mutations:
+                sample = copy.deepcopy(final)
+                mutate(sample)
+                with self.subTest(label=final["verdict"], case=sample):
+                    self.assertIsNone(side_trial_automatic_decision(sample))
+                    self.assertFalse(production_decision_policy(sample)["auto_allowed"])
+        physical = copy.deepcopy(ok)
+        physical["detail"]["physical_missing_veto"] = {"status": "SUSPECT_ABSENCE"}
+        self.assertFalse(production_decision_policy(physical)["auto_allowed"])
+        visual = copy.deepcopy(ok)
+        visual["detail"]["knn_visual_corroboration"] = {"status": "NG_CORROBORATED"}
+        self.assertFalse(production_decision_policy(visual)["auto_allowed"])
 
     def test_trial_shortcut_requires_valid_local_ng_and_no_conflicting_c(self):
         import copy

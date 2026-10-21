@@ -66,6 +66,22 @@ class AIVerdictFeedbackStateTests(unittest.TestCase):
             ("DEFEITO REAL", "ng"),
         )
 
+    def test_trial_side_ok_shows_ok_when_review_flag_is_only_checkpoint_legacy(self):
+        from src.core.side_early_decision import build_side_early_decision
+        from tests.test_side_early_decision import SideEarlyDecisionTests
+
+        side = SideEarlyDecisionTests._trial_ng_side()
+        side.update(verdict="FALHA FALSA", is_defect=False, confidence=.9997)
+        side["detail"]["cnn_v2_ng_score_uncalibrated"] = .0003
+        final = build_side_early_decision(side, "FALTANDO")
+        self.assertTrue(final["production_review_required"])
+        self.assertEqual(verdict_feedback_state(final), ("FALHA FALSA", "ok"))
+        final["detail"]["cnn_v2_status"] = "ERROR"
+        self.assertEqual(
+            verdict_feedback_state(final),
+            ("REVISÃO OBRIGATÓRIA", "ng"),
+        )
+
     def test_conflicting_ng_text_and_binary_marker_keeps_mandatory_review(self):
         analysis = {
             "is_defect": False,

@@ -20,7 +20,11 @@ from src.core.corroborated_ng_verdict import corroborated_ng_verdict
 from src.core.knn_c_supervised_policy import supervised_knn_c_decision
 from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
-from src.core.side_early_decision import SIDE_EARLY_EXIT_THRESHOLD, side_automatic_decision
+from src.core.side_early_decision import (
+    SIDE_EARLY_EXIT_THRESHOLD,
+    side_automatic_decision,
+    side_trial_automatic_decision,
+)
 
 
 # Mantido por compatibilidade com imports antigos. Não participa mais da política.
@@ -86,10 +90,9 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     # Contraprova física independente: uma inconsistência ou ausência dos
     # pares visuais proíbe 0/OK até confirmação humana. Esse segundo gate
     # continua válido mesmo se uma tela intermediária mudar o veredito.
-    # O candidato com 97,70% detectou todos os NG do benchmark publicado,
-    # mas reprovou 19 OK no histórico. Mesmo quando a fusão multilight
-    # sobrescreve os flags de uma luz, um único SHA do ensaio força
-    # confirmação do operador. Sem qualquer caminho de auto-OK/auto-NG.
+    # Histórico trial permanece registrado na auditoria. Uma exceção de
+    # Produção explicitamente validada só se aplica à SIDE final com contrato
+    # de inferência, SHA, direção OK/NG, memória e episódio íntegros.
     diagnostics = detail.get("cnn_v2_light_diagnostics")
     diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
     trial_used = bool(
@@ -102,6 +105,17 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             ) for data in diagnostics.values()
         )
     )
+    trial_side = side_trial_automatic_decision(analysis) if trial_used else None
+    if trial_side in {"OK", "NG"}:
+        return {
+            "mode": "production", "confidence": confidence,
+            "threshold": SIDE_EARLY_EXIT_THRESHOLD,
+            "verdict": "FALHA FALSA" if trial_side == "OK" else "DEFEITO REAL",
+            "auto_allowed": True, "operator_review_required": False,
+            "proposed_decision": trial_side,
+            "reason": "side_trial_verified_auto_" + trial_side.lower(),
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
     if trial_used:
         return {
             "mode": "production", "confidence": confidence, "threshold": None,
