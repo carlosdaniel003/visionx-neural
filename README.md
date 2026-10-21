@@ -1,3 +1,12 @@
+## 21/10/2026 — Tempo de análise como terceiro cartão flutuante
+
+- Removido o cartão permanente de **TEMPO DE ANÁLISE** do cabeçalho, preservando o layout responsivo do título e seletor de modo para notebooks e telas grandes.
+- `src/ui/analysis_time_feedback.py` mostra o tempo final já medido e registrado em `detail.analysis_time_seconds`, como cartão de resultado abaixo do veredito e da iluminação atual. Nenhuma contagem é mostrada para a SIDE provisória; o tempo aparece somente após a conclusão do evento com uma ou três iluminações.
+- Ao julgar OK/NG, o cartão segue o mesmo fade-out sincronizado dos outros avisos; ao descartar ou receber a próxima peça, desaparece no reset. Os tempos do relatório de debug permanecem inalterados. Não modifica a inferência nem comandos XP.
+- Novo teste Qt offscreen exercita duração inválida, SIDE parcial/final, descarte, decisão, sincronismo e ancoragem em notebooks e monitores amplos.
+
+---
+
 ## 21/10/2026 — Encerramento SIDE independente do nome do defeito AOI
 
 - Corrigida a elegibilidade da SIDE experimental: a CNN FALTANDO V2 já era compartilhada por **FALTANDO, INVERTIDO, EMBORCADO e DESLOCADO**, mas `_eligible_trial_side_for_review` e o gate de revalidação de Produção exigiam literalmente `FALTANDO`. Agora o escopo é verificado por `uses_faltando_v2` e a categoria AOI observada deve coincidir com a categoria registrada pela CNN (aliases canônicos).
