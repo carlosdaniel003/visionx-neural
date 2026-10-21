@@ -476,6 +476,13 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
             category, knn,
         )
 
+    if side_only:
+        # A consulta ao acervo é visual e assíncrona: o veredito não espera.
+        from src.ui.archive_visual_presence_feedback import (
+            submit_side_archive_presence,
+        )
+        submit_side_archive_presence(panel, fused, category)
+
     panel.current_analysis = fused
     panel.adhesive_multilight_final_analysis = fused
     panel.adhesive_multilight_last_final_analysis = fused
