@@ -56,6 +56,15 @@ class SideArchivePresenceFeedback(QObject):
         return True
 
     def _run(self):
+        # Reutiliza a política Win32 já empregada no observador KNN:
+        # reduz prioridade SOMENTE desta thread, nunca do processo XP/UI.
+        try:
+            from src.services.knn_archive_auto_memory import (
+                _set_background_thread_mode,
+            )
+            _set_background_thread_mode(True)
+        except (ImportError, AttributeError):
+            pass
         while True:
             analysis, frame, category, event_id = self._requests.get()
             try:
