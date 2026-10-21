@@ -15,7 +15,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import QEventLoop, QTimer, Qt
+from PyQt6.QtCore import QEventLoop, QSize, QTimer, Qt
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
@@ -173,6 +173,8 @@ class _ResponsiveImageViewport(QLabel):
         super().__init__(placeholder)
         self._source_pixmap = QPixmap()
         self._placeholder = str(placeholder)
+        self._viewport_min_height = 92 if focused else 150
+        self._rendered_target_size = QSize()
         self.setObjectName("focusViewport" if focused else "imageViewport")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setSizePolicy(
@@ -180,7 +182,15 @@ class _ResponsiveImageViewport(QLabel):
             QSizePolicy.Policy.Expanding,
         )
         self.setMinimumWidth(0)
-        self.setMinimumHeight(92 if focused else 150)
+        self.setMinimumHeight(self._viewport_min_height)
+
+    def sizeHint(self) -> QSize:
+        # QLabel calcula seu sizeHint pelo pixmap renderizado. Se ele muda
+        # no resizeEvent, o QScrollArea pode realimentar o layout sem parar.
+        return QSize(120, self._viewport_min_height)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, self._viewport_min_height)
 
     def set_bgr_image(self, image: np.ndarray, placeholder: str | None = None) -> bool:
         if not _valid_image(image):
@@ -202,11 +212,13 @@ class _ResponsiveImageViewport(QLabel):
             return False
 
         self._source_pixmap = pixmap
+        self._rendered_target_size = QSize()
         self._render()
         return True
 
     def clear_view(self, placeholder: str | None = None) -> None:
         self._source_pixmap = QPixmap()
+        self._rendered_target_size = QSize()
         self.clear()
         self.setText(str(placeholder or self._placeholder))
 
@@ -216,11 +228,14 @@ class _ResponsiveImageViewport(QLabel):
         target = self.contentsRect().size()
         if target.width() <= 1 or target.height() <= 1:
             return
+        if target == self._rendered_target_size:
+            return
         scaled = self._source_pixmap.scaled(
             target,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
+        self._rendered_target_size = QSize(target)
         super().setPixmap(scaled)
 
     def resizeEvent(self, event):
@@ -545,7 +560,9 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
         if mode == "Modo Produção":
             if side_only:
                 panel.update_brain_status(
-                    "SIDE >=97%: decisão antecipada; apresentação automática em andamento.",
+                    "SIDE NG antecipada • aguardando confirmação humana."
+                    if fused.get("production_review_required", False)
+                    else "SIDE >=97%: decisão antecipada; apresentação automática em andamento.",
                     True,
                 )
             elif fused.get("production_review_required", False):

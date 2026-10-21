@@ -125,6 +125,26 @@ class AdhesiveResponsiveViewTests(unittest.TestCase):
             self.assertIsNotNone(card.large_view)
             self.assertIsNotNone(card.small_view)
 
+    def test_viewport_layout_hints_do_not_depend_on_scaled_pixmap(self):
+        view = AdhesiveMultiLightView()
+        viewport = view.cards["SIDE"].main_view
+        original_hint = viewport.sizeHint()
+        original_minimum = viewport.minimumSizeHint()
+        viewport.resize(240, 300)
+        viewport.show()
+        pixels = np.full((540, 300, 3), 117, dtype=np.uint8)
+        self.assertTrue(viewport.set_bgr_image(pixels))
+        self.app.processEvents()
+        self.assertEqual(viewport.sizeHint(), original_hint)
+        self.assertEqual(viewport.minimumSizeHint(), original_minimum)
+        rendered = viewport._rendered_target_size
+        viewport._render()
+        self.assertEqual(viewport._rendered_target_size, rendered)
+        viewport.resize(200, 260)
+        self.app.processEvents()
+        self.assertEqual(viewport.sizeHint(), original_hint)
+        self.assertEqual(viewport.minimumSizeHint(), original_minimum)
+
     def test_each_card_shows_its_own_full_xp_frame_and_original_test_crop(self):
         view = AdhesiveMultiLightView()
         for mode, value in (("SIDE", 35), ("TOP", 95), ("MID", 155)):
@@ -298,7 +318,7 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def _run_capture(self, *, confidence, verdict, mode):
+    def _run_capture(self, *, confidence, verdict, mode, side_analysis=None):
         import time
         from types import SimpleNamespace
         from unittest.mock import Mock
@@ -314,6 +334,9 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                 "decision_trace": {"operator_review_required": False},
             },
         }
+
+        if side_analysis is not None:
+            active_analysis = side_analysis
 
         class FakePanel:
             def __init__(self):
@@ -398,6 +421,57 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                         panel.notify_production_analysis_ready.assert_called_once()
                     else:
                         panel.notify_production_analysis_ready.assert_not_called()
+
+    def test_trial_ng_ends_after_side_in_all_modes_without_sending_xp(self):
+        from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        for mode in ("Modo Teste", "Modo Sombra", "Modo Produção"):
+            side = {
+                "verdict": "DEFEITO REAL", "is_defect": True,
+                "confidence": .9999722242355347,
+                "lighting_mode": "SIDE",
+                "production_review_required": True,
+                "detail": {
+                    "recognition_route": "NEW_CNN",
+                    "operator_review_required": True,
+                    "cnn_v2_active": True,
+                    "cnn_v2_experimental": True,
+                    "cnn_v2_status": "INFERENCE_OK",
+                    "cnn_v2_aoi_category": "FALTANDO",
+                    "cnn_v2_lighting_mode": "SIDE",
+                    "cnn_v2_checkpoint_verified": True,
+                    "cnn_v2_checkpoint_sha256": TRIAL_97P70_SHA256,
+                    "cnn_v2_trial_manual_only": True,
+                    "cnn_v2_ng_score_uncalibrated": .9999722242355347,
+                    "decision_trace": {
+                        "operator_review_required": True,
+                        "fusion_rule": "cnn_v2_dualscale_direct",
+                    },
+                },
+            }
+            with self.subTest(mode=mode):
+                panel = self._run_capture(
+                    confidence=side["confidence"], verdict="DEFEITO REAL",
+                    mode=mode, side_analysis=side,
+                )
+                panel.adhesive_multilight_automation.start.assert_not_called()
+                panel.network_receiver.set_auxiliary_image_mode.assert_called_with(False)
+                panel.send_command_to_xp.assert_not_called()
+                self.assertFalse(panel.adhesive_multilight_active)
+                self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
+                self.assertTrue(panel.current_analysis["production_review_required"])
+                self.assertEqual(
+                    panel.current_analysis["detail"]["side_early_exit"]["skipped_lights"],
+                    ["TOP", "MID"],
+                )
+                policy = production_decision_policy(panel.current_analysis)
+                self.assertFalse(policy["auto_allowed"])
+                self.assertEqual(policy["proposed_decision"], "NG")
+                if mode == "Modo Produção":
+                    panel.notify_production_analysis_ready.assert_called_once()
+                else:
+                    panel.notify_production_analysis_ready.assert_not_called()
 
     def test_just_below_threshold_keeps_three_light_capture(self):
         panel = self._run_capture(
