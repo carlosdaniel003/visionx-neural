@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import unittest
 
 from src.core.corroborated_ng_verdict import corroborated_ng_verdict
+from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
 from src.services.capture_debug_payload import decision_record
 from src.ui.decision_verdict_feedback import verdict_feedback_state
 from src.ui.production_confidence_gate import (
@@ -85,7 +86,7 @@ class BinaryNGWithReviewTests(unittest.TestCase):
         _record_policy(panel, policy, resolution="confirmed")
         self.assertFalse(analysis["production_review_required"])
 
-    def test_raw_ng_without_independent_corrob_does_not_override_review(self):
+    def test_raw_ng_keeps_visual_verdict_without_bypassing_operational_review(self):
         for field, value in (
             ("physical_missing_veto", {"status": "NO_STRONG_EVIDENCE"}),
             ("knn_visual_corroboration", {"status": "CONFLICT"}),
@@ -95,14 +96,44 @@ class BinaryNGWithReviewTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertFalse(corroborated_ng_verdict(case))
                 self.assertEqual(verdict_feedback_state(case),
-                                 ("REVISÃO OBRIGATÓRIA", "ng"))
+                                 ("DEFEITO REAL", "ng"))
+                self.assertFalse(production_decision_policy(case)["auto_allowed"])
         older = {
             "verdict": "DEFEITO REAL", "is_defect": True,
             "production_review_required": True,
         }
         self.assertFalse(corroborated_ng_verdict(older))
         self.assertEqual(verdict_feedback_state(older),
-                         ("REVISÃO OBRIGATÓRIA", "ng"))
+                         ("DEFEITO REAL", "ng"))
+        self.assertFalse(production_decision_policy(older)["auto_allowed"])
+
+    def test_trial_cnn_three_ng_lights_display_ng_but_do_not_auto_send_xp(self):
+        # Reprodução dos estados relevantes do evento XP de 21/10.
+        analysis = {
+            "multilight_final": True,
+            "is_defect": True,
+            "verdict": "DEFEITO REAL",
+            "production_review_required": True,
+            "detail": {
+                "multilight_category": "FALTANDO",
+                "recognition_route": "NEW_CNN",
+                "fusion_rule": "multilight_strong_single",
+                "cnn_v2_checkpoint_sha256": TRIAL_97P70_SHA256,
+                "cnn_v2_trial_manual_only": True,
+                "cnn_v2_consensus": "REVIEW",
+                "cnn_v2_consensus_reason": "INVALID_LIGHT_EVIDENCE",
+                "operator_review_required": True,
+                "decision_trace": {"operator_review_required": True},
+            },
+        }
+        self.assertEqual(verdict_feedback_state(analysis),
+                         ("DEFEITO REAL", "ng"))
+        policy = production_decision_policy(analysis)
+        self.assertEqual(policy["verdict"], "DEFEITO REAL")
+        self.assertEqual(policy["proposed_decision"], "NG")
+        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["operator_review_required"])
+        self.assertEqual(policy["reason"], "cnn_97p70_unqualified_operator_review_only")
 
     def test_uncertain_physical_only_is_still_review_not_ng(self):
         candidate = ng_corroborated()
