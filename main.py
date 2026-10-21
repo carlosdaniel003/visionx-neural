@@ -63,6 +63,10 @@ from src.ui.adhesive_multilight_inspection import (
 )
 from src.ui.capture_button_copy import install_capture_button_copy
 from src.ui.control_panel import ControlPanel
+from src.ui.analysis_time_feedback import (
+    install_analysis_time_feedback,
+    install_analysis_time_feedback_hooks,
+)
 from src.ui.decision_key_feedback import (
     install_decision_key_feedback,
     install_decision_key_feedback_hooks,
@@ -222,6 +226,7 @@ def main():
     # O fundo permanece neutro em todos os estados. O veredito final é
     # comunicado somente pelo overlay persistente no canto superior direito.
     install_ai_verdict_feedback_hooks(ControlPanel)
+    install_analysis_time_feedback_hooks(ControlPanel)
 
     # Camada exclusivamente visual: resume dual-scale, protótipos e contraste
     # OK x NG sem modificar analysis, score, confiança ou persistência.
@@ -232,6 +237,7 @@ def main():
     install_decision_key_feedback(panel)
     install_ai_verdict_feedback(panel)
     install_lighting_status_feedback(panel)
+    install_analysis_time_feedback(panel)
     # Os painéis gráficos dos especialistas foram removidos do layout no PR #33.
     # Não instalar os antigos debuggers: ambos dependem de scroll_layout,
     # que não existe mais. Os motores físicos/CNN/KNN permanecem ativos.
