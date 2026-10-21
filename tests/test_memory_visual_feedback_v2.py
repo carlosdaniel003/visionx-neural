@@ -44,13 +44,13 @@ class MemoryFeedbackTests(unittest.TestCase):
     def test_new_cnn_is_new_pair_not_new_type_of_defect(self):
         a=cnn_case()
         title,message,tone=memory_feedback_state(a)
-        self.assertEqual(title,"NUNCA VI")
+        self.assertEqual(title,"SEM PAR EXATO")
         self.assertIn("par",message.lower())
         self.assertEqual(tone,"new")
         self.assertNotIn("primeiro defeito",message.lower())
 
     def test_new_physical_specialist_is_new_pair(self):
-        self.assertEqual(memory_feedback_state(case("NEW_EXPERTS"))[0],"NUNCA VI")
+        self.assertEqual(memory_feedback_state(case("NEW_EXPERTS"))[0],"SEM PAR EXATO")
 
     def test_unknown_route_does_not_claim_first_occurrence(self):
         self.assertEqual(memory_feedback_state(case("")),("","",""))
@@ -95,7 +95,7 @@ class MemoryPanelRenderingTests(unittest.TestCase):
         self.addCleanup(panel.frame_knn.deleteLater)
         self.addCleanup(panel.frame_decision_influence.deleteLater)
         _render_panel(panel,cnn_case())
-        self.assertIn("NUNCA VI",panel.lbl_memory_role.text())
+        self.assertIn("SEM PAR EXATO",panel.lbl_memory_role.text())
         self.assertIn("par humano exato não encontrado",panel.lbl_db_info.text())
         self.assertIn("NEW_CNN",panel.frame_knn.recognition_route)
         self.assertTrue(panel.frame_knn.isVisible() or not panel.frame_knn.isHidden())
@@ -118,7 +118,7 @@ class MemoryPanelRenderingTests(unittest.TestCase):
         panel.resize(1100,720)
         overlay=InspectionMemoryFeedbackOverlay(panel)
         self.assertTrue(overlay.show_analysis(cnn_case()))
-        self.assertEqual(overlay.title_label.text(),"NUNCA VI")
+        self.assertEqual(overlay.title_label.text(),"SEM PAR EXATO")
         self.assertTrue(overlay.prepare_decision_dismissal())
         self.assertFalse(overlay.clear())
         self.assertTrue(overlay.start_synchronized_fade_out())

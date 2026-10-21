@@ -1,0 +1,46 @@
+name: Visual Archive Near-Duplicate Tests
+
+on:
+  push:
+    branches: [central]
+    paths:
+      - "src/services/image_archive_dedup.py"
+      - "src/services/ng_image_archive.py"
+      - "src/services/ok_image_archive.py"
+      - "tests/test_image_archive_near_duplicates.py"
+      - ".github/workflows/visual-archive-near-duplicate-tests.yml"
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/services/image_archive_dedup.py"
+      - "src/services/ng_image_archive.py"
+      - "src/services/ok_image_archive.py"
+      - "src/ui/neural_telemetry_model.py"
+      - "src/ui/decision_verdict_feedback.py"
+      - "src/ui/inspection_memory_feedback.py"
+      - "tests/test_image_archive_near_duplicates.py"
+      - ".github/workflows/visual-archive-near-duplicate-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  visual-archive:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Native Qt dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0
+      - name: Python dependencies
+        run: |
+          python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" PyQt6 scipy scikit-image
+      - name: Validate modules and queue behavior
+        run: |
+          python -m py_compile src/services/image_archive_dedup.py src/services/ng_image_archive.py src/services/ok_image_archive.py src/ui/neural_telemetry_model.py src/ui/inspection_memory_feedback.py src/ui/decision_verdict_feedback.py
+          python -m unittest tests.test_image_archive_near_duplicates tests.test_ng_image_archive tests.test_ok_image_archive tests.test_memory_visual_feedback_v2 tests.test_knn_visual_memory_feedback tests.test_combined_verdict_memory_overlay -v

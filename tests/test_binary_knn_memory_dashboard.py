@@ -73,9 +73,9 @@ class BinarySeenLogicTests(unittest.TestCase):
         analysis = make_case("NEW_CNN", "NEW_CNN", "NEW_CNN")
         state = memory_seen_state(analysis)
         self.assertEqual(state["status"], "NUNCA_VI")
-        self.assertEqual(memory_feedback_state(analysis)[0], "NUNCA VI")
+        self.assertEqual(memory_feedback_state(analysis)[0], "SEM PAR EXATO")
         self.assertIn("0/3", self._caption(state))
-        self.assertIn("NUNCA VI", memory_panel_text(analysis)[0])
+        self.assertIn("SEM PAR EXATO", memory_panel_text(analysis)[0])
 
     @staticmethod
     def _caption(state):

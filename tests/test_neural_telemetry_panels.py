@@ -93,7 +93,7 @@ class TelemetryModelTests(unittest.TestCase):
 
     def test_knn_new_case_does_not_fabricate_similarity_zero(self):
         header, description = memory_panel_text(combined())
-        self.assertIn("KNN SEM MATCH EXATO", header)
+        self.assertIn("SEM PAR EXATO", header)
         self.assertIn("nem vizinhos ng corroborados", description.lower())
         self.assertNotIn("similaridade 0%", description.lower())
 
@@ -213,7 +213,7 @@ class TelemetryWidgetsTests(unittest.TestCase):
         self.addCleanup(w.deleteLater)
         w.update_data(combined()["detail"])
         self.assertEqual(w.recognition_route, "NEW_CNN")
-        self.assertIn("KNN SEM MATCH EXATO", w.route_header)
+        self.assertIn("SEM PAR EXATO", w.route_header)
 
     def test_neural_card_uses_unmodified_original_score(self):
         w = NeuralSpecialistWidget()

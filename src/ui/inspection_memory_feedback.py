@@ -23,7 +23,7 @@ def memory_feedback_state(analysis: dict | None) -> tuple[str, str, str]:
     if memory["status"] == "VI_SEMELHANTE":
         return "VI SEMELHANTE", memory_panel_text(analysis)[1], "similar"
     if memory["status"] == "NUNCA_VI":
-        return "NUNCA VI", memory_panel_text(analysis)[1], "new"
+        return "SEM PAR EXATO", memory_panel_text(analysis)[1], "new"
     return "", "", ""
 
 

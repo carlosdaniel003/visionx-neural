@@ -106,13 +106,13 @@ class VisualMemoryMeaningTests(unittest.TestCase):
             case["detail"]["knn_visual_corroboration"] = bad
             with self.subTest(bad=bad):
                 self.assertEqual(memory_seen_state(case)["status"], "NUNCA_VI")
-                self.assertEqual(memory_feedback_state(case)[0], "NUNCA VI")
+                self.assertEqual(memory_feedback_state(case)[0], "SEM PAR EXATO")
 
     def test_new_without_neighbors_is_only_no_exact_match(self):
         case = reported_event()
         del case["detail"]["knn_visual_corroboration"]
         self.assertEqual(memory_seen_state(case)["status"], "NUNCA_VI")
-        self.assertIn("NUNCA VI", memory_panel_text(case)[0])
+        self.assertIn("SEM PAR EXATO", memory_panel_text(case)[0])
         self.assertIn("não significa", memory_panel_text(case)[1])
 
     def test_three_light_ng_trend_has_same_visual_memory_display(self):
@@ -147,7 +147,7 @@ class VisualMemoryQtTests(unittest.TestCase):
         self.assertEqual(card.memory_state_label.text(), "VI SEMELHANTE")
         self.assertIn("NG", card.toolTip())
         self.assertIn("não pares exatos", card.toolTip())
-        self.assertNotIn("NUNCA VI", card.toolTip())
+        self.assertNotIn("SEM PAR EXATO", card.toolTip())
 
     def test_knn_spectrum_shows_similar_ng_in_all_three_light_cards(self):
         card = KNNSpectrumWidget()

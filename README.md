@@ -1,3 +1,12 @@
+## 21/10/2026 — Acervo visual seletivo: não repetir quase a mesma imagem
+
+- Arquivos OK/NG são preservados **somente para capturas novas**: além da igualdade SHA-256, os workers agora aplicam deduplicação visual conservadora por mesma categoria AOI e iluminação, exigindo semelhança simultânea de tela, gabarito, teste e mapa de diferenças. A verificação ocorre apenas na fila assíncrona, sobre os PNGs originais completos. Não bloqueia recebimento de imagens nem decisão XP e não cruza os acervos OK e NG.
+- O índice é recuperado no startup a partir de PNGs existentes, inclusive nomes com sufixo `_2`/`_3`. Não apaga fotos ou registros antigos, não modifica dataset, pesos CNN, fingerprints usados pelo KNN exato nem o observador do acervo. Imagens distintas e casos duvidosos continuam arquivados.
+- **NUNCA VI** não era evidência de primeira ocorrência: significava apenas `NOT_FOUND` de um par pixel-idêntico. O texto agora é **SEM PAR EXATO**, preservando o estado interno `NUNCA_VI` para compatibilidade, e continua sendo **VI SEMELHANTE** apenas quando a memória visual efetivamente reportar exemplos. A UI não afirma que leu imagens similares que a rota SIDE antecipada não consultou.
+- Reproduzido o problema observado: capturas próximas em horas distintas que divergem poucos pixels devem ser bloqueadas sem reduzir o cuidado com pequenas diferenças reais. A similaridade calculada é critério de economia do arquivo, jamais rótulo/corroboração para aprovar ou rejeitar uma peça.
+
+---
+
 ## 21/10/2026 — Tempo de análise como terceiro cartão flutuante
 
 - Removido o cartão permanente de **TEMPO DE ANÁLISE** do cabeçalho, preservando o layout responsivo do título e seletor de modo para notebooks e telas grandes.
