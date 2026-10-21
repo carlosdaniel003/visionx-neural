@@ -527,14 +527,10 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
         )
     )
 
-    try:
-        panel.lbl_timer.setText(f"{elapsed:.2f} s")
-        panel.lbl_timer.setToolTip(
-            "Tempo desde a SIDE até o resultado final exibido. "
-            + ("TOP/MID dispensadas." if side_only else "SIDE/TOP/MID analisadas.")
-        )
-    except Exception:
-        pass
+    # Tempo final completo da peça; SIDE provisória não produz cartão.
+    show_time = getattr(panel, "show_analysis_time_feedback", None)
+    if callable(show_time):
+        show_time(fused)
 
     # O debug principal deixa de apontar para a decisão provisória SIDE.
     # Mantemos o mesmo event_id e apenas promovemos a decisão final já fundida.
@@ -1230,7 +1226,6 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 "SIDE concluída. Coletando TOP e MID para o único "
                 "julgamento final."
             )
-            self.lbl_timer.setText("Coletando TOP/MID...")
             self.btn_save_ok.setEnabled(False)
             self.btn_save_ng.setEnabled(False)
             self.btn_skip.setEnabled(False)
