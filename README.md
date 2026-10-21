@@ -1,3 +1,11 @@
+## 21/10/2026 — Decisão automática seletiva do checkpoint experimental SIDE
+
+- A regra de Produção pode autorizar **0/OK ou 1/NG** para o checkpoint CNN FALTANDO V2 experimental identificado por SHA somente quando uma captura SIDE terminou antecipadamente e a inferência local, o score reportado (>=97% para a classe escolhida), o veredito binário, o marcador SIDE, a categoria e a ausência de conflitos são revalidados integralmente. A marca de revisão herdada do ensaio permanece na telemetria, mas não bloqueia esta exceção específica da política de Produção.
+- O controlador da Produção apresenta a inspeção e deixa **5 segundos adicionais** para Space pausar antes de transmitir o único comando ao XP. A política é reavaliada no envio; troca de modo/peça, conflito, falha de transporte ou comando duplicado não é automaticamente ignorado. Em Teste e Sombra não há envio automático.
+- Os **19 falsos NG históricos** permanecem nos relatórios como evidência do ensaio; não bloqueiam sozinhos a exceção solicitada. Score da CNN **não é probabilidade calibrada** e a aprovação em dados independentes da linha não foi aferida pelo CI. Não altera os pesos da CNN, o agente XP nem o protocolo de teclado. Confirmar operação na estação após o merge.
+
+---
+
 ## 21/10/2026 — Cópia de imagens do evento com uma ou três iluminações
 
 - **Copiar imagem** funciona tanto para captura concluída na SIDE com TOP/MID dispensadas quanto para um evento completo SIDE/TOP/MID; compõe somente as iluminações realmente capturadas.

@@ -16,6 +16,7 @@ from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
 SIDE_EARLY_EXIT_THRESHOLD = 0.97
 SIDE_EARLY_EXIT_RULE = "side_confidence_early_exit_v1"
 SIDE_TRIAL_NG_REVIEW_RULE = "side_trial_ng_human_review_v1"
+SIDE_TRIAL_OK_REVIEW_RULE = "side_trial_ok_human_review_v1"
 
 
 def _eligible_side_analysis(analysis: dict | None) -> bool:
@@ -80,14 +81,13 @@ def _eligible_side_analysis(analysis: dict | None) -> bool:
     return True
 
 
-def _eligible_trial_ng_for_review(
+def _eligible_trial_side_for_review(
     analysis: dict | None, category: str,
 ) -> bool:
-    """Dispensa outras luzes para mostrar NG, sem liberar comando industrial.
+    """Verifica o resultado binário da SIDE experimental antes do encerramento.
 
-    O checkpoint experimental teve falsos NG históricos: apenas NG local
-    inequívoco pode antecipar a *apresentação*, sempre com revisão humana.
-    OK, conflito, falha técnica e demais checkpoints mantêm o fluxo anterior.
+    A exigência herdada de revisão é preservada para auditoria. Autorizar
+    envio ao XP é responsabilidade exclusiva do gate de Produção.
     """
     if not isinstance(analysis, dict) or str(category).strip().upper() != "FALTANDO":
         return False
@@ -99,8 +99,8 @@ def _eligible_trial_ng_for_review(
         return False
     if not (
         analysis.get("lighting_mode") == "SIDE"
-        and analysis.get("verdict") == "DEFEITO REAL"
-        and analysis.get("is_defect") is True
+        and analysis.get("verdict") in {"DEFEITO REAL", "FALHA FALSA"}
+        and analysis.get("is_defect") is (analysis.get("verdict") == "DEFEITO REAL")
         and analysis.get("production_review_required") is True
         and detail.get("operator_review_required") is True
         and trace.get("operator_review_required") is True
@@ -118,9 +118,29 @@ def _eligible_trial_ng_for_review(
         and trace.get("memory_conflict") is not True
     ):
         return False
-    # Não encerrar antecipadamente quando a própria estratégia C discorda.
+    # A revisão herdada do checkpoint é tolerada; contraprovas independentes
+    # e discordâncias permanecem impeditivas para 0/OK e 1/NG.
+    defect = analysis["is_defect"]
+    opposite_c = "SUGERE_OK" if defect else "SUGERE_NG"
     candidate = detail.get("knn_c")
-    if isinstance(candidate, dict) and candidate.get("status") == "SUGERE_OK":
+    if isinstance(candidate, dict) and (
+        candidate.get("status") == opposite_c
+        or candidate.get("conflicts_with_existing_verdict") is True
+    ):
+        return False
+    neighbors = detail.get("knn_visual_corroboration")
+    if (not defect and isinstance(neighbors, dict)
+            and neighbors.get("status") in {"NG_CORROBORATED", "CONFLICT"}):
+        return False
+    veto = detail.get("physical_missing_veto")
+    if (not defect and isinstance(veto, dict)
+            and veto.get("status") in {
+                "SUSPECT_ABSENCE", "UNAVAILABLE", "GEOMETRY_REVIEW",
+            }):
+        return False
+    if detail.get("multilight_physical_disagreement") is True:
+        return False
+    if detail.get("multilight_missing_verified_presence"):
         return False
     try:
         confidence = float(analysis["confidence"])
@@ -131,18 +151,22 @@ def _eligible_trial_ng_for_review(
         isfinite(confidence)
         and isfinite(ng_score)
         and SIDE_EARLY_EXIT_THRESHOLD <= confidence <= 1.0
-        and SIDE_EARLY_EXIT_THRESHOLD <= ng_score <= 1.0
-        and abs(confidence - ng_score) <= 0.000001
+        and 0.0 <= ng_score <= 1.0
+        and (
+            ng_score >= SIDE_EARLY_EXIT_THRESHOLD if defect
+            else ng_score <= 1.0 - SIDE_EARLY_EXIT_THRESHOLD
+        )
+        and abs(confidence - (ng_score if defect else 1.0 - ng_score)) <= 0.000001
     )
 
 
 def build_side_early_decision(analysis: dict | None, category: str) -> dict | None:
     """Finaliza a inspeção pela SIDE; separa classificação de comando XP."""
     automatic = _eligible_side_analysis(analysis)
-    manual_trial_ng = (
-        not automatic and _eligible_trial_ng_for_review(analysis, category)
+    trial_review = (
+        not automatic and _eligible_trial_side_for_review(analysis, category)
     )
-    if not automatic and not manual_trial_ng:
+    if not automatic and not trial_review:
         return None
 
     verdict = str(analysis["verdict"]).strip().upper()
@@ -152,7 +176,8 @@ def build_side_early_decision(analysis: dict | None, category: str) -> dict | No
     final["reason"] = (
         f"SIDE: encerramento antecipado com confiança reportada de "
         f"{confidence:.1%}; TOP e MID dispensadas. "
-        + ("Checkpoint experimental: confirmar NG no operador. " if manual_trial_ng else "")
+        + ("Checkpoint experimental: autorização XP depende do gate de Produção. "
+           if trial_review else "")
         + str(analysis.get("reason", "") or "")
     )
     final["lighting_mode"] = "SIDE"
@@ -160,23 +185,72 @@ def build_side_early_decision(analysis: dict | None, category: str) -> dict | No
     final["multilight_category"] = str(category or "").strip().upper()
     final["eligible_for_final_decision"] = True
     # A apresentação é final, mas o modelo experimental NÃO autoriza XP.
-    final["production_review_required"] = manual_trial_ng
+    final["production_review_required"] = trial_review
 
     final_detail["multilight_final"] = True
     final_detail["multilight_category"] = final["multilight_category"]
     final_detail["eligible_for_final_decision"] = True
-    final_detail["operator_review_required"] = manual_trial_ng
+    final_detail["operator_review_required"] = trial_review
     final_detail["side_early_exit"] = {
-        "rule": SIDE_TRIAL_NG_REVIEW_RULE if manual_trial_ng else SIDE_EARLY_EXIT_RULE,
+        "rule": (
+            (SIDE_TRIAL_NG_REVIEW_RULE if final["is_defect"]
+             else SIDE_TRIAL_OK_REVIEW_RULE) if trial_review
+            else SIDE_EARLY_EXIT_RULE
+        ),
         "threshold": SIDE_EARLY_EXIT_THRESHOLD,
         "reported_confidence": confidence,
         "verdict": verdict,
         "analyzed_lights": ["SIDE"],
         "skipped_lights": ["TOP", "MID"],
         "production_auto_allowed": automatic,
-        "operator_review_required": manual_trial_ng,
+        "operator_review_required": trial_review,
     }
     return final
+
+
+def side_trial_automatic_decision(analysis: dict | None) -> str | None:
+    """Permite 0/OK ou 1/NG somente para a SIDE trial final íntegra.
+
+    O checkpoint mantém seu histórico de erro; os resultados da CNN são
+    escores não calibrados e não comprovam acerto em todas as peças.
+    """
+    if not isinstance(analysis, dict):
+        return None
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict):
+        return None
+    marker = detail.get("side_early_exit")
+    if not isinstance(marker, dict):
+        return None
+    category = analysis.get("multilight_category")
+    if not _eligible_trial_side_for_review(analysis, category):
+        return None
+    try:
+        reported = float(marker.get("reported_confidence"))
+    except (ValueError, TypeError, OverflowError):
+        return None
+    expected_rule = (
+        SIDE_TRIAL_NG_REVIEW_RULE if analysis["is_defect"]
+        else SIDE_TRIAL_OK_REVIEW_RULE
+    )
+    if not (
+        analysis.get("multilight_final") is True
+        and analysis.get("eligible_for_final_decision") is True
+        and detail.get("multilight_final") is True
+        and detail.get("eligible_for_final_decision") is True
+        and detail.get("multilight_category") == category == "FALTANDO"
+        and marker.get("rule") == expected_rule
+        and marker.get("threshold") == SIDE_EARLY_EXIT_THRESHOLD
+        and marker.get("verdict") == analysis.get("verdict")
+        and marker.get("analyzed_lights") == ["SIDE"]
+        and marker.get("skipped_lights") == ["TOP", "MID"]
+        and marker.get("production_auto_allowed") is False
+        and marker.get("operator_review_required") is True
+        and isfinite(reported)
+        and reported == float(analysis.get("confidence"))
+    ):
+        return None
+    return "NG" if analysis["is_defect"] else "OK"
 
 
 def side_automatic_decision(analysis: dict | None) -> str | None:
@@ -224,6 +298,8 @@ __all__ = [
     "SIDE_EARLY_EXIT_THRESHOLD",
     "SIDE_EARLY_EXIT_RULE",
     "SIDE_TRIAL_NG_REVIEW_RULE",
+    "SIDE_TRIAL_OK_REVIEW_RULE",
     "build_side_early_decision",
     "side_automatic_decision",
+    "side_trial_automatic_decision",
 ]

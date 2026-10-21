@@ -559,10 +559,14 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
     try:
         if mode == "Modo Produção":
             if side_only:
+                from src.ui.production_confidence_gate import production_decision_policy
+                policy = production_decision_policy(fused)
                 panel.update_brain_status(
-                    "SIDE NG antecipada • aguardando confirmação humana."
-                    if fused.get("production_review_required", False)
-                    else "SIDE >=97%: decisão antecipada; apresentação automática em andamento.",
+                    "SIDE antecipada: decisão automática "
+                    + str(policy.get("proposed_decision", ""))
+                    + " • apresentação e intervalo de pausa pendentes."
+                    if policy.get("auto_allowed", False) else
+                    "SIDE antecipada • confirmação humana necessária.",
                     True,
                 )
             elif fused.get("production_review_required", False):
