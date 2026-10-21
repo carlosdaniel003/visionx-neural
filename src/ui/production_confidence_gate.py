@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.core.corroborated_ng_verdict import corroborated_ng_verdict
+from src.core.knn_c_supervised_policy import supervised_knn_c_decision
 from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
 from src.core.side_early_decision import SIDE_EARLY_EXIT_THRESHOLD, side_automatic_decision
@@ -173,6 +174,22 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "auto_allowed": False, "operator_review_required": True,
             "proposed_decision": "",
             "reason": "cnn_knn_visual_ng_disagreement",
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
+
+    # Estratégia C: somente o operador pode armá-la por sessão.
+    # Executa DEPOIS dos vetos físicos, checkpoint trial e corroboração NG,
+    # e ANTES das políticas genéricas. O controlador revalida no envio.
+    selected_c = supervised_knn_c_decision(analysis)
+    if selected_c in {"OK", "NG"}:
+        return {
+            "mode": "production", "confidence": confidence,
+            "threshold": None,
+            "verdict": "FALHA FALSA" if selected_c == "OK" else "DEFEITO REAL",
+            "auto_allowed": True,
+            "operator_review_required": False,
+            "proposed_decision": selected_c,
+            "reason": "knn_c_supervised_three_light_" + selected_c.lower(),
             "operator_shortcuts": {"0": "OK", "1": "NG"},
         }
 
