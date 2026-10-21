@@ -1,3 +1,11 @@
+## 21/10/2026 — SIDE NG experimental com revisão, e estabilidade do viewport
+
+- A captura pode terminar já na SIDE para um NG conclusivo do checkpoint experimental FALTANDO v2 (97,70%), quando a inferência local foi válida, o score NG reportado é >=97%, o veredito é consistente, a revisão decorre do próprio checkpoint e não há conflito KNN. TOP/MID são dispensadas **somente como captura**, não se atribuem evidências dessas luzes.
+- O resultado antecipado permanece `DEFEITO REAL` com `production_review_required=True`, `operator_review_required=True` e `side_early_exit.production_auto_allowed=False`. A política do XP continua exigindo confirmação humana, inclusive em Produção; a estratégia C continua precisando de três luzes para liberação supervisionada.
+- O viewport das imagens multilight mantém `sizeHint` / `minimumSizeHint` independentes do pixmap escalado e evita renderizar repetidamente no mesmo tamanho, impedindo que a troca de escala altere a própria geometria que originou o resize. Confirmar estabilidade na estação industrial.
+
+---
+
 ## 19/10/2026 — Encerramento antecipado pela SIDE com confiança reportada >=97% (em validação)
 
 - No fluxo de rede, após inspecionar SIDE, o ODIN conclui o ciclo **sem comandar/capturar TOP e MID** se o resultado for `DEFEITO REAL` ou `FALHA FALSA`, o score local estiver no intervalo `[0.97, 1.0]`, os campos `is_defect` e `verdict` concordarem, e não houver conflito, falha técnica ou exigência local de revisão.
