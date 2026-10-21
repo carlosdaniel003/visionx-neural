@@ -7,6 +7,10 @@ on:
       - "main.py"
       - "src/ui/decision_verdict_feedback.py"
       - "src/ui/decision_key_feedback.py"
+      - "src/ui/analysis_time_feedback.py"
+      - "tests/test_analysis_time_feedback.py"
+      - "src/ui/control_panel_ui.py"
+      - "src/ui/adhesive_multilight_inspection.py"
       - "tests/test_combined_verdict_memory_overlay.py"
       - ".github/workflows/combined-verdict-memory-tests.yml"
   pull_request:
@@ -33,7 +37,7 @@ jobs:
           python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
       - name: Syntax verification
         run: |
-          python -m py_compile main.py src/ui/decision_verdict_feedback.py src/ui/decision_key_feedback.py tests/test_combined_verdict_memory_overlay.py
+          python -m py_compile main.py src/ui/decision_verdict_feedback.py src/ui/decision_key_feedback.py src/ui/analysis_time_feedback.py src/ui/control_panel_ui.py src/ui/control_panel.py src/ui/adhesive_multilight_inspection.py tests/test_combined_verdict_memory_overlay.py tests/test_analysis_time_feedback.py
       - name: Verify unified overlay and no regressions
         run: |
-          python -m unittest tests.test_combined_verdict_memory_overlay tests.test_decision_verdict_feedback tests.test_lighting_status_feedback tests.test_decision_key_feedback tests.test_memory_visual_feedback_v2 tests.test_neural_telemetry_panels -v
+          python -m unittest tests.test_analysis_time_feedback tests.test_combined_verdict_memory_overlay tests.test_decision_verdict_feedback tests.test_lighting_status_feedback tests.test_decision_key_feedback tests.test_memory_visual_feedback_v2 tests.test_neural_telemetry_panels -v
