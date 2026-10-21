@@ -367,7 +367,6 @@ class ControlPanel(QWidget):
 
         self.update_brain_status("🧠 Recebendo da Rede...", True)
         
-        self.lbl_timer.setText("Analisando...")
         self.btn_start.setEnabled(False)
         self.btn_save_ok.setEnabled(False)
         self.btn_save_ng.setEnabled(False)
@@ -435,7 +434,6 @@ class ControlPanel(QWidget):
         
         self.update_brain_status("🧠 Capturando Tela (Local)...", True)
         
-        self.lbl_timer.setText("Aguardando captura...")
         self.btn_start.setEnabled(False)
         self.btn_save_ok.setEnabled(False)
         self.btn_save_ng.setEnabled(False)
@@ -758,12 +756,12 @@ class ControlPanel(QWidget):
             "imagem recebida/capturada -> resultado pintado na interface"
         )
 
-        self.lbl_timer.setText(f"{elapsed_time:.2f} s")
-        self.lbl_timer.setToolTip(
-            "Tempo real desde o recebimento/captura do frame até o resultado "
-            "estar atualizado na interface."
-        )
-        self.lbl_timer.setStyleSheet("font-family: Consolas, monospace; font-size: 14px; font-weight: bold; color: #3fb950;")
+        # O tempo já foi medido e persistido no detail/debug. O cartão
+        # temporário só aparece na decisão final, não na SIDE provisória.
+        if not multilight_pending:
+            show_time = getattr(self, "show_analysis_time_feedback", None)
+            if callable(show_time):
+                show_time(analysis)
 
         current_mode = self.combo_mode.currentText()
 
@@ -840,7 +838,6 @@ class ControlPanel(QWidget):
         self.btn_start.setText("Capturar Local (MSS)")
         self.btn_start.setEnabled(True)
 
-        self.lbl_timer.setText("Aguardando imagem...")
         self.update_brain_status("Aguardando próxima imagem da AOI...", True)
 
     def save_label(self, user_decision: str, source="button"):
