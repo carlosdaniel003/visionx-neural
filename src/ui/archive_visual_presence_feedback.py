@@ -77,7 +77,11 @@ class SideArchivePresenceFeedback(QObject):
                 }
             finally:
                 self._requests.task_done()
-            self.finished.emit(event_id, analysis, result)
+            try:
+                self.finished.emit(event_id, analysis, result)
+            except RuntimeError:
+                # Janela Qt destruída ao encerrar o ODIN; o worker é daemon.
+                return
 
     def _deliver(self, event_id, analysis, result):
         """Executado na thread Qt; nunca atualiza UI de outra peça ou pós-0/1."""
