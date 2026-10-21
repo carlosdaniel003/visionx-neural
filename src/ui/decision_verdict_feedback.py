@@ -270,7 +270,9 @@ class AIVerdictFeedbackOverlay(QFrame):
         # não declarar "primeira vez" nem inventar pesquisa na memória.
         memory_title, memory_explanation, memory_tone = memory_feedback_state(analysis)
         subtitle = {
-            "known": "JÁ VI", "similar": "VI SEMELHANTE", "new": "SEM PAR EXATO"
+            "known": "JÁ VI", "similar": "VI SEMELHANTE",
+            "new": "SEM PAR EXATO", "pending": "CONSULTANDO ACERVO",
+            "review": "ACERVO AMBÍGUO"
         }.get(memory_tone, "")
         self.memory_state_label.setText(subtitle)
         self.memory_state_label.setVisible(bool(subtitle))
