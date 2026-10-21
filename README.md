@@ -1,3 +1,11 @@
+## 21/10/2026 — Cópia de imagens do evento com uma ou três iluminações
+
+- **Copiar imagem** funciona tanto para captura concluída na SIDE com TOP/MID dispensadas quanto para um evento completo SIDE/TOP/MID; compõe somente as iluminações realmente capturadas.
+- A cópia SIDE isolada requer `side_early_exit` finalizado e imagem original do mesmo evento. Em ciclos completos mantém o composto SIDE/TOP/MID sem redimensionamento. Não mistura frames de eventos diferentes e não disponibiliza montagem multilight incompleta.
+- O rótulo, prévia e status dos controles acompanham 1 ou 3 capturas.
+
+---
+
 ## 21/10/2026 — SIDE NG experimental com revisão, e estabilidade do viewport
 
 - A captura pode terminar já na SIDE para um NG conclusivo do checkpoint experimental FALTANDO v2 (97,70%), quando a inferência local foi válida, o score NG reportado é >=97%, o veredito é consistente, a revisão decorre do próprio checkpoint e não há conflito KNN. TOP/MID são dispensadas **somente como captura**, não se atribuem evidências dessas luzes.

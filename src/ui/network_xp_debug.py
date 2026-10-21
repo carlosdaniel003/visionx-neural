@@ -601,11 +601,14 @@ def _normalize_composite_frame(image: Any) -> np.ndarray | None:
     return None
 
 
-def build_multilight_composite(frames: dict | None) -> np.ndarray | None:
-    """Junta SIDE/TOP/MID lado a lado, sem redimensionar nem sobrepor."""
+def build_multilight_composite(
+    frames: dict | None, *, side_only: bool = False,
+) -> np.ndarray | None:
+    """Compõe SIDE isolada ou SIDE/TOP/MID completas, sem redimensionamento."""
     source = frames if isinstance(frames, dict) else {}
     normalized = []
-    for mode in MULTILIGHT_DEBUG_ORDER:
+    modes = ("SIDE",) if side_only else MULTILIGHT_DEBUG_ORDER
+    for mode in modes:
         frame = _normalize_composite_frame(source.get(mode))
         if frame is None:
             return None
@@ -653,11 +656,35 @@ def build_multilight_composite(frames: dict | None) -> np.ndarray | None:
     return canvas
 
 
+def _multilight_side_only_completed(panel) -> bool:
+    """Só libera imagem SIDE isolada após encerramento antecipado da peça."""
+    if not _multilight_event_matches(panel):
+        return False
+    final = getattr(panel, "adhesive_multilight_last_final_analysis", None)
+    if not isinstance(final, dict) or final.get("multilight_final") is not True:
+        return False
+    detail = final.get("detail")
+    marker = detail.get("side_early_exit") if isinstance(detail, dict) else None
+    analyses = getattr(panel, "adhesive_multilight_last_analyses", None)
+    return bool(
+        isinstance(marker, dict)
+        and marker.get("analyzed_lights") == ["SIDE"]
+        and marker.get("skipped_lights") == ["TOP", "MID"]
+        and final.get("lighting_mode") == "SIDE"
+        and isinstance(analyses, dict)
+        and isinstance(analyses.get("SIDE"), dict)
+        and not isinstance(analyses.get("TOP"), dict)
+        and not isinstance(analyses.get("MID"), dict)
+    )
+
+
 def multilight_copy_image_snapshot(panel) -> np.ndarray | None:
     if not _multilight_event_matches(panel):
         return None
     frames = getattr(panel, "adhesive_multilight_last_source_frames", {})
-    return build_multilight_composite(frames)
+    return build_multilight_composite(
+        frames, side_only=_multilight_side_only_completed(panel),
+    )
 
 
 def _legacy_xp_image_fallback_allowed(panel) -> bool:
@@ -843,11 +870,14 @@ def copy_network_image_to_clipboard(panel) -> bool:
     from PyQt6.QtWidgets import QApplication
 
     QApplication.clipboard().setImage(qimage)
-    composite = _multilight_event_matches(panel)
+    three_lights = _multilight_event_matches(panel) and not _multilight_side_only_completed(panel)
+    side_only = _multilight_side_only_completed(panel)
     _set_button_feedback(
         getattr(panel, "btn_copy_network_image", None),
-        "3 imagens copiadas" if composite else "Imagem copiada",
-        "Copiar imagens SIDE/TOP/MID" if composite else "Copiar imagem",
+        "3 imagens copiadas" if three_lights else
+        "Imagem SIDE copiada" if side_only else "Imagem copiada",
+        "Copiar imagens SIDE/TOP/MID" if three_lights else
+        "Copiar imagem SIDE" if side_only else "Copiar imagem",
     )
     return True
 
@@ -870,19 +900,27 @@ def sync_network_debug_controls(panel) -> None:
 
     if image_button is not None:
         try:
+            side_ready = (
+                _multilight_side_only_completed(panel)
+                and multilight_copy_image_snapshot(panel) is not None
+            )
             composite_ready = (
                 _multilight_event_matches(panel)
+                and not side_ready
                 and multilight_copy_image_snapshot(panel) is not None
             )
             image_button.setText(
-                "Copiar imagens SIDE/TOP/MID" if composite_ready
+                "Copiar imagem SIDE" if side_ready
+                else "Copiar imagens SIDE/TOP/MID" if composite_ready
                 else "Copiar imagem"
             )
             image_button.setToolTip(
-                "Copia uma única imagem com os três frames completos SIDE/TOP/MID."
+                "Copia somente a captura original SIDE deste evento."
+                if side_ready else
+                "Copia uma imagem com os três frames SIDE/TOP/MID."
                 if composite_ready else
-                "Copia a captura do evento atual; para multilight, aguarde "
-                "as três iluminações."
+                "Copia a captura do evento atual; multilight aguarda "
+                "a finalização da inspeção."
             )
             image_button.setEnabled(image_available)
         except Exception:
@@ -900,7 +938,12 @@ def sync_network_debug_controls(panel) -> None:
             analysis_count, frame_count = _multilight_counts(panel)
 
             if multilight_match:
-                if analysis_count == 3 and frame_count == 3:
+                if _multilight_side_only_completed(panel) and frame_count == 1:
+                    state_label.setText(
+                        "SIDE antecipada • imagem original SIDE disponível"
+                    )
+                    state_label.setProperty("state", "ready")
+                elif analysis_count == 3 and frame_count == 3:
                     state_label.setText(
                         "Multilight completo • 3 análises + "
                         "imagem composta SIDE/TOP/MID"
