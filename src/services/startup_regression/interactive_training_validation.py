@@ -34,6 +34,8 @@ def _row(model: str, item: dict) -> dict:
     return {
         "model": model,
         "source_path": item.get("path"),
+        "source_file_sha256": item.get("file_sha256", ""),
+        "source_pixel_sha256": item.get("pixel_sha256", ""),
         "category": item.get("category_hint"),
         "lighting_mode": item.get("lighting_mode"),
         "expected_label": item.get("expected_label"),

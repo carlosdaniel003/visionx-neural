@@ -1,3 +1,14 @@
+## 22/10/2026 — Comparador KNN visual + CNN (EXPERIMENTAL, somente leitura)
+
+- Em **TREINAMENTO • VALIDAÇÃO DO ACERVO**, botão **Comparar KNN + CNN (experimental)**. O processo `src.services.startup_regression.knn_cnn_shadow_worker` lê um inventário único, executa primeiro a **CNN FALTANDO V2 real e isolada**, depois a **KNN visual leave-one-out** já existente, com exclusão de próprio PNG/mesmo hash/event_id e prefixo de captura. Importa apenas os rótulos das pastas; não usa a KNN EXATA memorizada como oráculo de acerto sobre a própria base.
+- A validação CNN passa a reportar `source_file_sha256` e `source_pixel_sha256` do inventário, além dos scores/checkpoints e rótulos. O comparador exige 100% dos mesmos caminhos, labels, luzes, categorias e hashes em ambos os diagnósticos; PNG comprovadamente inválido em ambas as análises aparece como exclusão explícita. Sem hashes ou dados incompletos **recusa comparar**; portanto JSONs antigos anteriores a este PR precisam ser regenerados pelo botão novo.
+- Comparação A/B por **PNG**, nunca por evento físico: A) CNN isolada original; B) *guarded_conflict_to_review* mantém a CNN quando KNN visual aprova/concorda ou não tem evidência e converte **somente conflitos** em revisão (nunca faz NG→OK por KNN aproximada); C) *optimistic_knn_override_hypothetical* simula trocas de classe, inclusive NG→OK, **apenas para medir a exposição ao risco**, sem efeito operacional.
+- Arquivos `reports/startup_regression/knn_cnn_shadow_*.json/.txt` incluem casos individuais, contexto de luz/categoria, discordâncias CNN NG × KNN sugere OK, CNN OK × KNN sugere NG, falsos NG convertidos em revisão, NG potencialmente protegidos da aprovação automática, indicadores NG→OK, OK→NG e revisões por opção. Os relatórios CNN e KNN fonte são também preservados.
+- A KNN de similaridade é **temporária** e não equivale à correspondência exata em Produção; exclusão da própria consulta não evita correlação de lote sem `event_id`. As etiquetas das pastas podem incluir erros. Score CNN e similaridade não são probabilidades calibradas. O comparador **não altera** CNN, KNN persistente, treinamento, checkpoints, fusão, inspeção, política 0/1 ou XP e jamais autoriza substituição para Produção.
+- Execução isolada com prioridade reduzida e opção Cancelar. CLI: `python -m src.services.startup_regression.knn_cnn_shadow_worker --root . --cancel-file reports/startup_regression/comparator.cancel` (criar a pasta reports antes, como a interface já faz). Conferir especialmente **NG→OK hipotéticos** antes de estudar qualquer ajuste operacional.
+
+---
+
 ## 22/10/2026 — Diário de eventos e diagnóstico útil do acervo legado
 
 - **Problema observado:** 1.042 PNGs arquivados, nenhum manifesto verificável e zero eventos qualificados. Não reconstruir peças pelo nome do PNG nem presumir que SIDE/TOP/MID do mesmo minuto pertencem à mesma inspeção.
