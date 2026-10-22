@@ -745,13 +745,24 @@ class ArchiveTrainingPanel(QObject):
             "JSON: " + str(packet.get("json_path") or "-") + "\n"
             + "TXT: " + str(packet.get("txt_path") or "-")
         )
+        png_report = packet.get("png_diagnostic")
+        if isinstance(png_report, dict):
+            self.details.setText(
+                self.details.text()
+                + "\\nDiagnóstico separado por PNG: "
+                + str(png_report.get("json_path") or "-")
+                + "\\nAtenção: PNG não é evento; não comparar a taxa aos 420/21."
+            )
         if self._cancel_requested or packet.get("canceled"):
             self.status.setText("Replay CANCELADO • resultado parcial.")
         elif qualified == 0:
             self.status.setText(
-                "SEM COBERTURA POR EVENTO: não há manifestos válidos "
-                f"({coverage.get('unlinked_png_count', 0)} PNGs sem vínculo). "
-                "Não foi calculada taxa de acerto por peça."
+                "SEM COBERTURA POR EVENTO: nenhum vínculo humano/event_id "
+                f"com PNG original verificável ({coverage.get('unlinked_png_count', 0)} "
+                "PNGs sem vínculo). "
+                + ("Diagnóstico CNN/KNN por PNG gerado separadamente."
+                   if isinstance(png_report, dict)
+                   else "Nenhuma métrica por peça calculada.")
             )
         else:
             self.status.setText(

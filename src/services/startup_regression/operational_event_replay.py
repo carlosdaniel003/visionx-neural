@@ -24,13 +24,86 @@ from src.core.multilight_fusion import fuse_multilight
 from src.core.side_early_decision import build_side_early_decision
 from src.services.startup_regression.archive_inventory import inventory_archives
 from src.services.startup_regression.archive_inventory_report import _atomic_text
+from src.services.image_archive_naming import safe_archive_category
 
 SCHEMA = "visionx.operational_event_replay.v1"
 LIGHTS = ("SIDE", "TOP", "MID")
 LABELS = {"NG": "DEFEITO REAL", "OK": "FALHA FALSA"}
 
 
-def verified_event_manifests(inventory: dict) -> tuple[list[dict], dict]:
+def _journal_qualified_events(root: Path, images: list[dict], forbidden: set[str]):
+    """Resolver observações futuras só por hash EXATO + luz + classe humana.
+
+    O log não cria nem duplica PNGs: se dedup visual descartar uma captura
+    diferente em pixels, a peça permanece sem evidência para replay.
+    """
+    from src.services.event_observation_journal import SCHEMA as JOURNAL_SCHEMA
+
+    folder = root / "reports" / "startup_regression" / "event_observations"
+    qualified, counts = [], Counter()
+    if not folder.is_dir():
+        return qualified, counts
+    by_fingerprint = {}
+    for image in images:
+        if image.get("status") != "VALID_PNG" or not image.get("pixel_sha256"):
+            continue
+        key = (image.get("expected_label"), image.get("lighting_mode"),
+               safe_archive_category(image.get("category_hint") or ""),
+               image["pixel_sha256"])
+        by_fingerprint.setdefault(key, []).append(image)
+    seen_ids = set(forbidden)
+    for filename in sorted(folder.glob("*.json")):
+        try:
+            if filename.stat().st_size > 128_000:
+                raise ValueError("Observation too large")
+            row = json.loads(filename.read_text(encoding="utf-8"))
+            event_id = str(row.get("event_id") or "")
+            frames = row.get("frames")
+            category = safe_archive_category(row.get("category") or "")
+            label = row.get("expected_label")
+            if (row.get("schema") != JOURNAL_SCHEMA or not event_id
+                    or filename.stem != event_id or event_id in seen_ids):
+                counts["INVALID_OR_DUPLICATE_EVENT_ID"] += 1
+                continue
+            seen_ids.add(event_id)
+            if (label not in LABELS or row.get("label_provenance")
+                    != "OPERATOR_INPUT"):
+                counts["AUTOMATIC_UNVERIFIED_LABEL"] += 1
+                continue
+            if (not isinstance(frames, dict)
+                    or set(frames) not in ({"SIDE"}, set(LIGHTS))):
+                counts["INVALID_FRAME_SET"] += 1
+                continue
+            selected = {}
+            for light, frame in frames.items():
+                h = frame.get("pixel_sha256") if isinstance(frame, dict) else None
+                candidates = by_fingerprint.get((label, light, category, h), ())
+                # Dois arquivos idênticos na mesma categoria/classe são seguros;
+                # escolher de forma estável o primeiro SHA validado.
+                if not candidates:
+                    break
+                selected[light] = sorted(candidates, key=lambda x:x["path"])[0]
+            if len(selected) != len(frames):
+                counts["EVIDENCE_NOT_RETAINED"] += 1
+                continue
+            paths = {light: item["path"] for light, item in selected.items()}
+            hashes = {light: item["file_sha256"] for light, item in selected.items()}
+            qualified.append({
+                "event_id": event_id, "expected_label": label,
+                "manifest_path": filename.relative_to(root).as_posix(),
+                "frame_paths": paths, "sha256": hashes,
+                "observed_route": row.get("route"),
+                "observed_verdict": row.get("final_verdict"),
+                "journal": True,
+            })
+        except (OSError, UnicodeError, ValueError, TypeError, AttributeError):
+            counts["MALFORMED_JOURNAL"] += 1
+    return qualified, counts
+
+
+def verified_event_manifests(
+    inventory: dict, *, root: Path | None = None,
+) -> tuple[list[dict], dict]:
     """Recusa evento incompleto, duplicado ou inferido pelo nome do PNG."""
     if inventory.get("schema") != "visionx.archive_inventory.v1":
         raise ValueError("Inventário sem schema verificável")
@@ -77,6 +150,14 @@ def verified_event_manifests(inventory: dict) -> tuple[list[dict], dict]:
             "frame_paths": {k: paths[k] for k in LIGHTS},
             "sha256": {k: by_path[paths[k]]["file_sha256"] for k in LIGHTS},
         })
+    if root is not None:
+        journal_events, journal_counts = _journal_qualified_events(
+            Path(root).resolve(), images, set(collisions)
+        )
+        accepted.extend(journal_events)
+        excluded.update(journal_counts)
+    else:
+        journal_events = []
     linked = {path for event in accepted for path in event["frame_paths"].values()}
     coverage = {
         "archive_png_count": len(images),
@@ -84,6 +165,7 @@ def verified_event_manifests(inventory: dict) -> tuple[list[dict], dict]:
         "linked_png_count": len(linked),
         "unlinked_png_count": len(images) - len(linked),
         "unusable_manifests": dict(sorted(excluded.items())),
+        "qualified_journal_events": len(journal_events),
         "coverage_warning": (
             "Arquivos sem manifesto event_id+SHA NÃO são eventos "
             "reconstruíveis; não usar nome/minuto para agrupá-los."
@@ -215,7 +297,7 @@ def replay(
     if progress:
         progress({"event": "phase", "phase": "Verificando manifests/event_id"})
     inv = inventory if inventory is not None else inventory_archives(root)
-    events, coverage = verified_event_manifests(inv)
+    events, coverage = verified_event_manifests(inv, root=root)
     if progress:
         progress({"event": "started", "total": len(events),
                   "qualified_events": len(events),
@@ -242,7 +324,8 @@ def replay(
         }
         try:
             analyses, samples, category = {}, {}, None
-            for light in LIGHTS:
+            available = tuple(light for light in LIGHTS if light in item["frame_paths"])
+            for light in available:
                 if light != "SIDE" and row["route"] == "SIDE_EARLY":
                     break
                 source = frame_loader(
@@ -282,10 +365,15 @@ def replay(
                 break
             side_only = row["route"] == "SIDE_EARLY"
             if not side_only:
-                row["route"] = "MULTILIGHT"
-            final = runtime.finalize(
-                analyses, samples, category, side_only=side_only
-            )
+                row["route"] = "MULTILIGHT" if len(available) == 3 else "SIDE_INCONCLUSIVE"
+            # Uma SIDE isolada não fornece TOP/MID: jamais completar com
+            # imagens de outro evento nem classificá-la como acerto.
+            if len(available) == 1 and not side_only:
+                final = None
+            else:
+                final = runtime.finalize(
+                    analyses, samples, category, side_only=side_only
+                )
             row["skipped_lights"] = [
                 light for light in LIGHTS if light not in row["analyzed_lights"]
             ]
@@ -349,7 +437,9 @@ def replay(
         "events": rows,
         "warnings": [
             "Não agrupa eventos por horário: somente manifestos vinculados por event_id e SHA.",
-            "PNG isolado sem manifesto não é considerado evento nem acerto.",
+            "PNG isolado sem manifesto/journal verificável não é evento nem acerto.",
+            "Observações automáticas não têm rótulo humano e são excluídas das métricas de acerto.",
+            "Capturas descartadas pela deduplicação visual permanecem sem evidência reexecutável.",
             "Usa núcleo decisório KNN/CNN/SIDE/fusão; não replica captura temporal, todas as extensões de legado e estado físico XP.",
             "Não há interação com XP, mudança de checkpoint, treinamento nem escrita no acervo.",
             "Memória e PNGs históricos podem conter a própria consulta: não equivale a generalização independente.",

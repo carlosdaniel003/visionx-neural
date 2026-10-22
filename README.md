@@ -1,3 +1,14 @@
+## 22/10/2026 — Diário de eventos e diagnóstico útil do acervo legado
+
+- **Problema observado:** 1.042 PNGs arquivados, nenhum manifesto verificável e zero eventos qualificados. Não reconstruir peças pelo nome do PNG nem presumir que SIDE/TOP/MID do mesmo minuto pertencem à mesma inspeção.
+- `src/services/event_observation_journal.py` registra **assíncronamente** metadados por `event_id` de eventos reais já julgados, com iluminações efetivamente presentes, hashes de pixels, checkpoint e score bruto por luz, veredito, fonte e decisão final. Só grava JSON em `reports/startup_regression/event_observations/`; **não salva PNG duplicado** e não altera o acervo. Não bloqueia comando XP; fila limitada descarta somente a anotação se estiver saturada.
+- Origem da verdade: decisões automáticas entram com `AUTOMATIC_DECISION` e `expected_label=null`, **nunca** como verdade humana validada. Entrada de operador recebe `OPERATOR_INPUT`, ainda sujeita à qualidade da rotulagem. Falha de envio 0/1 automático não gera observação concluída.
+- O replay agora admite SIDE-only quando o diário mostra apenas essa luz e encontra **o PNG original pixel-idêntico** no arquivo da classe/categoria/iluminação correspondente. Três luzes exigem os três PNGs originais. Como a fila mantém só imagens novas, uma captura excluída por similaridade pode ficar `EVIDENCE_NOT_RETAINED`; nenhum atalho associa fotos parecidas a um evento para inventar acertos.
+- Para os PNGs antigos **sem event_id**, o botão *Replay operacional por evento* executa automaticamente um relatório **separado** da validação CNN/KNN por PNG já existente. Continua indicando **ZERO eventos**, mas agora fornece o resultado real do acervo histórico, com caminho do relatório e métricas rotuladas `PNG_ONLY_NOT_EVENT_ACCURACY`. Nenhuma taxa de acerto por peça é produzida sem vínculo.
+- As 1.042 imagens antigas **não ganham event_id retroativo**. A captura de dados começa somente após esta atualização. Nenhum checkpoint, treino, gate 0/1, agente XP ou política de Produção é modificado.
+
+---
+
 ## 22/10/2026 — Replay operacional por EVENTO (diagnóstico sem XP)
 
 - O botão **TREINAMENTO • VALIDAÇÃO DO ACERVO → Replay operacional por evento** é diferente do antigo **Iniciar treinamento**: o antigo mede KNN/CNN por PNG; o novo avalia somente peças com **manifesto `visionx.archive_regression.v1` íntegro**, três links SIDE/TOP/MID, `event_id` não duplicado e SHA-256 válido. Nome, minuto, aparência ou categoria AOI **não comprovam** pertencer à mesma peça.
