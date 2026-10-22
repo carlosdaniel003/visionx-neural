@@ -1,3 +1,14 @@
+## 22/10/2026 — Replay operacional por EVENTO (diagnóstico sem XP)
+
+- O botão **TREINAMENTO • VALIDAÇÃO DO ACERVO → Replay operacional por evento** é diferente do antigo **Iniciar treinamento**: o antigo mede KNN/CNN por PNG; o novo avalia somente peças com **manifesto `visionx.archive_regression.v1` íntegro**, três links SIDE/TOP/MID, `event_id` não duplicado e SHA-256 válido. Nome, minuto, aparência ou categoria AOI **não comprovam** pertencer à mesma peça.
+- Runner: `src.services.startup_regression.operational_event_replay_cli`. Reutiliza `build_side_early_decision`, `fuse_multilight`, as verificações físicas e a corroboração KNN no caso multilight; o núcleo do roteador offline carrega `FaltandoCNNLive`, `VerifiedKNNMemory` e estratégia C, em processo isolado de baixa prioridade. A análise encerra na SIDE somente se passar o mesmo gate; caso contrário, executa TOP e MID **do mesmo manifesto**. Simula a elegibilidade da política de Produção, mas nunca envia comando XP ou julga uma peça real.
+- O replay **não recria** a temporização, o estado completo dos wrappers legados/UI, a aquisição XP nem decisões humanas originais; não é equivalência integral certificada, nem validação independente de imagens inéditas. Alguns registros históricos já existem na memória KNN e podem gerar correspondência in-sample. As pastas OK/NG são rótulos de arquivo, não confirmação pericial de cada peça.
+- PNGs sem manifesto ficam expressamente **SEM COBERTURA POR EVENTO** e jamais contam como acerto, mesmo quando a CNN individual acerta. Se houver zero manifestos, o diagnóstico retorna **0 eventos qualificados**, sem inventar as 420 peças observadas ou misturar imagens de minutos próximos.
+- Relatórios somente leitura dos dados originais em `reports/startup_regression/operational_event_replay_*.json/.txt`. Registram cobertura, decisões por evento, rota SIDE/MULTILIGHT, cada score/checkpoint e NG→OK/OK→NG/revisão, além de limitações. Cancelamento preserva relatório parcial e não trata eventos ausentes como aprovados.
+- Para executar pela CLI no computador ODIN (sem XP): `python -m src.services.startup_regression.operational_event_replay_cli --root .`. O botão visual usa o mesmo comando com cancelamento e subprocesso. **Não treina, não promove checkpoint e não altera a política de produção.**
+
+---
+
 ## 21/10/2026 — SIDE reconhece imagens semelhantes já arquivadas
 
 - Na SIDE antecipada, o roteador KNN consultava apenas pares gabarito/teste **pixel-idênticos** e nunca executava a busca visual multilight. No evento `bc6ad9a1a1c54ff0a36a53c35134e1ad`, havia 2.800 registros indexados, nenhum par exato e nenhum resultado de consulta visual aproximada.

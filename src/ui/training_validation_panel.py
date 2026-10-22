@@ -197,11 +197,18 @@ class ArchiveTrainingPanel(QObject):
             "Compara pares AOI gabarito/captura por diferenças visuais, "
             "usando caixa maior e epicentro menor sem filtrar por datas."
         )
+        self.event_replay_button = QPushButton("Replay operacional por evento")
+        self.event_replay_button.setObjectName("archiveOperationalEventReplay")
+        self.event_replay_button.setToolTip(
+            "Somente leitura: usa manifestos com event_id e SHA conferidos. "
+            "Não agrupa PNGs pelo minuto e não envia comandos ao XP."
+        )
         container.addLayout(title_row)
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
         action_row.addWidget(self.start_button)
         action_row.addWidget(self.similarity_button)
+        action_row.addWidget(self.event_replay_button)
         action_row.addWidget(self.cancel_button)
         container.addLayout(action_row)
         self.geometry_experiment_box = QCheckBox(
@@ -282,6 +289,7 @@ class ArchiveTrainingPanel(QObject):
         self.start_button.clicked.connect(self.start)
         self.cancel_button.clicked.connect(self.cancel)
         self.similarity_button.clicked.connect(self.start_similarity)
+        self.event_replay_button.clicked.connect(self.start_event_replay)
 
         layout = self.panel.content_layout
         target = getattr(self.panel, "network_debug_frame", None)
@@ -319,6 +327,7 @@ class ArchiveTrainingPanel(QObject):
         self._cancel_path.unlink(missing_ok=True)
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
+        self.event_replay_button.setEnabled(False)
         self.geometry_experiment_box.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("Inventariando imagens OK/NG...")
@@ -350,6 +359,82 @@ class ArchiveTrainingPanel(QObject):
         proc.errorOccurred.connect(self._process_error)
         proc.start()
 
+    def start_event_replay(self):
+        """Replay de peças vinculadas; nunca usa a thread de captura ou o XP."""
+        if self._active():
+            return
+        self._run_type = "event_replay"
+        self._stdout = ""
+        self._stderr = ""
+        self._last_finished = None
+        self._cancel_requested = False
+        reports = self.root / "reports" / "startup_regression"
+        reports.mkdir(parents=True, exist_ok=True)
+        self._cancel_path = reports / (
+            "operational_event_replay_" + uuid4().hex + ".cancel"
+        )
+        self._cancel_path.unlink(missing_ok=True)
+        self.start_button.setEnabled(False)
+        self.similarity_button.setEnabled(False)
+        self.event_replay_button.setEnabled(False)
+        self.geometry_experiment_box.setEnabled(False)
+        self.cancel_button.setEnabled(True)
+        self.status.setText("Conferindo eventos com manifesto e SHA...")
+        self.details.setText(
+            "Somente eventos com event_id verificado. "
+            "PNG sem manifesto aparece como SEM COBERTURA, não como acerto."
+        )
+        self.progress_bar.setRange(0, 0)
+        proc = QProcess(self)
+        self.process = proc
+        env = QProcessEnvironment.systemEnvironment()
+        for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+            env.insert(key, "1")
+        env.insert("PYTHONUNBUFFERED", "1")
+        env.insert("PYTHONIOENCODING", "utf-8")
+        env.insert("PYTHONUTF8", "1")
+        proc.setProcessEnvironment(env)
+        proc.setWorkingDirectory(str(self.root))
+        proc.setProgram(sys.executable)
+        proc.setArguments([
+            "-u", "-m",
+            "src.services.startup_regression.operational_event_replay_cli",
+            "--root", str(self.root),
+            "--cancel-file", str(self._cancel_path),
+        ])
+        proc.readyReadStandardOutput.connect(self._read_stdout)
+        proc.readyReadStandardError.connect(self._read_stderr)
+        proc.finished.connect(self._finished)
+        proc.errorOccurred.connect(self._process_error)
+        proc.start()
+
+    def _handle_event_replay(self, packet: dict):
+        event = packet.get("event")
+        if event == "phase":
+            self.status.setText(str(packet.get("phase") or "Preparando"))
+        elif event == "started":
+            total = int(packet.get("total") or 0)
+            self.progress_bar.setRange(0, max(1, total))
+            self.progress_bar.setValue(0)
+            self.progress_bar.setFormat(f"%v/{total} eventos verificáveis")
+            self.status.setText(
+                f"{total} eventos vinculados • "
+                f"{packet.get('unlinked_pngs', 0)} PNGs sem event_id válido."
+            )
+        elif event == "progress":
+            done, total = int(packet.get("done", 0)), int(packet.get("total", 0))
+            self.progress_bar.setValue(min(done, max(1, total)))
+            self.status.setText(
+                f"{done}/{total} eventos • "
+                f"{packet.get('status', '')} • "
+                f"{packet.get('event_id', '')}"
+            )
+        elif event == "finished":
+            self._last_finished = packet
+        elif event == "error":
+            self.status.setText("Falha no replay por evento: "
+                                + str(packet.get("message", ""))[:350])
+
     def start_similarity(self):
         """Segundo teste: somente avaliação de vizinhos KNN, sem aprendizado."""
         if self._active():
@@ -367,6 +452,7 @@ class ArchiveTrainingPanel(QObject):
         self._cancel_path.unlink(missing_ok=True)
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
+        self.event_replay_button.setEnabled(False)
         self.geometry_experiment_box.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("KNN similaridade: inventariando OK e NG...")
@@ -480,6 +566,9 @@ class ArchiveTrainingPanel(QObject):
         if self._run_type == "similarity":
             self._handle_similarity(packet)
             return
+        if self._run_type == "event_replay":
+            self._handle_event_replay(packet)
+            return
         event = packet.get("event")
         if event == "phase":
             self.status.setText(str(packet.get("phase") or "Preparando"))
@@ -570,6 +659,7 @@ class ArchiveTrainingPanel(QObject):
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.start_button.setEnabled(True)
             self.similarity_button.setEnabled(True)
+            self.event_replay_button.setEnabled(True)
             self.geometry_experiment_box.setEnabled(True)
             self.cancel_button.setEnabled(False)
             if not self._cancel_requested and self._last_finished is None:
@@ -580,9 +670,18 @@ class ArchiveTrainingPanel(QObject):
         self._read_stderr()
         self.start_button.setEnabled(True)
         self.similarity_button.setEnabled(True)
+        self.event_replay_button.setEnabled(True)
         self.geometry_experiment_box.setEnabled(True)
         self.cancel_button.setEnabled(False)
         result = self._last_finished
+        if self._run_type == "event_replay":
+            self._finish_event_replay(code, result)
+            if self._cancel_path is not None:
+                self._cancel_path.unlink(missing_ok=True)
+            if self.process is not None:
+                self.process.deleteLater()
+            self.process = None
+            return
         if self._run_type == "similarity":
             self._finish_similarity(code, result)
             if self._cancel_path is not None:
@@ -630,6 +729,39 @@ class ArchiveTrainingPanel(QObject):
         if self.process is not None:
             self.process.deleteLater()
         self.process = None
+
+    def _finish_event_replay(self, code: int, packet: dict | None):
+        if not isinstance(packet, dict):
+            self.status.setText(
+                "Replay encerrado sem relatório"
+                + (f" (código {code}): " + self._stderr[-300:]
+                   if not self._cancel_requested else " (cancelado).")
+            )
+            return
+        metrics = packet.get("counts") or {}
+        coverage = packet.get("coverage") or {}
+        qualified = int(metrics.get("qualified_events", 0))
+        self.details.setText(
+            "JSON: " + str(packet.get("json_path") or "-") + "\n"
+            + "TXT: " + str(packet.get("txt_path") or "-")
+        )
+        if self._cancel_requested or packet.get("canceled"):
+            self.status.setText("Replay CANCELADO • resultado parcial.")
+        elif qualified == 0:
+            self.status.setText(
+                "SEM COBERTURA POR EVENTO: não há manifestos válidos "
+                f"({coverage.get('unlinked_png_count', 0)} PNGs sem vínculo). "
+                "Não foi calculada taxa de acerto por peça."
+            )
+        else:
+            self.status.setText(
+                f"{metrics.get('replayed', 0)}/{qualified} eventos • "
+                f"NG→OK {metrics.get('ng_as_ok', 0)} • "
+                f"OK→NG {metrics.get('ok_as_ng', 0)} • "
+                f"revisão {metrics.get('review', 0)} • "
+                f"sem vínculo {coverage.get('unlinked_png_count', 0)} PNGs. "
+                "Apenas cobertura por manifesto; não certifica Produção."
+            )
 
     def _finish_similarity(self, code: int, packet: dict | None) -> None:
         if packet is not None:

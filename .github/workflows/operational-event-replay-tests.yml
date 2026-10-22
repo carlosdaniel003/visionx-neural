@@ -1,0 +1,44 @@
+name: ODIN Operational Event Replay
+
+on:
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/services/startup_regression/operational_event_replay.py"
+      - "src/services/startup_regression/operational_event_replay_cli.py"
+      - "src/ui/training_validation_panel.py"
+      - "tests/test_operational_event_replay.py"
+      - ".github/workflows/operational-event-replay-tests.yml"
+  push:
+    branches: [central]
+    paths:
+      - "src/services/startup_regression/operational_event_replay.py"
+      - "src/services/startup_regression/operational_event_replay_cli.py"
+      - "src/ui/training_validation_panel.py"
+      - "tests/test_operational_event_replay.py"
+      - ".github/workflows/operational-event-replay-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Qt headless dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Install test dependencies
+        run: python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6
+      - name: Compile
+        run: |
+          python -m py_compile src/services/startup_regression/operational_event_replay.py src/services/startup_regression/operational_event_replay_cli.py src/ui/training_validation_panel.py tests/test_operational_event_replay.py
+      - name: Test event identity, replay, UI and legacy validator
+        run: |
+          python -m unittest tests.test_operational_event_replay tests.test_training_validation_panel tests.test_interactive_training_validation tests.test_side_early_decision tests.test_adhesive_multilight_fusion -v
