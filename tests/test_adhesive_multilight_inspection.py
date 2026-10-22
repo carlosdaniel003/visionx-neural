@@ -1,3 +1,4 @@
+from copy import deepcopy
 import os
 import unittest
 from unittest.mock import patch
@@ -528,6 +529,113 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                     panel.notify_production_analysis_ready.assert_called_once()
                 else:
                     panel.notify_production_analysis_ready.assert_not_called()
+
+    def test_test_mode_cnn_ng_knn_both_ok_reviews_continue_top_mid_only_here(self):
+        from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
+        from src.ui.production_confidence_gate import production_decision_policy
+        base = {
+            "verdict": "DEFEITO REAL", "is_defect": True,
+            "confidence": .9998650550842285,
+            "lighting_mode": "SIDE", "production_review_required": True,
+            "detail": {
+                "recognition_route": "NEW_CNN",
+                "operator_review_required": True,
+                "cnn_v2_active": True,
+                "cnn_v2_experimental": True,
+                "cnn_v2_status": "INFERENCE_OK",
+                "cnn_v2_aoi_category": "FALTANDO",
+                "cnn_v2_lighting_mode": "SIDE",
+                "cnn_v2_checkpoint_verified": True,
+                "cnn_v2_checkpoint_sha256": TRIAL_97P70_SHA256,
+                "cnn_v2_trial_manual_only": True,
+                "cnn_v2_ng_score_uncalibrated": .9998650550842285,
+                "decision_trace": {
+                    "operator_review_required": True,
+                    "fusion_rule": "cnn_v2_dualscale_direct",
+                },
+                "knn_c": {
+                    "status": "REVISAO", "reason": "SEM_SUGESTAO_CONFIAVEL",
+                    "bank_status": "READY", "diagnostic_only": True,
+                    "auto_decision_authorized": False,
+                    "vote_A": "OK", "vote_B": "OK",
+                    "suggestion_A": "REVISAO", "suggestion_B": "REVISAO",
+                },
+            },
+        }
+        for mode in ("Modo Teste", "Modo Sombra", "Modo Produção"):
+            with self.subTest(mode=mode):
+                panel = self._run_capture(
+                    confidence=base["confidence"], verdict="DEFEITO REAL",
+                    mode=mode, side_analysis=deepcopy(base),
+                )
+                panel.send_command_to_xp.assert_not_called()
+                if mode == "Modo Teste":
+                    self.assertTrue(panel.adhesive_multilight_active)
+                    self.assertIsNone(panel.adhesive_multilight_final_analysis)
+                    self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
+                    panel.adhesive_multilight_automation.start.assert_called_once()
+                    panel.network_receiver.set_auxiliary_image_mode.assert_called_with(True)
+                    panel.notify_production_analysis_ready.assert_not_called()
+                    self.assertEqual(panel.current_analysis["verdict"], "DEFEITO REAL")
+                    self.assertTrue(panel.current_analysis["is_defect"])
+                    self.assertEqual(
+                        panel.current_analysis["detail"][
+                            "test_mode_side_knn_disagreement"]["status"],
+                        "DEFER_TO_TOP_MID",
+                    )
+                    self.assertNotIn("side_early_exit", panel.current_analysis["detail"])
+                    panel.btn_save_ok.setEnabled.assert_called_with(False)
+                    panel.btn_save_ng.setEnabled.assert_called_with(False)
+                else:
+                    self.assertFalse(panel.adhesive_multilight_active)
+                    panel.adhesive_multilight_automation.start.assert_not_called()
+                    self.assertIsNotNone(panel.adhesive_multilight_final_analysis)
+                    self.assertNotIn(
+                        "test_mode_side_knn_disagreement",
+                        panel.current_analysis["detail"],
+                    )
+                    self.assertEqual(
+                        production_decision_policy(panel.current_analysis)["proposed_decision"],
+                        "NG",
+                    )
+                    if mode == "Modo Produção":
+                        panel.notify_production_analysis_ready.assert_called_once()
+                    else:
+                        panel.notify_production_analysis_ready.assert_not_called()
+
+    def test_test_mode_without_knn_both_ok_maintains_side_early(self):
+        from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
+        side = {
+            "verdict": "DEFEITO REAL", "is_defect": True,
+            "confidence": .9998650550842285, "lighting_mode": "SIDE",
+            "production_review_required": True,
+            "detail": {
+                "recognition_route": "NEW_CNN", "operator_review_required": True,
+                "cnn_v2_active": True, "cnn_v2_experimental": True,
+                "cnn_v2_status": "INFERENCE_OK", "cnn_v2_aoi_category": "FALTANDO",
+                "cnn_v2_lighting_mode": "SIDE", "cnn_v2_checkpoint_verified": True,
+                "cnn_v2_checkpoint_sha256": TRIAL_97P70_SHA256,
+                "cnn_v2_trial_manual_only": True,
+                "cnn_v2_ng_score_uncalibrated": .9998650550842285,
+                "decision_trace": {
+                    "operator_review_required": True,
+                    "fusion_rule": "cnn_v2_dualscale_direct",
+                },
+                "knn_c": {
+                    "status": "REVISAO", "bank_status": "READY",
+                    "diagnostic_only": True, "auto_decision_authorized": False,
+                    "vote_A": "NG", "vote_B": "OK",
+                    "suggestion_A": "REVISAO", "suggestion_B": "REVISAO",
+                },
+            },
+        }
+        panel = self._run_capture(
+            confidence=side["confidence"], verdict="DEFEITO REAL",
+            mode="Modo Teste", side_analysis=side,
+        )
+        self.assertFalse(panel.adhesive_multilight_active)
+        panel.adhesive_multilight_automation.start.assert_not_called()
+        self.assertIn("side_early_exit", panel.current_analysis["detail"])
 
     def test_just_below_threshold_keeps_three_light_capture(self):
         panel = self._run_capture(
