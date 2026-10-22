@@ -197,6 +197,13 @@ class ArchiveTrainingPanel(QObject):
             "Compara pares AOI gabarito/captura por diferenças visuais, "
             "usando caixa maior e epicentro menor sem filtrar por datas."
         )
+        self.shadow_button = QPushButton("Comparar KNN + CNN (experimental)")
+        self.shadow_button.setObjectName("archiveTrainingKnnCnnShadow")
+        self.shadow_button.setToolTip(
+            "Avalia a CNN e a KNN visual leave-one-out no mesmo inventário. "
+            "Conflitos viram revisão no candidato conservador. "
+            "Nunca modifica Produção ou comandos XP."
+        )
         self.event_replay_button = QPushButton("Replay operacional por evento")
         self.event_replay_button.setObjectName("archiveOperationalEventReplay")
         self.event_replay_button.setToolTip(
@@ -209,6 +216,7 @@ class ArchiveTrainingPanel(QObject):
         action_row.addWidget(self.start_button)
         action_row.addWidget(self.similarity_button)
         action_row.addWidget(self.event_replay_button)
+        action_row.addWidget(self.shadow_button)
         action_row.addWidget(self.cancel_button)
         container.addLayout(action_row)
         self.geometry_experiment_box = QCheckBox(
@@ -290,6 +298,7 @@ class ArchiveTrainingPanel(QObject):
         self.cancel_button.clicked.connect(self.cancel)
         self.similarity_button.clicked.connect(self.start_similarity)
         self.event_replay_button.clicked.connect(self.start_event_replay)
+        self.shadow_button.clicked.connect(self.start_shadow)
 
         layout = self.panel.content_layout
         target = getattr(self.panel, "network_debug_frame", None)
@@ -328,6 +337,7 @@ class ArchiveTrainingPanel(QObject):
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
         self.event_replay_button.setEnabled(False)
+        self.shadow_button.setEnabled(False)
         self.geometry_experiment_box.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("Inventariando imagens OK/NG...")
@@ -359,6 +369,78 @@ class ArchiveTrainingPanel(QObject):
         proc.errorOccurred.connect(self._process_error)
         proc.start()
 
+    def start_shadow(self):
+        """Comparação dupla, em processo isolado, nunca em Production."""
+        if self._active():
+            return
+        self._run_type = "shadow"
+        self._stdout = ""
+        self._stderr = ""
+        self._last_finished = None
+        self._cancel_requested = False
+        reports = self.root / "reports" / "startup_regression"
+        reports.mkdir(parents=True, exist_ok=True)
+        self._cancel_path = reports / ("knn_cnn_shadow_" + uuid4().hex + ".cancel")
+        self._cancel_path.unlink(missing_ok=True)
+        for button in (self.start_button, self.similarity_button,
+                       self.event_replay_button, self.shadow_button):
+            button.setEnabled(False)
+        self.geometry_experiment_box.setEnabled(False)
+        self.cancel_button.setEnabled(True)
+        self.status.setText("Comparador experimental: preparando inventário...")
+        self.details.setText(
+            "CNN isolada + KNN visual leave-one-out; mesmo inventário, "
+            "hashes conferidos. Conservador: conflito → revisão; "
+            "substituição por OK é apenas cenário hipotético."
+        )
+        self.progress_bar.setRange(0, 0)
+        proc = QProcess(self)
+        self.process = proc
+        env = QProcessEnvironment.systemEnvironment()
+        for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+            env.insert(key, "1")
+        env.insert("PYTHONUNBUFFERED", "1")
+        env.insert("PYTHONIOENCODING", "utf-8")
+        env.insert("PYTHONUTF8", "1")
+        proc.setProcessEnvironment(env)
+        proc.setWorkingDirectory(str(self.root))
+        proc.setProgram(sys.executable)
+        proc.setArguments([
+            "-u", "-m",
+            "src.services.startup_regression.knn_cnn_shadow_worker",
+            "--root", str(self.root),
+            "--cancel-file", str(self._cancel_path),
+        ])
+        proc.readyReadStandardOutput.connect(self._read_stdout)
+        proc.readyReadStandardError.connect(self._read_stderr)
+        proc.finished.connect(self._finished)
+        proc.errorOccurred.connect(self._process_error)
+        proc.start()
+
+    def _handle_shadow(self, packet: dict):
+        event = packet.get("event")
+        if event == "phase":
+            self.status.setText(str(packet.get("phase") or "Comparando modelos"))
+        elif event == "progress":
+            done, total = int(packet.get("done") or 0), max(1, int(
+                packet.get("total") or 1
+            ))
+            self.progress_bar.setRange(0, total)
+            self.progress_bar.setValue(min(done, total))
+            self.status.setText(
+                f"{packet.get('phase', '')}: {done}/{total} • "
+                + escape(Path(str(packet.get("path") or "")).name)
+            )
+        elif event == "finished":
+            self._last_finished = packet
+        elif event == "error":
+            self.status.setText(
+                "Erro no comparador experimental: "
+                + str(packet.get("message") or "")[:350]
+            )
+        elif event == "canceled":
+            self.status.setText("Comparador cancelado; nenhum resultado aprovado.")
+
     def start_event_replay(self):
         """Replay de peças vinculadas; nunca usa a thread de captura ou o XP."""
         if self._active():
@@ -377,6 +459,7 @@ class ArchiveTrainingPanel(QObject):
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
         self.event_replay_button.setEnabled(False)
+        self.shadow_button.setEnabled(False)
         self.geometry_experiment_box.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("Conferindo eventos com manifesto e SHA...")
@@ -453,6 +536,7 @@ class ArchiveTrainingPanel(QObject):
         self.start_button.setEnabled(False)
         self.similarity_button.setEnabled(False)
         self.event_replay_button.setEnabled(False)
+        self.shadow_button.setEnabled(False)
         self.geometry_experiment_box.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.status.setText("KNN similaridade: inventariando OK e NG...")
@@ -569,6 +653,9 @@ class ArchiveTrainingPanel(QObject):
         if self._run_type == "event_replay":
             self._handle_event_replay(packet)
             return
+        if self._run_type == "shadow":
+            self._handle_shadow(packet)
+            return
         event = packet.get("event")
         if event == "phase":
             self.status.setText(str(packet.get("phase") or "Preparando"))
@@ -660,6 +747,7 @@ class ArchiveTrainingPanel(QObject):
             self.start_button.setEnabled(True)
             self.similarity_button.setEnabled(True)
             self.event_replay_button.setEnabled(True)
+            self.shadow_button.setEnabled(True)
             self.geometry_experiment_box.setEnabled(True)
             self.cancel_button.setEnabled(False)
             if not self._cancel_requested and self._last_finished is None:
@@ -671,9 +759,18 @@ class ArchiveTrainingPanel(QObject):
         self.start_button.setEnabled(True)
         self.similarity_button.setEnabled(True)
         self.event_replay_button.setEnabled(True)
+        self.shadow_button.setEnabled(True)
         self.geometry_experiment_box.setEnabled(True)
         self.cancel_button.setEnabled(False)
         result = self._last_finished
+        if self._run_type == "shadow":
+            self._finish_shadow(code, result)
+            if self._cancel_path is not None:
+                self._cancel_path.unlink(missing_ok=True)
+            if self.process is not None:
+                self.process.deleteLater()
+            self.process = None
+            return
         if self._run_type == "event_replay":
             self._finish_event_replay(code, result)
             if self._cancel_path is not None:
@@ -729,6 +826,39 @@ class ArchiveTrainingPanel(QObject):
         if self.process is not None:
             self.process.deleteLater()
         self.process = None
+
+    def _finish_shadow(self, code: int, packet: dict | None):
+        if not isinstance(packet, dict):
+            self.status.setText(
+                "Comparador cancelado ou encerrado sem resultado validado. "
+                + self._stderr[-300:]
+            )
+            return
+        results = packet.get("results") or {}
+        baseline = results.get("cnn_isolated_baseline") or {}
+        guarded = results.get("guarded_conflict_to_review") or {}
+        risky = results.get("optimistic_knn_override_hypothetical") or {}
+        self.details.setText(
+            "JSON: " + str(packet.get("json_path") or "-") + "\n"
+            + "TXT: " + str(packet.get("txt_path") or "-") + "\n"
+            + "NG→OK CNN isolada: " + str(baseline.get("ng_as_ok", 0))
+            + " | NG→OK conservador: " + str(guarded.get("ng_as_ok", 0))
+            + " | NG→OK hipotético: " + str(risky.get("ng_as_ok", 0))
+            + "\nOK→NG CNN isolada: " + str(baseline.get("ok_as_ng", 0))
+            + " | OK→NG conservador: " + str(guarded.get("ok_as_ng", 0))
+            + "\nRevisões conservador: " + str(guarded.get("review", 0))
+            + " | possíveis falsos NG enviados a revisão: "
+            + str((packet.get("conflicts") or {}).get(
+                "false_ng_possible_review_rescue", 0
+            ))
+            + "\nPNG ≠ evento; comparador NÃO autoriza produção."
+        )
+        self.status.setText(
+            f"Comparação experimental completa • "
+            f"{packet.get('cnn_eligible_pngs', 0)} imagens CNN elegíveis • "
+            f"conflitos: {(packet.get('conflicts') or {}).get('total', 0)}. "
+            "Nenhuma alteração em XP ou treinamento."
+        )
 
     def _finish_event_replay(self, code: int, packet: dict | None):
         if not isinstance(packet, dict):
