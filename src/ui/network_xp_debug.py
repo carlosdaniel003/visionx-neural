@@ -53,6 +53,40 @@ def _json_safe(value: Any):
     return str(value)
 
 
+def _knn_c_evidence_lines(knn: dict | None) -> list[str]:
+    """Mostra top-5 verdadeiro de cada método, não apenas score máximo."""
+    if not isinstance(knn, dict) or not knn:
+        return []
+    lines = [
+        "", "KNN ESTRATÉGIA C — VOTOS E CINCO VIZINHOS", "-" * 72,
+        f"Banco: {knn.get('bank_status', '-')}",
+        f"Rota final: {knn.get('status', '-')} | motivo: {knn.get('reason', '-')}",
+        f"Voto A visual: {knn.get('vote_A', '-')} | sugestão: {knn.get('suggestion_A', '-')}",
+        f"Voto B geométrico: {knn.get('vote_B', '-')} | sugestão: {knn.get('suggestion_B', '-')}",
+        f"Por que A pediu revisão: {knn.get('reason_A', '-')}",
+        f"Por que B pediu revisão: {knn.get('reason_B', '-')}",
+        f"Score ponderado NG A: {knn.get('weighted_ng_A', '-')}",
+        f"Score ponderado NG B: {knn.get('weighted_ng_B', '-')}",
+        f"Referências disponíveis por rótulo: {knn.get('reference_support', '-')}",
+        "Somente diagnóstico: sem substituição de veredito ou autorização XP.",
+    ]
+    for algo in ("A", "B"):
+        neighbors = knn.get(f"neighbors_{algo}")
+        lines.append(f"Vizinhos {algo} (mais próximos primeiro):")
+        if not isinstance(neighbors, list) or not neighbors:
+            lines.append("  Sem detalhes; banco não estava pronto ou inferência falhou.")
+            continue
+        for i, match in enumerate(neighbors[:5], 1):
+            if not isinstance(match, dict):
+                continue
+            lines.append(
+                f"  {i}. {match.get('label', '-')} • similaridade "
+                f"{match.get('similarity', '-')} • "
+                f"{match.get('path', '-')}"
+            )
+    return lines
+
+
 def format_network_debug_report(record: dict | None) -> str:
     data = _json_safe(record if isinstance(record, dict) else {})
     source = str(data.get("source", "") or "").strip().lower()
@@ -226,6 +260,18 @@ def format_network_debug_report(record: dict | None) -> str:
                 f"Motivo final: {decision.get('reason', '-')}",
             ]
         )
+
+    if isinstance(decision, dict) and decision:
+        lines.extend(_knn_c_evidence_lines(decision.get("knn_c")))
+        marker = decision.get("test_mode_side_knn_disagreement")
+        if isinstance(marker, dict) and marker:
+            lines.extend([
+                "", "ARBITRAGEM EXPERIMENTAL — SOMENTE MODO TESTE",
+                "-" * 72,
+                f"Motivo: {marker.get('reason', '-')}",
+                f"Ação: {marker.get('status', '-')}",
+                "CNN NG preservada. TOP/MID solicitadas; OK automático proibido.",
+            ])
 
     # Para o roteamento CNN/KNN exato, os antigos campos físicos ficam
     # honestamente ausentes; não poluir o diagnóstico com dezenas de '-'.
@@ -533,6 +579,14 @@ def format_multilight_debug_report(panel) -> str:
                 "Elegível para resultado final multilight: False",
             ]
         )
+        lines.extend(_knn_c_evidence_lines(detail.get("knn_c")))
+        test_marker = detail.get("test_mode_side_knn_disagreement")
+        if isinstance(test_marker, dict) and test_marker:
+            lines.extend([
+                "Modo Teste • CNN NG × KNN A/B OK: "
+                + str(test_marker.get("status", "-")),
+                "TOP/MID investigadas sem inversão automática de veredito.",
+            ])
         verified = detail.get("verified_memory_timing")
         if isinstance(verified, dict) and verified:
             lines.extend([
