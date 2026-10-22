@@ -65,9 +65,16 @@ def _active_snapshot(panel, label: str, source: str) -> dict | None:
         per_light = scored.get(light) if isinstance(scored.get(light), dict) else {}
         d = per_light.get("detail")
         d = d if isinstance(d, dict) else {}
+        try:
+            score = float(d.get("cnn_v2_ng_score_uncalibrated"))
+            from math import isfinite
+            if not isfinite(score):
+                score = None
+        except (TypeError, ValueError, OverflowError):
+            score = None
         observed[light] = {
             "checkpoint_sha256": str(d.get("cnn_v2_checkpoint_sha256") or ""),
-            "cnn_ng_score_uncalibrated": d.get("cnn_v2_ng_score_uncalibrated"),
+            "cnn_ng_score_uncalibrated": score,
             "verdict": str(per_light.get("verdict") or ""),
         }
     origin = str(source or "").lower()
