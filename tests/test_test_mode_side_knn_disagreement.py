@@ -54,6 +54,52 @@ class TestOnlyDisagreementTests(unittest.TestCase):
         self.assertFalse(event["xp_command_authorized"])
         self.assertEqual(analysis, before)  # pure; no mutation of CNN result
 
+    def test_same_real_event_when_knn_is_loading_requests_top_mid(self):
+        image = disputed_side()
+        image["detail"]["knn_c"] = {
+            "status": "REVISAO",
+            "reason": "MEMORIA_VISUAL_EM_PREPARACAO",
+            "bank_status": "LOADING",
+            "reference_count": 0,
+            "diagnostic_only": True,
+            "auto_decision_authorized": False,
+        }
+        untouched = deepcopy(image)
+        marker = test_mode_side_knn_disagreement(image, "Modo Teste")
+        self.assertIsNotNone(marker)
+        self.assertEqual(marker["reason"], "CNN_NG_KNN_C_LOADING_SEM_VOTO")
+        self.assertEqual(marker["knn_bank_status"], "LOADING")
+        self.assertEqual(marker["knn_votes"], {"A": None, "B": None})
+        self.assertEqual(marker["knn_suggestions"], {"A": None, "B": None})
+        self.assertFalse(marker["auto_ok_authorized"])
+        self.assertFalse(marker["xp_command_authorized"])
+        self.assertEqual(image, untouched)
+        for mode in ("Modo Produção", "Modo Sombra"):
+            self.assertIsNone(test_mode_side_knn_disagreement(image, mode))
+
+    def test_only_specific_loading_reason_defers_without_votes(self):
+        original = disputed_side()
+        original["detail"]["knn_c"] = {
+            "status": "REVISAO", "reason": "MEMORIA_VISUAL_EM_PREPARACAO",
+            "bank_status": "LOADING", "diagnostic_only": True,
+            "auto_decision_authorized": False,
+        }
+        alterations = [
+            ("reason", "SEM_MEMORIA_NESTA_ILUMINACAO"),
+            ("bank_status", "UNAVAILABLE"),
+            ("bank_status", "NOT_READY"),
+            ("status", "SUGERE_OK"),
+            ("vote_A", "OK"),
+            ("vote_B", "NG"),
+            ("diagnostic_only", False),
+            ("auto_decision_authorized", True),
+        ]
+        for k, v in alterations:
+            with self.subTest(field=k, value=v):
+                image = deepcopy(original)
+                image["detail"]["knn_c"][k] = v
+                self.assertIsNone(test_mode_side_knn_disagreement(image, "Modo Teste"))
+
     def test_shadow_and_production_keep_existing_side_shortcut(self):
         analysis = disputed_side()
         for mode in ("Modo Produção", "Modo Sombra", "", "test", "Modo TESTE"):
@@ -62,7 +108,7 @@ class TestOnlyDisagreementTests(unittest.TestCase):
 
     def test_no_trigger_for_unavailable_or_nonselective_knn_without_two_ok_votes(self):
         mutations = [
-            ("bank_status", "LOADING"), ("bank_status", "UNAVAILABLE"),
+            ("bank_status", "UNAVAILABLE"),
             ("status", "SUGERE_OK"), ("status", "SUGERE_NG"),
             ("vote_A", "NG"), ("vote_B", None),
             ("suggestion_A", "SUGERE_OK"), ("suggestion_B", "SUGERE_NG"),
@@ -94,6 +140,27 @@ class TestOnlyDisagreementTests(unittest.TestCase):
                     else:
                         case[key]=value
                 self.assertIsNone(test_mode_side_knn_disagreement(case,"Modo Teste"))
+
+    def test_debug_explains_loading_without_claiming_ok_neighbors(self):
+        image = disputed_side()
+        image["detail"]["knn_c"] = {
+            "status": "REVISAO", "reason": "MEMORIA_VISUAL_EM_PREPARACAO",
+            "bank_status": "LOADING", "diagnostic_only": True,
+            "auto_decision_authorized": False,
+        }
+        image["detail"]["test_mode_side_knn_disagreement"] = (
+            test_mode_side_knn_disagreement(image, "Modo Teste")
+        )
+        txt = format_network_debug_report({
+            "schema": "visionx.network_xp_debug.v1",
+            "event_id": "26bfed78922e4fb3a58294a515149542",
+            "decision": decision_record(image, {"category": "FALTANDO"}),
+        })
+        self.assertIn("Banco: LOADING", txt)
+        self.assertIn("CNN_NG_KNN_C_LOADING_SEM_VOTO", txt)
+        self.assertIn("votos A/B indisponíveis", txt)
+        self.assertNotIn("Voto A visual: OK", txt)
+        self.assertNotIn("Voto B geométrico: OK", txt)
 
     def test_debug_contains_exact_neighbor_paths_and_revision_reasons(self):
         analysis = disputed_side()
