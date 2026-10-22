@@ -216,9 +216,13 @@ class ArchiveTrainingPanel(QObject):
         action_row.addWidget(self.start_button)
         action_row.addWidget(self.similarity_button)
         action_row.addWidget(self.event_replay_button)
-        action_row.addWidget(self.shadow_button)
         action_row.addWidget(self.cancel_button)
         container.addLayout(action_row)
+        # Linha própria para preservar responsividade em notebooks.
+        shadow_row = QHBoxLayout()
+        shadow_row.addWidget(self.shadow_button)
+        shadow_row.addStretch(1)
+        container.addLayout(shadow_row)
         self.geometry_experiment_box = QCheckBox(
             "Comparar geometria de bordas (experimental, somente acervo)"
         )
