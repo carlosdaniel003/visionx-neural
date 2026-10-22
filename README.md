@@ -1,3 +1,12 @@
+## 22/10/2026 — Correção do botão Comparar KNN + CNN
+
+- Corrigido `ImportError: cannot import name '_limit_torch_threads'` na inicialização do worker. O validador existente fornece `configure_low_priority()`, que já limita as threads OpenCV/PyTorch e a prioridade da tarefa: nenhum helper adicional precisa ser importado.
+- O replay operacional também deixa de tentar importar essa função inexistente, antes mascarada por um `except ImportError`.
+- Teste de regressão executa o **entrypoint real** `python -m src.services.startup_regression.knn_cnn_shadow_worker --help`; `py_compile` não teria detectado a falta de uma função exportada.
+- Sem alterações no checkpoint, KNN, scores, critérios de arbitragem, comandos 0/1 ou em Produção. A comparação continua somente diagnóstico.
+
+---
+
 ## 22/10/2026 — Comparador KNN visual + CNN (EXPERIMENTAL, somente leitura)
 
 - Em **TREINAMENTO • VALIDAÇÃO DO ACERVO**, botão **Comparar KNN + CNN (experimental)**. O processo `src.services.startup_regression.knn_cnn_shadow_worker` lê um inventário único, executa primeiro a **CNN FALTANDO V2 real e isolada**, depois a **KNN visual leave-one-out** já existente, com exclusão de próprio PNG/mesmo hash/event_id e prefixo de captura. Importa apenas os rótulos das pastas; não usa a KNN EXATA memorizada como oráculo de acerto sobre a própria base.
