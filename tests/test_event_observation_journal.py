@@ -73,6 +73,19 @@ class EventObservationTests(unittest.TestCase):
         self.assertEqual(auto["label_provenance"], "AUTOMATIC_DECISION")
         self.assertIsNone(auto["expected_label"])
 
+    def test_partial_side_top_is_logged_but_not_replayed_as_complete(self):
+        instance, image = panel()
+        instance.adhesive_multilight_last_source_frames = {
+            "SIDE": image, "TOP": image.copy(),
+        }
+        with patch(
+            "src.services.event_observation_journal.network_xp_record_event_id",
+            return_value="abcdef0123456789",
+        ):
+            data = _active_snapshot(instance, "NG", "xp_keyboard")
+        self.assertEqual(data["analyzed_lights"], ["SIDE", "TOP"])
+        self.assertEqual(data["skipped_lights"], ["MID"])
+
     def test_wrong_event_and_stale_capture_never_registered(self):
         instance, _ = panel()
         with patch(
