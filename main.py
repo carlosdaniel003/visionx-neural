@@ -50,6 +50,7 @@ from src.core.semantic_roi_extension import (
 from src.core.strict_category_memory import install_strict_category_memory
 from src.services.anomaly_learning import install_anomaly_learning
 from src.services.dataset_manager import DatasetManager
+from src.services.event_observation_journal import install_event_observation_journal
 from src.services.ng_image_archive import install_ng_image_archive
 from src.services.ok_image_archive import install_ok_image_archive
 from src.services.knn_archive_auto_memory import (
@@ -217,6 +218,7 @@ def main():
     # Camada externa multilight: mantém SIDE/TOP/MID da mesma peça em toda categoria AOI e entrega
     # a fusão final ao controlador único do Modo Produção.
     install_adhesive_multilight_inspection(ControlPanel)
+    install_event_observation_journal(ControlPanel)
     install_qt_button_signal_adapter(ControlPanel)
     install_mode_selector_gate(OperationalControlsPresenter)
     # Hooks visuais leves: confirmam 0/1 e teclas de iluminação sem alterar
