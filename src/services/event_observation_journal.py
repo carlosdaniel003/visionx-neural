@@ -53,7 +53,9 @@ def _active_snapshot(panel, label: str, source: str) -> dict | None:
     else:
         image = network_xp_frame_snapshot(panel)
         frames = {"SIDE": image.copy()} if isinstance(image, np.ndarray) and image.size else {}
-    if not frames or set(frames) not in ({"SIDE"}, set(LIGHTS)):
+    # O XP também pode encerrar após SIDE+TOP em Sombra. Registrar a
+    # ocorrência parcial para auditoria sem fingir um evento replayável.
+    if not frames or "SIDE" not in frames or not set(frames).issubset(LIGHTS):
         return None
     detail = analysis.get("detail")
     detail = detail if isinstance(detail, dict) else {}
