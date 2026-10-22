@@ -603,6 +603,73 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                     else:
                         panel.notify_production_analysis_ready.assert_not_called()
 
+    def test_real_loading_case_test_only_collects_top_mid_no_auto_xp(self):
+        from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
+        from src.ui.production_confidence_gate import production_decision_policy
+        side = {
+            "verdict": "DEFEITO REAL", "is_defect": True,
+            "confidence": 0.9998650550842285, "lighting_mode": "SIDE",
+            "production_review_required": True,
+            "detail": {
+                "recognition_route": "NEW_CNN",
+                "operator_review_required": True,
+                "cnn_v2_active": True,
+                "cnn_v2_experimental": True,
+                "cnn_v2_status": "INFERENCE_OK",
+                "cnn_v2_aoi_category": "FALTANDO",
+                "cnn_v2_lighting_mode": "SIDE",
+                "cnn_v2_checkpoint_verified": True,
+                "cnn_v2_checkpoint_sha256": TRIAL_97P70_SHA256,
+                "cnn_v2_trial_manual_only": True,
+                "cnn_v2_ng_score_uncalibrated": 0.9998650550842285,
+                "decision_trace": {
+                    "operator_review_required": True,
+                    "fusion_rule": "cnn_v2_dualscale_direct",
+                },
+                "knn_c": {
+                    "schema": "visionx.knn_c_live_review_gated.v1",
+                    "status": "REVISAO", "reason": "MEMORIA_VISUAL_EM_PREPARACAO",
+                    "bank_status": "LOADING", "diagnostic_only": True,
+                    "auto_decision_authorized": False,
+                    "reference_count": 0, "xp_command": None,
+                },
+            },
+        }
+        for mode in ("Modo Teste", "Modo Sombra", "Modo Produção"):
+            with self.subTest(mode=mode):
+                panel = self._run_capture(
+                    confidence=side["confidence"], verdict="DEFEITO REAL",
+                    mode=mode, side_analysis=deepcopy(side),
+                )
+                panel.send_command_to_xp.assert_not_called()
+                self.assertEqual(panel.current_analysis["verdict"], "DEFEITO REAL")
+                if mode == "Modo Teste":
+                    self.assertTrue(panel.adhesive_multilight_active)
+                    panel.network_receiver.set_auxiliary_image_mode.assert_called_with(True)
+                    panel.adhesive_multilight_automation.start.assert_called_once()
+                    panel.notify_production_analysis_ready.assert_not_called()
+                    self.assertIsNone(panel.adhesive_multilight_final_analysis)
+                    self.assertEqual(
+                        panel.current_analysis["detail"][
+                            "test_mode_side_knn_disagreement"]["reason"],
+                        "CNN_NG_KNN_C_LOADING_SEM_VOTO",
+                    )
+                    self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
+                    panel.btn_save_ok.setEnabled.assert_called_with(False)
+                    panel.btn_save_ng.setEnabled.assert_called_with(False)
+                else:
+                    self.assertFalse(panel.adhesive_multilight_active)
+                    panel.adhesive_multilight_automation.start.assert_not_called()
+                    self.assertIsNotNone(panel.adhesive_multilight_final_analysis)
+                    self.assertNotIn(
+                        "test_mode_side_knn_disagreement",
+                        panel.current_analysis["detail"],
+                    )
+                    self.assertEqual(
+                        production_decision_policy(panel.current_analysis)["proposed_decision"],
+                        "NG",
+                    )
+
     def test_test_mode_without_knn_both_ok_maintains_side_early(self):
         from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
         side = {
