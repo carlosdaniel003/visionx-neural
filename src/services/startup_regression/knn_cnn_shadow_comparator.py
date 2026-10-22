@@ -183,7 +183,10 @@ def compare(cnn_report: dict, knn_report: dict) -> dict:
         for r in eligible:
             groups[str(r[key])].append(r)
         return {name: {
-            "cnn": _metrics(group, "cnn_baseline_label"),
+            "cnn": _metrics(
+                [{**item, "baseline": item["cnn"]["label"]} for item in group],
+                "baseline"
+            ),
             "guarded": _metrics(group, "guarded_label"),
             "optimistic_hypothetical": _metrics(group, "optimistic_label"),
         } for name, group in sorted(groups.items())}
@@ -192,11 +195,9 @@ def compare(cnn_report: dict, knn_report: dict) -> dict:
         "guarded_conflict_to_review": _metrics(eligible, "guarded_label"),
         "optimistic_knn_override_hypothetical": _metrics(eligible, "optimistic_label"),
     }
+    # A métrica do baseline foi calculada ANTES de remover o campo interno.
     for r in eligible:
         r.pop("cnn_baseline_label", None)
-    results["cnn_isolated_baseline"] = _metrics(
-        [{**r, "baseline": r["cnn"]["label"]} for r in eligible], "baseline"
-    )
     conflicts = [r for r in eligible if r["conflict"]]
     return {
         "schema": SCHEMA, "generated_at_utc": datetime.now(timezone.utc).isoformat(),
