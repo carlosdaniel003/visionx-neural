@@ -1,0 +1,53 @@
+name: Test Mode KNN SIDE Disagreement
+
+on:
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/core/test_mode_side_knn_disagreement.py"
+      - "src/core/knn_c_live.py"
+      - "src/ui/adhesive_multilight_inspection.py"
+      - "src/services/capture_debug_payload.py"
+      - "src/ui/network_xp_debug.py"
+      - "tests/test_test_mode_side_knn_disagreement.py"
+      - "tests/test_adhesive_multilight_inspection.py"
+      - "tests/test_knn_c_live.py"
+      - ".github/workflows/test-mode-knn-side-disagreement.yml"
+  push:
+    branches: [central]
+    paths:
+      - "src/core/test_mode_side_knn_disagreement.py"
+      - "src/core/knn_c_live.py"
+      - "src/ui/adhesive_multilight_inspection.py"
+      - "src/services/capture_debug_payload.py"
+      - "src/ui/network_xp_debug.py"
+      - "tests/test_test_mode_side_knn_disagreement.py"
+      - "tests/test_adhesive_multilight_inspection.py"
+      - "tests/test_knn_c_live.py"
+      - ".github/workflows/test-mode-knn-side-disagreement.yml"
+  workflow_dispatch:
+
+jobs:
+  test-arbitration:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Qt/OpenCV dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6 mss pytesseract
+      - name: Compile production and experimental modules
+        run: |
+          python -m py_compile src/core/test_mode_side_knn_disagreement.py src/core/knn_c_live.py src/ui/adhesive_multilight_inspection.py src/services/capture_debug_payload.py src/ui/network_xp_debug.py tests/test_test_mode_side_knn_disagreement.py tests/test_adhesive_multilight_inspection.py tests/test_knn_c_live.py
+      - name: Test trial side gating, real UI path and debug
+        run: |
+          python -m unittest tests.test_test_mode_side_knn_disagreement tests.test_adhesive_multilight_inspection tests.test_knn_c_live tests.test_side_early_decision tests.test_network_xp_debug -v

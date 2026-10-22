@@ -1,3 +1,13 @@
+## 22/10/2026 — Modo Teste investiga CNN NG × votos KNN A/B OK antes do encerramento SIDE
+
+- Caso referência: evento `d0ce716762e64f66a81eef73b9b09296`, SIDE com CNN `NEW_CNN` / NG bruto `0.999865`, memória exata sem par (`NOT_FOUND`), KNN C READY com **voto A = OK** (similaridade `0.99309709`) e **voto B = OK** (`0.98159185`), mas **sugestões A/B = REVISÃO** e consenso C `REVISAO / SEM_SUGESTAO_CONFIAVEL`. Não existe autorização para transformar esses votos em OK.
+- **Somente Modo Teste:** quando haveria encerramento antecipado SIDE, a CNN está com NG validado, o banco C está READY e **ambos os votos A/B são OK mas nenhuma sugestão seletiva é suficiente**, o ODIN registra `test_mode_side_knn_disagreement` e continua a automação TOP/MID. Desabilita botões manuais até o resultado multilight. O veredito CNN e seu score são preservados; TOP/MID entram na fusão física/memória existente e o resultado continua sujeito a confirmação do operador.
+- **Produção e Modo Sombra:** comportamento SIDE original **intocado**, incluindo política XP e `0/1`; não há autorização nova nem alteração nos pesos/checkpoints/KNN/corte de 97%. Em Modo Teste a hipótese **não** altera o veredito: só impede a SIDE de saltar as outras iluminações quando faltam evidências seletivas.
+- A Estratégia C passa a anexar os **cinco vizinhos A e B reais** (nome do PNG, classe OK/NG, similaridade, SHA), motivos seletivos individuais `reason_A`/`reason_B`, votos, scores ponderados e contraprovas OK/NG ao `detail.knn_c`. O debug do Windows XP e a seção multilight apresentam esses dados e o motivo de solicitar TOP/MID. Os números são semelhanças, não probabilidades industriais.
+- Testes reproduzem o caso relatado, entradas incompletas/banco não pronto, sugestões contraditórias, ausência de confiança CNN, categoria rota não confiável, os três modos, sem comandos XP, persistência do veredito original e integridade do debug.
+
+---
+
 ## 22/10/2026 — Correção do botão Comparar KNN + CNN
 
 - Corrigido `ImportError: cannot import name '_limit_torch_threads'` na inicialização do worker. O validador existente fornece `configure_low_priority()`, que já limita as threads OpenCV/PyTorch e a prioridade da tarefa: nenhum helper adicional precisa ser importado.

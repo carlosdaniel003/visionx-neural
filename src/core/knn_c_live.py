@@ -181,6 +181,31 @@ class LiveKNNStrategyC:
                 "suggestion_B": b["shadow_candidate"]["status"],
                 "similarity_A": a["shadow_candidate"].get("best_similarity"),
                 "similarity_B": b["shadow_candidate"].get("best_similarity"),
+                # Explicar por que os votos A/B não produziram sugestão
+                # seletiva. Os vizinhos são os cinco mais próximos reais.
+                "reason_A": a["shadow_candidate"].get("reason"),
+                "reason_B": b["shadow_candidate"].get("reason"),
+                "weighted_ng_A": a.get("score_ng"),
+                "weighted_ng_B": b.get("score_ng"),
+                "reference_support": support,
+                "neighbors_A": [
+                    {
+                        "path": n.get("source_path", ""),
+                        "label": n.get("label"),
+                        "similarity": n.get("similarity"),
+                        "source_pixel_sha256": n.get("source_pixel_sha256"),
+                    }
+                    for n in a.get("neighbors", ())[:5]
+                ],
+                "neighbors_B": [
+                    {
+                        "path": n.get("source_path", ""),
+                        "label": n.get("label"),
+                        "similarity": n.get("similarity"),
+                        "source_pixel_sha256": n.get("source_pixel_sha256"),
+                    }
+                    for n in b.get("neighbors", ())[:5]
+                ],
                 "bank_status": "READY",
             })
         except Exception as exc:

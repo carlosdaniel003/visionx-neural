@@ -483,6 +483,26 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
         )
         submit_side_archive_presence(panel, fused, category)
 
+    # O modo Teste pode ter solicitado TOP/MID para esclarecer votos OK
+    # das KNNs A/B contra o NG da CNN. Transportar a hipótese para o
+    # resultado final somente como metadado; não mudar a classificação.
+    if not side_only:
+        side_analysis = analyses.get("SIDE") if isinstance(analyses, dict) else None
+        side_detail = (
+            side_analysis.get("detail", {}) if isinstance(side_analysis, dict)
+            else {}
+        )
+        marker = side_detail.get("test_mode_side_knn_disagreement") if isinstance(
+            side_detail, dict
+        ) else None
+        if isinstance(marker, dict):
+            fused.setdefault("detail", {})["test_mode_side_knn_disagreement"] = dict(marker)
+            fused["reason"] = (
+                str(fused.get("reason", "") or "")
+                + " • Modo Teste: TOP/MID coletadas por divergência "
+                "CNN-NG × votos KNN A/B-OK; sem aprovação automática."
+            )
+
     panel.current_analysis = fused
     panel.adhesive_multilight_final_analysis = fused
     panel.adhesive_multilight_last_final_analysis = fused
@@ -1203,11 +1223,25 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         if self.combo_mode.currentText() != "Modo Sombra":
             _switch_inspection_view(self, True)
 
-        # A primeira luz suficiente encerra a aquisição sem comandar TOP/MID.
-        # O resultado passa pela política de Produção antes de eventual 0/1.
-        if build_side_early_decision(
-            self.adhesive_multilight_analyses["SIDE"], category
-        ) is not None:
+        # Somente no Modo Teste, votos preliminares A/B = OK com
+        # recomendações ainda em REVISÃO não podem encerrar a SIDE por
+        # score CNN NG alto. Investigar TOP/MID sem promover KNN a OK.
+        from src.core.test_mode_side_knn_disagreement import (
+            test_mode_side_knn_disagreement,
+        )
+        mode = self.combo_mode.currentText()
+        side_analysis = self.adhesive_multilight_analyses["SIDE"]
+        test_knn_trigger = test_mode_side_knn_disagreement(side_analysis, mode)
+        side_early = build_side_early_decision(side_analysis, category)
+        if isinstance(test_knn_trigger, dict) and side_early is not None:
+            side_analysis.setdefault("detail", {})[
+                "test_mode_side_knn_disagreement"
+            ] = test_knn_trigger
+        else:
+            test_knn_trigger = None
+
+        # Produção e Sombra seguem exatamente o fluxo anterior.
+        if side_early is not None and test_knn_trigger is None:
             finalize = getattr(self, "finalize_multilight_decision", None)
             final = finalize(side_only=True) if callable(finalize) else None
             if isinstance(final, dict):
@@ -1230,6 +1264,9 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 "border: none;"
             )
             self.lbl_reason.setText(
+                "Modo Teste • CNN NG × KNN A/B votam OK: investigando TOP/MID; "
+                "sem OK automático."
+                if test_knn_trigger is not None else
                 "SIDE concluída. Coletando TOP e MID para o único "
                 "julgamento final."
             )

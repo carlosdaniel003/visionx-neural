@@ -101,6 +101,20 @@ class KNNCLiveTests(unittest.TestCase):
         self.assertFalse(result["auto_decision_authorized"])
         self.assertIn(result["status"], ("SUGERE_OK", "SUGERE_NG", "REVISAO"))
         self.assertIsNone(result["xp_command"])
+        if result["status"] in ("SUGERE_OK", "SUGERE_NG", "REVISAO") and (
+            "vote_A" in result and "vote_B" in result
+        ):
+            for method in ("A", "B"):
+                self.assertIn("reason_" + method, result)
+                self.assertIn("weighted_ng_" + method, result)
+                neighbors = result["neighbors_" + method]
+                self.assertLessEqual(len(neighbors), 5)
+                self.assertGreater(len(neighbors), 0)
+                for entry in neighbors:
+                    self.assertIn(entry["label"], ("OK", "NG"))
+                    self.assertIn("similarity", entry)
+                    self.assertIn("path", entry)
+            self.assertFalse(result["auto_decision_authorized"])
 
     def test_unknown_light_has_no_reference_bank(self):
         bank = make_bank()

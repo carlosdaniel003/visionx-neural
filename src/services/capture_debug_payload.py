@@ -284,6 +284,10 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         ),
         "analysis_time_contract": str(analysis_time_contract or ""),
         "side_early_exit": json_safe(detail.get("side_early_exit", {})),
+        "test_mode_side_knn_disagreement": json_safe(
+            detail.get("test_mode_side_knn_disagreement", {})
+        ),
+        "knn_c": json_safe(detail.get("knn_c", {})),
         "final_score": json_safe(detail.get("final_score")),
         "physical_score": json_safe(detail.get("physical_score")),
         "fusion_rule": str(detail.get("fusion_rule", "") or ""),
