@@ -36,10 +36,8 @@ def main(argv=None) -> int:
         _low_priority()
         import cv2
         cv2.setNumThreads(1)
-        from src.services.startup_regression.interactive_training_validation import (
-            _limit_torch_threads,
-        )
-        _limit_torch_threads()
+        # _low_priority já limita as threads de OpenCV/PyTorch.
+        # Evitar importar _limit_torch_threads (função inexistente).
     except (ImportError, AttributeError):
         pass
 

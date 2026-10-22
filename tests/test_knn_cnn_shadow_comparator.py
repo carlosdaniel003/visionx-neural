@@ -1,6 +1,8 @@
 """Simulação A/B seletiva offline: nunca deslocar falso NG para OK automaticamente."""
 import copy
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -179,6 +181,23 @@ class ComparatorTests(unittest.TestCase):
             self.assertEqual(json.loads(jp.read_text(encoding="utf-8"))["schema"],SCHEMA)
             self.assertIn("NG->OK",tp.read_text(encoding="utf-8"))
         self.assertEqual(result,original)
+
+    def test_worker_cli_starts_without_missing_function_import(self):
+        # py_compile não detecta import de um nome inexistente: exercitar
+        # o entrypoint real, como o botão da interface faz no Windows.
+        proc = subprocess.run(
+            [sys.executable, "-m",
+             "src.services.startup_regression.knn_cnn_shadow_worker",
+             "--help"],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            capture_output=True, text=True, timeout=40,
+        )
+        self.assertEqual(
+            proc.returncode, 0,
+            "Worker não inicia: " + proc.stderr[-1500:],
+        )
+        self.assertIn("--cancel-file", proc.stdout)
+        self.assertNotIn("ImportError", proc.stderr)
 
     def test_worker_ui_wiring_never_uses_actuation_or_training(self):
         ui=Path("src/ui/training_validation_panel.py").read_text(encoding="utf-8")

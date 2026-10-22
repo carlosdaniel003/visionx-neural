@@ -8,7 +8,6 @@ import sys
 
 from src.services.startup_regression.interactive_training_validation import (
     configure_low_priority, validate, save_report as save_cnn_report,
-    _limit_torch_threads,
 )
 from src.services.startup_regression.knn_archive_visual_replay import (
     replay_knn_archive_visual,
@@ -34,13 +33,9 @@ def main(argv=None) -> int:
     reports = (root / "reports" / "startup_regression").resolve()
     if reports not in cancel.parents or cancel.suffix != ".cancel":
         raise ValueError("Cancelamento fora de reports")
+    # configure_low_priority já limita OpenCV e Torch a uma thread.
+    # Não chamar _limit_torch_threads: essa função não existe no validador.
     configure_low_priority()
-    try:
-        import cv2
-        cv2.setNumThreads(1)
-        _limit_torch_threads()
-    except (ImportError, AttributeError):
-        pass
 
     def emit(data):
         print(json.dumps(data, ensure_ascii=False, allow_nan=False), flush=True)
