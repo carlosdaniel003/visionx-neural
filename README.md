@@ -1,3 +1,13 @@
+## 22/10/2026 — Falha falsa SIDE com KNN C em LOADING (Modo Teste)
+
+- Evento de referência `26bfed78922e4fb3a58294a515149542`: operador identificou falso NG; CNN FALTANDO V2 score NG bruto `0.999865055`, par exato `NOT_FOUND`, KNN C `LOADING/MEMORIA_VISUAL_EM_PREPARACAO`, sem votos A/B (banco `reference_count=0`), conclusão antecipada SIDE em `1.91s` e TOP/MID dispensadas. `LOADING` não significa `KNN OK` nem `KNN NG`; a memória visual ainda não estava pronta.
+- **Exclusivamente em Modo Teste**, se a SIDE CNN NEW_CNN NG verificada teria encerramento antecipado por score `>=0.97`, mas a KNN C está `LOADING/REVISAO` com motivo exato `MEMORIA_VISUAL_EM_PREPARACAO`, sem votos, adiar o julgamento final para TOP/MID, **sem esperar pelo carregamento** e **sem alterar o veredito NG para OK**. Preserva a hipótese anteriormente implementada quando A/B votam OK mas sugestões seletivas continuam REVISAO.
+- Marcador de diagnóstico `detail.test_mode_side_knn_disagreement` informa `CNN_NG_KNN_C_LOADING_SEM_VOTO`, `knn_bank_status=LOADING`, votos/sugestões `null`; o painel e o debug distinguem explicitamente memória carregando de KNN A/B votando OK. O resultado multilight existente continua com revisão humana, sem liberação autônoma.
+- **Modo Sombra e Produção permanecem intocados** — mesmo encerramento SIDE e mesmos comandos 0/1. Não há treinamento, mudança de checkpoint, alteração da memória persistente ou nova autorização XP. Nenhuma inferência de `FALHA FALSA` é declarada pelo estado LOADING.
+- Testes cobrem a SIDE real, startup LOADING, ausência de votos, razão incorreta, banco indisponível, os três modos, botões bloqueados até TOP/MID, status/debug e regressões de CN​N.
+
+---
+
 ## 22/10/2026 — Modo Teste investiga CNN NG × votos KNN A/B OK antes do encerramento SIDE
 
 - Caso referência: evento `d0ce716762e64f66a81eef73b9b09296`, SIDE com CNN `NEW_CNN` / NG bruto `0.999865`, memória exata sem par (`NOT_FOUND`), KNN C READY com **voto A = OK** (similaridade `0.99309709`) e **voto B = OK** (`0.98159185`), mas **sugestões A/B = REVISÃO** e consenso C `REVISAO / SEM_SUGESTAO_CONFIAVEL`. Não existe autorização para transformar esses votos em OK.

@@ -271,6 +271,11 @@ def format_network_debug_report(record: dict | None) -> str:
                 f"Motivo: {marker.get('reason', '-')}",
                 f"Ação: {marker.get('status', '-')}",
                 "CNN NG preservada. TOP/MID solicitadas; OK automático proibido.",
+                (
+                    "KNN C em LOADING: votos A/B indisponíveis, não equivalem a OK."
+                    if marker.get("reason") == "CNN_NG_KNN_C_LOADING_SEM_VOTO"
+                    else "KNN A/B votaram OK preliminarmente, sem sugestão seletiva."
+                ),
             ])
 
     # Para o roteamento CNN/KNN exato, os antigos campos físicos ficam
@@ -583,8 +588,12 @@ def format_multilight_debug_report(panel) -> str:
         test_marker = detail.get("test_mode_side_knn_disagreement")
         if isinstance(test_marker, dict) and test_marker:
             lines.extend([
-                "Modo Teste • CNN NG × KNN A/B OK: "
-                + str(test_marker.get("status", "-")),
+                "Modo Teste • "
+                + (
+                    "KNN C LOADING sem votos"
+                    if test_marker.get("reason") == "CNN_NG_KNN_C_LOADING_SEM_VOTO"
+                    else "CNN NG × KNN A/B OK"
+                ) + ": " + str(test_marker.get("status", "-")),
                 "TOP/MID investigadas sem inversão automática de veredito.",
             ])
         verified = detail.get("verified_memory_timing")

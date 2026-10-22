@@ -1,8 +1,8 @@
-"""Arbitragem não decisória: em Modo Teste investigar SIDE CNN-NG × KNN A/B-OK.
+"""Investigação SIDE CNN-NG no Modo Teste: KNN A/B-OK incerta ou LOADING.
 
-Não muda pesos, rotas, classificação ou autorização 0/1; coleta TOP/MID
-quando a CNN encerraria na SIDE, mas as duas KNNs só conseguiram votos OK
-não seletivos (REVISAO). Falha fechada em campos incompletos.
+Não muda pesos, veredito nem autorização 0/1. Quando a CNN encerraria a
+SIDE e a memória visual ainda carrega ou as KNN A/B votam OK sem sugestão
+seletiva, requisita TOP/MID. Nunca inventa voto quando banco está LOADING.
 """
 from __future__ import annotations
 
@@ -38,24 +38,46 @@ def test_mode_side_knn_disagreement(analysis: dict | None, mode: str) -> dict | 
     if not isinstance(knn, dict):
         return None
     if not (
-        knn.get("bank_status") == "READY"
-        and knn.get("diagnostic_only") is True
+        knn.get("diagnostic_only") is True
         and knn.get("auto_decision_authorized") is False
         and knn.get("status") == "REVISAO"
+    ):
+        return None
+
+    # Distinção crucial: LOADING não é voto OK e não equivale a falha
+    # de correspondência. Teste deve coletar mais evidências da mesma peça,
+    # sem esperar pelo índice e sem modificar decisões de Produção/Sombra.
+    loading = (
+        knn.get("bank_status") == "LOADING"
+        and knn.get("reason") == "MEMORIA_VISUAL_EM_PREPARACAO"
+        and knn.get("vote_A") is None
+        and knn.get("vote_B") is None
+    )
+    disagreement = (
+        knn.get("bank_status") == "READY"
         and knn.get("vote_A") == "OK"
         and knn.get("vote_B") == "OK"
         and knn.get("suggestion_A") == "REVISAO"
         and knn.get("suggestion_B") == "REVISAO"
-    ):
+    )
+    if not (loading or disagreement):
         return None
     return {
         "schema": SCHEMA,
         "status": "DEFER_TO_TOP_MID",
         "mode": "Modo Teste",
-        "reason": "CNN_NG_KNN_A_B_OK_SELETIVAS_EM_REVISAO",
+        "reason": (
+            "CNN_NG_KNN_C_LOADING_SEM_VOTO"
+            if loading else "CNN_NG_KNN_A_B_OK_SELETIVAS_EM_REVISAO"
+        ),
+        "knn_bank_status": str(knn.get("bank_status")),
         "cnn_verdict_unchanged": "DEFEITO REAL",
-        "knn_votes": {"A": "OK", "B": "OK"},
-        "knn_suggestions": {"A": "REVISAO", "B": "REVISAO"},
+        "knn_votes": {"A": None if loading else "OK",
+                      "B": None if loading else "OK"},
+        "knn_suggestions": {
+            "A": None if loading else "REVISAO",
+            "B": None if loading else "REVISAO",
+        },
         "side_cnn_ng_score_uncalibrated": score,
         "extra_lights": ["TOP", "MID"],
         "diagnostic_only": True,

@@ -497,10 +497,16 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
         ) else None
         if isinstance(marker, dict):
             fused.setdefault("detail", {})["test_mode_side_knn_disagreement"] = dict(marker)
+            scenario = str(marker.get("reason") or "")
+            explanation = (
+                "memória KNN C ainda LOADING, sem votos A/B"
+                if scenario == "CNN_NG_KNN_C_LOADING_SEM_VOTO"
+                else "divergência CNN-NG × votos KNN A/B-OK"
+            )
             fused["reason"] = (
                 str(fused.get("reason", "") or "")
-                + " • Modo Teste: TOP/MID coletadas por divergência "
-                "CNN-NG × votos KNN A/B-OK; sem aprovação automática."
+                + " • Modo Teste: TOP/MID coletadas porque "
+                + explanation + "; sem aprovação automática."
             )
 
     panel.current_analysis = fused
@@ -1223,9 +1229,9 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         if self.combo_mode.currentText() != "Modo Sombra":
             _switch_inspection_view(self, True)
 
-        # Somente no Modo Teste, votos preliminares A/B = OK com
-        # recomendações ainda em REVISÃO não podem encerrar a SIDE por
-        # score CNN NG alto. Investigar TOP/MID sem promover KNN a OK.
+        # No Modo Teste, não encerrar SIDE-CNN NG se a KNN ainda carrega
+        # (sem votos) OU se A/B votam OK com sugestões ainda em revisão.
+        # Investigar TOP/MID sem promover qualquer evidência KNN a OK.
         from src.core.test_mode_side_knn_disagreement import (
             test_mode_side_knn_disagreement,
         )
@@ -1263,13 +1269,22 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 "color: #ffd33d; font-size: 16px; font-weight: bold; "
                 "border: none;"
             )
-            self.lbl_reason.setText(
-                "Modo Teste • CNN NG × KNN A/B votam OK: investigando TOP/MID; "
-                "sem OK automático."
-                if test_knn_trigger is not None else
-                "SIDE concluída. Coletando TOP e MID para o único "
-                "julgamento final."
-            )
+            if test_knn_trigger is not None:
+                why = str(test_knn_trigger.get("reason", ""))
+                message = (
+                    "Modo Teste • memória KNN ainda carregando; "
+                    "CNN NG sem contraposição KNN: investigando TOP/MID. "
+                    "Sem OK automático."
+                    if why == "CNN_NG_KNN_C_LOADING_SEM_VOTO" else
+                    "Modo Teste • CNN NG × KNN A/B votam OK: "
+                    "investigando TOP/MID; sem OK automático."
+                )
+            else:
+                message = (
+                    "SIDE concluída. Coletando TOP e MID para o único "
+                    "julgamento final."
+                )
+            self.lbl_reason.setText(message)
             self.btn_save_ok.setEnabled(False)
             self.btn_save_ng.setEnabled(False)
             self.btn_skip.setEnabled(False)
