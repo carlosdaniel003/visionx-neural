@@ -61,6 +61,7 @@ def _join(cnn_report: dict, knn_report: dict) -> tuple[list[dict], dict]:
     if set(originals) != set(visuals):
         raise ValueError("Arquivos dos relatórios não coincidem")
     out = []
+    excluded_invalid = []
     for key in sorted(originals):
         c, k = originals[key], visuals[key]
         if (c.get("expected_label") not in LABELS
@@ -69,6 +70,13 @@ def _join(cnn_report: dict, knn_report: dict) -> tuple[list[dict], dict]:
                 or canonical_memory_category(c.get("category"))
                    != canonical_memory_category(k.get("category_hint"))):
             raise ValueError(f"Rótulo/categoria/luz divergente: {key}")
+        if (c.get("status") == "INVALIDO" and k.get("status") == "INVALIDO"
+                and not c.get("source_file_sha256")
+                and not k.get("source_file_sha256")):
+            # O inventário pode conter um PNG ilegível: não inventar hash.
+            # A ocorrência permanece visível nas métricas de cobertura.
+            excluded_invalid.append(key)
+            continue
         for field in ("source_file_sha256", "source_pixel_sha256"):
             a, b = c.get(field), k.get(field)
             if (not isinstance(a, str) or len(a) != 64
@@ -141,6 +149,7 @@ def _join(cnn_report: dict, knn_report: dict) -> tuple[list[dict], dict]:
         })
     return out, {
         "archives_same_files": True,
+        "invalid_pngs_excluded_by_path": excluded_invalid,
         "original_png_hashes_verified_between_reports": True,
         "knn_own_capture_excluded": True,
         "independent_event_holdout": False,
@@ -206,7 +215,10 @@ def compare(cnn_report: dict, knn_report: dict) -> dict:
         "complete": True, "production_approved": False,
         "xp_command_authorized": False,
         "weights_changed": False, "memory_changed": False,
-        "archive_pngs": len(rows), "cnn_eligible_pngs": len(eligible),
+        "archive_pngs": cnn_report["archive_png_count"],
+        "valid_crosschecked_pngs": len(rows),
+        "invalid_pngs": len(evidence["invalid_pngs_excluded_by_path"]),
+        "cnn_eligible_pngs": len(eligible),
         "cnn_out_of_scope_pngs": len(rows)-len(eligible),
         "evidence_contract": evidence,
         "baseline_isolated_cnn_only": True,
