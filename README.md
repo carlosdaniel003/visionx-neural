@@ -1,3 +1,35 @@
+## 23/10/2026 — Recuperação supervisionada dos falsos NG CNN FALTANDO V2 (sem promoção)
+
+O pré-carregamento KNN C está funcional na estação: `READY`, **1042/1042** PNGs, **276 OK / 766 NG**, **0 descartados**, cache 1042/1042, **18.484 segundos** no segundo preparo (7.044 ms inventário, 11.441 ms assinaturas). Isso corrige indisponibilidade, mas **não ajusta pesos CNN**.
+
+### Resultados que justificam o experimento
+
+O comparador offline `knn_cnn_shadow_20261023_123909_221885.json` contém 953 PNGs elegíveis CNN: **78 OK→NG**, **8 NG→OK**, dos quais os falsos NG FALTANDO são **13 SIDE, 15 TOP, 11 MID**. A KNN visual seletiva sugeriu OK para apenas **0/13 SIDE**, **5/15 TOP** e **0/11 MID**. Logo, liberar automaticamente qualquer voto KNN não resolveria esse padrão. Uma sugestão seletiva KNN também apresentou um NG→OK no replay de 1042 imagens; rótulos de pasta e eventos correlacionados não equivalem a avaliação independente.
+
+### Preparar uma lista auditável de exemplos difíceis e NG de proteção
+
+Com o ODIN fechado ou sem atividade industrial, e após usar **TREINAMENTO → VALIDAÇÃO DO ACERVO → Comparar KNN + CNN (experimental)**:
+
+```powershell
+python -m src.scripts.faltando_false_ng_recovery --report reports/startup_regression/knn_cnn_shadow_20261023_123909_221885.json --verify-files
+```
+
+O nome acima é o do relatório real compartilhado pelo operador; use o arquivo `knn_cnn_shadow_*.json` correspondente, se estiver em outra sessão. O comando exige mesmo inventário e **verifica SHA de cada PNG atual**. Se o acervo mudou, execute o comparador novamente antes da auditoria (não use relatório obsoleto). Saída `reports/startup_regression/faltando_hard_ok_recovery_*.json/.txt`, com ordem **SIDE primeiro**, scores CNN, vizinhos KNN, 13 falsos NG SIDE do acervo e exemplos NG semelhantes aos OK usados como **contraprovas**. Ele **não treina** nem corrige veredito.
+
+### Gerar candidato CNN novo, só após revisão humana de pares AOI
+
+Na interface de qualificação da CNN FALTANDO, revisar os exemplos difíceis e NG de proteção do relatório, confirmar **gabarito e captura**, rótulo real OK/NG e integridade de arquivos. É necessário um `manifest.json` de preparação e o `qualification.json` correspondente com revisão humana de cada par. Não utilizar a classificação automática ou simplesmente o nome da pasta como confirmação.
+
+```powershell
+python -m src.scripts.train_faltando_cnn_v2_verified_archive --manifest reports/faltando_neural/<pasta_preparacao>/manifest.json --hard-ok-recovery --epochs 5
+```
+
+O modo é **opt-in**, exclusivo do conjunto humano individualmente confirmado; recusa combinação com `--archive-labels-experimental`. Inclui reforço balanceado OK/NG em cada época, escolhe a época pelos conjuntos de desenvolvimento **sem consultar o holdout**, e executa um gate adicional: reduzir falsos NG de **SIDE** no holdout, não introduzir falsos NG no histórico e exigir **zero NG→OK observado em histórico/online/holdout**, inclusive não regressão NG por luz. O candidato permanece em `reports/faltando_neural/verified_candidates` com `hard_ok_recovery_acceptance` e **não é promovido**, mesmo se todos os gates passarem. Um holdout deste acervo não prova risco zero no próximo lote: requer eventos novos, revisão independente e autorização explícita antes de estudar qualquer ativação.
+
+**Nenhuma mudança nos pesos ativos `c13ca329...`, roteamento, CNN de Produção, Strategy C, SIDE/TOP/MID, XP ou política 0/1.**
+
+---
+
 ## 23/10/2026 — KNN C: inventário SHA otimizado e preparo antes do turno
 
 - Evento real `d58b9595e8f446fc931a5bf041a0191f` (23/10 07:54): Produção julgou CNN FALTANDO V2 NG (score bruto `0.999850`) enquanto a KNN C permanecia `BUILD_SIGNATURES / 1 de 1042 PNGs`, com `elapsed_ms=303768`; decisão SIDE em `18.28s`, sem TOP/MID, sem votos KNN A/B. Esse tempo inclui o inventário inicial; não comprova que a primeira assinatura consumiu cinco minutos. Inference CNN isolada levou ~248ms, enquanto a etapa `inference_ms` totalizou ~16s, requer investigação de contenção externa.
