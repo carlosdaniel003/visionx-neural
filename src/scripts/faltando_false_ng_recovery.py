@@ -35,8 +35,10 @@ def _origin(root: Path, path: str) -> Path:
         or relative.suffix.lower() != ".png"
     ):
         raise ValueError(f"Caminho fora do acervo protegido: {path}")
-    target = (root / relative).resolve()
-    if not target.is_relative_to(root.resolve()) or target.is_symlink():
+    original = root / relative
+    target = original.resolve()
+    if (original.is_symlink() or
+            not target.is_relative_to(root.resolve()) or target.is_symlink()):
         raise ValueError("Referência fora da raiz ou symlink")
     return target
 
