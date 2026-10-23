@@ -70,6 +70,31 @@ def _knn_c_evidence_lines(knn: dict | None) -> list[str]:
         f"Referências disponíveis por rótulo: {knn.get('reference_support', '-')}",
         "Somente diagnóstico: sem substituição de veredito ou autorização XP.",
     ]
+    progress = knn.get("bank_progress")
+    if isinstance(progress, dict):
+        count = progress.get("processed", 0)
+        total = progress.get("total", 0)
+        lines.extend([
+            f"Preparação do acervo: {progress.get('phase', '-')} "
+            f"| {count}/{total} PNGs examinados",
+            f"Referências utilizáveis: {progress.get('usable', 0)} "
+            f"| recuperadas do cache: {progress.get('cached', 0)} "
+            f"| excluídas: {progress.get('excluded', 0)} "
+            f"| duplicadas: {progress.get('skipped_duplicates', 0)}",
+            f"Tempo de preparo acumulado: {progress.get('elapsed_ms', 0)} ms",
+            f"Erros por causa: {progress.get('failure_reasons', {})}",
+        ])
+        for issue in progress.get("sample_failures", [])[:5]:
+            if isinstance(issue, dict):
+                lines.append(
+                    "  Exemplo excluído: " + str(issue.get("path", "-"))
+                    + " | " + str(issue.get("reason", "-"))
+                )
+        if knn.get("bank_status") == "LOADING":
+            lines.append(
+                "Ainda sem votos A/B: carregamento não significa sem "
+                "exemplos OK/NG. Não alterar julgamento automaticamente."
+            )
     for algo in ("A", "B"):
         neighbors = knn.get(f"neighbors_{algo}")
         lines.append(f"Vizinhos {algo} (mais próximos primeiro):")

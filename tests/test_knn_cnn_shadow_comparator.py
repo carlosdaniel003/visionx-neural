@@ -86,10 +86,29 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual(result["conflicts"]["total"],3)
         self.assertEqual(result["conflicts"]["false_ng_possible_review_rescue"],1)
         self.assertEqual(result["conflicts"]["false_ok_blocked_from_auto_release"],1)
+        history = result["false_ng_investigation"]
+        self.assertEqual(history["count"], 1)
+        self.assertEqual(history["possible_review_rescues"], 1)
+        self.assertFalse(history["auto_ok_authorized"])
+        self.assertEqual(len(history["cases"]), 1)
+        self.assertIsNone(history["cases"][0]["neighbors"][0]["label"])
+        self.assertIn("source_path", history["cases"][0])
+        self.assertTrue(history["nearest_neighbor_groups"])
+        self.assertFalse(result["xp_command_authorized"])
         self.assertEqual(result["rows"][0]["guarded_label"],None)
         self.assertTrue(result["evidence_contract"]["original_png_hashes_verified_between_reports"])
         self.assertEqual(result["by_category"]["FALTANDO"]["guarded"]["ng_as_ok"],0)
         self.assertEqual(result["by_lighting"]["SIDE"]["guarded"]["ng_as_ok"],0)
+
+    def test_neighbor_label_is_propagated_only_when_source_provides_it(self):
+        a, b = fixture()
+        b["cases"][0]["neighbors"][0]["label"] = "OK"
+        b["cases"][0]["neighbors"][0]["similarity"] = 0.9874
+        report = compare(a, b)
+        neighbor = report["false_ng_investigation"]["cases"][0]["neighbors"][0]
+        self.assertEqual(neighbor["label"], "OK")
+        self.assertEqual(neighbor["similarity"], 0.9874)
+        self.assertFalse(report["false_ng_investigation"]["auto_ok_authorized"])
 
     def test_unsupervised_knn_does_not_create_new_verdict_when_cnn_in_review(self):
         a,b=fixture([("NG",None,"SUGERE_OK","REVISAO")])

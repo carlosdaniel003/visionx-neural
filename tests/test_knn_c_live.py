@@ -124,12 +124,62 @@ class KNNCLiveTests(unittest.TestCase):
         self.assertEqual(status["status"], "REVISAO")
         self.assertEqual(status["reason"], "SEM_MEMORIA_NESTA_ILUMINACAO")
 
-    def test_conflicted_archive_does_not_load(self):
+    def test_conflicted_png_is_quarantined_without_erasing_safe_references(self):
         bank = make_bank()
-        bank._inventory["cross_label_conflicts"] = [{"paths": ["a", "b"]}]
-        self.assertEqual(bank.warmup()["status"], "UNAVAILABLE")
+        bank._inventory["cross_label_conflicts"] = [{
+            "paths": ["public/ok_archive/ok-1.png", "public/ng_archive/ng-1.png"],
+            "pixel_sha256": "ambiguous-image",
+        }]
+        result = bank.warmup()
+        self.assertEqual(result["status"], "READY")
+        self.assertEqual(result["excluded"], 2)
+        self.assertEqual(result["images"], 4)
+        self.assertEqual(bank.progress()["failure_reasons"]["CROSS_LABEL_CONFLICT"], 2)
         ref, obs, _ = pair("OK")
-        self.assertEqual(bank.diagnose(ref, obs, "SIDE")["status"], "REVISAO")
+        query = bank.diagnose(ref, obs, "SIDE")
+        self.assertEqual(query["bank_status"], "READY")
+        self.assertFalse(query["auto_decision_authorized"])
+
+    def test_bad_individual_file_does_not_disable_healthy_bank(self):
+        bank = make_bank()
+        bank._inventory["images"][2]["status"] = "INVALID_PNG"
+        bank._inventory["images"][3]["pixel_sha256"] = ""
+        bank._inventory["images"][3]["file_sha256"] = ""
+        result = bank.warmup()
+        self.assertEqual(result["status"], "READY")
+        self.assertEqual(result["images"], 4)
+        self.assertEqual(result["excluded"], 2)
+        progress = bank.progress()
+        self.assertEqual(progress["phase"], "READY")
+        self.assertEqual(progress["processed"], 6)
+        self.assertEqual(progress["total"], 6)
+        self.assertEqual(progress["failure_reasons"]["INVALID_PNG_OR_SHA"], 2)
+        self.assertFalse(bank.diagnose(*pair("OK")[:2], "SIDE")["auto_decision_authorized"])
+
+    def test_same_pixels_with_both_labels_never_enter_bank(self):
+        bank = make_bank()
+        bank._inventory["images"][0]["pixel_sha256"] = "cross-label-test"
+        bank._inventory["images"][4]["pixel_sha256"] = "cross-label-test"
+        result = bank.warmup()
+        self.assertEqual(result["status"], "READY")
+        self.assertEqual(result["excluded"], 2)
+        self.assertNotIn(
+            "cross-label-test",
+            [r["source_pixel_sha256"] for rows in bank._pools.values() for r in rows],
+        )
+
+    def test_all_corrupt_inputs_fail_closed(self):
+        bank = make_bank()
+        for record in bank._inventory["images"]:
+            record["status"] = "INVALID_PNG"
+        self.assertEqual(bank.warmup()["status"], "UNAVAILABLE")
+        self.assertEqual(bank.progress()["phase"], "UNAVAILABLE")
+        ref, obs, _ = pair("OK")
+        info = bank.diagnose(ref, obs, "SIDE")
+        self.assertEqual(info["bank_status"], "UNAVAILABLE")
+        self.assertEqual(info["status"], "REVISAO")
+        self.assertFalse(info["auto_decision_authorized"])
+
 
     def call(self, verdict, route="NEW_CNN", proposed="SUGERE_NG",
              replay=False):
