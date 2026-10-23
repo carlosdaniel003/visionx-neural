@@ -478,15 +478,90 @@ def _operational_light_summary(result: dict) -> dict:
     return summary
 
 
+def hard_ok_recovery_gate(
+    old_hist: dict, new_hist: dict, old_online: dict, new_online: dict,
+    old_hold: dict, new_hold: dict, *,
+    individually_qualified: bool,
+) -> dict:
+    """Barreira EXTRA experimental: não aprovar novo NG->OK observado.
+
+    Métricas por PNG e luz; nem esta verificação prova risco industrial zero.
+    O modelo candidato nunca é promovido por este gate.
+    """
+    def count_false_ng(report):
+        return sum(
+            c.get("label") == "OK" and not view.get("correct", False)
+            for c in report.get("cases", ())
+            for view in c.get("per_light", {}).values()
+        )
+    def count_side_false_ng(report):
+        return sum(
+            c.get("label") == "OK" and
+            "SIDE" in c.get("per_light", {}) and
+            not c["per_light"]["SIDE"].get("correct", False)
+            for c in report.get("cases", ())
+        )
+    def new_ng_false_ok(report):
+        return sum(
+            c.get("label") == "NG" and
+            any(
+                not view.get("correct", False)
+                for view in c.get("per_light", {}).values()
+            )
+            for c in report.get("cases", ())
+        )
+    old_side = count_side_false_ng(old_hold)
+    new_side = count_side_false_ng(new_hold)
+    checks = {
+        "every_pair_individually_confirmed": individually_qualified,
+        "candidate_no_ng_as_ok_historical": new_hist["ng_false_ok"] == 0,
+        "candidate_no_ng_as_ok_online": new_online["ng_false_ok"] == 0,
+        "candidate_no_ng_as_ok_holdout": new_hold["ng_false_ok"] == 0,
+        "candidate_no_ng_light_regressions_historical": (
+            new_ng_false_ok(new_hist) <= new_ng_false_ok(old_hist)
+        ),
+        "candidate_no_ng_light_regressions_online": (
+            new_ng_false_ok(new_online) <= new_ng_false_ok(old_online)
+        ),
+        "candidate_no_ng_light_regressions_holdout": (
+            new_ng_false_ok(new_hold) <= new_ng_false_ok(old_hold)
+        ),
+        "candidate_reduces_holdout_false_ng": (
+            count_false_ng(new_hold) < count_false_ng(old_hold)
+        ),
+        "candidate_reduces_side_false_ng_holdout": new_side < old_side,
+        "candidate_preserves_historical_ok": (
+            count_false_ng(new_hist) <= count_false_ng(old_hist)
+        ),
+    }
+    return {
+        "passed": all(checks.values()),
+        "gates": checks,
+        "old_holdout_side_false_ng": old_side,
+        "new_holdout_side_false_ng": new_side,
+        "old_holdout_all_lights_false_ng": count_false_ng(old_hold),
+        "new_holdout_all_lights_false_ng": count_false_ng(new_hold),
+        "production_approval_eligible": False,
+        "auto_ok_authorized": False,
+        "independent_post_training_validation_required": True,
+    }
+
+
 def train_verified_archive(
     root: Path, manifest: Path, *, epochs: int = 5, seed: int = 42,
     holdout: float = .25, lr: float = .00002,
     archive_labels_experimental: bool = False,
+    hard_ok_recovery: bool = False,
 ) -> dict:
     """Produz SOMENTE checkpoint experimental sem ponteiro de ativação."""
     root = Path(root).resolve()
     if not 1 <= epochs <= 25 or not 0 < lr <= .0001:
         raise ValueError("Parâmetros de treino fora dos limites")
+    if hard_ok_recovery and archive_labels_experimental:
+        raise ValueError(
+            "Hard OK recovery exige rótulos humanos individuais: "
+            "não pode usar --archive-labels-experimental"
+        )
     if (root / "reports/neural_online/live_active.json").exists():
         raise ValueError("Checkpoint online ativo: auditar antes de novo experimento")
     torch.set_num_threads(max(1, min(2, torch.get_num_threads())))
@@ -575,7 +650,7 @@ def train_verified_archive(
             optimizer.step()
             running += float(loss.item())
 
-        if archive_labels_experimental:
+        if archive_labels_experimental or hard_ok_recovery:
             balanced, replay_counts = _balanced_hard_replay(
                 forced, anchors, model, size, focus,
                 seed=seed, epoch=epoch, epochs=epochs,
@@ -587,7 +662,8 @@ def train_verified_archive(
         if balanced:
             forced_loader = DataLoader(
                 PairDataset(balanced, size, focus),
-                batch_size=2 if archive_labels_experimental else 1,
+                batch_size=2 if (archive_labels_experimental or hard_ok_recovery)
+                else 1,
                 shuffle=False, num_workers=0,
             )
             model.train()
@@ -610,7 +686,7 @@ def train_verified_archive(
                 for label in ("NG", "OK")
             },
         }
-        if archive_labels_experimental:
+        if archive_labels_experimental or hard_ok_recovery:
             assessment_hist = _assess(model, historical, size, focus)
             assessment_online = _assess(model, online, size, focus)
             assessment_train = _assess(model, train, size, focus)
@@ -643,7 +719,7 @@ def train_verified_archive(
               f"replay_NG={replay_counts.get('NG', 0)} "
               f"replay_OK={replay_counts.get('OK', 0)}", flush=True)
 
-    if archive_labels_experimental:
+    if archive_labels_experimental or hard_ok_recovery:
         if best_state is None:
             raise ValueError("Nenhuma época candidata foi selecionada")
         model.load_state_dict(best_state, strict=True)
@@ -655,6 +731,12 @@ def train_verified_archive(
     acceptance = candidate_acceptance(
         old_hist, new_hist, old_online, new_online, old_hold, new_hold,
         minimum_holdout_accuracy=.97 if archive_labels_experimental else None,
+    )
+    recovery_acceptance = (
+        hard_ok_recovery_gate(
+            old_hist, new_hist, old_online, new_online, old_hold, new_hold,
+            individually_qualified=not archive_labels_experimental,
+        ) if hard_ok_recovery else None
     )
     when = datetime.now(timezone.utc)
     destination = ("archive_experiments" if archive_labels_experimental
@@ -686,6 +768,8 @@ def train_verified_archive(
         "candidate_only": True, "promoted": False,
         "automatic_ok_authorized": False,
         "production_approval_eligible": False,
+        "hard_ok_recovery": bool(hard_ok_recovery),
+        "hard_ok_recovery_acceptance": recovery_acceptance,
         "qualification_mode": ("ARCHIVE_FOLDER_BULK_EXPERIMENT"
                                if archive_labels_experimental else "INDIVIDUALLY_VERIFIED"),
         "base_checkpoint_sha256": _digest(baseline_path),
@@ -696,7 +780,9 @@ def train_verified_archive(
         "holdout_event_ids": [e["id"] for e in hold],
         "train_forced_misclassified": [e["id"] for e in forced],
         "epochs": epochs, "learning_rate": lr, "history": history,
-        "selected_epoch": best_epoch if archive_labels_experimental else epochs,
+        "selected_epoch": best_epoch if (
+            archive_labels_experimental or hard_ok_recovery
+        ) else epochs,
         "epoch_selection_uses_holdout": False,
         "objective": (
             {"target_accuracy": .98, "minimum_acceptable_accuracy": .97,
@@ -748,6 +834,12 @@ def main(argv=None) -> int:
     parser.add_argument("--holdout", type=float, default=.25)
     parser.add_argument("--lr", type=float, default=.00002)
     parser.add_argument(
+        "--hard-ok-recovery", action="store_true",
+        help=("Treina candidato de correção dos falsos NG com reforço "
+              "balanceado OK/NG, somente pares confirmados individualmente; "
+              "sem ativação automática, com gate adicional de proteção NG"),
+    )
+    parser.add_argument(
         "--archive-labels-experimental", action="store_true",
         help=("Aceita explicitamente rótulos OK/NG das pastas SEM revisão "
               "individual, apenas para candidato OFFLINE NÃO PROMOVÍVEL"),
@@ -757,6 +849,7 @@ def main(argv=None) -> int:
         args.root, args.manifest, epochs=args.epochs,
         seed=args.seed, holdout=args.holdout, lr=args.lr,
         archive_labels_experimental=args.archive_labels_experimental,
+        hard_ok_recovery=args.hard_ok_recovery,
     )
     return 0
 
