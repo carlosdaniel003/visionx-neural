@@ -82,6 +82,12 @@ def _knn_c_evidence_lines(knn: dict | None) -> list[str]:
             f"| excluídas: {progress.get('excluded', 0)} "
             f"| duplicadas: {progress.get('skipped_duplicates', 0)}",
             f"Tempo de preparo acumulado: {progress.get('elapsed_ms', 0)} ms",
+            f"Inventário: {progress.get('inventory_processed', progress.get('inventory_total', '?'))}"
+            f"/{progress.get('inventory_total', progress.get('total', '?'))} "
+            f"PNGs | {progress.get('inventory_elapsed_ms', 'N/D')} ms",
+            f"Assinaturas: {progress.get('build_signatures_elapsed_ms', 'N/D')} ms",
+            f"Hashes de pixels reutilizados após SHA: "
+            f"{progress.get('inventory_reused_pixel_hashes', 0)}",
             f"Erros por causa: {progress.get('failure_reasons', {})}",
         ])
         for issue in progress.get("sample_failures", [])[:5]:
