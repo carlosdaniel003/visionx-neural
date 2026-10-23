@@ -118,7 +118,7 @@ class FastInventoryTests(unittest.TestCase):
             self.prepare(root)
             cache = read_cache(root)
             path = next((root / "public/ok_archive").glob("*.png"))
-            target = root / "public/ng_archive" / path.name
+            target = root / "public/ng_archive" / "2026-10-23_0812_FALTANDO.png"
             path.rename(target)
             inv = inventory_for_knn_c(root, cache)
             self.assertEqual(inv["reused_pixel_hashes_from_sha_verified_cache"], 3)
