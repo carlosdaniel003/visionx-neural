@@ -133,6 +133,15 @@ def _join(cnn_report: dict, knn_report: dict) -> tuple[list[dict], dict]:
                 "neighbor_count": k.get("neighbors_count"),
                 "neighbors_ok": k.get("neighbors_ok"),
                 "neighbors_ng": k.get("neighbors_ng"),
+                "neighbors": [
+                    {
+                        "source_path": n.get("source_path"),
+                        "label": n.get("label"),
+                        "similarity": n.get("similarity"),
+                    }
+                    for n in (k.get("neighbors") or [])[:5]
+                    if isinstance(n, dict)
+                ],
                 "diagnostic_only": True,
             },
             "guarded_label": guarded,
@@ -208,6 +217,28 @@ def compare(cnn_report: dict, knn_report: dict) -> dict:
     for r in eligible:
         r.pop("cnn_baseline_label", None)
     conflicts = [r for r in eligible if r["conflict"]]
+    # Drill-down: locais dos OK que a CNN considerou NG, sem converter
+    # sugestão aproximada em autorização operacional.
+    false_ng = [
+        {
+            "source_path": r["source_path"],
+            "category": r["category"],
+            "lighting": r["lighting"],
+            "cnn_ng_score_uncalibrated": r["cnn"]["ng_score_uncalibrated"],
+            "knn_suggested_label": r["knn_visual"]["suggested_label"],
+            "knn_visual_prediction": r["knn_visual"]["visual_prediction"],
+            "best_similarity": r["knn_visual"]["best_similarity"],
+            "neighbors": r["knn_visual"]["neighbors"],
+            "possible_review_rescue": r["rescue_of_false_ng_for_review"],
+        }
+        for r in eligible
+        if r["expected_label"] == "OK" and r["cnn"]["label"] == "NG"
+    ]
+    groups = defaultdict(list)
+    for case in false_ng:
+        # Agrupamento exploratório por vizinho principal, NUNCA por event_id.
+        first = case["neighbors"][0]["source_path"] if case["neighbors"] else ""
+        groups[first or "SEM_VIZINHOS"].append(case["source_path"])
     return {
         "schema": SCHEMA, "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "root": cnn_report["root"],
@@ -240,6 +271,22 @@ def compare(cnn_report: dict, knn_report: dict) -> dict:
             "false_ok_blocked_from_auto_release": sum(
                 r["ng_blocked_from_auto_ok"] for r in eligible
             ),
+        },
+        "false_ng_investigation": {
+            "scope": "PNG_HISTORICO_IN_SAMPLE_RISCO_NG_OK",
+            "count": len(false_ng),
+            "possible_review_rescues": sum(
+                c["possible_review_rescue"] for c in false_ng
+            ),
+            "grouping_notice": (
+                "Agrupamento apenas por vizinho KNN mais próximo; "
+                "não identifica peças ou eventos físicos."
+            ),
+            "nearest_neighbor_groups": {
+                key: sorted(values) for key, values in sorted(groups.items())
+            },
+            "cases": false_ng,
+            "auto_ok_authorized": False,
         },
         "by_category": category_group("category"),
         "by_lighting": category_group("lighting"),
@@ -284,6 +331,16 @@ def save_report(report: dict, root: Path) -> tuple[Path, Path]:
     t.extend(["POSSÍVEIS MELHORIAS SEM APROVAR NG AUTOMATICAMENTE:",
               f"Falsos NG enviados a revisão: {report['conflicts']['false_ng_possible_review_rescue']}",
               f"Falsos OK bloqueados: {report['conflicts']['false_ok_blocked_from_auto_release']}",
+              "", "FALSOS NG HISTÓRICOS POR PNG (CNN NG, ARQUIVO OK):",
+              f"Total: {report['false_ng_investigation']['count']}; "
+              f"enviáveis a revisão: {report['false_ng_investigation']['possible_review_rescues']}",
+              "O vizinho não valida a verdade física. Nenhum OK automático.",
+              *[
+                  f"{case['source_path']} | CNN_NG={case['cnn_ng_score_uncalibrated']} "
+                  f"| KNN={case['knn_suggested_label']} "
+                  f"| próximo={case['neighbors'][0]['source_path'] if case['neighbors'] else '-'}"
+                  for case in report["false_ng_investigation"]["cases"]
+              ],
               "", "LIMITAÇÕES:", *report["cautions"]])
     _atomic_text(tp, "\n".join(t)+"\n")
     return jp,tp
