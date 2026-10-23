@@ -1,3 +1,15 @@
+## 23/10/2026 — KNN C resiliente, cache de assinaturas e auditoria de falsos NG
+
+- Em `Modo Produção`, evento `63d53e8ef5b64049b407fe5fb16afb5d` recebeu CNN NG (score bruto `0.999850`) após SIDE, enquanto KNN C permanecia `LOADING`. O arquivo da estação tem registros OK parecidos, mas sem um banco C READY não há votos de similaridade e `NOT_FOUND` da KNN exata não significa falta de exemplos semelhantes.
+- O carregamento assíncrono C deixou de ser tudo-ou-nada: cada PNG inválido, sem hash, rótulo ou iluminação confiável, ou com falha na assinatura é **excluído individualmente**. Se os mesmos pixels aparecerem em **OK e NG**, as duas entradas conflitantes são excluídas (nenhum rótulo arbitrariamente preferido); outros exemplos válidos permanecem elegíveis. Se todas as entradas forem inválidas, retorna `UNAVAILABLE` e somente REVISÃO.
+- Descritores foco+geometria íntegros passam a ser salvos em cache local, em `reports/startup_regression/knn_c_signature_cache.json.gz` (JSON/gzip, **sem pickle**). Cada entrada é revalidada por caminho, classe, luz e **SHA do PNG original segundo inventário novo**, logo PNG modificado recalcula apenas sua própria assinatura e PNG removido deixa de ser consultado. Cache ausente/corrompido é ignorado; nunca é fonte de rótulos persistentes ou de decisão XP.
+- O debug **KNN ESTRATÉGIA C** expõe `INVENTORY` / `BUILD_SIGNATURES` / `READY` / `UNAVAILABLE`, total de PNGs, número já processado, referências válidas, quantas vieram do cache, quantas foram excluídas, erros agrupados por motivo e até 12 caminhos problemáticos. `LOADING` continua **sem votos A/B**, não significa OK nem NG.
+- Com o banco `READY`, a função `diagnose` existente fornece os **cinco vizinhos OK/NG reais por assinatura visual A e geométrica B**, motivos da sugestão e votos, sem depender do rótulo categorial da AOI. Sua atuação em Produção continua **somente como evidência para revisão**, sem nova aprovação automática, treino, alteração de pesos ou alteração na política `0/1`.
+- O botão já existente **Comparar KNN + CNN (experimental)** gera um aprofundamento no JSON `false_ng_investigation`: lista os PNGs arquivados como OK que a CNN julgou NG, suas similaridades/vizinhos, sugestões de revisão e agrupamento **exploratório por vizinho mais próximo**. O agrupamento **não comprova event_id nem desempenho independente**; rótulos de pasta podem conter erro. Os resultados ainda não podem autorizar OK automático.
+- Testes automatizados: PNG corrompido, conflitos de pixels entre OK e NG, preservação das referências válidas, alteração de PNG invalidando cache, cache incompleto, ausência de evidência, debug de andamento e inspeção histórica de falsos NG.
+
+---
+
 ## 22/10/2026 — Falha falsa SIDE com KNN C em LOADING (Modo Teste)
 
 - Evento de referência `26bfed78922e4fb3a58294a515149542`: operador identificou falso NG; CNN FALTANDO V2 score NG bruto `0.999865055`, par exato `NOT_FOUND`, KNN C `LOADING/MEMORIA_VISUAL_EM_PREPARACAO`, sem votos A/B (banco `reference_count=0`), conclusão antecipada SIDE em `1.91s` e TOP/MID dispensadas. `LOADING` não significa `KNN OK` nem `KNN NG`; a memória visual ainda não estava pronta.
