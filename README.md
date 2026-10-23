@@ -1,3 +1,14 @@
+## 23/10/2026 — KNN C: inventário SHA otimizado e preparo antes do turno
+
+- Evento real `d58b9595e8f446fc931a5bf041a0191f` (23/10 07:54): Produção julgou CNN FALTANDO V2 NG (score bruto `0.999850`) enquanto a KNN C permanecia `BUILD_SIGNATURES / 1 de 1042 PNGs`, com `elapsed_ms=303768`; decisão SIDE em `18.28s`, sem TOP/MID, sem votos KNN A/B. Esse tempo inclui o inventário inicial; não comprova que a primeira assinatura consumiu cinco minutos. Inference CNN isolada levou ~248ms, enquanto a etapa `inference_ms` totalizou ~16s, requer investigação de contenção externa.
+- **Novo inventário específico C:** em cada início verifica SHA-256 real dos bytes de todos os PNGs, **sem confiar só no mtime**. Se o mesmo caminho/classe/luz/hash já estiver no cache, reaproveita o hash visual validado e evita CRC+decode duplicado. Arquivos novos/modificados passam pela validação completa de PNG antes de gerar assinaturas. Ambas cópias de pixels iguais rotuladas OK e NG são excluídas; links simbólicos não são usados. O inventário **não consulta categoria AOI para decidir rótulo**.
+- O debug diferencia `inventory_elapsed_ms`, progresso `inventory_processed/inventory_total`, `build_signatures_elapsed_ms`, `inventory_reused_pixel_hashes` e cache de assinaturas. Arquivos rejeitados continuam identificados por motivo, e memória `LOADING` continua **sem votos**.
+- **Preparo do cache fora do turno:** fechar o ODIN e executar `python -m src.services.knn_c_preload_cli` na pasta principal. O comando executa o mesmo warmup C, gera/reusa `reports/startup_regression/knn_c_signature_cache.json.gz`, imprime status READY/UNAVAILABLE e progresso detalhado; **não conecta XP, não escreve PNG, não treina modelo e não envia 0/1**. Código de saída 0 significa READY, 2 significa falha.
+- O replay experimental enviado pelo operador (`knn_cnn_shadow_20261023_123909_221885.json`) encontrou 78 PNGs OK classificados NG pela CNN isolada e 8 PNGs NG classificados OK entre 953 elegíveis; 25 falsos NG poderiam ser enviados à revisão pela combinação conservadora, não automaticamente aprovados. A KNN visual seletiva sugeriu OK indevidamente para 1 PNG NG. O relatório é **somente por PNG**, com rótulo de pasta e sem holdout independente por evento. Portanto, a melhoria da KNN C não é certificação para liberar NG como OK.
+- Produção, Sombra e Modo Teste mantêm **idênticos os critérios de veredito e comandos XP**. A melhoria acelera a preparação e expõe diagnósticos; não altera o checkpoint `c13ca329...`, limiares, KNN exata nem autorização 0/1.
+
+---
+
 ## 23/10/2026 — KNN C resiliente, cache de assinaturas e auditoria de falsos NG
 
 - Em `Modo Produção`, evento `63d53e8ef5b64049b407fe5fb16afb5d` recebeu CNN NG (score bruto `0.999850`) após SIDE, enquanto KNN C permanecia `LOADING`. O arquivo da estação tem registros OK parecidos, mas sem um banco C READY não há votos de similaridade e `NOT_FOUND` da KNN exata não significa falta de exemplos semelhantes.

@@ -7,6 +7,8 @@ on:
       - "src/core/test_mode_side_knn_disagreement.py"
       - "src/core/knn_c_live.py"
       - "src/services/knn_c_signature_cache.py"
+      - "src/services/knn_c_fast_inventory.py"
+      - "src/services/knn_c_preload_cli.py"
       - "src/ui/adhesive_multilight_inspection.py"
       - "src/services/capture_debug_payload.py"
       - "src/ui/network_xp_debug.py"
@@ -14,6 +16,7 @@ on:
       - "tests/test_adhesive_multilight_inspection.py"
       - "tests/test_knn_c_live.py"
       - "tests/test_knn_c_signature_cache.py"
+      - "tests/test_knn_c_fast_inventory.py"
       - ".github/workflows/test-mode-knn-side-disagreement.yml"
   push:
     branches: [central]
@@ -21,6 +24,8 @@ on:
       - "src/core/test_mode_side_knn_disagreement.py"
       - "src/core/knn_c_live.py"
       - "src/services/knn_c_signature_cache.py"
+      - "src/services/knn_c_fast_inventory.py"
+      - "src/services/knn_c_preload_cli.py"
       - "src/ui/adhesive_multilight_inspection.py"
       - "src/services/capture_debug_payload.py"
       - "src/ui/network_xp_debug.py"
@@ -28,6 +33,7 @@ on:
       - "tests/test_adhesive_multilight_inspection.py"
       - "tests/test_knn_c_live.py"
       - "tests/test_knn_c_signature_cache.py"
+      - "tests/test_knn_c_fast_inventory.py"
       - ".github/workflows/test-mode-knn-side-disagreement.yml"
   workflow_dispatch:
 
@@ -51,7 +57,7 @@ jobs:
           python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" scipy scikit-image PyQt6 mss pytesseract
       - name: Compile production and experimental modules
         run: |
-          python -m py_compile src/services/knn_c_signature_cache.py tests/test_knn_c_signature_cache.py src/core/test_mode_side_knn_disagreement.py src/core/knn_c_live.py src/ui/adhesive_multilight_inspection.py src/services/capture_debug_payload.py src/ui/network_xp_debug.py tests/test_test_mode_side_knn_disagreement.py tests/test_adhesive_multilight_inspection.py tests/test_knn_c_live.py
+          python -m py_compile src/services/knn_c_fast_inventory.py src/services/knn_c_preload_cli.py tests/test_knn_c_fast_inventory.py src/services/knn_c_signature_cache.py tests/test_knn_c_signature_cache.py src/core/test_mode_side_knn_disagreement.py src/core/knn_c_live.py src/ui/adhesive_multilight_inspection.py src/services/capture_debug_payload.py src/ui/network_xp_debug.py tests/test_test_mode_side_knn_disagreement.py tests/test_adhesive_multilight_inspection.py tests/test_knn_c_live.py
       - name: Test trial side gating, real UI path and debug
         run: |
-          python -m unittest tests.test_knn_c_signature_cache tests.test_test_mode_side_knn_disagreement tests.test_adhesive_multilight_inspection tests.test_knn_c_live tests.test_side_early_decision tests.test_network_xp_debug -v
+          python -m unittest tests.test_knn_c_fast_inventory tests.test_knn_c_signature_cache tests.test_test_mode_side_knn_disagreement tests.test_adhesive_multilight_inspection tests.test_knn_c_live tests.test_side_early_decision tests.test_network_xp_debug -v

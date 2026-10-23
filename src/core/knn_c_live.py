@@ -19,6 +19,7 @@ import cv2
 
 from src.config.settings import BASE_DIR
 from src.services.knn_c_signature_cache import read_cache, write_cache
+from src.services.knn_c_fast_inventory import inventory_for_knn_c
 from src.core.strict_category_memory import canonical_memory_lighting
 from src.services.startup_regression.archive_inventory import inventory_archives
 from src.services.faltando_cross_category_audit import _archive_image
@@ -97,9 +98,25 @@ class LiveKNNStrategyC:
         failures = defaultdict(int)
         samples = []
         try:
-            inv = self._inventory if self._inventory is not None else (
-                inventory_archives(self.root)
+            cached = read_cache(self.root) if self._inventory is None else {}
+            # Com cache válido, verificar SHA bruto é suficiente para
+            # reutilizar identidade visual já decodificada. PNG novo /
+            # modificado continua exigindo CRC, decode e pixel SHA completos.
+            # Progresso INVENTORY distingue inventário de assinatura.
+            def inventory_progress(done, total, path):
+                self._publish_progress(
+                    phase="INVENTORY", inventory_processed=done,
+                    inventory_total=total, inventory_current_path=path,
+                    inventory_elapsed_ms=round(
+                        (perf_counter() - begin) * 1000, 2),
+                )
+            inv = (
+                self._inventory if self._inventory is not None else
+                inventory_for_knn_c(
+                    self.root, cached, progress=inventory_progress,
+                )
             )
+            inventory_ms = round((perf_counter() - begin) * 1000, 2)
             items = inv.get("images")
             if (inv.get("schema") != "visionx.archive_inventory.v1"
                     or not isinstance(items, list) or not items
@@ -128,7 +145,12 @@ class LiveKNNStrategyC:
                 d for d, labels in labels_by_digest.items()
                 if "OK" in labels and "NG" in labels
             )
-            cached = read_cache(self.root) if self._inventory is None else {}
+            self._publish_progress(
+                inventory_elapsed_ms=inventory_ms,
+                inventory_reused_pixel_hashes=inv.get(
+                    "reused_pixel_hashes_from_sha_verified_cache", 0),
+                processed=0,
+            )
             extractor = self._extractor
             if extractor is None:
                 from src.services.faltando_neural_dataset import AOIPairExtractor
@@ -200,6 +222,9 @@ class LiveKNNStrategyC:
                         excluded=sum(failures.values()), cached=used_cache,
                         skipped_duplicates=skipped,
                         elapsed_ms=round((perf_counter() - begin) * 1000, 2),
+                        build_signatures_elapsed_ms=round(
+                            (perf_counter() - begin) * 1000 - inventory_ms, 2
+                        ),
                         failure_reasons=dict(failures),
                         sample_failures=list(samples),
                     )
@@ -219,7 +244,10 @@ class LiveKNNStrategyC:
                 self._reason = "OK"
                 self._progress.update(
                     phase="READY", processed=len(items),
-                    elapsed_ms=elapsed, cache_saved=cache_saved,
+                    elapsed_ms=elapsed,
+                    inventory_elapsed_ms=inventory_ms,
+                    build_signatures_elapsed_ms=round(elapsed-inventory_ms, 2),
+                    cache_saved=cache_saved,
                     indexed_by_label=dict(counts),
                 )
             LOG.info(
