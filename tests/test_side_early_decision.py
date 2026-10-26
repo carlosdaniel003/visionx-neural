@@ -140,6 +140,84 @@ class SideEarlyDecisionTests(unittest.TestCase):
         # Não altera retroativamente o resultado local de origem.
         self.assertNotIn("side_early_exit", original["detail"])
 
+    def test_production_false_ng_oct_26_continues_to_top_mid_when_knn_both_vote_ok(self):
+        # Evento e70363365eaa4681b822b95557977e63: o componente está
+        # presente, a CNN experimental errou NG=.999189, e KNN A/B
+        # votaram OK mas sem sugestão seletiva. Não enviar NG pela SIDE.
+        analysis = self._trial_ng_side()
+        analysis["confidence"] = 0.999189555644989
+        analysis["detail"]["cnn_v2_ng_score_uncalibrated"] = 0.999189555644989
+        analysis["detail"]["knn_c"] = {
+            "schema": "visionx.knn_c_live_review_gated.v1",
+            "bank_status": "READY",
+            "status": "REVISAO",
+            "reason": "SEM_SUGESTAO_CONFIAVEL",
+            "vote_A": "OK", "vote_B": "OK",
+            "suggestion_A": "REVISAO", "suggestion_B": "REVISAO",
+            "weighted_ng_A": .45517853,
+            "weighted_ng_B": .4325297,
+            "diagnostic_only": True,
+            "auto_decision_authorized": False,
+        }
+        from copy import deepcopy
+        original = deepcopy(analysis)
+        self.assertIsNone(build_side_early_decision(analysis, "FALTANDO"))
+        self.assertIsNone(side_trial_automatic_decision(analysis))
+        self.assertEqual(original, analysis)  # sem corrigir para OK artificial
+        self.assertEqual(analysis["verdict"], "DEFEITO REAL")
+
+    def test_defer_on_two_weak_ok_votes_only_not_on_one_vote_or_missing_knn(self):
+        from copy import deepcopy
+        sample = self._trial_ng_side()
+        sample["detail"]["knn_c"] = {
+            "schema": "visionx.knn_c_live_review_gated.v1",
+            "bank_status": "READY",
+            "status": "REVISAO",
+            "reason": "SEM_SUGESTAO_CONFIAVEL",
+            "vote_A": "OK", "vote_B": "OK",
+            "suggestion_A": "REVISAO", "suggestion_B": "REVISAO",
+            "diagnostic_only": True,
+            "auto_decision_authorized": False,
+        }
+        variants = (
+            ("unavailable", {"bank_status": "LOADING"}),
+            ("one_ng", {"vote_B": "NG"}),
+            ("no_vote", {"vote_B": None}),
+            ("untrusted", {"diagnostic_only": False}),
+            ("alternative_status", {"status": "SUGERE_NG"}),
+            ("other_reason", {"reason": "ASSINATURA_INSUFICIENTE"}),
+            ("incomplete", {"suggestion_A": None}),
+        )
+        for name, overrides in variants:
+            with self.subTest(name=name):
+                modified = deepcopy(sample)
+                modified["detail"]["knn_c"].update(overrides)
+                self.assertIsNotNone(build_side_early_decision(modified, "FALTANDO"))
+                self.assertEqual(
+                    side_trial_automatic_decision(
+                        build_side_early_decision(modified, "FALTANDO")
+                    ), "NG",
+                )
+
+    def test_physical_hard_missing_evidence_is_not_downgraded_by_knn_soft_ok(self):
+        sample = self._trial_ng_side()
+        sample["detail"]["knn_c"] = {
+            "schema": "visionx.knn_c_live_review_gated.v1",
+            "bank_status": "READY", "status": "REVISAO",
+            "reason": "SEM_SUGESTAO_CONFIAVEL",
+            "vote_A": "OK", "vote_B": "OK",
+            "suggestion_A": "REVISAO", "suggestion_B": "REVISAO",
+            "diagnostic_only": True, "auto_decision_authorized": False,
+        }
+        sample["hard_missing_evidence"] = True
+        self.assertIsNotNone(build_side_early_decision(sample, "FALTANDO"))
+        sample["hard_missing_evidence"] = False
+        sample["detail"]["hard_missing_evidence"] = True
+        self.assertIsNotNone(build_side_early_decision(sample, "FALTANDO"))
+        sample["detail"]["hard_missing_evidence"] = False
+        sample["detail"]["cnn_v2_aoi_category"] = "INVERTIDO"
+        self.assertIsNotNone(build_side_early_decision(sample, "INVERTIDO"))
+
     def test_trial_side_routes_all_supported_aoi_categories_without_changing_defect_label(self):
         from src.ui.production_confidence_gate import production_decision_policy
 

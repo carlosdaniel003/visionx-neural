@@ -21,6 +21,38 @@ SIDE_TRIAL_NG_REVIEW_RULE = "side_trial_ng_human_review_v1"
 SIDE_TRIAL_OK_REVIEW_RULE = "side_trial_ok_human_review_v1"
 
 
+def _uncorroborated_missing_ng_vs_two_knn_ok(analysis: dict, category: str) -> bool:
+    """Do not finish trial SIDE when both KNN votes contradict CNN NG.
+
+    KNN A/B review votes are weak diagnostic signals, NOT proof of OK.
+    In this narrow FALTANDO situation, acquire TOP/MID before finalizing.
+    Never changes the CNN verdict, label, production policy or XP command.
+    """
+    if (canonical_memory_category(category) != "FALTANDO"
+            or analysis.get("is_defect") is not True
+            or analysis.get("hard_missing_evidence") is True):
+        return False
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict):
+        return False
+    if detail.get("hard_missing_evidence") is True:
+        return False
+    knn = detail.get("knn_c")
+    return bool(
+        isinstance(knn, dict)
+        and knn.get("schema") == "visionx.knn_c_live_review_gated.v1"
+        and knn.get("diagnostic_only") is True
+        and knn.get("auto_decision_authorized") is False
+        and knn.get("bank_status") == "READY"
+        and knn.get("status") == "REVISAO"
+        and knn.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+        and knn.get("vote_A") == "OK"
+        and knn.get("vote_B") == "OK"
+        and knn.get("suggestion_A") == "REVISAO"
+        and knn.get("suggestion_B") == "REVISAO"
+    )
+
+
 def _eligible_side_analysis(analysis: dict | None) -> bool:
     """Revalida a classificação SIDE sem depender de flags de UI ou Produção."""
     if not isinstance(analysis, dict):
@@ -147,6 +179,11 @@ def _eligible_trial_side_for_review(
     if detail.get("multilight_physical_disagreement") is True:
         return False
     if detail.get("multilight_missing_verified_presence"):
+        return False
+    # Provenance: 26/10/2026 false NG (SIDE FALTANDO, CNN .99919,
+    # KNN A/B vote OK but both still REVISAO). High, uncalibrated CNN
+    # confidence cannot by itself skip the two independent lights.
+    if _uncorroborated_missing_ng_vs_two_knn_ok(analysis, category):
         return False
     try:
         confidence = float(analysis["confidence"])
