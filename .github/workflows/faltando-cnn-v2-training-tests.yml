@@ -31,6 +31,8 @@ on:
       - "tests/test_aoi_universal_quality_offline.py"
       - "src/scripts/audit_aoi_universal_operator_confirmed.py"
       - "tests/test_aoi_universal_operator_replay.py"
+      - "src/scripts/train_aoi_universal_hard_case_repair.py"
+      - "tests/test_aoi_universal_hard_case_repair.py"
       - "src/scripts/benchmark_original_97p70_offline.py"
       - "tests/test_benchmark_original_97p70_offline.py"
       - "docs/faltando_v2_operator_triage_20261016.json"
@@ -65,6 +67,8 @@ on:
       - "tests/test_aoi_universal_quality_offline.py"
       - "src/scripts/audit_aoi_universal_operator_confirmed.py"
       - "tests/test_aoi_universal_operator_replay.py"
+      - "src/scripts/train_aoi_universal_hard_case_repair.py"
+      - "tests/test_aoi_universal_hard_case_repair.py"
       - "src/scripts/benchmark_original_97p70_offline.py"
       - "tests/test_benchmark_original_97p70_offline.py"
       - "docs/faltando_v2_operator_triage_20261016.json"
@@ -91,8 +95,8 @@ jobs:
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
           python -m pip install numpy opencv-python-headless
       - name: Compile v2
-        run: python -m py_compile src/scripts/faltando_false_ng_recovery.py tests/test_faltando_false_ng_recovery.py src/core/neural/faltando_checkpoint_contract.py src/core/neural/faltando_preprocessing.py src/core/neural/faltando_cnn_v2.py src/scripts/train_faltando_cnn_v2_online.py src/scripts/train_faltando_cnn_v2_verified_archive.py src/services/faltando_neural_archive_experiment.py src/scripts/train_faltando_cnn_v2.py tests/test_faltando_verified_archive_finetuning.py tests/test_faltando_archive_label_experiment.py tests/test_faltando_balanced_archive_replay.py tests/test_faltando_cnn_v2_candidate_blend.py src/scripts/faltando_cnn_v2_blend_candidates.py tests/test_faltando_cnn_v2_guarded_light_repair.py tests/test_faltando_cnn_v2_event_mil.py tests/test_faltando_v2_failure_audit.py tests/test_faltando_v2_operator_triage.py tests/test_faltando_cross_category_preparation.py tests/test_aoi_universal_quality_offline.py tests/test_aoi_universal_operator_replay.py src/scripts/audit_aoi_universal_operator_confirmed.py src/services/aoi_universal_quality_archive.py src/scripts/train_aoi_universal_quality_offline.py src/scripts/benchmark_original_97p70_offline.py tests/test_benchmark_original_97p70_offline.py src/services/faltando_neural_dataset.py src/scripts/faltando_v2_record_operator_triage.py src/scripts/faltando_v2_audit_failed_pairs.py src/scripts/faltando_cnn_v2_guarded_light_repair.py tests/test_faltando_cnn_v2_training.py
+        run: python -m py_compile src/scripts/faltando_false_ng_recovery.py tests/test_faltando_false_ng_recovery.py src/core/neural/faltando_checkpoint_contract.py src/core/neural/faltando_preprocessing.py src/core/neural/faltando_cnn_v2.py src/scripts/train_faltando_cnn_v2_online.py src/scripts/train_faltando_cnn_v2_verified_archive.py src/services/faltando_neural_archive_experiment.py src/scripts/train_faltando_cnn_v2.py tests/test_faltando_verified_archive_finetuning.py tests/test_faltando_archive_label_experiment.py tests/test_faltando_balanced_archive_replay.py tests/test_faltando_cnn_v2_candidate_blend.py src/scripts/faltando_cnn_v2_blend_candidates.py tests/test_faltando_cnn_v2_guarded_light_repair.py tests/test_faltando_cnn_v2_event_mil.py tests/test_faltando_v2_failure_audit.py tests/test_faltando_v2_operator_triage.py tests/test_faltando_cross_category_preparation.py tests/test_aoi_universal_quality_offline.py tests/test_aoi_universal_operator_replay.py tests/test_aoi_universal_hard_case_repair.py src/scripts/train_aoi_universal_hard_case_repair.py src/scripts/audit_aoi_universal_operator_confirmed.py src/services/aoi_universal_quality_archive.py src/scripts/train_aoi_universal_quality_offline.py src/scripts/benchmark_original_97p70_offline.py tests/test_benchmark_original_97p70_offline.py src/services/faltando_neural_dataset.py src/scripts/faltando_v2_record_operator_triage.py src/scripts/faltando_v2_audit_failed_pairs.py src/scripts/faltando_cnn_v2_guarded_light_repair.py tests/test_faltando_cnn_v2_training.py
       - name: Test multiscale training and integrity
-        run: python -m unittest tests.test_faltando_false_ng_recovery tests.test_faltando_cnn_v2_training tests.test_faltando_verified_archive_finetuning tests.test_faltando_archive_label_experiment tests.test_faltando_balanced_archive_replay tests.test_faltando_cnn_v2_candidate_blend tests.test_faltando_cnn_v2_guarded_light_repair tests.test_faltando_cnn_v2_event_mil tests.test_faltando_v2_failure_audit tests.test_faltando_v2_operator_triage tests.test_faltando_cross_category_preparation tests.test_aoi_universal_quality_offline tests.test_aoi_universal_operator_replay tests.test_benchmark_original_97p70_offline tests.test_faltando_neural_dataset -v
+        run: python -m unittest tests.test_faltando_false_ng_recovery tests.test_faltando_cnn_v2_training tests.test_faltando_verified_archive_finetuning tests.test_faltando_archive_label_experiment tests.test_faltando_balanced_archive_replay tests.test_faltando_cnn_v2_candidate_blend tests.test_faltando_cnn_v2_guarded_light_repair tests.test_faltando_cnn_v2_event_mil tests.test_faltando_v2_failure_audit tests.test_faltando_v2_operator_triage tests.test_faltando_cross_category_preparation tests.test_aoi_universal_quality_offline tests.test_aoi_universal_operator_replay tests.test_aoi_universal_hard_case_repair tests.test_benchmark_original_97p70_offline tests.test_faltando_neural_dataset -v
       - name: Verify v1 regression tests
         run: python -m unittest tests.test_faltando_cnn_training -v
