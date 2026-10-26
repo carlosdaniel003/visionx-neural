@@ -1,0 +1,114 @@
+{
+  "schema": "visionx.operator_confirmed_quality.v1",
+  "reviewed_on": "2026-10-26",
+  "review_source": "explicit_operator_visual_inspection_of_8_cases_and_related_controls",
+  "approved_for_production": false,
+  "physical_event_groups_verified": false,
+  "labels": [
+    {
+      "source_path": "public/ng_archive/2026-10-14_0852_INVERTIDO_MID.png",
+      "source_sha256": "7472af86fbd4f7fa29809599979bb9cd654c95189d86a16567ae47667ca265b6",
+      "quality_label": "NG",
+      "physical_type": "INVERTIDO",
+      "pair_inspected_by_operator": true
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-14_0859_INVERTIDO_SIDE.png",
+      "source_sha256": "9bd42bd2225d35ace27bfa29668ec0aaf3d2ca623be4225d890dcefc69efe109",
+      "quality_label": "NG",
+      "physical_type": "INVERTIDO",
+      "pair_inspected_by_operator": true
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-14_0859_INVERTIDO_TOP.png",
+      "source_sha256": "44e4f3fcdf31449a4e7a9b67436e216da9a17805b08b0228abc5bb399c8351ed",
+      "quality_label": "NG",
+      "physical_type": "INVERTIDO",
+      "pair_inspected_by_operator": true
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-15_1439_INVERTIDO_MID.png",
+      "source_sha256": "54aced17cd24dde69e63d1fc24c092ba290857cbb8616a5c4c3b584eee220246",
+      "quality_label": "NG",
+      "physical_type": "INVERTIDO",
+      "pair_inspected_by_operator": true
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-15_1458_INVERTIDO_SIDE_2.png",
+      "source_sha256": "ef3eeb3e5620dd00481d4d6c1a394d6c597363001c8a12e5826c9edfb563c752",
+      "quality_label": "NG",
+      "physical_type": "INVERTIDO",
+      "pair_inspected_by_operator": true
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-15_1458_INVERTIDO_TOP_2.png",
+      "source_sha256": "1b254bef3b4f00cc1ee3cac6aa2db3719fa11a45b998d27a73a4a1cc10cbcd64",
+      "quality_label": "NG",
+      "physical_type": "INVERTIDO",
+      "pair_inspected_by_operator": true
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-21_1414_FALTANDO.png",
+      "source_sha256": "b33a8a9b9a9f7ef2684564f851ee989c5a76783ab158095cd5b910c52311dc65",
+      "quality_label": "OK",
+      "physical_type": "COMPONENT_PRESENT",
+      "pair_inspected_by_operator": false
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-21_1415_EMBORCADO_TOP.png",
+      "source_sha256": "2c62559d9becbb9c56e2291e7aadbd7055e490381524be99d7d330a724fa4ce9",
+      "quality_label": "NG",
+      "physical_type": "SERIGRAFIA_PRETA_TIPO_INCERTO",
+      "pair_inspected_by_operator": false
+    },
+    {
+      "source_path": "public/ok_archive/2026-10-21_1416_FALTANDO.png",
+      "source_sha256": "118f0396fdb3759d58063582dbfcd2a64f83d13389991c1d96050f0d58011043",
+      "quality_label": "OK",
+      "physical_type": "COMPONENT_PRESENT",
+      "pair_inspected_by_operator": false
+    },
+    {
+      "source_path": "public/ok_archive/2026-10-21_1545_FALTANDO.png",
+      "source_sha256": "8ee1a2acdcd5d75a948939736c873cb77fce25286304a2ac8e3b2e919ab327c2",
+      "quality_label": "OK",
+      "physical_type": "COMPONENT_PRESENT",
+      "pair_inspected_by_operator": false
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-21_1442_FALTANDO.png",
+      "source_sha256": "52804d552f836156fef64e84867a22303bb6565c207125aaec0fea4fe9eaf325",
+      "quality_label": "NG",
+      "physical_type": "COMPONENT_MISSING",
+      "pair_inspected_by_operator": false
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-21_1421_FALTANDO_2.png",
+      "source_sha256": "4b903bd2e79f8730d5cf629e82e1ecf4028cbaff4a78d1df7011b096818871c3",
+      "quality_label": "NG",
+      "physical_type": "COMPONENT_MISSING",
+      "pair_inspected_by_operator": false
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-21_1419_EMBORCADO_TOP.png",
+      "source_sha256": "19e38faea8ef6b164c66ce00a229cf3c2841364c235f9ab737763cb9c26228d7",
+      "quality_label": "NG",
+      "physical_type": "INVERTIDO_OR_EMBORCADO",
+      "pair_inspected_by_operator": false
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-21_1418_EMBORCADO_TOP.png",
+      "source_sha256": "b5fc31c37c19bd697e6e189ce25e1e0b427668b5670c9f02b7d8b58ecdaef07f",
+      "quality_label": "NG",
+      "physical_type": "INVERTIDO_OR_EMBORCADO",
+      "pair_inspected_by_operator": false
+    },
+    {
+      "source_path": "public/ng_archive/2026-10-21_1447_EMBORCADO_TOP.png",
+      "source_sha256": "8f6e263aa81831efb33ced1c2dbb62ae5a700fbf677996f60fe3aa22e4bfdc34",
+      "quality_label": "NG",
+      "physical_type": "ADESIVO_TERMINAIS",
+      "pair_inspected_by_operator": false
+    }
+  ]
+}

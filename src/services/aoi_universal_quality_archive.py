@@ -20,6 +20,7 @@ import re
 import numpy as np
 
 from src.services.faltando_neural_qualification import QualificationStore
+from src.services.odin_operator_confirmed_labels import verified_operator_labels, EVIDENCE
 from src.scripts.train_faltando_cnn_v2_verified_archive import (
     _digest, _visual_key,
 )
@@ -86,6 +87,15 @@ def universal_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
             or doc.get("dataset_ready") is not False):
         raise ValueError("Manifesto multcategoria de preparação offline inválido")
     annotated = _load_review(store.root)
+    confirmed_quality = (
+        verified_operator_labels(store.root)
+        if (store.root / EVIDENCE).is_file() else {}
+    )
+    if (not confirmed_quality and
+            "public/ng_archive/2026-10-21_1414_FALTANDO.png" in store.by_path):
+        raise ValueError(
+            "Confirmação humana do caso 7 ausente: não treinar NG incorreto"
+        )
     for source, review in annotated.items():
         if source not in store.by_path:
             raise ValueError("Fonte da triagem ausente do manifesto: " + source)
@@ -106,15 +116,32 @@ def universal_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
         if item.get("visual_defect_type") is not None:
             raise ValueError("Tipo físico não pode vir da categoria AOI: " + source)
         store._validate_source(source)
-        label = store.expected_labels[source]
+        archive_label = store.expected_labels[source]
         if tuple(Path(source).parts[:2]) != (
-            "public", label.lower() + "_archive",
+            "public", archive_label.lower() + "_archive",
         ):
             raise ValueError("Rótulo de pasta contradiz origem: " + source)
         review = annotated.get(source)
+        operator = confirmed_quality.get(source)
         if review and review["visual_category"] == "IGNORAR":
+            if operator:
+                raise ValueError("Conflito entre triagens humanas: " + source)
             skipped += 1
             continue
+        label = operator["quality_label"] if operator else archive_label
+        if operator and item["source_sha256"] != operator["source_sha256"]:
+            raise ValueError("SHA da confirmação humana divergente: " + source)
+        if operator and review and review["visual_category"] in (
+            "FALTANDO", "INVERTIDO",
+        ) and label != "NG":
+            raise ValueError("Conflito de decisões humanas: " + source)
+        individual = store.case_reviews.get(source)
+        if individual and individual.get("pair_inspected") is True:
+            reviewed = individual.get("reviewed_label")
+            if reviewed in ("OK", "NG"):
+                if operator and reviewed != label:
+                    raise ValueError("Qualificação individual contradiz operador: " + source)
+                label = reviewed
         category = item.get("category_hint")
         if not isinstance(category, str) or not category.strip():
             raise ValueError("Categoria AOI ausente")
@@ -129,14 +156,21 @@ def universal_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
             duplicates += 1
             continue
         seen[signature] = label
-        physical = review["visual_category"] if review else None
+        physical = (operator["physical_type"] if operator
+                    else review["visual_category"] if review else None)
+        provenance_label = (
+            "HUMAN_CONFIRMED_SHA256" if operator
+            else "HUMAN_INDIVIDUAL_PAIR" if individual and
+                 individual.get("pair_inspected") is True and
+                 individual.get("reviewed_label") in ("OK", "NG")
+            else "HUMAN_CONTACT_SHEET_NG" if review
+            else "ARCHIVE_FOLDER_PROVISIONAL"
+        )
         row = {
             "id": "universal_provisional:" + source,
             "label": label, "category_hint": category,
             "visual_defect_type": physical,
-            "label_provenance": (
-                "HUMAN_CONTACT_SHEET_NG" if physical else "ARCHIVE_FOLDER_PROVISIONAL"
-            ),
+            "label_provenance": provenance_label,
             "views": {item["lighting_mode"]: {
                 "reference": reference, "test": test,
             }},
@@ -158,9 +192,26 @@ def universal_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
         "exact_duplicates_skipped": duplicates,
         "human_ignored_sources": skipped,
         "human_reviewed_general_ng": sum(
-            x["label_provenance"] == "HUMAN_CONTACT_SHEET_NG" for x in recorded
+            x["label_provenance"] in (
+                "HUMAN_CONTACT_SHEET_NG", "HUMAN_CONFIRMED_SHA256",
+            ) and x["label"] == "NG" for x in recorded
         ),
-        "quality_source": "ARCHIVE_FOLDER_PROVISIONAL_WITH_SHA_PINNED_TRIAGE",
+        "operator_confirmed_rows_in_manifest": sum(
+            x["label_provenance"] == "HUMAN_CONFIRMED_SHA256" for x in recorded
+        ),
+        "operator_confirmed_corrected_ok_from_ng": sum(
+            x["label_provenance"] == "HUMAN_CONFIRMED_SHA256"
+            and x["label"] == "OK"
+            and x["sources"][0].startswith("public/ng_archive/")
+            for x in recorded
+        ),
+        "operator_confirmed_rows_outside_manifest": len(confirmed_quality) -
+            len(set(confirmed_quality).intersection(store.by_path)),
+        "quality_source": (
+            "ARCHIVE_FOLDER_PROVISIONAL_WITH_SHA_PINNED_OPERATOR_CORRECTIONS"
+            if confirmed_quality else
+            "ARCHIVE_FOLDER_PROVISIONAL_WITH_SHA_PINNED_TRIAGE"
+        ),
         "aoi_category_not_defect_type": True,
         "physical_event_association_verified": False,
         "human_reviewed_all_labels": False,
