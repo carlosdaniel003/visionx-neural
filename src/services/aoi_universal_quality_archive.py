@@ -21,6 +21,9 @@ import numpy as np
 
 from src.services.faltando_neural_qualification import QualificationStore
 from src.services.odin_operator_confirmed_labels import verified_operator_labels, EVIDENCE
+from src.services.odin_operator_validation_labels import (
+    EVIDENCE as VALIDATION_EVIDENCE, verified_validation_labels,
+)
 from src.scripts.train_faltando_cnn_v2_verified_archive import (
     _digest, _visual_key,
 )
@@ -91,6 +94,12 @@ def universal_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
         verified_operator_labels(store.root)
         if (store.root / EVIDENCE).is_file() else {}
     )
+    if (store.root / VALIDATION_EVIDENCE).is_file():
+        additional = verified_validation_labels(store)
+        overlap = set(confirmed_quality) & set(additional)
+        if overlap:
+            raise ValueError("Duas revisões humanas para as mesmas imagens: " + str(overlap))
+        confirmed_quality = {**confirmed_quality, **additional}
     if (not confirmed_quality and
             "public/ng_archive/2026-10-21_1414_FALTANDO.png" in store.by_path):
         raise ValueError(
@@ -156,7 +165,7 @@ def universal_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
             duplicates += 1
             continue
         seen[signature] = label
-        physical = (operator["physical_type"] if operator
+        physical = (operator.get("physical_type") if operator
                     else review["visual_category"] if review else None)
         provenance_label = (
             "HUMAN_CONFIRMED_SHA256" if operator

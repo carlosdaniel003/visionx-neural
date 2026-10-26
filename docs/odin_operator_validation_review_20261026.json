@@ -1,0 +1,92 @@
+{
+  "schema": "visionx.operator_confirmed_validation_quality.v1",
+  "reviewed_on": "2026-10-26",
+  "evidence_source": "20261026T161704_538044Z_b17706_repaired_candidate_validation_visual_zip",
+  "source_manifest_sha256": "028d84785d71107aed1f104bc9c110d9f7d78b12a1d36f6dd5197b586512d178",
+  "source_checkpoint_sha256": "7f3794933bc8def83d448fc0c7189efb6add5fe9960dccf7d2a0ebe05d80aec6",
+  "approved_for_production": false,
+  "physical_event_groups_verified": false,
+  "labels": [
+    {
+      "case_number": 1,
+      "source_path": "public/ok_archive/2026-10-08_0754_FALTANDO_TOP.png",
+      "source_sha256": "6a2245a37c05afa938705fa96c3a99a0612d3b22399ab44bb9b8ca631175865a",
+      "reference_sha256": "5ded67fd828dbf269339c2ce96a65baadbc562782acaa664c3254d69802e7451",
+      "test_sha256": "f513a37cfb1f4ebb9a03d5b8e9388a224b64bfc1ce0d86f090fea92a7807617c",
+      "quality_label": "OK",
+      "operator_reviewed_pair": true
+    },
+    {
+      "case_number": 2,
+      "source_path": "public/ok_archive/2026-10-06_0822_EMBORCADO.png",
+      "source_sha256": "59165425e53ab7a4d7d609a2a29bf75fa1bb25cbe5139c6731da3898dcd37534",
+      "reference_sha256": "f9587b9b7189d48f15b65d25b4318cd7613c2a42b2dbffdd0709bdcad220e320",
+      "test_sha256": "3e52debe1c8e81f78cbd88104fbe22a5e99ed2e72964e9f24d337b869e373279",
+      "quality_label": "OK",
+      "operator_reviewed_pair": true
+    },
+    {
+      "case_number": 3,
+      "source_path": "public/ok_archive/2026-10-09_0857_DESLOCADO_TOP.png",
+      "source_sha256": "201061115dccff1e09ed0abdfa1aac185fc546382237a6c350f71034de1bfc74",
+      "reference_sha256": "77a65af494955e764acb93a26addedf38be1ee28e44aba942fa54e8dec89f720",
+      "test_sha256": "25bc55992f463a161c68f7ea3b1daf96d4dd03aaf9e1812ec77e88ba9065e596",
+      "quality_label": "OK",
+      "operator_reviewed_pair": true
+    },
+    {
+      "case_number": 4,
+      "source_path": "public/ok_archive/2026-10-05_1421_EMBORCADO.png",
+      "source_sha256": "1c7a707d8222290f1ebf2b805a0b93210ac80efac1dbd02020ab26d63a41c68d",
+      "reference_sha256": "e9db84c0170349cde8967f93f3a30a4207f1fea611b1938deb8df1931fb35202",
+      "test_sha256": "d0e6b2940731e0267b82de60434bd7e25e0827c367fe1a3a65fe221735c9726f",
+      "quality_label": "OK",
+      "operator_reviewed_pair": true
+    },
+    {
+      "case_number": 5,
+      "source_path": "public/ng_archive/2026-10-15_1607_FALTANDO_MID_4.png",
+      "source_sha256": "a9544bcdee8ecbfd4314e34695f35384a3f6478dd4edb64ab7c84884416a8fae",
+      "reference_sha256": "8a05187c087360b3f0b4b89281b97a76eac8ed724b47558c32c074843eadf425",
+      "test_sha256": "87be64c4282f862a1f870be76028c6c9c494291aba064c9715ae4cb55bb87a33",
+      "quality_label": "NG",
+      "operator_reviewed_pair": true
+    },
+    {
+      "case_number": 6,
+      "source_path": "public/ng_archive/2026-10-14_1430_FALTANDO_MID.png",
+      "source_sha256": "a659b67b9e2c681e15fe99db67be5ac55ab872a4a0a590b5dc91cf178a4f95e1",
+      "reference_sha256": "286d33dade9d49e5182e00cbaf9f47fd2fed2b2510a8d00dc8295f3fa2aefc31",
+      "test_sha256": "617c71058ee7bbf0eb0621d4fd92344283904666411c39ba26d41751abc78611",
+      "quality_label": "NG",
+      "operator_reviewed_pair": true
+    },
+    {
+      "case_number": 7,
+      "source_path": "public/ng_archive/2026-10-15_1503_FALTANDO_MID_2.png",
+      "source_sha256": "3197b4d80b6eec2d482308f8453982c2d41530e0df09d64667abd28d35a75346",
+      "reference_sha256": "286d33dade9d49e5182e00cbaf9f47fd2fed2b2510a8d00dc8295f3fa2aefc31",
+      "test_sha256": "50a63f3b3f78a942eb866d335979a506ff39d655ad495392f3d50da7d5226b04",
+      "quality_label": "NG",
+      "operator_reviewed_pair": true
+    },
+    {
+      "case_number": 8,
+      "source_path": "public/ok_archive/2026-10-08_0822_FALTANDO_TOP.png",
+      "source_sha256": "d91beab731b60a79d04d701cd87be860901662a9c79d3d894b62d084ccb2f30c",
+      "reference_sha256": "741a299ebde52c04f5409dca2be8e0706f1330494c0f5127146e9c4b57a7d039",
+      "test_sha256": "001619d10ba5f0abe0ea5ba7f98d76d9d1aafc9894684afcc935df662f4e7884",
+      "quality_label": "OK",
+      "operator_reviewed_pair": true
+    },
+    {
+      "case_number": 9,
+      "source_path": "public/ok_archive/2026-10-08_0731_FALTANDO_TOP.png",
+      "source_sha256": "fd179f7d77f45114921320a790bec88f27557256c43cc4fc6d0985e4e6bca41b",
+      "reference_sha256": "7ea1dba62a3b05f7d17d5daf29d8881ec3d2804a533082bdbeb61ec378b04c1c",
+      "test_sha256": "0aa67f5e379175c9991afb0262252a879bd7a47750d8f580cff1a2c06164920d",
+      "quality_label": "OK",
+      "operator_reviewed_pair": true
+    }
+  ]
+}
