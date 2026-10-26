@@ -103,6 +103,9 @@ QLabel#productionInterventionReason {{
     font-size: 23px;
     font-weight: 900;
 }}
+QLabel#productionInterventionReason[tone="ok"] {{
+    color: {SUCCESS};
+}}
 QLabel#productionInterventionHint {{
     color: #d6d6d6;
     background: transparent;
@@ -439,9 +442,20 @@ class ProductionInterventionFeedbackOverlay(QFrame):
             "DEFEITO REAL",
             "NG",
             "REVISÃO OBRIGATÓRIA",
+            "FALHA FALSA",
         }:
             normalized = "REVISÃO OBRIGATÓRIA"
+        # Mensagem de classificação e solicitação de operador são
+        # dimensões diferentes. O cartão verde NÃO transmite comando XP.
+        known_ok = normalized == "FALHA FALSA"
+        self.header_label.setText(
+            "CONFIRMAÇÃO HUMANA NECESSÁRIA"
+            if known_ok else "INTERVENÇÃO NECESSÁRIA"
+        )
         self.reason_label.setText(normalized)
+        self.reason_label.setProperty("tone", "ok" if known_ok else "ng")
+        self.reason_label.style().unpolish(self.reason_label)
+        self.reason_label.style().polish(self.reason_label)
         self._position()
         self.raise_()
         self.show()

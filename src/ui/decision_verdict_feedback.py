@@ -97,11 +97,31 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
     # sem transformar o flag histórico de revisão em julgamento visual.
     if side_trial_automatic_decision(analysis) == "OK":
         return "FALHA FALSA", "ok"
-    # Revisão sem classificação conclusiva continua explícita.
+    # O reconhecimento OK recorrente é uma classificação confirmada da
+    # memória. A revisão aqui significa SOMENTE autorização manual do XP,
+    # não incerteza quanto ao rótulo exibido. Validar contrato completo
+    # antes de apresentar verde; não confiar apenas no texto FALHA FALSA.
+    verdict = str(analysis.get("verdict", "") or "").strip().upper()
+    if (
+        verdict == "FALHA FALSA"
+        and analysis.get("is_defect") is False
+        and detail.get("fusion_rule")
+        == "operator_confirmed_recurrent_ok_three_light_review_v1"
+    ):
+        from src.ui.production_confidence_gate import production_decision_policy
+        policy = production_decision_policy(analysis)
+        if (
+            policy.get("verdict") == "FALHA FALSA"
+            and policy.get("reason")
+            == "operator_confirmed_recurring_ok_requires_operator"
+            and policy.get("auto_allowed") is False
+        ):
+            return "FALHA FALSA", "ok"
+
+    # Revisão sem reconhecimento verificado continua explícita.
     if review_required:
         return "REVISÃO OBRIGATÓRIA", "ng"
 
-    verdict = str(analysis.get("verdict", "") or "").strip().upper()
     if verdict == "REVISÃO OBRIGATÓRIA":
         return "REVISÃO OBRIGATÓRIA", "ng"
     if verdict == "FALHA FALSA":

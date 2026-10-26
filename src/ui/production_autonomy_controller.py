@@ -591,7 +591,9 @@ class ProductionAutonomyController(QObject):
         enter_production_review(self.panel, analysis)
 
         reason = str(policy.get("verdict", "") or "").strip().upper()
-        if reason not in {"DEFEITO REAL", "REVISÃO OBRIGATÓRIA"}:
+        # Mostrar a classificação final da memória recorrente, sem
+        # confundi-la com autorização XP: o gate permanece 0/1 manual.
+        if reason not in {"DEFEITO REAL", "FALHA FALSA", "REVISÃO OBRIGATÓRIA"}:
             reason = (
                 "DEFEITO REAL"
                 if policy.get("proposed_decision") == "NG"
