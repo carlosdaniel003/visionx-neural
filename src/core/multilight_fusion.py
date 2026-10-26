@@ -595,6 +595,24 @@ def fuse_multilight(
         }
     detail["cnn_v2_light_diagnostics"] = cnn_light_diagnostics
 
+    # Preservar votos de diagnóstico da KNN C de CADA iluminação. Até aqui
+    # o resultado final carregava apenas a luz dominante (MID), ocultando
+    # que SIDE/TOP/MID votaram OK contra o NG da CNN. Não traduzir votos
+    # de revisão para par exato nem para autorização automática do XP.
+    knn_c_light_observer_votes = {}
+    for light in LIGHTING_ORDER:
+        candidate = _detail(source[light]).get("knn_c")
+        if isinstance(candidate, dict):
+            knn_c_light_observer_votes[light] = {
+                key: candidate.get(key) for key in (
+                    "schema", "bank_status", "status", "reason",
+                    "vote_A", "vote_B", "suggestion_A", "suggestion_B",
+                    "diagnostic_only", "auto_decision_authorized",
+                    "similarity_A", "similarity_B",
+                )
+            }
+    detail["knn_c_light_observer_votes"] = knn_c_light_observer_votes
+
     # Verifica TODAS as luzes e a identidade do checkpoint. A fusão
     # pode ter herdado metadados somente da luz dominante, insuficientes
     # para permitir decisão automática.

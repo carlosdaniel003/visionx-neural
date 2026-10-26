@@ -1,0 +1,223 @@
+"""Regression: 26 Oct 2026 physically OK FALTANDO rejected by all 3 CNN lights.
+
+Approximate KNN A/B + visual signatures can veto an uncorroborated
+CNN NG presentation, but may NEVER automatically release the PCB as OK.
+"""
+from __future__ import annotations
+
+from copy import deepcopy
+import unittest
+from unittest.mock import patch
+
+from src.core.knn_visual_corroboration import (
+    _three_light_ok_counterevidence,
+    apply_knn_visual_corroboration,
+    SCHEMA,
+)
+from src.core.multilight_fusion import fuse_multilight
+from src.ui.production_confidence_gate import production_decision_policy
+
+LIGHTS = ("SIDE", "TOP", "MID")
+GOOD = {
+    "SIDE": (.951006, .944863),
+    "TOP": (.951006, .938456),
+    "MID": (.954742, .922532),
+}
+
+
+def raw_c(light):
+    return {
+        "schema": "visionx.knn_c_live_review_gated.v1",
+        "bank_status": "READY",
+        "status": "REVISAO",
+        "reason": "SEM_SUGESTAO_CONFIAVEL",
+        "diagnostic_only": True, "auto_decision_authorized": False,
+        "vote_A": "OK", "vote_B": "OK",
+        "suggestion_A": "REVISAO", "suggestion_B": "REVISAO",
+        "similarity_A": .86, "similarity_B": .80,
+    }
+
+
+def report():
+    return {
+        "schema": SCHEMA, "status": "CONFLICT", "lights": {
+            light: {
+                "status": "CONFLICT",
+                "cross_category_ng": False,
+                "ng_margin_over_ok": round(ng-ok, 6),
+                "ok": {"best_similarity": ok},
+                "ng": {"best_similarity": ng},
+            }
+            for light, (ok, ng) in GOOD.items()
+        },
+        "strong_ng_lights": [],
+    }
+
+
+def fused():
+    return {
+        "verdict": "DEFEITO REAL", "is_defect": True,
+        "multilight_final": True, "eligible_for_final_decision": True,
+        "production_review_required": False,
+        "confidence": .9999463558197021,
+        "detail": {
+            "recognition_route": "NEW_CNN",
+            "multilight_category": "FALTANDO",
+            "cnn_v2_active": True, "cnn_v2_experimental": True,
+            "cnn_v2_trial_manual_only": True,
+            "cnn_v2_consensus": "REVIEW",
+            "cnn_v2_consensus_reason": "INVALID_LIGHT_EVIDENCE",
+            "multilight_strong_positive_modes": list(LIGHTS),
+            "multilight_physical_disagreement": False,
+            "multilight_missing_verified_presence": False,
+            "hard_missing_evidence": False, "physical_score": 0.,
+            "physical_missing_veto": {"status": ""},
+            "knn_c_light_observer_votes": {
+                light: raw_c(light) for light in LIGHTS
+            },
+            "decision_trace": {
+                "verdict": "DEFEITO REAL",
+                "hard_missing_evidence": False,
+                "raw_hard_missing_evidence": False,
+            },
+        },
+    }
+
+
+class KNNOKCounterevidenceTests(unittest.TestCase):
+    def test_oct26_real_example_becomes_review_not_auto_ok_or_ng(self):
+        candidate = fused()
+        with patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=report(),
+        ):
+            result = apply_knn_visual_corroboration(
+                candidate, {}, "FALTANDO", object(),
+            )
+        self.assertEqual(result["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertIs(result["is_defect"], False)
+        self.assertTrue(result["production_review_required"])
+        self.assertFalse(result["eligible_for_final_decision"])
+        self.assertEqual(result["confidence"], .5)
+        self.assertEqual(result["detail"]["cnn_ng_verdict_before_knn_review"],
+                         "DEFEITO REAL")
+        self.assertEqual(result["detail"]["knn_ok_counterevidence"]["status"],
+                         "OPERATOR_REVIEW_KNN_OK_COUNTEREVIDENCE")
+        self.assertTrue(result["detail"]["knn_ok_counterevidence"]["no_exact_pair_claim"])
+        self.assertFalse(result["detail"]["knn_ok_counterevidence"]["automatic_ok_authorized"])
+        self.assertEqual(result["detail"]["decision_trace"]["verdict"],
+                         "REVISÃO OBRIGATÓRIA")
+        policy = production_decision_policy(result)
+        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "")
+
+    def test_without_three_distinct_knn_c_light_votes_does_not_change_ng(self):
+        for missing in LIGHTS:
+            with self.subTest(missing=missing):
+                f = fused()
+                f["detail"]["knn_c_light_observer_votes"].pop(missing)
+                self.assertIsNone(_three_light_ok_counterevidence(f, report(), "FALTANDO"))
+
+    def test_weak_or_conflicting_votes_never_obtain_ok_review_guard(self):
+        variants = (
+            ("vote_A", "NG"), ("vote_B", "NG"),
+            ("suggestion_A", "SUGERE_OK"), ("suggestion_B", "SUGERE_OK"),
+            ("status", "SUGERE_OK"), ("bank_status", "LOADING"),
+            ("diagnostic_only", False), ("auto_decision_authorized", True),
+            ("reason", "MEMORIA_VISUAL_EM_PREPARACAO"),
+            ("schema", "untrusted"),
+        )
+        for key, value in variants:
+            with self.subTest(key=key):
+                f = fused()
+                f["detail"]["knn_c_light_observer_votes"]["TOP"][key] = value
+                self.assertIsNone(_three_light_ok_counterevidence(f, report(), "FALTANDO"))
+
+    def test_no_automatic_ok_from_approximate_or_missing_visual_neighbors(self):
+        variants = (
+            ("LOW_OK", lambda r: r["lights"]["TOP"]["ok"].update(best_similarity=.949)),
+            ("NG_BETTER", lambda r: r["lights"]["SIDE"]["ng"].update(best_similarity=.96)),
+            ("MISSING_LIGHT", lambda r: r["lights"].pop("MID")),
+            ("NO_CONCLUSION", lambda r: r["lights"]["TOP"].update(status="NO_CONCLUSION")),
+            ("NG_CORROBORATED", lambda r: r.update(status="NG_CORROBORATED")),
+            ("CROSS_CATEGORY", lambda r: r["lights"]["MID"].update(cross_category_ng=True)),
+            ("FAKE_SCHEMA", lambda r: r.update(schema="unknown")),
+            ("NO_OK", lambda r: r["lights"]["MID"]["ok"].update(best_similarity=None)),
+        )
+        for name, mutation in variants:
+            with self.subTest(name=name):
+                r = report()
+                mutation(r)
+                self.assertIsNone(_three_light_ok_counterevidence(fused(), r, "FALTANDO"))
+
+    def test_genuine_physical_absence_and_valid_cnn_consensus_remain_ng(self):
+        originals = (
+            ("hard_missing_evidence", True),
+            ("physical_score", .8),
+            ("cnn_v2_consensus", "NG"),
+            ("cnn_v2_consensus_reason", "FULL_THREE_LIGHT_VOTES"),
+        )
+        for key, value in originals:
+            with self.subTest(key=key):
+                f = fused()
+                f["detail"][key] = value
+                self.assertIsNone(_three_light_ok_counterevidence(f, report(), "FALTANDO"))
+        f = fused()
+        f["detail"]["decision_trace"]["raw_hard_missing_evidence"] = True
+        self.assertIsNone(_three_light_ok_counterevidence(f, report(), "FALTANDO"))
+        for category in ("INVERTIDO", "EMBORCADO", "DESLOCADO", "MUITO ADESIVO"):
+            self.assertIsNone(_three_light_ok_counterevidence(fused(), report(), category))
+
+    def test_without_counterevidence_original_ng_preserved(self):
+        f = fused()
+        f["detail"]["knn_c_light_observer_votes"]["MID"]["vote_B"] = "NG"
+        with patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=report(),
+        ):
+            result = apply_knn_visual_corroboration(
+                f, {}, "FALTANDO", object(),
+            )
+        self.assertEqual(result["verdict"], "DEFEITO REAL")
+        self.assertIs(result["is_defect"], True)
+        self.assertNotIn("knn_ok_counterevidence", result["detail"])
+
+    def test_multilight_fusion_retains_distinct_per_light_c_votes_for_arbitration(self):
+        def local(light):
+            return {
+                "verdict": "DEFEITO REAL", "is_defect": True,
+                "confidence": .999, "lighting_mode": light,
+                "production_review_required": True,
+                "detail": {
+                    "recognition_route": "NEW_CNN",
+                    "cnn_v2_active": True, "cnn_v2_experimental": True,
+                    "cnn_v2_aoi_category": "FALTANDO",
+                    "cnn_v2_lighting_mode": light,
+                    "cnn_v2_status": "INFERENCE_OK",
+                    "cnn_v2_checkpoint_sha256": "c" * 64,
+                    "cnn_v2_checkpoint_verified": True,
+                    "cnn_v2_ng_score_uncalibrated": .999,
+                    "fusion_rule": "cnn_v2_dualscale_direct",
+                    "operator_review_required": True,
+                    "knn_c": raw_c(light),
+                    "decision_trace": {
+                        "fusion_rule": "cnn_v2_dualscale_direct",
+                        "operator_review_required": True,
+                    },
+                }
+            }
+        raw = {light: local(light) for light in LIGHTS}
+        baseline = deepcopy(raw)
+        f = fuse_multilight(raw, "FALTANDO")
+        self.assertEqual(
+            set(f["detail"]["knn_c_light_observer_votes"]), set(LIGHTS),
+        )
+        self.assertEqual(
+            f["detail"]["knn_c_light_observer_votes"]["SIDE"]["vote_A"], "OK",
+        )
+        self.assertEqual(raw, baseline)
+
+
+if __name__ == "__main__":
+    unittest.main()

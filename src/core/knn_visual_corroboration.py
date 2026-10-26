@@ -462,6 +462,110 @@ def trusted_three_light_ng_recall(detail: dict) -> bool:
     )
 
 
+def _three_light_ok_counterevidence(fused: dict, report: dict,
+                                    category: str) -> dict | None:
+    """Three KNN lights support *review*, never automatic OK.
+
+    A/B votes from KNN C are approximate diagnostics. The independent
+    signature search must also prefer OK to NG in all three lights; the
+    uncalibrated CNN cannot erase this uncertainty by a high NG score.
+    """
+    if canonical_memory_category(category) != "FALTANDO":
+        return None
+    detail = fused.get("detail")
+    if not isinstance(detail, dict) or not (
+        fused.get("multilight_final") is True
+        and fused.get("verdict") == "DEFEITO REAL"
+        and fused.get("is_defect") is True
+        and detail.get("recognition_route") == "NEW_CNN"
+        and detail.get("cnn_v2_consensus") == "REVIEW"
+        and detail.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
+        and set(detail.get("multilight_strong_positive_modes") or ()) == set(LIGHTS)
+        and detail.get("multilight_physical_disagreement") is not True
+        and detail.get("multilight_missing_verified_presence") is not True
+        and detail.get("hard_missing_evidence") is not True
+        and fused.get("hard_missing_evidence") is not True
+    ):
+        return None
+    trace = detail.get("decision_trace")
+    if isinstance(trace, dict) and (
+        trace.get("hard_missing_evidence") is True
+        or trace.get("raw_hard_missing_evidence") is True
+    ):
+        return None
+    try:
+        physical_score = float(detail.get("physical_score", 0))
+    except (ValueError, TypeError):
+        return None
+    if not math.isfinite(physical_score) or physical_score != 0:
+        return None
+    physical = detail.get("physical_missing_veto")
+    if isinstance(physical, dict) and physical.get("status") in {
+        "SUSPECT_ABSENCE", "NG_CORROBORATED",
+    }:
+        return None
+    observations = detail.get("knn_c_light_observer_votes")
+    if not isinstance(observations, dict) or set(observations) != set(LIGHTS):
+        return None
+    if not all(
+        isinstance(observations[light], dict)
+        and observations[light].get("schema") == "visionx.knn_c_live_review_gated.v1"
+        and observations[light].get("bank_status") == "READY"
+        and observations[light].get("status") == "REVISAO"
+        and observations[light].get("diagnostic_only") is True
+        and observations[light].get("auto_decision_authorized") is False
+        and observations[light].get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+        and observations[light].get("vote_A") == "OK"
+        and observations[light].get("vote_B") == "OK"
+        and observations[light].get("suggestion_A") == "REVISAO"
+        and observations[light].get("suggestion_B") == "REVISAO"
+        for light in LIGHTS
+    ):
+        return None
+    if (not isinstance(report, dict)
+            or report.get("schema") != SCHEMA
+            or report.get("status") != "CONFLICT"):
+        return None
+    lights = report.get("lights")
+    if not isinstance(lights, dict) or set(lights) != set(LIGHTS):
+        return None
+    points = {}
+    for light in LIGHTS:
+        evidence = lights[light]
+        if (not isinstance(evidence, dict)
+                or evidence.get("status") != "CONFLICT"
+                or evidence.get("cross_category_ng") is not False
+                or not isinstance(evidence.get("ok"), dict)
+                or not isinstance(evidence.get("ng"), dict)):
+            return None
+        try:
+            ok = float(evidence["ok"]["best_similarity"])
+            ng = float(evidence["ng"]["best_similarity"])
+            margin = float(evidence["ng_margin_over_ok"])
+        except (TypeError, ValueError, KeyError):
+            return None
+        # O caso confirmado tem 0.951/0.951/0.954 de vizinhança OK.
+        # O limite é apenas um filtro de CONFLITO para revisão, não uma
+        # regra treinada para classificar peças como OK.
+        if (not all(map(math.isfinite, (ok, ng, margin)))
+                or ok < .95 or ng >= ok
+                or margin >= 0 or abs((ng - ok) - margin) > .00001):
+            return None
+        points[light] = {
+            "best_ok_similarity": round(ok, 6),
+            "best_ng_similarity": round(ng, 6),
+            "ng_margin_over_ok": round(margin, 6),
+        }
+    return {
+        "schema": "visionx.knn_three_light_ok_counterevidence_review.v1",
+        "status": "OPERATOR_REVIEW_KNN_OK_COUNTEREVIDENCE",
+        "no_exact_pair_claim": True,
+        "automatic_ok_authorized": False,
+        "xp_command_authorized": False,
+        "lights": points,
+    }
+
+
 def apply_knn_visual_corroboration(
     fused: dict | None, samples: dict | None, category: str, knn,
 ) -> dict | None:
@@ -481,6 +585,40 @@ def apply_knn_visual_corroboration(
         return fused
     report = evaluate_knn_visual_corroboration(samples, category, knn)
     detail["knn_visual_corroboration"] = report
+    # Dar voz à KNN quando o consenso CNN é inválido, sem converter
+    # proximidade visual em OK confirmado ou conceder comando 0.
+    ok_counterevidence = _three_light_ok_counterevidence(
+        fused, report, category,
+    )
+    if ok_counterevidence is not None:
+        detail["knn_ok_counterevidence"] = ok_counterevidence
+        detail["cnn_ng_verdict_before_knn_review"] = fused["verdict"]
+        fused["verdict"] = "REVISÃO OBRIGATÓRIA"
+        fused["is_defect"] = False
+        fused["production_review_required"] = True
+        fused["eligible_for_final_decision"] = False
+        fused["confidence"] = .5
+        fused["reason"] = (
+            "CNN FALTANDO NG sem corroboração física: SIDE/TOP/MID "
+            "apresentam divergência KNN, com os dois votos KNN C "
+            "apontando OK (ainda em REVISAO) e vizinhos OK mais "
+            "próximos do que NG nas três luzes. É contraprova visual "
+            "para REVISÃO OBRIGATÓRIA, não prova de par exato nem "
+            "autorização de OK ou de comando XP automático."
+        )
+        detail["fusion_rule"] = "knn_three_light_ok_counterevidence_review_v1"
+        detail["operator_review_required"] = True
+        detail["eligible_for_final_decision"] = False
+        detail["cnn_v2_supervised_auto_eligible"] = False
+        detail["final_score"] = .5
+        trace = detail.get("decision_trace")
+        if isinstance(trace, dict):
+            trace["verdict"] = "REVISÃO OBRIGATÓRIA"
+            trace["operator_review_required"] = True
+            trace["physical_defect"] = False
+            trace["fusion_rule"] = detail["fusion_rule"]
+            trace["final_score"] = .5
+        return fused
     memory_recall = trusted_three_light_ng_recall(detail)
     if memory_recall:
         # Três iluminações com NG visual extremamente próximo e separado
