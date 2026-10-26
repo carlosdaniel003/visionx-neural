@@ -24,9 +24,13 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2, MODEL_SCHEMA_V2
+from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2, LIGHTS, MODEL_SCHEMA_V2
+from src.core.neural.faltando_live import (
+    PINNED_CHECKPOINT_SHA256, PINNED_RELATIVE_CHECKPOINT,
+)
+from src.scripts.deploy_faltando_97p70_trial import _read_trial_pointer
 from src.scripts.train_faltando_cnn_v2_online import (
-    PairDataset, _assess, _base_model, _supervised_loss,
+    PairDataset, _assess, _supervised_loss,
 )
 from src.services.aoi_universal_quality_archive import (
     split_universal_events, universal_archive_events,
@@ -34,6 +38,49 @@ from src.services.aoi_universal_quality_archive import (
 
 SCHEMA = "visionx.aoi_general_quality_offline_candidate.v1"
 REPORT_SCHEMA = "visionx.aoi_general_quality_experiment_report.v1"
+
+
+def _trial_readonly_snapshot(root: Path, *, opt_in: bool) -> str | None:
+    """Audit a known trial pointer without ever using it for optimization.
+
+    The existing trial validator checks schema, authorized manual-review
+    restrictions and SHA-256 of its referenced checkpoint. Unknown online
+    pointers stay blocked. The fingerprint is checked again before saving.
+    """
+    pointer = root / "reports/neural_online/live_active.json"
+    if not pointer.exists() and not pointer.is_symlink():
+        if opt_in:
+            raise ValueError("Nenhum ponteiro de ensaio ativo para auditar")
+        return None
+    if not opt_in:
+        raise ValueError(
+            "Ponteiro online ativo: usar "
+            "--allow-verified-trial-pointer-readonly somente para o ensaio "
+            "97,70% já validado, com ODIN fechado; nunca apagar o ponteiro"
+        )
+    _read_trial_pointer(root)
+    return sha256(pointer.read_bytes()).hexdigest()
+
+
+def _pinned_initialization(root: Path) -> tuple[Path, dict, str]:
+    """Read ONLY the SHA-pinned original, not live_active.json or a candidate."""
+    path = root / PINNED_RELATIVE_CHECKPOINT
+    origin = path.resolve()
+    expected_parent = (root / "reports/faltando_neural/models").resolve()
+    if (path.is_symlink() or not origin.is_file()
+            or not origin.is_relative_to(expected_parent)):
+        raise ValueError("Checkpoint fixado ausente ou fora do diretório de modelos")
+    digest = sha256(origin.read_bytes()).hexdigest()
+    if digest != PINNED_CHECKPOINT_SHA256:
+        raise ValueError("Checkpoint fixado alterado: SHA-256 incorreto")
+    checkpoint = torch.load(origin, map_location="cpu", weights_only=True)
+    if (not isinstance(checkpoint, dict)
+            or checkpoint.get("schema") != MODEL_SCHEMA_V2
+            or checkpoint.get("experimental") is not True
+            or checkpoint.get("production_approved") is not False
+            or tuple(checkpoint.get("lights", ())) != LIGHTS):
+        raise ValueError("Checkpoint fixado incompatível")
+    return origin, checkpoint, digest
 
 
 def _metrics(rows: list[dict], assessment: dict) -> dict:
@@ -112,6 +159,7 @@ def train_general_quality(
     test_fraction: float = .20, image_size: int = 128,
     allow_provisional_archive_labels: bool = False,
     initialize_from_pinned_champion: bool = False,
+    allow_verified_trial_pointer_readonly: bool = False,
 ) -> dict:
     """Offline candidate only; never reports training_ready or approval."""
     if not allow_provisional_archive_labels:
@@ -127,8 +175,9 @@ def train_general_quality(
             or not 64 <= image_size <= 256):
         raise ValueError("Hiperparâmetros inválidos")
     root = Path(root).resolve()
-    if (root/"reports/neural_online/live_active.json").exists():
-        raise ValueError("Ponteiro online ativo: exige auditoria antes do experimento")
+    trial_pointer_digest = _trial_readonly_snapshot(
+        root, opt_in=allow_verified_trial_pointer_readonly,
+    )
     manifest = Path(manifest)
     manifest = manifest if manifest.is_absolute() else root/manifest
     manifest = manifest.resolve()
@@ -151,11 +200,8 @@ def train_general_quality(
     model = FaltandoCNNV2()
     source_base_sha = None
     if initialize_from_pinned_champion:
-        base_path, base = _base_model(root)
-        if base.get("schema") != MODEL_SCHEMA_V2:
-            raise ValueError("Modelo de inicialização incompatível")
+        _, base, source_base_sha = _pinned_initialization(root)
         model.load_state_dict(base["state_dict"], strict=True)
-        source_base_sha = sha256(base_path.read_bytes()).hexdigest()
 
     # Inverse sqrt of class×AOI-category support, bounded against amplification
     # of extremely rare two-NG categories.
@@ -250,6 +296,15 @@ def train_general_quality(
         "all_labels_individually_verified": False,
         "baseline_other_defects_replay_qualified": False,
     }
+    # Re-check even after CPU training: fail closed if the active trial changed.
+    if _trial_readonly_snapshot(
+        root, opt_in=allow_verified_trial_pointer_readonly,
+    ) != trial_pointer_digest:
+        raise ValueError("Ponteiro de ensaio mudou durante o treinamento")
+    if initialize_from_pinned_champion:
+        _, _, current_base_sha = _pinned_initialization(root)
+        if current_base_sha != source_base_sha:
+            raise ValueError("Checkpoint original mudou durante o treinamento")
     stamp = datetime.now(timezone.utc)
     out = root/"reports/aoi_universal_quality/experiments"/(
         stamp.strftime("%Y%m%dT%H%M%S_%fZ") + "_" + uuid4().hex[:6]
@@ -273,6 +328,7 @@ def train_general_quality(
         "candidate_only": True,
         "source_manifest_sha256": provenance["manifest_sha256"],
         "source_champion_sha256": source_base_sha,
+        "active_trial_pointer_sha256_readonly": trial_pointer_digest,
         "selected_epoch": best_epoch,
     }, candidate)
     report = {
@@ -289,6 +345,8 @@ def train_general_quality(
         "new_cross_category_production_regression_qualified": False,
         "old_faltando_holdout_may_overlap": True,
         "source_champion_sha256": source_base_sha,
+        "active_trial_pointer_sha256_readonly": trial_pointer_digest,
+        "active_checkpoint_used_for_training": False,
         "provenance": provenance, "split": split,
         "seed": seed, "epochs": epochs, "learning_rate": learning_rate,
         "image_size": image_size, "selected_epoch": best_epoch,
@@ -338,6 +396,8 @@ def main(argv=None) -> int:
     parser.add_argument("--image-size", type=int, default=128)
     parser.add_argument("--allow-provisional-archive-labels", action="store_true")
     parser.add_argument("--initialize-from-pinned-champion", action="store_true")
+    parser.add_argument("--allow-verified-trial-pointer-readonly", action="store_true",
+                        help="Audita ensaio 97,70%% conhecido sem modificar ponteiro")
     args = parser.parse_args(argv)
     train_general_quality(
         args.root, args.manifest, epochs=args.epochs, seed=args.seed,
@@ -345,6 +405,7 @@ def main(argv=None) -> int:
         test_fraction=args.test, image_size=args.image_size,
         allow_provisional_archive_labels=args.allow_provisional_archive_labels,
         initialize_from_pinned_champion=args.initialize_from_pinned_champion,
+        allow_verified_trial_pointer_readonly=args.allow_verified_trial_pointer_readonly,
     )
     return 0
 

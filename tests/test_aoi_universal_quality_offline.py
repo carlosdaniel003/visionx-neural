@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -17,7 +18,8 @@ from src.services.aoi_universal_quality_archive import (
     split_universal_events, universal_archive_events,
 )
 from src.scripts.train_aoi_universal_quality_offline import (
-    SCHEMA, _metrics, _selection_key, train_general_quality,
+    SCHEMA, _metrics, _selection_key, _trial_readonly_snapshot,
+    _pinned_initialization, train_general_quality,
 )
 from tests.test_faltando_neural_dataset import FakeMonitor
 
@@ -177,6 +179,76 @@ class UniversalQualityOfflineTests(unittest.TestCase):
         self.assertFalse(
             (self.root/"reports/neural_online/live_active.json").exists()
         )
+
+    def test_online_pointer_blocks_by_default_without_modification(self):
+        pointer = self.root/"reports/neural_online/live_active.json"
+        pointer.parent.mkdir(parents=True, exist_ok=True)
+        pointer.write_text('{"schema":"unknown"}', encoding="utf-8")
+        before = pointer.read_bytes()
+        with self.assertRaisesRegex(ValueError, "Ponteiro online ativo"):
+            train_general_quality(
+                self.root, self.manifest, epochs=1,
+                allow_provisional_archive_labels=True,
+                initialize_from_pinned_champion=True,
+            )
+        self.assertEqual(pointer.read_bytes(), before)
+
+    def test_readonly_override_rejects_untrusted_pointer(self):
+        pointer = self.root/"reports/neural_online/live_active.json"
+        pointer.parent.mkdir(parents=True, exist_ok=True)
+        pointer.write_text('{"schema":"untrusted"}', encoding="utf-8")
+        before = pointer.read_bytes()
+        with self.assertRaisesRegex(ValueError, "outra implantação"):
+            train_general_quality(
+                self.root, self.manifest, epochs=1,
+                allow_provisional_archive_labels=True,
+                allow_verified_trial_pointer_readonly=True,
+                initialize_from_pinned_champion=True,
+            )
+        self.assertEqual(pointer.read_bytes(), before)
+
+    def test_audited_trial_snapshot_is_readonly_and_tracks_change(self):
+        pointer = self.root/"reports/neural_online/live_active.json"
+        pointer.parent.mkdir(parents=True, exist_ok=True)
+        pointer.write_text('{"schema":"trial"}', encoding="utf-8")
+        before = pointer.read_bytes()
+        with patch(
+            "src.scripts.train_aoi_universal_quality_offline._read_trial_pointer",
+            return_value={"validated": True},
+        ) as audited:
+            stamp = _trial_readonly_snapshot(self.root, opt_in=True)
+            self.assertEqual(stamp, sha256(before).hexdigest())
+            self.assertEqual(pointer.read_bytes(), before)
+            pointer.write_text('{"schema":"trial","changed":true}', encoding="utf-8")
+            self.assertNotEqual(
+                _trial_readonly_snapshot(self.root, opt_in=True), stamp,
+            )
+        self.assertEqual(audited.call_count, 2)
+
+    def test_initialization_uses_original_pinned_file_not_active_pointer(self):
+        from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2, LIGHTS, MODEL_SCHEMA_V2
+        from src.core.neural.faltando_live import PINNED_RELATIVE_CHECKPOINT
+        original = self.root/PINNED_RELATIVE_CHECKPOINT
+        original.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({
+            "schema": MODEL_SCHEMA_V2, "experimental": True,
+            "production_approved": False, "lights": LIGHTS,
+            "state_dict": FaltandoCNNV2().state_dict(),
+        }, original)
+        digest = sha256(original.read_bytes()).hexdigest()
+        pointer = self.root/"reports/neural_online/live_active.json"
+        pointer.parent.mkdir(parents=True, exist_ok=True)
+        pointer.write_text('{"schema":"active-different-weight"}', encoding="utf-8")
+        previous = pointer.read_bytes()
+        with patch(
+            "src.scripts.train_aoi_universal_quality_offline.PINNED_CHECKPOINT_SHA256",
+            digest,
+        ):
+            path, model, actual = _pinned_initialization(self.root)
+        self.assertEqual(path, original)
+        self.assertEqual(actual, digest)
+        self.assertEqual(model["schema"], MODEL_SCHEMA_V2)
+        self.assertEqual(pointer.read_bytes(), previous)
 
     def test_category_metrics_do_not_infer_unknown_ng_recall(self):
         records = [

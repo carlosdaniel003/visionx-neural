@@ -1,3 +1,34 @@
+### 26/10/2026 — candidato offline com ponteiro do ensaio 97,70% presente
+
+Um `reports/neural_online/live_active.json` válido é parte do estado da CNN de
+ensaio e **não pode ser apagado, movido ou renomeado** para treinar. Para
+permitir um experimento universal **somente offline**, o treinador recebeu
+`--allow-verified-trial-pointer-readonly`: essa opção só aceita o ponteiro
+do ensaio **97,70% com restrição de revisão humana** quando o contrato
+exato e os hashes do checkpoint forem aprovados pelo mesmo verificador
+do instalador. Ponteiros de outras implantações ou com SHA divergente
+continuam BLOQUEADOS. Não muda produção.
+
+`--initialize-from-pinned-champion` agora carrega somente o checkpoint
+original fixado por `PINNED_RELATIVE_CHECKPOINT` e
+`PINNED_CHECKPOINT_SHA256` — **nunca** usa implicitamente o checkpoint
+referenciado por `live_active.json`. Os SHA-256 do ponteiro e do original
+são revalidados antes de salvar o candidato, e a saída registra a
+procedência `active_trial_pointer_sha256_readonly` e
+`active_checkpoint_used_for_training=false`.
+
+Com ODIN e XP encerrados para manutenção:
+
+```powershell
+python -m src.scripts.deploy_faltando_97p70_trial status --root .
+python -m src.scripts.train_aoi_universal_quality_offline --root . --manifest "reports/faltando_neural/run_20261016T154441_358349Z/manifest.json" --epochs 5 --seed 42 --allow-provisional-archive-labels --initialize-from-pinned-champion --allow-verified-trial-pointer-readonly
+```
+
+O ensaio NÃO treina os pesos ativos, não envia comandos ao XP, não edita o
+acervo e mantém o checkpoint de saída incompatível com o carregador produtivo.
+O estudo ainda usa parte do acervo não confirmado pelo operador e NÃO
+comprova segurança para liberar NG automaticamente.
+
 ## 16/10/2026 — Correção de instalação da CNN 97,70%: 117 luzes ≠ 117 eventos
 
 Ao executar `src.scripts.deploy_faltando_97p70_trial install`, o instalador
