@@ -159,20 +159,20 @@ class SecondRepairGatesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             rows = []
-            for i, value in enumerate((50, 50, 180)):
+            for i, value in enumerate((50, 50, 180, 220)):
                 r, t = root / f"ref{i}.png", root / f"test{i}.png"
                 r.write_bytes(_png(value))
                 t.write_bytes(_png(value))
                 rows.append({
-                    "id": f"case{i}", "label": "NG" if i < 2 else "OK",
+                    "id": f"case{i}", "label": "NG" if i in (0, 1, 3) else "OK",
                     "split_group": f"AOI_MINUTE:2026-10-26_09{i:02d}",
                     "views": {"SIDE": {"reference": r, "test": t}},
                 })
             kept, removed = _avoid_visual_replay_in_validation(
-                [rows[1], rows[2]], [rows[0]],
+                [rows[1], rows[2], rows[3]], [rows[0]],
             )
             self.assertEqual(removed, 1)
-            self.assertEqual([x["id"] for x in kept], ["case2"])
+            self.assertEqual([x["id"] for x in kept], ["case2", "case3"])
             # Actual training veto requires both labels in remaining holdout;
             # this helper only removes visually related candidates.
 
