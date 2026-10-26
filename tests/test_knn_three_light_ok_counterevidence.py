@@ -183,6 +183,106 @@ class KNNOKCounterevidenceTests(unittest.TestCase):
         self.assertIs(result["is_defect"], True)
         self.assertNotIn("knn_ok_counterevidence", result["detail"])
 
+    def test_operator_confirmed_known_ok_appears_as_false_failure_not_auto(self):
+        # Caso real 26/10 14:56:58; SHA vem da memória OK da estação.
+        pin = (
+            "public/ok_archive/2026-10-21_1412_FALTANDO.png",
+            "c9dec1d85617aa074e71b8b3640cace88f3a23c123185f7be84d6c06e2946bd9",
+        )
+        f = fused()
+        f["detail"]["knn_c_light_neighbor_evidence"] = {
+            light: {"neighbors_A": [], "neighbors_B": []}
+            for light in LIGHTS
+        }
+        f["detail"]["knn_c_light_neighbor_evidence"]["SIDE"] = {
+            "neighbors_A": [
+                {"path": pin[0], "source_pixel_sha256": pin[1],
+                 "label": "OK", "similarity": .99325113},
+                {"path": "public/ng_archive/ng.png", "label": "NG",
+                 "source_pixel_sha256": "b" * 64, "similarity": .85977105},
+            ],
+            "neighbors_B": [
+                {"path": pin[0], "source_pixel_sha256": pin[1],
+                 "label": "OK", "similarity": .97756581},
+                {"path": "public/ng_archive/ng.png", "label": "NG",
+                 "source_pixel_sha256": "b" * 64, "similarity": .82187452},
+            ],
+        }
+        self.assertEqual(f["verdict"], "DEFEITO REAL")
+        modified_report = report()
+        modified_report["lights"]["SIDE"] = {
+            "status": "CONFLICT", "cross_category_ng": False,
+            "ng_margin_over_ok": -.045818,
+            "ok": {"best_similarity": .995819},
+            "ng": {"best_similarity": .950001},
+        }
+        with patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=modified_report,
+        ):
+            result = apply_knn_visual_corroboration(f, {}, "FALTANDO", object())
+        self.assertEqual(result["verdict"], "FALHA FALSA")
+        self.assertIs(result["is_defect"], False)
+        self.assertTrue(result["production_review_required"])
+        self.assertFalse(result["eligible_for_final_decision"])
+        self.assertEqual(
+            result["detail"]["recognized_recurrent_ok"]["source_pixel_sha256"],
+            pin[1],
+        )
+        self.assertEqual(
+            result["detail"]["fusion_rule"],
+            "operator_confirmed_recurrent_ok_three_light_review_v1",
+        )
+        policy = production_decision_policy(result)
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "")
+
+        # Fonte OK falsificada ou muito menos semelhante não ganha status OK.
+        for name, changes in (
+            ("untrusted_sha", {"neighbors_A": {"source_pixel_sha256": "d" * 64}}),
+            ("low_A", {"neighbors_A": {"similarity": .9899}}),
+            ("low_B", {"neighbors_B": {"similarity": .9749}}),
+            ("ng_near", {"ng": {"similarity": .900001}}),
+        ):
+            with self.subTest(name=name):
+                other = fused()
+                other["detail"]["knn_c_light_neighbor_evidence"] = deepcopy(
+                    f["detail"]["knn_c_light_neighbor_evidence"]
+                )
+                side = other["detail"]["knn_c_light_neighbor_evidence"]["SIDE"]
+                if "ng" in changes:
+                    side["neighbors_A"][1].update(changes["ng"])
+                else:
+                    key = next(iter(changes))
+                    side[key][0].update(changes[key])
+                with patch(
+                    "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+                    return_value=modified_report,
+                ):
+                    downgraded = apply_knn_visual_corroboration(
+                        other, {}, "FALTANDO", object(),
+                    )
+                self.assertEqual(downgraded["verdict"], "REVISÃO OBRIGATÓRIA")
+                self.assertNotIn("recognized_recurrent_ok", downgraded["detail"])
+                self.assertFalse(production_decision_policy(downgraded)["auto_allowed"])
+
+        # Mesmo modelo reconhecido não atravessa veto físico.
+        stronger = fused()
+        stronger["detail"]["physical_score"] = .75
+        stronger["detail"]["knn_c_light_neighbor_evidence"] = deepcopy(
+            f["detail"]["knn_c_light_neighbor_evidence"]
+        )
+        with patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=modified_report,
+        ):
+            blocked = apply_knn_visual_corroboration(
+                stronger, {}, "FALTANDO", object(),
+            )
+        self.assertEqual(blocked["verdict"], "DEFEITO REAL")
+
     def test_multilight_fusion_retains_distinct_per_light_c_votes_for_arbitration(self):
         def local(light):
             return {

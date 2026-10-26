@@ -612,6 +612,14 @@ def fuse_multilight(
                 )
             }
     detail["knn_c_light_observer_votes"] = knn_c_light_observer_votes
+    detail["knn_c_light_neighbor_evidence"] = {
+        light: {
+            key: deepcopy(_detail(source[light]).get("knn_c", {}).get(key))
+            for key in ("neighbors_A", "neighbors_B")
+        }
+        for light in LIGHTING_ORDER
+        if isinstance(_detail(source[light]).get("knn_c"), dict)
+    }
 
     # Verifica TODAS as luzes e a identidade do checkpoint. A fusão
     # pode ter herdado metadados somente da luz dominante, insuficientes

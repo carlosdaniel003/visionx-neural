@@ -117,6 +117,43 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "operator_shortcuts": {"0": "OK", "1": "NG"},
         }
     if trial_used:
+        # Uma referência OK de captura recorrente pode recuperar a
+        # CLASSIFICAÇÃO do operador na interface, mas nunca transmitir 0.
+        # Validar novamente a identidade da fonte e as evidências brutas;
+        # o flag calculado pela fusão não basta para liberar a placa.
+        from src.core.knn_visual_corroboration import _recognized_recurrent_ok
+        recalled = detail.get("recognized_recurrent_ok")
+        counterevidence = detail.get("knn_ok_counterevidence")
+        trace = detail.get("decision_trace")
+        verified_recall = _recognized_recurrent_ok(detail, counterevidence)
+        if (
+            verdict == "FALHA FALSA"
+            and isinstance(recalled, dict)
+            and verified_recall is not None
+            and recalled == verified_recall
+            and detail.get("fusion_rule")
+            == "operator_confirmed_recurrent_ok_three_light_review_v1"
+            and detail.get("operator_review_required") is True
+            and isinstance(analysis, dict)
+            and analysis.get("production_review_required") is True
+            and analysis.get("eligible_for_final_decision") is False
+            and isinstance(trace, dict)
+            and trace.get("operator_review_required") is True
+            and trace.get("verdict") == "FALHA FALSA"
+            and detail.get("physical_score") == 0.0
+            and detail.get("cnn_v2_consensus") == "REVIEW"
+        ):
+            return {
+                "mode": "production",
+                "confidence": confidence,
+                "threshold": None,
+                "verdict": "FALHA FALSA",
+                "auto_allowed": False,
+                "operator_review_required": True,
+                "proposed_decision": "",
+                "reason": "operator_confirmed_recurring_ok_requires_operator",
+                "operator_shortcuts": {"0": "OK", "1": "NG"},
+            }
         return {
             "mode": "production", "confidence": confidence, "threshold": None,
             "verdict": verdict if verdict == "DEFEITO REAL"

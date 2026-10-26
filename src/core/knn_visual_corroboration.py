@@ -566,6 +566,92 @@ def _three_light_ok_counterevidence(fused: dict, report: dict,
     }
 
 
+# Fontes físicas OK especificamente confirmadas por um operador.
+# 26/10/2026: mesmo componente recorrente, arquivo citado no evento
+# c69b71764ba34ab6add7be8fde7a5dae. A pasta OK isolada não autoriza
+# classificação: conferir SHA dos pixels e evidência multilight.
+OPERATOR_VERIFIED_RECURRENT_OK_ANCHORS = {
+    (
+        "public/ok_archive/2026-10-21_1412_FALTANDO.png",
+        "c9dec1d85617aa074e71b8b3640cace88f3a23c123185f7be84d6c06e2946bd9",
+    ),
+}
+
+
+def _recognized_recurrent_ok(
+    detail: dict, counterevidence: dict,
+) -> dict | None:
+    """Reconhece um padrão OK do operador, nunca valida OK automático.
+
+    A semelhança é apenas aproximada; por isso requer confirmação
+    humana até que a segurança com NG inéditos seja demonstrada.
+    """
+    if (
+        not isinstance(counterevidence, dict)
+        or counterevidence.get("status")
+        != "OPERATOR_REVIEW_KNN_OK_COUNTEREVIDENCE"
+        or counterevidence.get("automatic_ok_authorized") is not False
+        or counterevidence.get("xp_command_authorized") is not False
+    ):
+        return None
+    observations = detail.get("knn_c_light_observer_votes")
+    side = observations.get("SIDE") if isinstance(observations, dict) else None
+    if not isinstance(side, dict):
+        return None
+    original = detail.get("knn_c")
+    # O registro herdado vem do MID, não da SIDE; para reconhecer memória
+    # de captura original precisamos preservar vizinhos da SIDE na fusão.
+    all_lights = detail.get("knn_c_light_neighbor_evidence")
+    if not isinstance(all_lights, dict):
+        return None
+    side_neighbors = all_lights.get("SIDE")
+    if not isinstance(side_neighbors, dict):
+        return None
+    winners = []
+    for label, minimum in (("neighbors_A", .99), ("neighbors_B", .975)):
+        group = side_neighbors.get(label)
+        if not isinstance(group, list) or not group:
+            return None
+        head = group[0]
+        if not isinstance(head, dict) or head.get("label") != "OK":
+            return None
+        try:
+            sim = float(head["similarity"])
+        except (TypeError, ValueError, KeyError):
+            return None
+        if not math.isfinite(sim) or sim < minimum or sim > 1:
+            return None
+        identity = (head.get("path"), head.get("source_pixel_sha256"))
+        if identity not in OPERATOR_VERIFIED_RECURRENT_OK_ANCHORS:
+            return None
+        # Não esconder um NG visual quase tão próximo.
+        ng_near = []
+        for other in group:
+            if isinstance(other, dict) and other.get("label") == "NG":
+                try:
+                    ng_sim = float(other.get("similarity"))
+                except (TypeError, ValueError):
+                    return None
+                if not math.isfinite(ng_sim):
+                    return None
+                ng_near.append(ng_sim)
+        if not ng_near or max(ng_near) >= .90:
+            return None
+        winners.append({"method": label, "similarity": round(sim, 8)})
+    return {
+        "schema": "visionx.operator_confirmed_recurrent_ok.v1",
+        "status": "OK_RECURRENT_OPERATOR_REFERENCE",
+        "source_path": side_neighbors["neighbors_A"][0]["path"],
+        "source_pixel_sha256": side_neighbors["neighbors_A"][0]["source_pixel_sha256"],
+        "visual_support": winners,
+        "three_light_counterevidence": True,
+        "approximate_match_not_exact": True,
+        "operator_review_required": True,
+        "automatic_ok_authorized": False,
+        "xp_command_authorized": False,
+    }
+
+
 def apply_knn_visual_corroboration(
     fused: dict | None, samples: dict | None, category: str, knn,
 ) -> dict | None:
@@ -593,27 +679,46 @@ def apply_knn_visual_corroboration(
     if ok_counterevidence is not None:
         detail["knn_ok_counterevidence"] = ok_counterevidence
         detail["cnn_ng_verdict_before_knn_review"] = fused["verdict"]
-        fused["verdict"] = "REVISÃO OBRIGATÓRIA"
+        known_ok = _recognized_recurrent_ok(detail, ok_counterevidence)
+        if known_ok is not None:
+            detail["recognized_recurrent_ok"] = known_ok
+        fused["verdict"] = (
+            "FALHA FALSA" if known_ok is not None
+            else "REVISÃO OBRIGATÓRIA"
+        )
         fused["is_defect"] = False
         fused["production_review_required"] = True
         fused["eligible_for_final_decision"] = False
         fused["confidence"] = .5
         fused["reason"] = (
-            "CNN FALTANDO NG sem corroboração física: SIDE/TOP/MID "
-            "apresentam divergência KNN, com os dois votos KNN C "
-            "apontando OK (ainda em REVISAO) e vizinhos OK mais "
-            "próximos do que NG nas três luzes. É contraprova visual "
-            "para REVISÃO OBRIGATÓRIA, não prova de par exato nem "
-            "autorização de OK ou de comando XP automático."
+            (
+                "FALHA FALSA • OK RECORRENTE: referência do operador "
+                "recuperada por SHA nas KNN A/B SIDE com semelhança "
+                "muito alta e NG afastados; TOP/MID também favorecem "
+                "OK, CNN sem evidência física independente. "
+                "Reconhecimento aproximado, SEM autorização automática "
+                "de comando XP: confirmar com o operador."
+            ) if known_ok is not None else (
+                "CNN FALTANDO NG sem corroboração física: SIDE/TOP/MID "
+                "apresentam divergência KNN, com os dois votos KNN C "
+                "apontando OK (ainda em REVISAO) e vizinhos OK mais "
+                "próximos do que NG nas três luzes. É contraprova visual "
+                "para REVISÃO OBRIGATÓRIA, não prova de par exato nem "
+                "autorização de OK ou de comando XP automático."
+            )
         )
-        detail["fusion_rule"] = "knn_three_light_ok_counterevidence_review_v1"
+        detail["fusion_rule"] = (
+            "operator_confirmed_recurrent_ok_three_light_review_v1"
+            if known_ok is not None
+            else "knn_three_light_ok_counterevidence_review_v1"
+        )
         detail["operator_review_required"] = True
         detail["eligible_for_final_decision"] = False
         detail["cnn_v2_supervised_auto_eligible"] = False
         detail["final_score"] = .5
         trace = detail.get("decision_trace")
         if isinstance(trace, dict):
-            trace["verdict"] = "REVISÃO OBRIGATÓRIA"
+            trace["verdict"] = fused["verdict"]
             trace["operator_review_required"] = True
             trace["physical_defect"] = False
             trace["fusion_rule"] = detail["fusion_rule"]
