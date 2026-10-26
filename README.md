@@ -8,13 +8,15 @@ O comparador offline `knn_cnn_shadow_20261023_123909_221885.json` contém 953 PN
 
 ### Preparar uma lista auditável de exemplos difíceis e NG de proteção
 
+A auditoria agora considera **todas as categorias AOI efetivamente avaliadas pela CNN V2**, não apenas `FALTANDO`: a categoria AOI pode estar errada e serve exclusivamente para detalhar a origem de cada caso. Os exemplos fora do escopo da CNN não são contados como erros. As listas são **provisórias**, exigem revisão humana da qualidade real e do tipo físico antes de qualquer seleção para treinamento. Isso não amplia automaticamente o conjunto de treino específico FALTANDO nem autoriza a CNN a aprovar peças.
+
 Com o ODIN fechado ou sem atividade industrial, e após usar **TREINAMENTO → VALIDAÇÃO DO ACERVO → Comparar KNN + CNN (experimental)**:
 
 ```powershell
 python -m src.scripts.faltando_false_ng_recovery --report reports/startup_regression/knn_cnn_shadow_20261023_123909_221885.json --verify-files
 ```
 
-O nome acima é o do relatório real compartilhado pelo operador; use o arquivo `knn_cnn_shadow_*.json` correspondente, se estiver em outra sessão. O comando exige mesmo inventário e **verifica SHA de cada PNG atual**. Se o acervo mudou, execute o comparador novamente antes da auditoria (não use relatório obsoleto). Saída `reports/startup_regression/faltando_hard_ok_recovery_*.json/.txt`, com ordem **SIDE primeiro**, scores CNN, vizinhos KNN, 13 falsos NG SIDE do acervo e exemplos NG semelhantes aos OK usados como **contraprovas**. Ele **não treina** nem corrige veredito.
+O nome acima é o do relatório real compartilhado pelo operador; use o arquivo `knn_cnn_shadow_*.json` correspondente, se estiver em outra sessão. O comando exige mesmo inventário e **verifica SHA de cada PNG atual**. Se o acervo mudou, execute o comparador novamente antes da auditoria (não use relatório obsoleto). Saída `reports/startup_regression/faltando_hard_ok_recovery_*.json/.txt`, com ordem **SIDE primeiro**, scores CNN, vizinhos KNN, exemplos falsos NG SIDE de todas as categorias AOI analisadas pela CNN e exemplos NG semelhantes aos OK usados como **contraprovas**. Ele **não treina** nem corrige veredito.
 
 ### Gerar candidato CNN novo, só após revisão humana de pares AOI
 

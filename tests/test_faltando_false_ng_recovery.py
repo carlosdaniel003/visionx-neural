@@ -13,10 +13,11 @@ from src.scripts.train_faltando_cnn_v2_verified_archive import (
 )
 
 
-def row(path, label, cnn, light="SIDE", *, ok_neighbor=False):
+def row(path, label, cnn, light="SIDE", *, ok_neighbor=False,
+        category="FALTANDO"):
     return {
         "source_path": path, "source_file_sha256": "0"*64,
-        "expected_label": label, "category": "FALTANDO", "lighting": light,
+        "expected_label": label, "category": category, "lighting": light,
         "cnn": {"status": "PASSOU" if label == cnn else "ERRO_CLASSIFICACAO",
                 "label": cnn, "ng_score_uncalibrated": .99985,
                 "checkpoint_sha256":
@@ -98,6 +99,34 @@ class HardOKRecoveryTests(unittest.TestCase):
         self.assertFalse(res["candidate_checkpoint_generated"])
         self.assertTrue(res["provisional_labels_not_human_verified"])
         self.assertEqual(data, before)
+
+    def test_aoi_category_is_not_a_filter_or_a_physical_truth(self):
+        # A CNN V2 recebe várias categorias AOI, que podem estar incorretas.
+        cases = [
+            row("public/ok_archive/other.png", "OK", "NG",
+                category="DESLOCADO"),
+            row("public/ok_archive/unknown.png", "OK", "NG",
+                light="MID", category="UNKNOWN"),
+            row("public/ng_archive/guard.png", "NG", "NG",
+                category="INVERTIDO", ok_neighbor=True),
+            row("public/ok_archive/no_cnn.png", "OK", "NG",
+                category="FALTANDO"),
+        ]
+        cases[-1]["cnn"]["status"] = "FORA_ESCOPO"
+        result = recovery_plan(report(cases), self.root)
+        self.assertEqual(result["false_ng"]["count"], 2)
+        self.assertEqual(result["false_ng"]["by_light"], {"SIDE": 1, "MID": 1})
+        self.assertEqual(result["false_ng"]["by_aoi_category_hint"],
+                         {"DESLOCADO": 1, "UNKNOWN": 1})
+        self.assertEqual(result["false_ng"]["prioritized_cases"][0][
+            "aoi_category_hint"], "DESLOCADO")
+        self.assertEqual(result["protected_ng"]["count"], 1)
+        self.assertEqual(result["protected_ng"]["by_aoi_category_hint"],
+                         {"INVERTIDO": 1})
+        self.assertFalse(result["auto_ok_authorized"])
+        self.assertFalse(result["model_changed"])
+        self.assertFalse(result["training_run"])
+        self.assertIn("ALL_CNN_V2_EVALUATED", result["audit_scope"])
 
     def test_hash_check_refuses_stale_report_and_requires_present_pngs(self):
         path = self.root/"public/ok_archive/ok.png"

@@ -65,6 +65,8 @@ def recovery_plan(report: dict, root: Path, *, verify_files: bool = False) -> di
     seen = set()
     candidates, guards = [], []
     counts = Counter()
+    by_aoi_category = Counter()
+    protected_by_aoi_category = Counter()
     for row in rows:
         path = row.get("source_path")
         if path in seen:
@@ -90,8 +92,11 @@ def recovery_plan(report: dict, root: Path, *, verify_files: bool = False) -> di
             cnn["checkpoint_sha256"] != CHECKPOINT_PREFIX
         ):
             raise ValueError("Checkpoint diferente do modelo original em estudo")
-        if row.get("category") != "FALTANDO":
-            continue  # categoria apenas para COORTE de auditoria, nunca veredito
+        # A categoria AOI é somente pista, não gabarito do defeito físico.
+        # Auditar TODOS os registros efetivamente avaliados pela CNN V2.
+        if cnn.get("status") not in ("PASSOU", "ERRO_CLASSIFICACAO"):
+            continue
+        aoi_category_hint = str(row.get("category") or "UNKNOWN")
         light = row.get("lighting")
         if light not in ("SIDE", "TOP", "MID"):
             continue
@@ -108,6 +113,7 @@ def recovery_plan(report: dict, root: Path, *, verify_files: bool = False) -> di
                 "path": path, "source_file_sha256": digest,
                 "operator_review_required": True,
                 "provisional_archive_label": "OK",
+                "aoi_category_hint": aoi_category_hint,
                 "light": light,
                 "cnn_ng_score_uncalibrated": score,
                 "knn_selective_suggestion": data.get("suggested_label"),
@@ -120,6 +126,7 @@ def recovery_plan(report: dict, root: Path, *, verify_files: bool = False) -> di
                 "review_priority": "FIRST" if light == "SIDE" else "OTHER_LIGHT",
             })
             counts[light] += 1
+            by_aoi_category[aoi_category_hint] += 1
         if expected == "NG" and cnn.get("label") == "NG":
             ok_neighbors = [
                 v for v in neighbors if v.get("label") == "OK"
@@ -127,6 +134,7 @@ def recovery_plan(report: dict, root: Path, *, verify_files: bool = False) -> di
             guards.append({
                 "path": path, "source_file_sha256": digest,
                 "provisional_archive_label": "NG",
+                "aoi_category_hint": aoi_category_hint,
                 "light": light,
                 "cnn_ng_score_uncalibrated": score,
                 "max_ok_neighbor_similarity": max(
@@ -136,6 +144,7 @@ def recovery_plan(report: dict, root: Path, *, verify_files: bool = False) -> di
                 "hard_negative": bool(ok_neighbors),
                 "operator_review_required": True,
             })
+            protected_by_aoi_category[aoi_category_hint] += 1
     candidates.sort(key=lambda r: (
         r["light"] != "SIDE",
         -float(r["cnn_ng_score_uncalibrated"] or 0),
@@ -155,6 +164,7 @@ def recovery_plan(report: dict, root: Path, *, verify_files: bool = False) -> di
         "source_archive_png_count": len(rows),
         "source_checkpoint_sha256": CHECKPOINT_PREFIX,
         "source_files_verified": verify_files,
+        "audit_scope": "ALL_CNN_V2_EVALUATED_AOI_CATEGORY_HINT_UNTRUSTED",
         "training_run": False,
         "candidate_checkpoint_generated": False,
         "model_changed": False,
@@ -165,18 +175,21 @@ def recovery_plan(report: dict, root: Path, *, verify_files: bool = False) -> di
         "false_ng": {
             "count": len(candidates),
             "by_light": dict(counts),
+            "by_aoi_category_hint": dict(sorted(by_aoi_category.items())),
             "prioritized_cases": candidates,
         },
         "protected_ng": {
             "count": len(guards),
+            "by_aoi_category_hint": dict(sorted(protected_by_aoi_category.items())),
             "hard_negatives_with_ok_neighbors": sum(
                 x["hard_negative"] for x in guards),
             "prioritized_cases": guards,
         },
         "next_step": (
-            "Revisar manualmente pares AOI das duas listas, confirmar OK/NG "
-            "em qualification.json e executar treinamento balanceado "
-            "offline; não utilizar rótulos de pasta como prova humana."
+            "Revisar manualmente pares AOI de TODAS as categorias, pois a "
+            "categoria AOI é falível. Confirmar OK/NG e tipo físico observado "
+            "antes de selecionar exemplos elegíveis ao treinamento especializado; "
+            "não usar pasta/categoria como prova humana nem ativar produção."
         ),
     }
 
@@ -206,12 +219,14 @@ def main(argv=None) -> int:
         f"Arquivos originais SHA verificados: {ns.verify_files}",
         f"OK recusados pela CNN: {result['false_ng']['count']}",
         f"OK recusados por iluminação: {result['false_ng']['by_light']}",
+        f"OK recusados por categoria AOI (pista): {result['false_ng']['by_aoi_category_hint']}",
         f"NGs para proteger: {result['protected_ng']['count']}",
         f"NGs com vizinhos OK: {result['protected_ng']['hard_negatives_with_ok_neighbors']}",
         "",
         "REVISÃO PRIORITÁRIA — FALHAS FALSAS CNN NG",
         *[
-            f"{item['light']} | CNN NG={item['cnn_ng_score_uncalibrated']} "
+            f"{item['light']} | AOI={item['aoi_category_hint']} "
+            f"| CNN NG={item['cnn_ng_score_uncalibrated']} "
             f"| KNN={item['knn_selective_suggestion']} | {item['path']}"
             for item in result["false_ng"]["prioritized_cases"]
         ],
