@@ -16,7 +16,7 @@ from src.services.odin_operator_confirmed_labels import (
 
 class FakeStore:
     def __init__(self, root, labels, *, missing_one=False, incompatible=False):
-        self.root = root
+        self.root = root.resolve()
         chosen = [(src, row) for src, row in labels.items()
                   if row["pair_inspected_by_operator"]]
         if missing_one:
