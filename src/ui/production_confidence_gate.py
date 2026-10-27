@@ -121,18 +121,34 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         # CLASSIFICAÇÃO do operador na interface, mas nunca transmitir 0.
         # Validar novamente a identidade da fonte e as evidências brutas;
         # o flag calculado pela fusão não basta para liberar a placa.
-        from src.core.knn_visual_corroboration import _recognized_recurrent_ok
+        from src.core.knn_visual_corroboration import (
+            _operator_confirmed_ok_pattern_review, _recognized_recurrent_ok,
+        )
         recalled = detail.get("recognized_recurrent_ok")
+        pattern = detail.get("operator_confirmed_ok_pattern_review")
         counterevidence = detail.get("knn_ok_counterevidence")
         trace = detail.get("decision_trace")
         verified_recall = _recognized_recurrent_ok(detail, counterevidence)
-        if (
-            verdict == "FALHA FALSA"
-            and isinstance(recalled, dict)
+        verified_pattern = _operator_confirmed_ok_pattern_review(
+            detail, counterevidence,
+        )
+        valid_known_ok = bool(
+            isinstance(recalled, dict)
             and verified_recall is not None
             and recalled == verified_recall
             and detail.get("fusion_rule")
             == "operator_confirmed_recurrent_ok_three_light_review_v1"
+        )
+        valid_pattern = bool(
+            isinstance(pattern, dict)
+            and verified_pattern is not None
+            and pattern == verified_pattern
+            and detail.get("fusion_rule")
+            == "operator_confirmed_ok_pattern_three_light_review_v1"
+        )
+        if (
+            verdict == "FALHA FALSA"
+            and (valid_known_ok or valid_pattern)
             and detail.get("operator_review_required") is True
             and isinstance(analysis, dict)
             and analysis.get("production_review_required") is True
@@ -151,7 +167,11 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 "auto_allowed": False,
                 "operator_review_required": True,
                 "proposed_decision": "",
-                "reason": "operator_confirmed_recurring_ok_requires_operator",
+                "reason": (
+                    "operator_confirmed_recurring_ok_requires_operator"
+                    if valid_known_ok
+                    else "operator_confirmed_ok_pattern_requires_operator"
+                ),
                 "operator_shortcuts": {"0": "OK", "1": "NG"},
             }
         return {

@@ -652,6 +652,122 @@ def _recognized_recurrent_ok(
     }
 
 
+def _operator_confirmed_ok_pattern_review(
+    detail: dict, counterevidence: dict,
+) -> dict | None:
+    """Propose a known false alarm even with lighting variation.
+
+    A known OK SHA must be retrieved in both KNN descriptors, while
+    three independent light comparisons favor OK. This is an operator
+    review classification, NEVER proof to send XP command 0.
+    """
+    if not isinstance(detail, dict) or not isinstance(counterevidence, dict):
+        return None
+    if (
+        counterevidence.get("status") != "OPERATOR_REVIEW_KNN_OK_COUNTEREVIDENCE"
+        or counterevidence.get("no_exact_pair_claim") is not True
+        or counterevidence.get("automatic_ok_authorized") is not False
+        or counterevidence.get("xp_command_authorized") is not False
+    ):
+        return None
+    lights = counterevidence.get("lights")
+    if not isinstance(lights, dict) or set(lights) != set(LIGHTS):
+        return None
+    margins = []
+    for light in LIGHTS:
+        point = lights.get(light)
+        if not isinstance(point, dict):
+            return None
+        try:
+            margin = float(point["ng_margin_over_ok"])
+            ok_similarity = float(point["best_ok_similarity"])
+        except (TypeError, ValueError, KeyError):
+            return None
+        if not math.isfinite(margin) or not math.isfinite(ok_similarity):
+            return None
+        if margin > -.005 or ok_similarity < .95:
+            return None
+        margins.append(-margin)
+    if sum(margins) / len(margins) < .012:
+        return None
+    # The display/production re-check must also see the raw votes.
+    votes = detail.get("knn_c_light_observer_votes")
+    if not isinstance(votes, dict) or set(votes) != set(LIGHTS):
+        return None
+    if not all(
+        isinstance(votes[light], dict)
+        and votes[light].get("schema") == "visionx.knn_c_live_review_gated.v1"
+        and votes[light].get("bank_status") == "READY"
+        and votes[light].get("status") == "REVISAO"
+        and votes[light].get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+        and votes[light].get("diagnostic_only") is True
+        and votes[light].get("auto_decision_authorized") is False
+        and votes[light].get("vote_A") == "OK"
+        and votes[light].get("vote_B") == "OK"
+        and votes[light].get("suggestion_A") == "REVISAO"
+        and votes[light].get("suggestion_B") == "REVISAO"
+        for light in LIGHTS
+    ):
+        return None
+    by_light = detail.get("knn_c_light_neighbor_evidence")
+    side = by_light.get("SIDE") if isinstance(by_light, dict) else None
+    if not isinstance(side, dict):
+        return None
+    matched = []
+    for key, minimum in (("neighbors_A", .88), ("neighbors_B", .82)):
+        rows = side.get(key)
+        if not isinstance(rows, list) or not 3 <= len(rows) <= 5:
+            return None
+        matches = []
+        ng_scores = []
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                return None
+            try:
+                similarity = float(row["similarity"])
+            except (TypeError, ValueError, KeyError):
+                return None
+            if not math.isfinite(similarity) or not 0 <= similarity <= 1:
+                return None
+            if row.get("label") == "NG":
+                ng_scores.append(similarity)
+            if (
+                index < 3 and row.get("label") == "OK"
+                and similarity >= minimum
+                and (row.get("path"), row.get("source_pixel_sha256"))
+                in OPERATOR_VERIFIED_RECURRENT_OK_ANCHORS
+            ):
+                matches.append((index, row, similarity))
+        if len(matches) != 1 or not ng_scores:
+            return None
+        rank, row, sim = matches[0]
+        best_ng = max(ng_scores)
+        if best_ng >= .90 or best_ng - sim > .02:
+            return None
+        matched.append({
+            "method": key, "rank": rank + 1,
+            "similarity": round(sim, 8),
+            "path": row["path"],
+            "source_pixel_sha256": row["source_pixel_sha256"],
+            "highest_competing_ng": round(best_ng, 8),
+        })
+    if matched[0]["source_pixel_sha256"] != matched[1]["source_pixel_sha256"]:
+        return None
+    return {
+        "schema": "visionx.operator_confirmed_ok_pattern_review.v1",
+        "status": "KNOWN_OK_PATTERN_PENDING_CURRENT_OPERATOR",
+        "source_path": matched[0]["path"],
+        "source_pixel_sha256": matched[0]["source_pixel_sha256"],
+        "matches": matched,
+        "three_light_counterevidence": True,
+        "current_capture_exact_match": False,
+        "current_capture_operator_confirmed": False,
+        "operator_review_required": True,
+        "automatic_ok_authorized": False,
+        "xp_command_authorized": False,
+    }
+
+
 def apply_knn_visual_corroboration(
     fused: dict | None, samples: dict | None, category: str, knn,
 ) -> dict | None:
@@ -682,8 +798,14 @@ def apply_knn_visual_corroboration(
         known_ok = _recognized_recurrent_ok(detail, ok_counterevidence)
         if known_ok is not None:
             detail["recognized_recurrent_ok"] = known_ok
+        pattern_ok = (
+            _operator_confirmed_ok_pattern_review(detail, ok_counterevidence)
+            if known_ok is None else None
+        )
+        if pattern_ok is not None:
+            detail["operator_confirmed_ok_pattern_review"] = pattern_ok
         fused["verdict"] = (
-            "FALHA FALSA" if known_ok is not None
+            "FALHA FALSA" if known_ok is not None or pattern_ok is not None
             else "REVISÃO OBRIGATÓRIA"
         )
         fused["is_defect"] = False
@@ -699,6 +821,12 @@ def apply_knn_visual_corroboration(
                 "Reconhecimento aproximado, SEM autorização automática "
                 "de comando XP: confirmar com o operador."
             ) if known_ok is not None else (
+                "FALHA FALSA • PADRÃO OK RECORRENTE: referência "
+                "confirmada encontrada em A/B entre os primeiros vizinhos, "
+                "com três luzes favorecendo OK e sem ausência física "
+                "corroborada. A captura atual não é um par exato: "
+                "confirmação do operador obrigatória, sem comando XP automático."
+            ) if pattern_ok is not None else (
                 "CNN FALTANDO NG sem corroboração física: SIDE/TOP/MID "
                 "apresentam divergência KNN, com os dois votos KNN C "
                 "apontando OK (ainda em REVISAO) e vizinhos OK mais "
@@ -710,6 +838,8 @@ def apply_knn_visual_corroboration(
         detail["fusion_rule"] = (
             "operator_confirmed_recurrent_ok_three_light_review_v1"
             if known_ok is not None
+            else "operator_confirmed_ok_pattern_three_light_review_v1"
+            if pattern_ok is not None
             else "knn_three_light_ok_counterevidence_review_v1"
         )
         detail["operator_review_required"] = True

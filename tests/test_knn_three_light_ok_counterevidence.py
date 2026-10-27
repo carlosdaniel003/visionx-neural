@@ -16,6 +16,7 @@ from src.core.knn_visual_corroboration import (
 )
 from src.core.multilight_fusion import fuse_multilight
 from src.ui.production_confidence_gate import production_decision_policy
+from src.ui.decision_verdict_feedback import verdict_feedback_state
 
 LIGHTS = ("SIDE", "TOP", "MID")
 GOOD = {
@@ -282,6 +283,136 @@ class KNNOKCounterevidenceTests(unittest.TestCase):
                 stronger, {}, "FALTANDO", object(),
             )
         self.assertEqual(blocked["verdict"], "DEFEITO REAL")
+
+    def test_oct27_same_confirmed_ok_family_with_ng_first_still_false_failure(self):
+        # Evento c3af7000a5b147bca4c03a695abc6675. Primeiros vizinhos
+        # NG, mas a mesma referência OK humana aparece em A/B no top 3.
+        # Resultado precisa ser FALHA FALSA, apenas para o operador.
+        pin = (
+            "public/ok_archive/2026-10-21_1412_FALTANDO.png",
+            "c9dec1d85617aa074e71b8b3640cace88f3a23c123185f7be84d6c06e2946bd9",
+        )
+        f = fused()
+        f["detail"]["knn_c_light_neighbor_evidence"] = {
+            light: {"neighbors_A": [], "neighbors_B": []}
+            for light in LIGHTS
+        }
+        f["detail"]["knn_c_light_neighbor_evidence"]["SIDE"] = {
+            "neighbors_A": [
+                {"path": "public/ng_archive/2026-10-21_1432_FALTANDO_SIDE.png",
+                 "label": "NG", "similarity": .88679835},
+                {"path": pin[0], "source_pixel_sha256": pin[1],
+                 "label": "OK", "similarity": .88399081},
+                {"path": "public/ng_archive/2026-10-21_1458_FALTANDO_3.png",
+                 "label": "NG", "similarity": .88335799},
+                {"path": "public/ok_archive/2026-10-21_1629_FALTANDO_SIDE.png",
+                 "label": "OK", "similarity": .86559447},
+                {"path": "public/ok_archive/2026-10-21_1436_FALTANDO_SIDE.png",
+                 "label": "OK", "similarity": .86534112},
+            ],
+            "neighbors_B": [
+                {"path": "public/ng_archive/2026-10-21_1458_FALTANDO_3.png",
+                 "label": "NG", "similarity": .83597105},
+                {"path": "public/ng_archive/2026-10-21_1432_FALTANDO_SIDE.png",
+                 "label": "NG", "similarity": .82735666},
+                {"path": pin[0], "source_pixel_sha256": pin[1],
+                 "label": "OK", "similarity": .82105397},
+                {"path": "public/ok_archive/2026-10-21_1436_FALTANDO_SIDE.png",
+                 "label": "OK", "similarity": .80787613},
+                {"path": "public/ok_archive/2026-10-21_1629_FALTANDO_SIDE.png",
+                 "label": "OK", "similarity": .80472034},
+            ],
+        }
+        actual = report()
+        for light, ok, ng in (
+            ("SIDE", .953651, .948180),
+            ("TOP", .953651, .942180),
+            ("MID", .952869, .927543),
+        ):
+            actual["lights"][light].update({
+                "ng_margin_over_ok": round(ng - ok, 6),
+                "ok": {"best_similarity": ok},
+                "ng": {"best_similarity": ng},
+            })
+        with patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=actual,
+        ):
+            result = apply_knn_visual_corroboration(
+                deepcopy(f), {}, "FALTANDO", object(),
+            )
+        self.assertEqual(result["verdict"], "FALHA FALSA")
+        self.assertFalse(result["is_defect"])
+        self.assertTrue(result["production_review_required"])
+        self.assertFalse(result["eligible_for_final_decision"])
+        self.assertEqual(
+            result["detail"]["fusion_rule"],
+            "operator_confirmed_ok_pattern_three_light_review_v1",
+        )
+        self.assertFalse(
+            result["detail"]["operator_confirmed_ok_pattern_review"]
+            ["current_capture_operator_confirmed"]
+        )
+        policy = production_decision_policy(result)
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertEqual(
+            policy["reason"], "operator_confirmed_ok_pattern_requires_operator",
+        )
+        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "")
+        self.assertEqual(verdict_feedback_state(result), ("FALHA FALSA", "ok"))
+
+        # Defeitos reais, memória adulterada, margem insuficiente
+        # ou ausência de um descritor não podem usar a exceção.
+        for name, mutation in (
+            ("sha", lambda x, y:
+             x["detail"]["knn_c_light_neighbor_evidence"]["SIDE"]
+             ["neighbors_A"][1].update(source_pixel_sha256="f" * 64)),
+            ("weak_visual", lambda x, y:
+             x["detail"]["knn_c_light_neighbor_evidence"]["SIDE"]
+             ["neighbors_A"][1].update(similarity=.8799)),
+            ("weak_geometry", lambda x, y:
+             x["detail"]["knn_c_light_neighbor_evidence"]["SIDE"]
+             ["neighbors_B"][2].update(similarity=.8199)),
+            ("dangerous_ng", lambda x, y:
+             x["detail"]["knn_c_light_neighbor_evidence"]["SIDE"]
+             ["neighbors_A"][0].update(similarity=.901)),
+            ("missing_light", lambda x, y: 
+             x["detail"]["knn_c_light_observer_votes"].pop("TOP")),
+            ("physical_ng", lambda x, y:
+             x["detail"].update(physical_score=.7)),
+            ("cnn_ng_consensus", lambda x, y:
+             x["detail"].update(cnn_v2_consensus="NG")),
+            ("poor_margin", lambda x, y:
+             y["lights"]["TOP"].update(
+                 ng_margin_over_ok=-.0001,
+                 ok={"best_similarity": .953651},
+                 ng={"best_similarity": .953551},
+             )),
+        ):
+            with self.subTest(name=name):
+                f2, r2 = deepcopy(f), deepcopy(actual)
+                mutation(f2, r2)
+                with patch(
+                    "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+                    return_value=r2,
+                ):
+                    blocked = apply_knn_visual_corroboration(
+                        f2, {}, "FALTANDO", object(),
+                    )
+                self.assertNotEqual(blocked["verdict"], "FALHA FALSA")
+                self.assertFalse(production_decision_policy(blocked)["auto_allowed"])
+
+        # Sem verificar o registro original, não confiar só no flag da fusão.
+        altered = deepcopy(result)
+        altered["detail"]["operator_confirmed_ok_pattern_review"]["source_pixel_sha256"] = "0" * 64
+        self.assertEqual(
+            production_decision_policy(altered)["verdict"], "REVISÃO OBRIGATÓRIA"
+        )
+        self.assertEqual(
+            verdict_feedback_state(altered), ("REVISÃO OBRIGATÓRIA", "ng"),
+        )
 
     def test_multilight_fusion_retains_distinct_per_light_c_votes_for_arbitration(self):
         def local(light):
