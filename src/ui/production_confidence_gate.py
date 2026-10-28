@@ -124,12 +124,14 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         from src.core.knn_visual_corroboration import (
             _operator_confirmed_ok_pattern_review, _recognized_recurrent_ok,
             _recognized_two_light_operator_ok, _mixed_light_ok_candidate,
+            _operator_corrected_side_ok_recall,
         )
         recalled = detail.get("recognized_recurrent_ok")
         pattern = detail.get("operator_confirmed_ok_pattern_review")
         counterevidence = detail.get("knn_ok_counterevidence")
         two_light = detail.get("recognized_two_light_operator_ok")
         mixed = detail.get("mixed_light_ok_candidate")
+        corrected = detail.get("operator_corrected_archive_ok_recall")
         trace = detail.get("decision_trace")
         verified_recall = _recognized_recurrent_ok(detail, counterevidence)
         verified_pattern = _operator_confirmed_ok_pattern_review(
@@ -184,9 +186,29 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             and validated_mixed is not None
             and mixed == validated_mixed
         )
+        verified_corrected = _operator_corrected_side_ok_recall(
+            {
+                **analysis,
+                "verdict": detail.get("verdict_before_corrected_archive_ok"),
+                "is_defect": False,
+                "detail": {**detail, "fusion_rule": "multilight_local_review"},
+            } if isinstance(analysis, dict) else {},
+            detail.get("knn_visual_corroboration"),
+            "FALTANDO",
+        )
+        valid_corrected = bool(
+            detail.get("verdict_before_corrected_archive_ok")
+            == "REVISÃO OBRIGATÓRIA"
+            and detail.get("fusion_rule")
+            == "operator_corrected_archive_ok_three_light_v1"
+            and isinstance(corrected, dict)
+            and verified_corrected is not None
+            and corrected == verified_corrected
+        )
         if (
             verdict == "FALHA FALSA"
-            and (valid_known_ok or valid_pattern or valid_two_light or valid_mixed)
+            and (valid_known_ok or valid_pattern or valid_two_light
+                 or valid_mixed or valid_corrected)
             and detail.get("operator_review_required") is True
             and isinstance(analysis, dict)
             and analysis.get("production_review_required") is True
@@ -204,7 +226,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             # Não libera outras falhas falsas, KNN genérica ou defeitos.
             supervised_auto_ok = (
                 detail.get("production_continuous_auto") is True
-                and (valid_two_light or valid_mixed)
+                and (valid_two_light or valid_mixed or valid_corrected)
                 and not valid_known_ok and not valid_pattern
                 and detail.get("hard_missing_evidence") is not True
                 and analysis.get("hard_missing_evidence") is not True
@@ -224,10 +246,14 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 "operator_review_required": not supervised_auto_ok,
                 "proposed_decision": "OK" if supervised_auto_ok else "",
                 "reason": (
-                    "supervised_recurrent_ok_top_mid_auto_v1"
+                    "supervised_operator_corrected_archive_ok_auto_v1"
+                    if supervised_auto_ok and valid_corrected
+                    else "supervised_recurrent_ok_top_mid_auto_v1"
                     if supervised_auto_ok and valid_two_light
                     else "supervised_mixed_light_ok_auto_v1"
                     if supervised_auto_ok and valid_mixed
+                    else "operator_corrected_archive_ok_requires_operator"
+                    if valid_corrected
                     else "operator_confirmed_recurring_ok_requires_operator"
                     if valid_known_ok
                     else "operator_recurrent_ok_top_mid_requires_operator"

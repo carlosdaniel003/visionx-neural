@@ -8,6 +8,9 @@ on:
       - "src/core/side_early_decision.py"
       - "src/core/multilight_fusion.py"
       - "src/core/knn_visual_corroboration.py"
+      - "src/core/operator_confirmed_archive_labels.py"
+      - "src/core/knn_c_live.py"
+      - "tests/test_operator_corrected_archive_live_ok.py"
       - "tests/test_knn_three_light_ok_counterevidence.py"
       - "src/core/adhesive_multilight_fusion.py"
       - "src/core/adhesive_multilight_analysis.py"
@@ -72,9 +75,9 @@ jobs:
       - name: Compile multilight modules
         shell: pwsh
         run: |
-          python -m py_compile src/core/side_early_decision.py src/services/capture_debug_payload.py src/core/multilight_fusion.py src/core/knn_visual_corroboration.py tests/test_knn_three_light_ok_counterevidence.py src/core/adhesive_multilight_fusion.py src/core/adhesive_multilight_analysis.py src/core/full_frame_memory.py src/core/prototype_memory.py src/core/strict_category_memory.py src/core/experts/knn_expert.py src/ui/adhesive_multilight_automation.py src/ui/adhesive_multilight_inspection.py src/ui/adhesive_multilight_analysis.py src/ui/network_xp_debug.py src/services/image_archive_candidates.py src/services/anomaly_learning.py src/services/decision_persistence.py src/services/dataset_manager.py
+          python -m py_compile src/core/side_early_decision.py src/services/capture_debug_payload.py src/core/multilight_fusion.py src/core/knn_visual_corroboration.py src/core/knn_c_live.py src/core/operator_confirmed_archive_labels.py tests/test_operator_corrected_archive_live_ok.py tests/test_knn_three_light_ok_counterevidence.py src/core/adhesive_multilight_fusion.py src/core/adhesive_multilight_analysis.py src/core/full_frame_memory.py src/core/prototype_memory.py src/core/strict_category_memory.py src/core/experts/knn_expert.py src/ui/adhesive_multilight_automation.py src/ui/adhesive_multilight_inspection.py src/ui/adhesive_multilight_analysis.py src/ui/network_xp_debug.py src/services/image_archive_candidates.py src/services/anomaly_learning.py src/services/decision_persistence.py src/services/dataset_manager.py
 
       - name: Run multilight regressions
         shell: pwsh
         run: |
-          python -m unittest tests.test_side_early_decision tests.test_knn_three_light_ok_counterevidence tests.test_knn_visual_corroboration tests.test_adhesive_multilight_automation tests.test_adhesive_multilight_expert_analysis tests.test_adhesive_multilight_fusion tests.test_adhesive_multilight_inspection tests.test_multilight_generalization tests.test_multilight_learning -v
+          python -m unittest tests.test_side_early_decision tests.test_knn_three_light_ok_counterevidence tests.test_operator_corrected_archive_live_ok tests.test_knn_visual_corroboration tests.test_adhesive_multilight_automation tests.test_adhesive_multilight_expert_analysis tests.test_adhesive_multilight_fusion tests.test_adhesive_multilight_inspection tests.test_multilight_generalization tests.test_multilight_learning -v

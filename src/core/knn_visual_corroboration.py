@@ -1145,6 +1145,198 @@ def _mixed_light_ok_candidate(
     }
 
 
+def _operator_corrected_side_ok_recall(
+    fused: dict, report: dict, category: str,
+) -> dict | None:
+    """Validated source was archived NG by AOI but confirmed physical OK.
+
+    This path is narrowly gated by TOP/MID, CNN and independent physical
+    evidence; it never declares the *current* capture an exact pixel match.
+    """
+    from src.core.operator_confirmed_archive_labels import (
+        CORRECTED_SOURCE, CORRECTED_SOURCE_FILE_SHA256,
+        CORRECTED_SOURCE_PIXEL_SHA256, verified_operator_archive_override,
+    )
+    if canonical_memory_category(category) != "FALTANDO":
+        return None
+    d = fused.get("detail")
+    if not isinstance(d, dict) or not (
+        fused.get("multilight_final") is True
+        and fused.get("verdict") == "REVISÃO OBRIGATÓRIA"
+        and fused.get("is_defect") is False
+        and d.get("fusion_rule") == "multilight_local_review"
+        and d.get("recognition_route") == "NEW_CNN"
+        and d.get("cnn_v2_consensus") == "REVIEW"
+        and d.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
+        and d.get("multilight_strong_positive_modes") == []
+        and set(d.get("multilight_review_modes") or ()) == set(LIGHTS)
+        and d.get("multilight_physical_disagreement") is False
+        and d.get("multilight_missing_verified_presence") is False
+        and d.get("hard_missing_evidence") is not True
+        and fused.get("hard_missing_evidence") is not True
+    ):
+        return None
+    if d.get("physical_score") != 0.0:
+        return None
+    physical = d.get("physical_missing_veto")
+    if not isinstance(physical, dict) or physical.get("status") in {
+        "SUSPECT_ABSENCE", "NG_CORROBORATED", "UNAVAILABLE", "GEOMETRY_REVIEW",
+    }:
+        return None
+    trace = d.get("decision_trace")
+    if not isinstance(trace, dict) or (
+        trace.get("raw_hard_missing_evidence") is True
+        or trace.get("hard_missing_evidence") is True
+    ):
+        return None
+    # The document is only trusted when the actual PNG's raw SHA matches.
+    if verified_operator_archive_override() != "OK":
+        return None
+    diag = d.get("cnn_v2_light_diagnostics")
+    if not isinstance(diag, dict) or set(diag) != set(LIGHTS):
+        return None
+    model_sha = set()
+    cnn_scores = {}
+    for light, ceiling in (("SIDE", .12), ("TOP", .30), ("MID", .90)):
+        item = diag[light]
+        if not isinstance(item, dict) or not (
+            item.get("route") == "NEW_CNN"
+            and item.get("category") == "FALTANDO"
+            and item.get("cnn_active") is True
+            and item.get("checkpoint_verified") is True
+            and item.get("cnn_status") == "INFERENCE_OK"
+            and item.get("verdict") == "REVISÃO OBRIGATÓRIA"
+        ):
+            return None
+        checksum = item.get("checkpoint_sha256")
+        if not isinstance(checksum, str) or len(checksum) != 64:
+            return None
+        model_sha.add(checksum)
+        try:
+            score = float(item["ng_score_uncalibrated"])
+        except (TypeError, ValueError, KeyError):
+            return None
+        if not math.isfinite(score) or not 0 <= score <= ceiling:
+            return None
+        cnn_scores[light] = round(score, 8)
+    if len(model_sha) != 1:
+        return None
+    votes = d.get("knn_c_light_observer_votes")
+    neighbours = d.get("knn_c_light_neighbor_evidence")
+    if (not isinstance(votes, dict) or set(votes) != set(LIGHTS)
+            or not isinstance(neighbours, dict) or set(neighbours) != set(LIGHTS)):
+        return None
+    matched = {}
+    for light in LIGHTS:
+        v = votes[light]
+        if not isinstance(v, dict) or not (
+            v.get("schema") == "visionx.knn_c_live_review_gated.v1"
+            and v.get("bank_status") == "READY"
+            and v.get("diagnostic_only") is True
+            and v.get("auto_decision_authorized") is False
+        ):
+            return None
+        if light in {"TOP", "MID"} and not (
+            v.get("vote_A") == "OK" and v.get("vote_B") == "OK"
+            and v.get("status") == "REVISAO"
+        ):
+            return None
+        rows = neighbours[light]
+        if not isinstance(rows, dict):
+            return None
+        matched[light] = {}
+        for key, minimum in (("neighbors_A", .97 if light == "SIDE" else 0),
+                             ("neighbors_B", .96 if light == "SIDE" else 0)):
+            group = rows.get(key)
+            if not isinstance(group, list) or len(group) < 5 or not all(
+                isinstance(row, dict) and row.get("label") in {"OK", "NG"}
+                for row in group[:5]
+            ):
+                return None
+            first = group[0]
+            if light == "SIDE":
+                if not (
+                    first.get("path") == CORRECTED_SOURCE
+                    and first.get("source_pixel_sha256")
+                    == CORRECTED_SOURCE_PIXEL_SHA256
+                    and first.get("label") in {"OK", "NG"}
+                ):
+                    return None
+                try:
+                    similarity = float(first["similarity"])
+                    other_ng = max(
+                        (float(row["similarity"]) for row in group[1:5]
+                         if row["label"] == "NG"), default=0.0,
+                    )
+                except (TypeError, ValueError, KeyError):
+                    return None
+                if (not math.isfinite(similarity) or similarity < minimum
+                        or not math.isfinite(other_ng)
+                        or other_ng >= .91):
+                    return None
+                matched[light][key] = round(similarity, 8)
+            else:
+                if first.get("label") != "OK" or sum(
+                    row["label"] == "OK" for row in group[:5]
+                ) < 4:
+                    return None
+                matched[light][key] = sum(
+                    row["label"] == "OK" for row in group[:5]
+                )
+    if not isinstance(report, dict) or not (
+        report.get("schema") == SCHEMA
+        and report.get("status") == "CONFLICT"
+        and report.get("strong_ng_lights") == []
+        and report.get("trend_ng_lights") == []
+    ):
+        return None
+    lights = report.get("lights")
+    if not isinstance(lights, dict) or set(lights) != set(LIGHTS):
+        return None
+    supports = {}
+    for light, min_ok, max_margin in (
+        ("SIDE", .97, .025), ("TOP", .97, -.03), ("MID", .96, -.025),
+    ):
+        item = lights[light]
+        if not isinstance(item, dict) or (
+            item.get("status") != "CONFLICT"
+            or item.get("cross_category_ng") is not False
+            or not isinstance(item.get("ok"), dict)
+            or not isinstance(item.get("ng"), dict)
+        ):
+            return None
+        try:
+            ok = float(item["ok"]["best_similarity"])
+            ng = float(item["ng"]["best_similarity"])
+            delta = float(item["ng_margin_over_ok"])
+        except (TypeError, ValueError, KeyError):
+            return None
+        if not (all(math.isfinite(v) for v in (ok, ng, delta))
+                and 0 <= ok <= 1 and 0 <= ng <= 1
+                and abs(ng - ok - delta) <= .00001
+                and ok >= min_ok and delta <= max_margin):
+            return None
+        supports[light] = {
+            "best_ok": round(ok, 6), "best_ng": round(ng, 6),
+            "ng_minus_ok": round(delta, 6),
+        }
+    return {
+        "schema": "visionx.operator_corrected_archive_ok_recall.v1",
+        "quality_label": "OK",
+        "historical_source_path": CORRECTED_SOURCE,
+        "historical_source_file_sha256": CORRECTED_SOURCE_FILE_SHA256,
+        "historical_source_pixel_sha256": CORRECTED_SOURCE_PIXEL_SHA256,
+        "side_matches": matched["SIDE"],
+        "knn_top_mid_ok_counts": {
+            "TOP": matched["TOP"], "MID": matched["MID"],
+        },
+        "visual_support": supports, "cnn_scores": cnn_scores,
+        "current_pair_exact_match": False,
+        "source_human_quality_verified": True,
+        "automatic_ok_only_by_production_gate": True,
+    }
+
+
 def apply_knn_visual_corroboration(
     fused: dict | None, samples: dict | None, category: str, knn,
 ) -> dict | None:
@@ -1164,6 +1356,33 @@ def apply_knn_visual_corroboration(
         return fused
     report = evaluate_knn_visual_corroboration(samples, category, knn)
     detail["knn_visual_corroboration"] = report
+    corrected = _operator_corrected_side_ok_recall(fused, report, category)
+    if corrected is not None:
+        detail["operator_corrected_archive_ok_recall"] = corrected
+        detail["verdict_before_corrected_archive_ok"] = fused["verdict"]
+        fused["verdict"] = "FALHA FALSA"
+        fused["is_defect"] = False
+        fused["production_review_required"] = True
+        fused["eligible_for_final_decision"] = False
+        fused["confidence"] = .5
+        fused["reason"] = (
+            "FALHA FALSA • fonte SIDE rotulada NG pela AOI foi "
+            "reclassificada como OK pelo operador (SHA verificado). "
+            "TOP/MID têm maioria OK e assinaturas favoráveis, "
+            "sem evidência física de componente ausente. "
+            "Sem afirmar par de pixels exatamente idênticos."
+        )
+        detail["fusion_rule"] = "operator_corrected_archive_ok_three_light_v1"
+        detail["operator_review_required"] = True
+        detail["eligible_for_final_decision"] = False
+        detail["cnn_v2_supervised_auto_eligible"] = False
+        detail["final_score"] = .5
+        trace = detail.get("decision_trace")
+        if isinstance(trace, dict):
+            trace.update(verdict="FALHA FALSA", physical_defect=False,
+                         operator_review_required=True,
+                         fusion_rule=detail["fusion_rule"], final_score=.5)
+        return fused
     mixed_ok = _mixed_light_ok_candidate(fused, report, category)
     if mixed_ok is not None:
         detail["mixed_light_ok_candidate"] = mixed_ok

@@ -577,6 +577,7 @@ class ProductionAutonomyController(QObject):
             is_recurrent_ok = policy.get("reason") in {
                 "supervised_recurrent_ok_top_mid_auto_v1",
                 "supervised_mixed_light_ok_auto_v1",
+                "supervised_operator_corrected_archive_ok_auto_v1",
             }
             is_safe_rejection = (
                 policy.get("reason")

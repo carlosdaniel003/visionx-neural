@@ -120,6 +120,7 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
             "operator_confirmed_ok_pattern_three_light_review_v1",
             "operator_recurrent_ok_top_mid_review_v1",
             "mixed_light_knn_ok_cnn_review_manual_v1",
+            "operator_corrected_archive_ok_three_light_v1",
         }
     ):
         from src.ui.production_confidence_gate import production_decision_policy
@@ -133,6 +134,8 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
                 "mixed_light_knn_ok_requires_operator",
                 "supervised_recurrent_ok_top_mid_auto_v1",
                 "supervised_mixed_light_ok_auto_v1",
+                "supervised_operator_corrected_archive_ok_auto_v1",
+                "operator_corrected_archive_ok_requires_operator",
             }
             and (
                 policy.get("auto_allowed") is False
