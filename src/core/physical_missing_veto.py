@@ -209,13 +209,19 @@ def apply_physical_missing_veto(
     # a sonda não classificará NG sozinha, mas estará disponível para
     # auditar divergência TOP versus SIDE/MID.
     from src.core.knn_visual_corroboration import verified_partial_cnn_review
+    from src.core.operator_confirmed_archive_labels import (
+        canonical_ok_review_needs_physical_probe,
+    )
     mixed_review = bool(
         fused.get("multilight_final") is True
         and fused.get("verdict") == "REVISÃO OBRIGATÓRIA"
         and detail.get("multilight_category") == "FALTANDO"
         and verified_partial_cnn_review(detail) is not None
     )
-    if not (auto_ok or mixed_review):
+    # O padrão OK 14:16 não satisfaz "dois OK, um NG em revisão":
+    # SIDE é OK, TOP/MID revisão. Auditar fisicamente antes de reconhecê-lo.
+    corrected_ok_review = canonical_ok_review_needs_physical_probe(fused)
+    if not (auto_ok or mixed_review or corrected_ok_review):
         return fused
 
     by_light = {}
@@ -263,9 +269,9 @@ def apply_physical_missing_veto(
         "geometry_review_lights": geometry_review, "lights": by_light,
     }
     detail["physical_missing_veto"] = audit
-    if mixed_review:
-        # A revisão CNN parcial não altera sua classificação aqui. A fusão
-        # de vizinhos executada a seguir pode usar a evidência física bruta.
+    if mixed_review or corrected_ok_review:
+        # O resultado da sonda fica disponível à corroboração visual;
+        # não classificar o componente sem o contrato completo de evidência.
         return fused
     if status != "NO_STRONG_EVIDENCE":
         fused["verdict"] = "REVISÃO OBRIGATÓRIA"
