@@ -20,28 +20,46 @@ CANONICAL_OK_FILE_SHA256 = "118f0396fdb3759d58063582dbfcd2a64f83d13389991c1d9605
 CANONICAL_OK_PIXEL_SHA256 = "0fddce88f7179bc816a094a1c2b7b9117cbef24a71d717cf29b3646ea619970f"
 
 
-def verified_canonical_ok_source(root: Path | None = None) -> bool:
-    """Only the verified live OK PNG is eligible; old NG must be gone."""
+def canonical_ok_source_status(root: Path | None = None) -> dict:
+    """Explain exactly why the confirmed OK archive reference is accepted.
+
+    File bytes may change after lossless PNG recompression; in that case
+    the freshly decoded pixel fingerprint must still match the pinned
+    canonical pixel SHA. No cached inventory fingerprint is trusted.
+    """
     root = Path(root or BASE_DIR).resolve()
+    evidence = root / EVIDENCE_PATH
+    canonical = root / CANONICAL_OK_SOURCE
+    obsolete = root / RETIRED_SOURCE
+    result = {
+        "valid": False, "reason": "", "path": CANONICAL_OK_SOURCE,
+        "file_sha256": None, "pixel_sha256": None,
+        "verification": None,
+    }
+
+    def blocked(reason: str) -> dict:
+        result["reason"] = reason
+        return result
+
     try:
-        evidence = root / EVIDENCE_PATH
-        canonical = root / CANONICAL_OK_SOURCE
-        obsolete = root / RETIRED_SOURCE
-        if (not evidence.is_file() or evidence.is_symlink()
-                or not canonical.is_file() or canonical.is_symlink()
-                or obsolete.exists() or obsolete.is_symlink()
-                or not canonical.resolve().is_relative_to(root / "public/ok_archive")):
-            return False
+        if obsolete.exists() or obsolete.is_symlink():
+            return blocked("RETIRED_WRONG_NG_STILL_PRESENT")
+        if not evidence.is_file() or evidence.is_symlink():
+            return blocked("OPERATOR_EVIDENCE_FILE_MISSING_OR_LINK")
+        if not canonical.is_file() or canonical.is_symlink():
+            return blocked("CANONICAL_OK_IMAGE_MISSING_OR_LINK")
+        if not canonical.resolve().is_relative_to(root / "public/ok_archive"):
+            return blocked("CANONICAL_OK_IMAGE_OUTSIDE_ARCHIVE")
         document = json.loads(evidence.read_text(encoding="utf-8"))
-        if (document.get("schema") != "visionx.operator_confirmed_quality.v1"
-                or document.get("reviewed_on") != "2026-10-26"
-                or document.get("approved_for_production") is not False
-                or not isinstance(document.get("labels"), list)):
-            return False
-        rows = {source: [item for item in document["labels"]
-                         if isinstance(item, dict)
-                         and item.get("source_path") == source]
-                for source in (RETIRED_SOURCE, CANONICAL_OK_SOURCE)}
+        if not (document.get("schema") == "visionx.operator_confirmed_quality.v1"
+                and document.get("reviewed_on") == "2026-10-26"
+                and document.get("approved_for_production") is False
+                and isinstance(document.get("labels"), list)):
+            return blocked("OPERATOR_EVIDENCE_METADATA_INVALID")
+        rows = {source: [
+            item for item in document["labels"]
+            if isinstance(item, dict) and item.get("source_path") == source
+        ] for source in (RETIRED_SOURCE, CANONICAL_OK_SOURCE)}
         old, good = rows[RETIRED_SOURCE], rows[CANONICAL_OK_SOURCE]
         if not (len(old) == len(good) == 1
                 and old[0].get("source_sha256") == RETIRED_SOURCE_FILE_SHA256
@@ -49,7 +67,38 @@ def verified_canonical_ok_source(root: Path | None = None) -> bool:
                 and good[0].get("source_sha256") == CANONICAL_OK_FILE_SHA256
                 and good[0].get("quality_label") == "OK"
                 and good[0].get("physical_type") == "COMPONENT_PRESENT"):
-            return False
-        return sha256(canonical.read_bytes()).hexdigest() == CANONICAL_OK_FILE_SHA256
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return False
+            return blocked("OPERATOR_CANONICAL_OK_NOT_CONFIRMED")
+        data = canonical.read_bytes()
+        actual_file_sha = sha256(data).hexdigest()
+        result["file_sha256"] = actual_file_sha
+        if actual_file_sha == CANONICAL_OK_FILE_SHA256:
+            result.update(
+                valid=True, reason="CANONICAL_FILE_SHA_VERIFIED",
+                verification="file_sha256",
+            )
+            return result
+        # Do not reject an identical image saved with different lossless
+        # PNG compression. Validate pixels from the current disk file.
+        import cv2
+        import numpy as np
+        from src.services.image_archive_dedup import image_fingerprint
+        decoded = cv2.imdecode(np.frombuffer(data, dtype=np.uint8),
+                               cv2.IMREAD_UNCHANGED)
+        if decoded is None or decoded.size == 0:
+            return blocked("CANONICAL_OK_DECODE_FAILED")
+        actual_pixel_sha = image_fingerprint(decoded)
+        result["pixel_sha256"] = actual_pixel_sha
+        if actual_pixel_sha != CANONICAL_OK_PIXEL_SHA256:
+            return blocked("CANONICAL_OK_IMAGE_SHA_MISMATCH")
+        result.update(
+            valid=True, reason="CANONICAL_PIXEL_SHA_VERIFIED",
+            verification="pixel_sha256",
+        )
+        return result
+    except (OSError, ValueError, TypeError, ImportError) as exc:
+        return blocked("CANONICAL_OK_VERIFICATION_ERROR_" + type(exc).__name__)
+
+
+def verified_canonical_ok_source(root: Path | None = None) -> bool:
+    """Check the physical image and the independently confirmed OK label."""
+    return canonical_ok_source_status(root)["valid"]

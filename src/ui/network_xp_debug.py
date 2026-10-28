@@ -566,6 +566,11 @@ def format_multilight_debug_report(panel) -> str:
                 f"Consenso CNN motivo: {final_detail.get('cnn_v2_consensus_reason', '-')}",
                 f"Consenso CNN elegível automático: {final_detail.get('cnn_v2_supervised_auto_eligible', False)}",
                 f"Motivo final: {final_analysis.get('reason', '-')}",
+                "Referência OK 14:16 — diagnóstico: "
+                + str(final_detail.get(
+                    "operator_corrected_archive_ok_diagnostic",
+                    {"status": "NOT_EVALUATED", "reason": "NO_RECALL_DIAGNOSTIC"},
+                )),
             ]
         )
     else:

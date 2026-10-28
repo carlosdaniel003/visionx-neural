@@ -1156,11 +1156,19 @@ def _operator_corrected_side_ok_recall(
     from src.core.operator_confirmed_archive_labels import (
         CANONICAL_OK_SOURCE, CANONICAL_OK_FILE_SHA256,
         CANONICAL_OK_PIXEL_SHA256, verified_canonical_ok_source,
-        RETIRED_SOURCE,
+        canonical_ok_source_status, RETIRED_SOURCE,
     )
     if canonical_memory_category(category) != "FALTANDO":
         return None
     d = fused.get("detail")
+    def reject(reason: str):
+        if isinstance(d, dict):
+            d["operator_corrected_archive_ok_diagnostic"] = {
+                "status": "BLOCKED", "reason": reason,
+                "reference": "public/ok_archive/2026-10-21_1416_FALTANDO.png",
+                "exact_pair_claimed": False,
+            }
+        return None
     if not isinstance(d, dict) or not (
         fused.get("multilight_final") is True
         and fused.get("verdict") == "REVISÃO OBRIGATÓRIA"
@@ -1176,27 +1184,27 @@ def _operator_corrected_side_ok_recall(
         and d.get("hard_missing_evidence") is not True
         and fused.get("hard_missing_evidence") is not True
     ):
-        return None
+        return reject("MULTILIGHT_BASE_CONTRACT_FAILED")
     if d.get("physical_score") != 0.0:
-        return None
+        return reject("PHYSICAL_SCORE_NOT_ZERO")
     physical = d.get("physical_missing_veto")
     if not isinstance(physical, dict) or physical.get("status") in {
         "SUSPECT_ABSENCE", "NG_CORROBORATED", "UNAVAILABLE", "GEOMETRY_REVIEW",
     }:
-        return None
+        return reject("PHYSICAL_VETO_NOT_CLEAR")
     trace = d.get("decision_trace")
     if not isinstance(trace, dict) or (
         trace.get("raw_hard_missing_evidence") is True
         or trace.get("hard_missing_evidence") is True
     ):
-        return None
+        return reject("RAW_HARD_MISSING_EVIDENCE_PRESENT")
     # The retired NG is no longer authoritative; only the intact OK PNG
     # confirmed by its own file SHA may serve as the positive reference.
     if not verified_canonical_ok_source():
-        return None
+        return reject("CANONICAL_IMAGE_" + canonical_ok_source_status()["reason"])
     diag = d.get("cnn_v2_light_diagnostics")
     if not isinstance(diag, dict) or set(diag) != set(LIGHTS):
-        return None
+        return reject("CNN_THREE_LIGHT_DIAGNOSTICS_MISSING")
     model_sha = set()
     cnn_scores = {}
     for light, ceiling in (("SIDE", .12), ("TOP", .30), ("MID", .90)):
@@ -1212,25 +1220,25 @@ def _operator_corrected_side_ok_recall(
                 if light == "SIDE" else {"REVISÃO OBRIGATÓRIA"}
             )
         ):
-            return None
+            return reject("CNN_LIGHT_INVALID_" + light)
         checksum = item.get("checkpoint_sha256")
         if not isinstance(checksum, str) or len(checksum) != 64:
-            return None
+            return reject("CNN_CHECKPOINT_SHA_INVALID_" + light)
         model_sha.add(checksum)
         try:
             score = float(item["ng_score_uncalibrated"])
         except (TypeError, ValueError, KeyError):
-            return None
+            return reject("CNN_SCORE_UNAVAILABLE_" + light)
         if not math.isfinite(score) or not 0 <= score <= ceiling:
-            return None
+            return reject("CNN_SCORE_OUTSIDE_SAFE_RANGE_" + light)
         cnn_scores[light] = round(score, 8)
     if len(model_sha) != 1:
-        return None
+        return reject("CNN_CHECKPOINTS_DIFFER")
     votes = d.get("knn_c_light_observer_votes")
     neighbours = d.get("knn_c_light_neighbor_evidence")
     if (not isinstance(votes, dict) or set(votes) != set(LIGHTS)
             or not isinstance(neighbours, dict) or set(neighbours) != set(LIGHTS)):
-        return None
+        return reject("KNN_C_THREE_LIGHT_EVIDENCE_MISSING")
     matched = {}
     for light in LIGHTS:
         v = votes[light]
@@ -1240,15 +1248,15 @@ def _operator_corrected_side_ok_recall(
             and v.get("diagnostic_only") is True
             and v.get("auto_decision_authorized") is False
         ):
-            return None
+            return reject("KNN_C_NOT_READY_" + light)
         if light in {"TOP", "MID"} and not (
             v.get("vote_A") == "OK" and v.get("vote_B") == "OK"
             and v.get("status") == "REVISAO"
         ):
-            return None
+            return reject("KNN_C_TOP_MID_NOT_OK_" + light)
         rows = neighbours[light]
         if not isinstance(rows, dict):
-            return None
+            return reject("KNN_C_NEIGHBORS_UNAVAILABLE_" + light)
         matched[light] = {}
         for key, minimum in (("neighbors_A", .85 if light == "SIDE" else 0),
                              ("neighbors_B", .82 if light == "SIDE" else 0)):
@@ -1257,7 +1265,7 @@ def _operator_corrected_side_ok_recall(
                 isinstance(row, dict) and row.get("label") in {"OK", "NG"}
                 for row in group[:5]
             ):
-                return None
+                return reject("KNN_C_INSUFFICIENT_NEIGHBORS_" + light + "_" + key)
             first = group[0]
             if light == "SIDE":
                 if not (
@@ -1268,7 +1276,7 @@ def _operator_corrected_side_ok_recall(
                     and all(row.get("path") != RETIRED_SOURCE
                             for row in group)
                 ):
-                    return None
+                    return reject("CANONICAL_OK_NOT_NEAREST_SIDE_" + key)
                 try:
                     similarity = float(first["similarity"])
                     other_ng = max(
@@ -1276,18 +1284,18 @@ def _operator_corrected_side_ok_recall(
                          if row["label"] == "NG"), default=0.0,
                     )
                 except (TypeError, ValueError, KeyError):
-                    return None
+                    return reject("KNN_SIDE_SIMILARITY_INVALID_" + key)
                 if (not math.isfinite(similarity) or similarity < minimum
                         or not math.isfinite(other_ng)
                         or other_ng >= .90
                         or other_ng > similarity - .015):
-                    return None
+                    return reject("KNN_SIDE_NG_COUNTEREVIDENCE_" + key)
                 matched[light][key] = round(similarity, 8)
             else:
                 if first.get("label") != "OK" or sum(
                     row["label"] == "OK" for row in group[:5]
                 ) < 4:
-                    return None
+                    return reject("KNN_TOP_MID_OK_SUPPORT_INSUFFICIENT_" + light + "_" + key)
                 matched[light][key] = sum(
                     row["label"] == "OK" for row in group[:5]
                 )
@@ -1297,10 +1305,10 @@ def _operator_corrected_side_ok_recall(
         and report.get("strong_ng_lights") == []
         and report.get("trend_ng_lights") == []
     ):
-        return None
+        return reject("VISUAL_THREE_LIGHT_CONFLICT_CONTRACT_FAILED")
     lights = report.get("lights")
     if not isinstance(lights, dict) or set(lights) != set(LIGHTS):
-        return None
+        return reject("VISUAL_LIGHT_EVIDENCE_MISSING")
     supports = {}
     for light, min_ok, max_margin in (
         ("SIDE", .97, .015), ("TOP", .97, -.03), ("MID", .96, -.025),
@@ -1312,22 +1320,27 @@ def _operator_corrected_side_ok_recall(
             or not isinstance(item.get("ok"), dict)
             or not isinstance(item.get("ng"), dict)
         ):
-            return None
+            return reject("VISUAL_LIGHT_STATUS_OR_FORMAT_INVALID_" + light)
         try:
             ok = float(item["ok"]["best_similarity"])
             ng = float(item["ng"]["best_similarity"])
             delta = float(item["ng_margin_over_ok"])
         except (TypeError, ValueError, KeyError):
-            return None
+            return reject("VISUAL_LIGHT_SCORES_UNAVAILABLE_" + light)
         if not (all(math.isfinite(v) for v in (ok, ng, delta))
                 and 0 <= ok <= 1 and 0 <= ng <= 1
                 and abs(ng - ok - delta) <= .00001
                 and ok >= min_ok and delta <= max_margin):
-            return None
+            return reject("VISUAL_LIGHT_COUNTEREVIDENCE_" + light)
         supports[light] = {
             "best_ok": round(ok, 6), "best_ng": round(ng, 6),
             "ng_minus_ok": round(delta, 6),
         }
+    d["operator_corrected_archive_ok_diagnostic"] = {
+        "status": "RECOGNIZED", "reason": "CANONICAL_OK_VISUAL_RECALL_VERIFIED",
+        "reference": CANONICAL_OK_SOURCE,
+        "exact_pair_claimed": False,
+    }
     return {
         "schema": "visionx.operator_corrected_archive_ok_recall.v1",
         "quality_label": "OK",

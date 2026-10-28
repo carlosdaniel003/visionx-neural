@@ -141,6 +141,72 @@ class RetiredWrongNGTests(unittest.TestCase):
                 doc.write_text(json.dumps(payload), encoding="utf-8")
                 self.assertFalse(verified_canonical_ok_source(root))
 
+    def test_canonical_pixel_sha_accepts_lossless_png_recompression_only(self):
+        import cv2
+        import src.core.operator_confirmed_archive_labels as mod
+        from src.services.image_archive_dedup import image_fingerprint
+
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            image_path = root / CANONICAL_OK_SOURCE
+            image_path.parent.mkdir(parents=True)
+            pixels = np.arange(48 * 48 * 3, dtype=np.uint8).reshape((48, 48, 3))
+            first = cv2.imencode(
+                ".png", pixels, [cv2.IMWRITE_PNG_COMPRESSION, 0]
+            )[1].tobytes()
+            recompressed = cv2.imencode(
+                ".png", pixels, [cv2.IMWRITE_PNG_COMPRESSION, 9]
+            )[1].tobytes()
+            self.assertNotEqual(first, recompressed)
+            file_sha = sha256(first).hexdigest()
+            pixel_sha = image_fingerprint(pixels)
+            doc = root / mod.EVIDENCE_PATH
+            doc.parent.mkdir(parents=True)
+            doc.write_text(json.dumps({
+                "schema": "visionx.operator_confirmed_quality.v1",
+                "reviewed_on": "2026-10-26",
+                "approved_for_production": False,
+                "labels": [
+                    {"source_path": RETIRED_SOURCE,
+                     "source_sha256": mod.RETIRED_SOURCE_FILE_SHA256,
+                     "quality_label": "OK"},
+                    {"source_path": CANONICAL_OK_SOURCE,
+                     "source_sha256": file_sha,
+                     "quality_label": "OK",
+                     "physical_type": "COMPONENT_PRESENT"},
+                ],
+            }), encoding="utf-8")
+            image_path.write_bytes(recompressed)
+            with patch.object(mod, "CANONICAL_OK_FILE_SHA256", file_sha), patch.object(
+                mod, "CANONICAL_OK_PIXEL_SHA256", pixel_sha
+            ):
+                status = mod.canonical_ok_source_status(root)
+                self.assertTrue(status["valid"], status)
+                self.assertEqual(status["verification"], "pixel_sha256")
+                pixels[0, 0, 0] += 1
+                image_path.write_bytes(cv2.imencode(".png", pixels)[1].tobytes())
+                status = mod.canonical_ok_source_status(root)
+                self.assertFalse(status["valid"])
+                self.assertEqual(status["reason"], "CANONICAL_OK_IMAGE_SHA_MISMATCH")
+
+    def test_rejection_carries_explainable_gate_reason(self):
+        a, visual = event()
+        a["detail"]["cnn_v2_light_diagnostics"]["SIDE"][
+            "verdict"
+        ] = "DEFEITO REAL"
+        with patch(
+            "src.core.operator_confirmed_archive_labels.verified_canonical_ok_source",
+            return_value=True,
+        ), patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=visual,
+        ):
+            result = apply_knn_visual_corroboration(a, {}, "FALTANDO", object())
+        diagnostic = result["detail"]["operator_corrected_archive_ok_diagnostic"]
+        self.assertEqual(diagnostic["status"], "BLOCKED")
+        self.assertEqual(diagnostic["reason"], "CNN_LIGHT_INVALID_SIDE")
+        self.assertFalse(diagnostic["exact_pair_claimed"])
+
     def test_knn_c_discards_wrong_ng_even_if_old_inventory_contains_it(self):
         wrong = {
             "path": RETIRED_SOURCE, "expected_label": "NG",
