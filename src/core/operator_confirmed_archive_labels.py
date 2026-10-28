@@ -99,6 +99,49 @@ def canonical_ok_source_status(root: Path | None = None) -> dict:
         return blocked("CANONICAL_OK_VERIFICATION_ERROR_" + type(exc).__name__)
 
 
+def canonical_ok_review_needs_physical_probe(fused: dict | None) -> bool:
+    """Identify the 14:16 OK recall candidate, without predicting OK.
+
+    This is only a cheap trigger for independent physical inspection. The
+    canonical PNG, KNN/CNN evidence and physical audit are verified again by
+    the recognition contract before any production decision.
+    """
+    if not isinstance(fused, dict) or not (
+        fused.get("multilight_final") is True
+        and fused.get("verdict") == "REVISÃO OBRIGATÓRIA"
+        and fused.get("is_defect") is False
+    ):
+        return False
+    detail = fused.get("detail")
+    if not isinstance(detail, dict) or not (
+        detail.get("multilight_category") == "FALTANDO"
+        and detail.get("fusion_rule") == "multilight_local_review"
+        and detail.get("recognition_route") == "NEW_CNN"
+        and detail.get("cnn_v2_consensus") == "REVIEW"
+        and detail.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
+        and detail.get("hard_missing_evidence") is not True
+    ):
+        return False
+    evidence = detail.get("knn_c_light_neighbor_evidence")
+    if not isinstance(evidence, dict) or set(evidence) != {"SIDE", "TOP", "MID"}:
+        return False
+    side = evidence.get("SIDE")
+    if not isinstance(side, dict):
+        return False
+    for key in ("neighbors_A", "neighbors_B"):
+        group = side.get(key)
+        if not isinstance(group, list) or not group:
+            return False
+        first = group[0]
+        if not isinstance(first, dict) or not (
+            first.get("label") == "OK"
+            and first.get("path") == CANONICAL_OK_SOURCE
+            and first.get("source_pixel_sha256") == CANONICAL_OK_PIXEL_SHA256
+        ):
+            return False
+    return True
+
+
 def verified_canonical_ok_source(root: Path | None = None) -> bool:
     """Check the physical image and the independently confirmed OK label."""
     return canonical_ok_source_status(root)["valid"]
