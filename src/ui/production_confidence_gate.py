@@ -233,6 +233,11 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 and detail.get("multilight_physical_disagreement") is False
                 and detail.get("multilight_missing_verified_presence") is False
                 and detail.get("physical_score") == 0.0
+                and (not valid_corrected or (
+                    isinstance(detail.get("physical_missing_veto"), dict)
+                    and detail["physical_missing_veto"].get("status")
+                    == "NO_STRONG_EVIDENCE"
+                ))
                 and detail.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
                 and detail.get("recognition_route") == "NEW_CNN"
                 and analysis.get("multilight_final") is True
@@ -484,6 +489,13 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     if not isinstance(detail, dict) or detail.get("production_continuous_auto") is not True:
         return policy
     if policy.get("auto_allowed") is True:
+        return policy
+    # Reconhecimento visual OK com geometria inconclusiva não deve
+    # virar nem 0 automático nem 1 preventivo. Preservar a revisão humana.
+    if (
+        detail.get("fusion_rule") == "operator_corrected_archive_ok_three_light_v1"
+        and policy.get("reason") == "operator_corrected_archive_ok_requires_operator"
+    ):
         return policy
     if (
         analysis.get("multilight_final") is not True
