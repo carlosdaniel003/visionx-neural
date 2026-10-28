@@ -19,10 +19,7 @@ import cv2
 
 from src.config.settings import BASE_DIR
 from src.services.knn_c_signature_cache import read_cache, write_cache
-from src.core.operator_confirmed_archive_labels import (
-    CORRECTED_SOURCE, CORRECTED_SOURCE_PIXEL_SHA256,
-    verified_operator_archive_override,
-)
+from src.core.operator_confirmed_archive_labels import RETIRED_SOURCE
 from src.services.knn_c_fast_inventory import inventory_for_knn_c
 from src.core.strict_category_memory import canonical_memory_lighting
 from src.services.startup_regression.archive_inventory import inventory_archives
@@ -140,19 +137,13 @@ class LiveKNNStrategyC:
             }
             # Verificação independente: nem um inventário injetado pode
             # autorizar a mesma imagem como OK e NG.
-            corrected_ok = verified_operator_archive_override(self.root)
-            def physical_label(item):
-                if (corrected_ok == "OK"
-                        and item.get("path") == CORRECTED_SOURCE
-                        and item.get("pixel_sha256") == CORRECTED_SOURCE_PIXEL_SHA256
-                        and item.get("status") == "VALID_PNG"):
-                    return "OK"
-                return item.get("expected_label")
             labels_by_digest = defaultdict(set)
             for item in items:
+                if item.get("path") == RETIRED_SOURCE:
+                    continue
                 digest = item.get("pixel_sha256")
                 if digest:
-                    labels_by_digest[digest].add(physical_label(item))
+                    labels_by_digest[digest].add(item.get("expected_label"))
             bad_digests.update(
                 d for d, labels in labels_by_digest.items()
                 if "OK" in labels and "NG" in labels
@@ -176,11 +167,12 @@ class LiveKNNStrategyC:
             for index, item in enumerate(items, 1):
                 path = str(item.get("path") or "")
                 digest = item.get("pixel_sha256") or item.get("file_sha256")
-                folder_label = item.get("expected_label")
-                label = physical_label(item)
+                label = item.get("expected_label")
                 light = canonical_memory_lighting(item.get("lighting_mode"))
                 reason = None
-                if path in bad_paths or item.get("pixel_sha256") in bad_digests:
+                if path == RETIRED_SOURCE:
+                    reason = "RETIRED_WRONG_AOI_NG"
+                elif path in bad_paths or item.get("pixel_sha256") in bad_digests:
                     reason = "CROSS_LABEL_CONFLICT"
                 elif item.get("status") != "VALID_PNG" or not digest:
                     reason = "INVALID_PNG_OR_SHA"
@@ -218,13 +210,6 @@ class LiveKNNStrategyC:
                                 "focus_signature": focus,
                                 "geometry_signature": geo,
                             }
-                        # Keep the original archive location, but use the
-                        # SHA-confirmed physical quality as effective KNN label.
-                        entry = {
-                            **entry, "expected_label": label,
-                            "archive_folder_label": folder_label,
-                            "operator_quality_override_verified": label != folder_label,
-                        }
                         pools[light].append(entry)
                         cache_rows.append(entry)
                         seen.add(digest)
@@ -269,9 +254,8 @@ class LiveKNNStrategyC:
                     build_signatures_elapsed_ms=round(elapsed-inventory_ms, 2),
                     cache_saved=cache_saved,
                     indexed_by_label=dict(counts),
-                    operator_corrected_archive_sources=sum(
-                        row.get("operator_quality_override_verified") is True
-                        for row in cache_rows
+                    retired_wrong_ng_entries=sum(
+                        row.get("path") == RETIRED_SOURCE for row in items
                     ),
                 )
             LOG.info(
@@ -285,9 +269,8 @@ class LiveKNNStrategyC:
                 "cached": used_cache, "excluded": sum(failures.values()),
                 "skipped_duplicates": skipped,
                 "indexed_by_label": dict(counts),
-                "operator_corrected_archive_sources": sum(
-                    row.get("operator_quality_override_verified") is True
-                    for row in cache_rows
+                "retired_wrong_ng_entries": sum(
+                    row.get("path") == RETIRED_SOURCE for row in items
                 ),
                 "cache_saved": cache_saved,
                 "duration_ms": elapsed,

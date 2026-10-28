@@ -19,6 +19,9 @@ import re
 
 import numpy as np
 
+from src.core.operator_confirmed_archive_labels import (
+    RETIRED_SOURCE, verified_canonical_ok_source,
+)
 from src.services.faltando_neural_qualification import QualificationStore
 from src.services.odin_operator_confirmed_labels import verified_operator_labels, EVIDENCE
 from src.services.odin_operator_validation_labels import (
@@ -116,10 +119,21 @@ def universal_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
             raise ValueError("Categoria física NG contradiz arquivo OK: " + source)
 
     recorded, duplicates, skipped = [], 0, 0
+    # The original offline manifest is immutable and may still list this
+    # removed AOI mistake. Retire only the explicitly verified wrong NG;
+    # never silently skip any other missing source or altered SHA.
+    retired_source_missing = (
+        RETIRED_SOURCE in store.by_path
+        and not (store.root / RETIRED_SOURCE).exists()
+        and verified_canonical_ok_source(store.root)
+    )
     seen = {}
     labels = Counter()
     categories = Counter()
     for source, item in sorted(store.by_path.items()):
+        if source == RETIRED_SOURCE and retired_source_missing:
+            skipped += 1
+            continue
         if item.get("status") != "EXTRACTED_PENDING_REVIEW":
             raise ValueError("Par inválido: " + source)
         if item.get("visual_defect_type") is not None:

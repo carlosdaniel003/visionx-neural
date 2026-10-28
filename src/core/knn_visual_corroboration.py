@@ -1148,14 +1148,15 @@ def _mixed_light_ok_candidate(
 def _operator_corrected_side_ok_recall(
     fused: dict, report: dict, category: str,
 ) -> dict | None:
-    """Validated source was archived NG by AOI but confirmed physical OK.
+    """Recall canonical OK archive after erroneous historical NG was retired.
 
-    This path is narrowly gated by TOP/MID, CNN and independent physical
-    evidence; it never declares the *current* capture an exact pixel match.
+    Requires the wrong NG source to be absent. Does NOT infer byte-identical
+    pair from approximate KNN similarities.
     """
     from src.core.operator_confirmed_archive_labels import (
-        CORRECTED_SOURCE, CORRECTED_SOURCE_FILE_SHA256,
-        CORRECTED_SOURCE_PIXEL_SHA256, verified_operator_archive_override,
+        CANONICAL_OK_SOURCE, CANONICAL_OK_FILE_SHA256,
+        CANONICAL_OK_PIXEL_SHA256, verified_canonical_ok_source,
+        RETIRED_SOURCE,
     )
     if canonical_memory_category(category) != "FALTANDO":
         return None
@@ -1189,8 +1190,9 @@ def _operator_corrected_side_ok_recall(
         or trace.get("hard_missing_evidence") is True
     ):
         return None
-    # The document is only trusted when the actual PNG's raw SHA matches.
-    if verified_operator_archive_override() != "OK":
+    # The retired NG is no longer authoritative; only the intact OK PNG
+    # confirmed by its own file SHA may serve as the positive reference.
+    if not verified_canonical_ok_source():
         return None
     diag = d.get("cnn_v2_light_diagnostics")
     if not isinstance(diag, dict) or set(diag) != set(LIGHTS):
@@ -1245,8 +1247,8 @@ def _operator_corrected_side_ok_recall(
         if not isinstance(rows, dict):
             return None
         matched[light] = {}
-        for key, minimum in (("neighbors_A", .97 if light == "SIDE" else 0),
-                             ("neighbors_B", .96 if light == "SIDE" else 0)):
+        for key, minimum in (("neighbors_A", .85 if light == "SIDE" else 0),
+                             ("neighbors_B", .82 if light == "SIDE" else 0)):
             group = rows.get(key)
             if not isinstance(group, list) or len(group) < 5 or not all(
                 isinstance(row, dict) and row.get("label") in {"OK", "NG"}
@@ -1256,10 +1258,12 @@ def _operator_corrected_side_ok_recall(
             first = group[0]
             if light == "SIDE":
                 if not (
-                    first.get("path") == CORRECTED_SOURCE
+                    first.get("path") == CANONICAL_OK_SOURCE
                     and first.get("source_pixel_sha256")
-                    == CORRECTED_SOURCE_PIXEL_SHA256
-                    and first.get("label") in {"OK", "NG"}
+                    == CANONICAL_OK_PIXEL_SHA256
+                    and first.get("label") == "OK"
+                    and all(row.get("path") != RETIRED_SOURCE
+                            for row in group)
                 ):
                     return None
                 try:
@@ -1272,7 +1276,8 @@ def _operator_corrected_side_ok_recall(
                     return None
                 if (not math.isfinite(similarity) or similarity < minimum
                         or not math.isfinite(other_ng)
-                        or other_ng >= .91):
+                        or other_ng >= .90
+                        or other_ng > similarity - .015):
                     return None
                 matched[light][key] = round(similarity, 8)
             else:
@@ -1299,7 +1304,7 @@ def _operator_corrected_side_ok_recall(
     ):
         item = lights[light]
         if not isinstance(item, dict) or (
-            item.get("status") != "CONFLICT"
+            item.get("status") not in {"CONFLICT", "NO_CONCLUSION"}
             or item.get("cross_category_ng") is not False
             or not isinstance(item.get("ok"), dict)
             or not isinstance(item.get("ng"), dict)
@@ -1323,9 +1328,10 @@ def _operator_corrected_side_ok_recall(
     return {
         "schema": "visionx.operator_corrected_archive_ok_recall.v1",
         "quality_label": "OK",
-        "historical_source_path": CORRECTED_SOURCE,
-        "historical_source_file_sha256": CORRECTED_SOURCE_FILE_SHA256,
-        "historical_source_pixel_sha256": CORRECTED_SOURCE_PIXEL_SHA256,
+        "historical_source_path": CANONICAL_OK_SOURCE,
+        "historical_source_file_sha256": CANONICAL_OK_FILE_SHA256,
+        "historical_source_pixel_sha256": CANONICAL_OK_PIXEL_SHA256,
+        "retired_wrong_ng_source": RETIRED_SOURCE,
         "side_matches": matched["SIDE"],
         "knn_top_mid_ok_counts": {
             "TOP": matched["TOP"], "MID": matched["MID"],
@@ -1366,11 +1372,11 @@ def apply_knn_visual_corroboration(
         fused["eligible_for_final_decision"] = False
         fused["confidence"] = .5
         fused["reason"] = (
-            "FALHA FALSA • fonte SIDE rotulada NG pela AOI foi "
-            "reclassificada como OK pelo operador (SHA verificado). "
-            "TOP/MID têm maioria OK e assinaturas favoráveis, "
-            "sem evidência física de componente ausente. "
-            "Sem afirmar par de pixels exatamente idênticos."
+            "FALHA FALSA • referência válida SIDE recuperada no "
+            "ok_archive com SHA verificado; rótulo NG histórico incorreto "
+            "retirado da memória. TOP/MID têm maioria OK e assinaturas "
+            "favoráveis, sem evidência física de ausência. "
+            "Correspondência visual aproximada, não par exato."
         )
         detail["fusion_rule"] = "operator_corrected_archive_ok_three_light_v1"
         detail["operator_review_required"] = True

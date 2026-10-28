@@ -1,7 +1,7 @@
-"""Regression for known 2026-10-21 AOI-NG / operator-OK label conflict.
+"""Regression: operator removed wrong NG (1414), canonical OK (1416) remains.
 
-Replays event ec843a9ae7f04b26ab0681eebec8a1f8 and verifies the
-source-SHA override without treating approximate matches as exact pairs.
+No stale NG archive entry is permitted in the KNN C pool. The supervised
+recognition validates the REAL canonical OK SHA, not the removed file.
 """
 from __future__ import annotations
 
@@ -12,12 +12,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
-
 import numpy as np
 
 from src.core.operator_confirmed_archive_labels import (
-    CORRECTED_SOURCE, CORRECTED_SOURCE_PIXEL_SHA256,
-    verified_operator_archive_override,
+    CANONICAL_OK_SOURCE, CANONICAL_OK_PIXEL_SHA256, RETIRED_SOURCE,
+    verified_canonical_ok_source,
 )
 from src.core.knn_c_live import LiveKNNStrategyC
 from src.core.knn_visual_corroboration import apply_knn_visual_corroboration
@@ -26,7 +25,7 @@ from src.ui.decision_verdict_feedback import verdict_feedback_state
 from tests.test_knn_three_light_ok_counterevidence import fused, report
 
 
-def event(side_label="NG"):
+def event():
     a = fused()
     a.update(verdict="REVISÃO OBRIGATÓRIA", is_defect=False,
              production_review_required=True, confidence=.5)
@@ -50,39 +49,39 @@ def event(side_label="NG"):
             )
         },
     )
-    side = d["knn_c_light_observer_votes"]["SIDE"]
-    side.update(status="SUGERE_NG", reason="A_SELETIVA_E_VOTOS_A_B_CONCORDAM",
-                vote_A="NG" if side_label == "NG" else "OK",
-                vote_B="NG" if side_label == "NG" else "OK",
-                suggestion_A="SUGERE_NG" if side_label == "NG" else "REVISAO",
-                suggestion_B="REVISAO",
-                similarity_A=.97620107, similarity_B=.96378327)
+    # After 1414 is removed, 1416 is the closest confirmed OK SIDE.
+    d["knn_c_light_observer_votes"]["SIDE"].update(
+        status="REVISAO", reason="SEM_SUGESTAO_CONFIAVEL",
+        vote_A="OK", vote_B="OK", suggestion_A="REVISAO",
+        suggestion_B="REVISAO", similarity_A=.86618201,
+        similarity_B=.83100362,
+    )
     for light in ("TOP", "MID"):
         d["knn_c_light_observer_votes"][light].update(
             status="REVISAO", vote_A="OK", vote_B="OK",
             suggestion_A="REVISAO", suggestion_B="REVISAO",
         )
-    def n(label, similarity, path="", pixel=""):
-        return {"label": label, "similarity": similarity,
+    def n(label, sim, path="", pixel=""):
+        return {"label": label, "similarity": sim,
                 "path": path or f"public/{label.lower()}_archive/sample.png",
-                "source_pixel_sha256": pixel or "d" * 64}
+                "source_pixel_sha256": pixel or "d"*64}
     side_a = [
-        n(side_label, .97620107, CORRECTED_SOURCE, CORRECTED_SOURCE_PIXEL_SHA256),
-        n("OK", .86618201), n("NG", .82163046),
-        n("OK", .82143573), n("NG", .81505456),
+        n("OK", .86618201, CANONICAL_OK_SOURCE, CANONICAL_OK_PIXEL_SHA256),
+        n("NG", .82163046), n("OK", .82143573),
+        n("NG", .81505456), n("OK", .803),
     ]
     side_b = [
-        n(side_label, .96378327, CORRECTED_SOURCE, CORRECTED_SOURCE_PIXEL_SHA256),
-        n("OK", .83100362), n("OK", .78586923),
-        n("OK", .78237802), n("OK", .77834246),
+        n("OK", .83100362, CANONICAL_OK_SOURCE, CANONICAL_OK_PIXEL_SHA256),
+        n("OK", .78586923), n("OK", .78237802),
+        n("OK", .77834246), n("NG", .770),
     ]
-    def ok_group(ng_slot):
-        return [n("NG" if i == ng_slot else "OK", .86-i*.015)
+    def group(ng_slot):
+        return [n("NG" if i == ng_slot else "OK", .87-i*.02)
                 for i in range(5)]
     d["knn_c_light_neighbor_evidence"] = {
         "SIDE": {"neighbors_A": side_a, "neighbors_B": side_b},
-        "TOP": {"neighbors_A": ok_group(-1), "neighbors_B": ok_group(4)},
-        "MID": {"neighbors_A": ok_group(1), "neighbors_B": ok_group(1)},
+        "TOP": {"neighbors_A": group(-1), "neighbors_B": group(4)},
+        "MID": {"neighbors_A": group(1), "neighbors_B": group(1)},
     }
     visual = report()
     visual["strong_ng_lights"] = []
@@ -101,156 +100,147 @@ def event(side_label="NG"):
     return a, visual
 
 
-class OperatorCorrectedArchiveTests(unittest.TestCase):
-    def test_human_label_override_verifies_evidence_json_and_real_png_bytes(self):
+class RetiredWrongNGTests(unittest.TestCase):
+    def test_canonical_source_verification_requires_wrong_ng_absent(self):
         import src.core.operator_confirmed_archive_labels as mod
         with TemporaryDirectory() as folder:
             root = Path(folder)
-            source = root / mod.CORRECTED_SOURCE
-            source.parent.mkdir(parents=True)
-            source.write_bytes(b"operator-approved-image")
-            digest = sha256(source.read_bytes()).hexdigest()
-            manifest = root / mod.EVIDENCE_PATH
-            manifest.parent.mkdir(parents=True)
-            manifest.write_text(json.dumps({
+            img = root / CANONICAL_OK_SOURCE
+            img.parent.mkdir(parents=True)
+            img.write_bytes(b"operator-approved-canonical-OK")
+            digest = sha256(img.read_bytes()).hexdigest()
+            doc = root / mod.EVIDENCE_PATH
+            doc.parent.mkdir(parents=True)
+            payload = {
                 "schema": "visionx.operator_confirmed_quality.v1",
                 "reviewed_on": "2026-10-26",
                 "approved_for_production": False,
-                "labels": [{
-                    "source_path": mod.CORRECTED_SOURCE,
-                    "source_sha256": digest, "quality_label": "OK",
-                    "physical_type": "COMPONENT_PRESENT",
-                }],
-            }), encoding="utf-8")
-            with patch.object(mod, "CORRECTED_SOURCE_FILE_SHA256", digest):
-                self.assertEqual(
-                    verified_operator_archive_override(root), "OK",
-                )
-                source.write_bytes(b"altered")
-                self.assertIsNone(verified_operator_archive_override(root))
-                source.write_bytes(b"operator-approved-image")
-                record = json.loads(manifest.read_text())
-                record["labels"][0]["quality_label"] = "NG"
-                manifest.write_text(json.dumps(record))
-                self.assertIsNone(verified_operator_archive_override(root))
+                "labels": [
+                    {"source_path": mod.RETIRED_SOURCE,
+                     "source_sha256": mod.RETIRED_SOURCE_FILE_SHA256,
+                     "quality_label": "OK"},
+                    {"source_path": CANONICAL_OK_SOURCE, "source_sha256": digest,
+                     "quality_label": "OK", "physical_type": "COMPONENT_PRESENT"},
+                ],
+            }
+            doc.write_text(json.dumps(payload), encoding="utf-8")
+            with patch.object(mod, "CANONICAL_OK_FILE_SHA256", digest):
+                self.assertTrue(verified_canonical_ok_source(root))
+                wrong = root / RETIRED_SOURCE
+                wrong.parent.mkdir(parents=True)
+                wrong.write_bytes(b"wrong-NG-is-present")
+                self.assertFalse(verified_canonical_ok_source(root))
+                wrong.unlink()
+                img.write_bytes(b"tampered")
+                self.assertFalse(verified_canonical_ok_source(root))
+                img.write_bytes(b"operator-approved-canonical-OK")
+                payload["labels"][1]["quality_label"] = "NG"
+                doc.write_text(json.dumps(payload), encoding="utf-8")
+                self.assertFalse(verified_canonical_ok_source(root))
 
-    def test_knn_c_warmup_relabels_only_sha_pinned_source_not_folder(self):
-        image = {
-            "path": CORRECTED_SOURCE,
-            "expected_label": "NG", "pixel_sha256": CORRECTED_SOURCE_PIXEL_SHA256,
-            "file_sha256": "a" * 64, "lighting_mode": "SIDE",
+    def test_knn_c_discards_wrong_ng_even_if_old_inventory_contains_it(self):
+        wrong = {
+            "path": RETIRED_SOURCE, "expected_label": "NG",
+            "pixel_sha256": "a"*64, "file_sha256": "b"*64,
+            "lighting_mode": "SIDE", "status": "VALID_PNG",
+        }
+        good = {
+            "path": CANONICAL_OK_SOURCE, "expected_label": "OK",
+            "pixel_sha256": CANONICAL_OK_PIXEL_SHA256,
+            "file_sha256": "c"*64, "lighting_mode": "SIDE",
             "status": "VALID_PNG",
         }
         inventory = {
-            "schema": "visionx.archive_inventory.v1", "images": [image],
-            "summary": {"png_count": 1}, "cross_label_conflicts": [],
+            "schema": "visionx.archive_inventory.v1",
+            "images": [wrong, good],
+            "summary": {"png_count": 2}, "cross_label_conflicts": [],
         }
         with TemporaryDirectory() as folder:
             bank = LiveKNNStrategyC(
                 root=folder, inventory=inventory,
                 extractor=lambda frame: (frame, frame, {}),
-                frame_loader=lambda root, item: np.ones((40, 40, 3), dtype=np.uint8),
+                frame_loader=lambda root, item: np.ones((40,40,3),dtype=np.uint8),
             )
-            with patch("src.core.knn_c_live.verified_operator_archive_override",
-                       return_value="OK"), patch(
-                "src.core.knn_c_live.build_focus_signature",
-                return_value={"focus": [1, 2, 3]},
-            ), patch(
+            with patch("src.core.knn_c_live.build_focus_signature",
+                       return_value={"focus": [1,2,3]}), patch(
                 "src.core.knn_c_live.valid_focus_signature", return_value=True,
-            ), patch(
-                "src.core.knn_c_live.build_geometry_signature",
-                return_value={"geo": 1},
-            ):
+            ), patch("src.core.knn_c_live.build_geometry_signature",
+                     return_value={"geometry": 1}):
                 result = bank.warmup()
-            self.assertEqual(result["status"], "READY")
-            self.assertEqual(result["indexed_by_label"], {"OK": 1, "NG": 0})
-            self.assertEqual(result["operator_corrected_archive_sources"], 1)
-            entry = bank._pools["SIDE"][0]
-            self.assertEqual(entry["expected_label"], "OK")
-            self.assertEqual(entry["archive_folder_label"], "NG")
+        self.assertEqual(result["status"], "READY")
+        self.assertEqual(result["indexed_by_label"], {"OK": 1, "NG": 0})
+        self.assertEqual(result["retired_wrong_ng_entries"], 1)
+        self.assertEqual([e["source_path"] for e in bank._pools["SIDE"]],
+                         [CANONICAL_OK_SOURCE])
 
-    def test_fusion_and_production_auto_ok_for_known_corrected_source(self):
-        for label in ("NG", "OK"):
-            with self.subTest(source_memory_label=label):
-                a, report_data = event(label)
-                with patch(
-                    "src.core.operator_confirmed_archive_labels.verified_operator_archive_override",
-                    return_value="OK",
-                ), patch(
-                    "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
-                    return_value=deepcopy(report_data),
-                ):
-                    actual = apply_knn_visual_corroboration(
-                        a, {}, "FALTANDO", object(),
-                    )
-                    self.assertEqual(actual["verdict"], "FALHA FALSA")
-                    self.assertEqual(
-                        actual["detail"]["fusion_rule"],
-                        "operator_corrected_archive_ok_three_light_v1",
-                    )
-                    info = actual["detail"]["operator_corrected_archive_ok_recall"]
-                    self.assertFalse(info["current_pair_exact_match"])
-                    self.assertTrue(info["source_human_quality_verified"])
-                    policy_manual = production_decision_policy(actual)
-                    self.assertFalse(policy_manual["auto_allowed"])
-                    actual["detail"]["production_continuous_auto"] = True
-                    policy = production_decision_policy(actual)
-                    self.assertEqual(policy["proposed_decision"], "OK")
-                    self.assertTrue(policy["auto_allowed"])
-                    self.assertEqual(
-                        policy["reason"],
-                        "supervised_operator_corrected_archive_ok_auto_v1",
-                    )
-                    self.assertEqual(verdict_feedback_state(actual),
-                                     ("FALHA FALSA", "ok"))
+    def test_supervised_recognition_and_auto_ok_only_with_canonical_source(self):
+        a, visual = event()
+        with patch(
+            "src.core.operator_confirmed_archive_labels.verified_canonical_ok_source",
+            return_value=True,
+        ), patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=deepcopy(visual),
+        ):
+            actual = apply_knn_visual_corroboration(a, {}, "FALTANDO", object())
+            self.assertEqual(actual["verdict"], "FALHA FALSA")
+            info = actual["detail"]["operator_corrected_archive_ok_recall"]
+            self.assertEqual(info["historical_source_path"], CANONICAL_OK_SOURCE)
+            self.assertFalse(info["current_pair_exact_match"])
+            self.assertFalse(production_decision_policy(actual)["auto_allowed"])
+            actual["detail"]["production_continuous_auto"] = True
+            policy = production_decision_policy(actual)
+            self.assertEqual(policy["proposed_decision"], "OK")
+            self.assertTrue(policy["auto_allowed"])
+            self.assertEqual(policy["reason"],
+                             "supervised_operator_corrected_archive_ok_auto_v1")
+            self.assertEqual(verdict_feedback_state(actual), ("FALHA FALSA", "ok"))
 
-    def test_disagreement_or_unverified_source_never_auto_approves(self):
+    def test_forged_source_ng_or_physical_defect_blocks_auto_ok(self):
         variants = (
-            ("bad_source", lambda a, r:
+            ("wrong_path", lambda a,r:
              a["detail"]["knn_c_light_neighbor_evidence"]["SIDE"]
-             ["neighbors_A"][0].update(path="public/ok_archive/other.png")),
-            ("wrong_sha", lambda a, r:
+             ["neighbors_A"][0].update(path=RETIRED_SOURCE)),
+            ("wrong_pixel_sha",lambda a,r:
              a["detail"]["knn_c_light_neighbor_evidence"]["SIDE"]
              ["neighbors_B"][0].update(source_pixel_sha256="0"*64)),
-            ("physical_missing", lambda a, r:
-             a["detail"].update(physical_score=.7)),
-            ("strong_ng", lambda a, r: r.update(strong_ng_lights=["SIDE"])),
-            ("side_ng_margin", lambda a, r: r["lights"]["SIDE"].update(
-                ng={"best_similarity": 1.0},
+            ("wrong_label",lambda a,r:
+             a["detail"]["knn_c_light_neighbor_evidence"]["SIDE"]
+             ["neighbors_A"][0].update(label="NG")),
+            ("strong_side_ng",lambda a,r:
+             a["detail"]["knn_c_light_neighbor_evidence"]["SIDE"]
+             ["neighbors_A"][1].update(similarity=.95)),
+            ("physical_missing",lambda a,r:a["detail"].update(physical_score=.7)),
+            ("strong_ng_lights",lambda a,r:r.update(strong_ng_lights=["SIDE"])),
+            ("side_margin",lambda a,r:r["lights"]["SIDE"].update(
+                ng={"best_similarity":1.0},
                 ng_margin_over_ok=1.0-.977865)),
-            ("top_ng", lambda a, r:
-             a["detail"]["knn_c_light_observer_votes"]["TOP"].update(vote_A="NG")),
-            ("cnn_strong_ng", lambda a, r:
-             a["detail"]["cnn_v2_light_diagnostics"]["SIDE"].update(
-                 ng_score_uncalibrated=.99)),
+            ("top_vote_ng",lambda a,r:
+             a["detail"]["knn_c_light_observer_votes"]["TOP"].update(vote_B="NG")),
         )
         for name, change in variants:
             with self.subTest(name=name):
-                a, report_data = event()
-                change(a, report_data)
+                a, visual = event()
+                change(a, visual)
                 with patch(
-                    "src.core.operator_confirmed_archive_labels.verified_operator_archive_override",
-                    return_value="OK",
+                    "src.core.operator_confirmed_archive_labels.verified_canonical_ok_source",
+                    return_value=True,
                 ), patch(
                     "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
-                    return_value=report_data,
+                    return_value=visual,
                 ):
-                    result = apply_knn_visual_corroboration(
-                        a, {}, "FALTANDO", object(),
-                    )
-                self.assertNotEqual(result["verdict"], "FALHA FALSA")
-        a, report_data = event()
+                    actual=apply_knn_visual_corroboration(a,{}, "FALTANDO",object())
+                self.assertNotEqual(actual["verdict"], "FALHA FALSA")
+        a,visual=event()
         with patch(
-            "src.core.operator_confirmed_archive_labels.verified_operator_archive_override",
-            return_value=None,
+            "src.core.operator_confirmed_archive_labels.verified_canonical_ok_source",
+            return_value=False,
         ), patch(
             "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
-            return_value=report_data,
+            return_value=visual,
         ):
-            result = apply_knn_visual_corroboration(
-                a, {}, "FALTANDO", object(),
-            )
-            self.assertNotEqual(result["verdict"], "FALHA FALSA")
+            actual=apply_knn_visual_corroboration(a,{},"FALTANDO",object())
+        self.assertNotEqual(actual["verdict"], "FALHA FALSA")
 
 
 if __name__ == "__main__":

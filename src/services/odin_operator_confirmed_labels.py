@@ -13,6 +13,9 @@ import json
 from pathlib import Path
 import re
 
+from src.core.operator_confirmed_archive_labels import (
+    RETIRED_SOURCE, verified_canonical_ok_source,
+)
 from src.services.faltando_neural_qualification import QualificationStore
 
 SCHEMA = "visionx.operator_confirmed_quality.v1"
@@ -34,6 +37,11 @@ def verified_operator_labels(root: Path) -> dict[str, dict]:
     entries = doc.get("labels")
     if not isinstance(entries, list) or len(entries) != 15:
         raise ValueError("Revisão humana deve conter os 15 PNGs confirmados")
+    # Keep all 15 historical decisions in the audit document. When
+    # the operator removes the one mislabeled AOI NG capture, omit only
+    # that retired source from active offline training/qualification.
+    retired = (not (root / RETIRED_SOURCE).exists()
+               and verified_canonical_ok_source(root))
     verified: dict[str, dict] = {}
     for row in entries:
         if not isinstance(row, dict):
@@ -54,6 +62,8 @@ def verified_operator_labels(root: Path) -> dict[str, dict]:
                 or rel.suffix.lower() != ".png"):
             raise ValueError("PNG fora dos arquivos protegidos: " + source)
         original = root / rel
+        if source == RETIRED_SOURCE and retired and not original.is_symlink():
+            continue
         if original.is_symlink() or not original.is_file():
             raise ValueError("PNG não encontrado ou symlink: " + source)
         if not original.resolve().is_relative_to(root / "public"):
@@ -62,10 +72,12 @@ def verified_operator_labels(root: Path) -> dict[str, dict]:
             raise ValueError("PNG divergente da confirmação humana: " + source)
         verified[source] = row
     counts = Counter(row["quality_label"] for row in verified.values())
-    if counts != Counter({"NG": 12, "OK": 3}):
+    if counts != Counter({"NG": 12, "OK": 2 if retired else 3}):
         raise ValueError("Contagens de decisões humanas incompatíveis")
     conflict = verified.get("public/ng_archive/2026-10-21_1414_FALTANDO.png")
-    if not conflict or conflict["quality_label"] != "OK":
+    if not retired and (
+        not conflict or conflict["quality_label"] != "OK"
+    ):
         raise ValueError("Correção crítica do caso 7 ausente")
     return verified
 

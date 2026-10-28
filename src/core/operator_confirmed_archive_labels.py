@@ -1,7 +1,8 @@
-"""Human-confirmed AOI archive quality labels for *live* KNN recall.
+"""Verified canonical OK reference and retired erroneous AOI NG provenance.
 
-Archive locations encode the original AOI judgment, not necessarily physical
-quality. Never edit historical images or treat a non-matching SHA as confirmed.
+The original NG judgment is retained in the human audit JSON, not in KNN
+training. After the operator deletes the erroneous PNG, all live matching
+depends exclusively on an unmodified, SHA-pinned OK archive reference.
 """
 from __future__ import annotations
 
@@ -12,39 +13,43 @@ from pathlib import Path
 from src.config.settings import BASE_DIR
 
 EVIDENCE_PATH = "docs/odin_operator_confirmed_quality_20261026.json"
-CORRECTED_SOURCE = "public/ng_archive/2026-10-21_1414_FALTANDO.png"
-CORRECTED_SOURCE_FILE_SHA256 = "b33a8a9b9a9f7ef2684564f851ee989c5a76783ab158095cd5b910c52311dc65"
-CORRECTED_SOURCE_PIXEL_SHA256 = "4481318c87aa3568959554fa95b438ef1b1c74a9d2b4876c2bd14c7ea751f9a3"
+RETIRED_SOURCE = "public/ng_archive/2026-10-21_1414_FALTANDO.png"
+RETIRED_SOURCE_FILE_SHA256 = "b33a8a9b9a9f7ef2684564f851ee989c5a76783ab158095cd5b910c52311dc65"
+CANONICAL_OK_SOURCE = "public/ok_archive/2026-10-21_1416_FALTANDO.png"
+CANONICAL_OK_FILE_SHA256 = "118f0396fdb3759d58063582dbfcd2a64f83d13389991c1d96050f0d58011043"
+CANONICAL_OK_PIXEL_SHA256 = "0fddce88f7179bc816a094a1c2b7b9117cbef24a71d717cf29b3646ea619970f"
 
 
-def verified_operator_archive_override(
-    root: Path | None = None, source: str = CORRECTED_SOURCE,
-) -> str | None:
-    """Return validated physical-quality override, or None (fail closed)."""
-    if source != CORRECTED_SOURCE:
-        return None
+def verified_canonical_ok_source(root: Path | None = None) -> bool:
+    """Only the verified live OK PNG is eligible; old NG must be gone."""
     root = Path(root or BASE_DIR).resolve()
     try:
-        document = root / EVIDENCE_PATH
-        image = root / CORRECTED_SOURCE
-        if (document.is_symlink() or image.is_symlink()
-                or not document.is_file() or not image.is_file()
-                or not image.resolve().is_relative_to(root / "public")):
-            return None
-        payload = json.loads(document.read_text(encoding="utf-8"))
-        if (payload.get("schema") != "visionx.operator_confirmed_quality.v1"
-                or payload.get("reviewed_on") != "2026-10-26"
-                or payload.get("approved_for_production") is not False
-                or not isinstance(payload.get("labels"), list)):
-            return None
-        rows = [r for r in payload["labels"] if isinstance(r, dict)
-                and r.get("source_path") == CORRECTED_SOURCE]
-        if (len(rows) != 1 or rows[0].get("quality_label") != "OK"
-                or rows[0].get("source_sha256") != CORRECTED_SOURCE_FILE_SHA256
-                or rows[0].get("physical_type") != "COMPONENT_PRESENT"):
-            return None
-        if sha256(image.read_bytes()).hexdigest() != CORRECTED_SOURCE_FILE_SHA256:
-            return None
-        return "OK"
+        evidence = root / EVIDENCE_PATH
+        canonical = root / CANONICAL_OK_SOURCE
+        obsolete = root / RETIRED_SOURCE
+        if (not evidence.is_file() or evidence.is_symlink()
+                or not canonical.is_file() or canonical.is_symlink()
+                or obsolete.exists() or obsolete.is_symlink()
+                or not canonical.resolve().is_relative_to(root / "public/ok_archive")):
+            return False
+        document = json.loads(evidence.read_text(encoding="utf-8"))
+        if (document.get("schema") != "visionx.operator_confirmed_quality.v1"
+                or document.get("reviewed_on") != "2026-10-26"
+                or document.get("approved_for_production") is not False
+                or not isinstance(document.get("labels"), list)):
+            return False
+        rows = {source: [item for item in document["labels"]
+                         if isinstance(item, dict)
+                         and item.get("source_path") == source]
+                for source in (RETIRED_SOURCE, CANONICAL_OK_SOURCE)}
+        old, good = rows[RETIRED_SOURCE], rows[CANONICAL_OK_SOURCE]
+        if not (len(old) == len(good) == 1
+                and old[0].get("source_sha256") == RETIRED_SOURCE_FILE_SHA256
+                and old[0].get("quality_label") == "OK"
+                and good[0].get("source_sha256") == CANONICAL_OK_FILE_SHA256
+                and good[0].get("quality_label") == "OK"
+                and good[0].get("physical_type") == "COMPONENT_PRESENT"):
+            return False
+        return sha256(canonical.read_bytes()).hexdigest() == CANONICAL_OK_FILE_SHA256
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return None
+        return False
