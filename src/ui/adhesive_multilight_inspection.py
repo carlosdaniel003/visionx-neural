@@ -446,6 +446,22 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
     )
     if side_only:
         fused = build_side_early_decision(analyses.get("SIDE"), category)
+        if fused is None and (
+            getattr(getattr(panel, "combo_mode", None), "currentText",
+                    lambda: "")() == "Modo Produção"
+        ):
+            from src.core.side_recurrent_ok_review import (
+                build_side_recurrent_ok_review,
+            )
+            sample = getattr(
+                panel, "adhesive_multilight_learning_samples", {}
+            )
+            side = sample.get("SIDE") if isinstance(sample, dict) else None
+            if isinstance(side, dict):
+                fused = build_side_recurrent_ok_review(
+                    analyses.get("SIDE"), category,
+                    side.get("sample_image"), side.get("test_image"),
+                )
     else:
         fused = fuse_multilight(analyses, category)
     if not isinstance(fused, dict):
@@ -1239,6 +1255,16 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         side_analysis = self.adhesive_multilight_analyses["SIDE"]
         test_knn_trigger = test_mode_side_knn_disagreement(side_analysis, mode)
         side_early = build_side_early_decision(side_analysis, category)
+        if side_early is None and mode == "Modo Produção":
+            from src.core.side_recurrent_ok_review import (
+                build_side_recurrent_ok_review,
+            )
+            side_sample = self.adhesive_multilight_learning_samples.get("SIDE")
+            if isinstance(side_sample, dict):
+                side_early = build_side_recurrent_ok_review(
+                    side_analysis, category,
+                    side_sample.get("sample_image"), side_sample.get("test_image"),
+                )
         if isinstance(test_knn_trigger, dict) and side_early is not None:
             side_analysis.setdefault("detail", {})[
                 "test_mode_side_knn_disagreement"
@@ -1246,7 +1272,8 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         else:
             test_knn_trigger = None
 
-        # Produção e Sombra seguem exatamente o fluxo anterior.
+        # Somente a memória visual supervisionada SIDE dispensa TOP/MID
+        # para revisão humana, nunca para aprovação automática do XP.
         if side_early is not None and test_knn_trigger is None:
             finalize = getattr(self, "finalize_multilight_decision", None)
             final = finalize(side_only=True) if callable(finalize) else None
