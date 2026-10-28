@@ -108,6 +108,7 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
         and detail.get("fusion_rule") in {
             "operator_confirmed_recurrent_ok_three_light_review_v1",
             "operator_confirmed_ok_pattern_three_light_review_v1",
+            "operator_recurrent_ok_top_mid_review_v1",
         }
     ):
         from src.ui.production_confidence_gate import production_decision_policy
@@ -117,6 +118,7 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
             and policy.get("reason") in {
                 "operator_confirmed_recurring_ok_requires_operator",
                 "operator_confirmed_ok_pattern_requires_operator",
+                "operator_recurrent_ok_top_mid_requires_operator",
             }
             and policy.get("auto_allowed") is False
         ):

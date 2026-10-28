@@ -123,10 +123,12 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         # o flag calculado pela fusão não basta para liberar a placa.
         from src.core.knn_visual_corroboration import (
             _operator_confirmed_ok_pattern_review, _recognized_recurrent_ok,
+            _recognized_two_light_operator_ok,
         )
         recalled = detail.get("recognized_recurrent_ok")
         pattern = detail.get("operator_confirmed_ok_pattern_review")
         counterevidence = detail.get("knn_ok_counterevidence")
+        two_light = detail.get("recognized_two_light_operator_ok")
         trace = detail.get("decision_trace")
         verified_recall = _recognized_recurrent_ok(detail, counterevidence)
         verified_pattern = _operator_confirmed_ok_pattern_review(
@@ -146,9 +148,26 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             and detail.get("fusion_rule")
             == "operator_confirmed_ok_pattern_three_light_review_v1"
         )
+        verified_two_light = _recognized_two_light_operator_ok(
+            {
+                **analysis, "verdict": detail.get("cnn_ng_verdict_before_knn_review"),
+                "is_defect": detail.get("cnn_ng_verdict_before_knn_review")
+                == "DEFEITO REAL",
+            } if isinstance(analysis, dict) else {},
+            detail.get("knn_visual_corroboration"), "FALTANDO",
+        )
+        # Recompute using original CNN NG evidence rather than trusting
+        # a final UI label; the helper accepts only raw NG multilight.
+        valid_two_light = bool(
+            isinstance(two_light, dict)
+            and verified_two_light is not None
+            and two_light == verified_two_light
+            and detail.get("fusion_rule")
+            == "operator_recurrent_ok_top_mid_review_v1"
+        )
         if (
             verdict == "FALHA FALSA"
-            and (valid_known_ok or valid_pattern)
+            and (valid_known_ok or valid_pattern or valid_two_light)
             and detail.get("operator_review_required") is True
             and isinstance(analysis, dict)
             and analysis.get("production_review_required") is True
@@ -170,6 +189,8 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 "reason": (
                     "operator_confirmed_recurring_ok_requires_operator"
                     if valid_known_ok
+                    else "operator_recurrent_ok_top_mid_requires_operator"
+                    if valid_two_light
                     else "operator_confirmed_ok_pattern_requires_operator"
                 ),
                 "operator_shortcuts": {"0": "OK", "1": "NG"},
