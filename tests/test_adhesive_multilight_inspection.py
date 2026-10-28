@@ -422,6 +422,37 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                     else:
                         panel.notify_production_analysis_ready.assert_not_called()
 
+    def test_verified_1416_side_early_skips_top_mid_but_never_sends_xp(self):
+        from tests.test_side_recurrent_ok_review import side, audit
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        with (
+            patch(
+                "src.core.side_recurrent_ok_review.verified_canonical_ok_source",
+                return_value=True,
+            ),
+            patch(
+                "src.core.side_recurrent_ok_review.physical_absence_probe",
+                return_value=audit(),
+            ),
+        ):
+            panel = self._run_capture(
+                confidence=.96563242748, verdict="FALHA FALSA",
+                mode="Modo Produção", side_analysis=side(),
+            )
+            policy = production_decision_policy(panel.current_analysis)
+
+        self.assertFalse(panel.adhesive_multilight_active)
+        self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
+        self.assertEqual(panel.current_analysis["verdict"], "FALHA FALSA")
+        self.assertEqual(panel.current_analysis["detail"]["side_early_exit"][
+            "skipped_lights"], ["TOP", "MID"])
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "")
+        panel.send_command_to_xp.assert_not_called()
+        panel.adhesive_multilight_automation.start.assert_not_called()
+        panel.notify_production_analysis_ready.assert_called_once()
+
     def test_trial_ng_ends_after_side_in_all_modes_without_sending_xp(self):
         from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
         from src.ui.production_confidence_gate import production_decision_policy
