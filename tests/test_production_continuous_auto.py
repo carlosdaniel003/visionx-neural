@@ -185,5 +185,81 @@ class QuarantineUnverifiedLabelsTests(unittest.TestCase):
                 }))
 
 
+class ProductionAutoArchiveIsolationTests(unittest.TestCase):
+    def test_control_panel_auto_ng_does_not_write_training_dataset(self):
+        from src.ui.control_panel import ControlPanel
+        fake = _Panel()
+        fake.current_ng = np.zeros((32, 32, 3), dtype=np.uint8)
+        fake.current_analysis = uncertain_three_light()
+        fake.current_analysis["detail"]["production_decision_policy"] = {
+            "reason": "production_uncertain_auto_ng_quarantine_v1",
+            "resolution": "automatic",
+        }
+        sent = []
+        fake.send_command_to_xp = lambda cmd: sent.append(cmd) or True
+        with patch(
+            "src.ui.control_panel.DatasetManager.save_sample",
+            side_effect=AssertionError("NG auto must never teach KNN"),
+        ):
+            result = ControlPanel.save_label(fake, "NG", source="production_auto")
+        self.assertIsNone(result)
+        self.assertEqual(sent, ["1"])
+        self.assertIs(fake.last_decision_command_success, True)
+
+    def test_ng_archive_hook_excludes_unverified_auto(self):
+        from src.services.ng_image_archive import install_ng_image_archive
+        class Plain:
+            def save_label(self, label, source="button"):
+                self.called = (label, source)
+                return None
+        install_ng_image_archive(Plain)
+        p = Plain.__new__(Plain)
+        p.current_ng = np.zeros((16, 16, 3), dtype=np.uint8)
+        p.current_analysis = uncertain_three_light()
+        p.current_analysis["detail"]["production_decision_policy"] = {
+            "reason": "production_uncertain_auto_ng_quarantine_v1",
+            "resolution": "automatic",
+        }
+        p.capture_cycle_source = "network"
+        p.current_aoi_info = {"category": "FALTANDO"}
+        p.ng_archive_enabled = True
+        with patch(
+            "src.services.ng_image_archive.archive_image_candidates",
+            side_effect=AssertionError("must not save auto-NG into NG archive"),
+        ):
+            p.save_label("NG", source="production_auto")
+        self.assertEqual(p.called, ("NG", "production_auto"))
+
+    def test_anomaly_learning_routes_autonomous_decision_to_quarantine(self):
+        from src.services.anomaly_learning import install_anomaly_learning
+        class Plain:
+            def save_label(self, label, source="button"):
+                self.last_decision_command_success = True
+                self.called = (label, source)
+                return None
+        install_anomaly_learning(Plain)
+        p = Plain.__new__(Plain)
+        p.current_ng = np.zeros((16, 16, 3), dtype=np.uint8)
+        p.current_analysis = uncertain_three_light()
+        p.current_analysis["detail"]["production_decision_policy"] = {
+            "reason": "production_uncertain_auto_ng_quarantine_v1",
+            "resolution": "automatic",
+        }
+        task = {
+            "source": "production_auto",
+            "analysis": p.current_analysis,
+            "label": "NG",
+        }
+        with patch(
+            "src.services.anomaly_learning._decision_task", return_value=task,
+        ) as snapshot, patch(
+            "src.services.anomaly_learning._submit_decision_persistence",
+        ) as queued:
+            p.save_label("NG", source="production_auto")
+        snapshot.assert_called_once()
+        queued.assert_called_once_with(p, task)
+        self.assertEqual(p.called, ("NG", "production_auto"))
+
+
 if __name__ == "__main__":
     unittest.main()

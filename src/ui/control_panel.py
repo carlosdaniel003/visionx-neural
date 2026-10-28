@@ -861,6 +861,28 @@ class ControlPanel(QWidget):
                     )
                     return False
 
+        # Resultado automático ainda não é verdade física humana.
+        # Não criar amostra NG/OK para DatasetManager ou memória ao
+        # discordar de uma classificação original provisória. O hook
+        # anomaly_learning já copiou o evento para auditoria isolada.
+        if source == "production_auto":
+            from src.services.decision_persistence import (
+                _UNVERIFIED_AUTOMATIC_REASONS,
+            )
+            raw = self.current_analysis if isinstance(
+                self.current_analysis, dict,
+            ) else {}
+            detail = raw.get("detail") if isinstance(raw.get("detail"), dict) else {}
+            policy = detail.get("production_decision_policy")
+            if (
+                isinstance(policy, dict)
+                and policy.get("reason") in _UNVERIFIED_AUTOMATIC_REASONS
+                and policy.get("resolution") == "automatic"
+            ):
+                from src.services.anomaly_learning import _finish_operator_decision_ui
+                _finish_operator_decision_ui(self, user_decision, source)
+                return None
+
         # =========================================================
         # FILTRO DE DISCORDÂNCIA (HARD NEGATIVE MINING)
         # =========================================================

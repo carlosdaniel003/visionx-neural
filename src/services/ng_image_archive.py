@@ -194,6 +194,17 @@ def install_ng_image_archive(control_panel_cls) -> None:
 
     def wrapped_save_label(self, user_decision: str, source="button"):
         normalized = str(user_decision or "").strip().upper()
+        unverified_auto = False
+        if str(source or "").strip().lower() == "production_auto":
+            from src.services.decision_persistence import _UNVERIFIED_AUTOMATIC_REASONS
+            analysis = getattr(self, "current_analysis", None)
+            detail = analysis.get("detail") if isinstance(analysis, dict) else {}
+            policy = detail.get("production_decision_policy") if isinstance(detail, dict) else {}
+            unverified_auto = bool(
+                isinstance(policy, dict)
+                and policy.get("reason") in _UNVERIFIED_AUTOMATIC_REASONS
+                and policy.get("resolution") == "automatic"
+            )
 
         current_cycle_source = str(
             getattr(self, "capture_cycle_source", "") or ""
@@ -218,6 +229,7 @@ def install_ng_image_archive(control_panel_cls) -> None:
 
         should_archive = bool(
             normalized == "NG"
+            and not unverified_auto
             and getattr(self, "ng_archive_enabled", False)
             and current_cycle_source == "network"
             and has_live_analysis
@@ -246,6 +258,7 @@ def install_ng_image_archive(control_panel_cls) -> None:
 
         if (
             normalized == "NG"
+            and not unverified_auto
             and getattr(self, "ng_archive_enabled", False)
             and current_cycle_source == "network"
             and has_live_analysis

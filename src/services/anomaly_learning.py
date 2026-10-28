@@ -191,10 +191,30 @@ def install_anomaly_learning(control_panel_cls) -> None:
         if normalized not in {"OK", "NG"} or self.current_ng is None:
             return None
 
-        # Produção automática não cria rótulos humanos para si mesma.
-        # "production_auto" identifica explicitamente o novo controlador visual;
-        # "auto" é mantido apenas por compatibilidade com fluxos antigos.
-        if str(source or "").strip().lower() in {"auto", "production_auto"}:
+        # Decisões de produção nova (OK aproximado / NG preventivo)
+        # são ações XP, NÃO verdades humanas para KNN/CNN. O evento
+        # é copiado ANTES de liberar o gate e enfileirado em quarentena
+        # somente após confirmação de transmissão ao XP.
+        normalized_source = str(source or "").strip().lower()
+        if normalized_source in {"auto", "production_auto"}:
+            if normalized_source == "production_auto":
+                from src.services.decision_persistence import (
+                    _UNVERIFIED_AUTOMATIC_REASONS,
+                )
+                analysis = getattr(self, "current_analysis", None)
+                detail = analysis.get("detail") if isinstance(analysis, dict) else {}
+                policy = detail.get("production_decision_policy") if isinstance(detail, dict) else {}
+                if (isinstance(policy, dict)
+                        and policy.get("reason") in _UNVERIFIED_AUTOMATIC_REASONS
+                        and policy.get("resolution") == "automatic"):
+                    task = _decision_task(
+                        self, normalized=normalized, source=source,
+                        ai_decision="NG" if analysis.get("is_defect") else "OK",
+                    )
+                    result = original_save_label(self, normalized, source=source)
+                    if getattr(self, "last_decision_command_success", None) is True:
+                        _submit_decision_persistence(self, task)
+                    return result
             return original_save_label(self, normalized, source=source)
 
         if source == "button":
