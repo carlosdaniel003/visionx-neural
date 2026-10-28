@@ -16,8 +16,9 @@ import numpy as np
 
 from src.core.operator_confirmed_archive_labels import (
     CANONICAL_OK_SOURCE, CANONICAL_OK_PIXEL_SHA256, RETIRED_SOURCE,
-    verified_canonical_ok_source,
+    canonical_ok_review_needs_physical_probe, verified_canonical_ok_source,
 )
+from src.core.physical_missing_veto import POLICY as PHYSICAL_POLICY, apply_physical_missing_veto
 from src.core.knn_c_live import LiveKNNStrategyC
 from src.core.knn_visual_corroboration import apply_knn_visual_corroboration
 from src.ui.production_confidence_gate import production_decision_policy
@@ -52,6 +53,18 @@ def event(side_local_verdict="FALHA FALSA"):
             )
         },
     )
+    # Direct-recall tests use a complete physical audit; integration tests
+    # below verify that the live pipeline actually performs this check.
+    d["physical_missing_veto"] = {
+        "policy": PHYSICAL_POLICY, "status": "NO_STRONG_EVIDENCE",
+        "diagnostic_only": True, "authorizes_ng": False,
+        "authorizes_ok": False, "review_required": False,
+        "suspect_lights": [], "unavailable_lights": [],
+        "geometry_review_lights": [],
+        "lights": {
+            light: {"status": "NO_STRONG_EVIDENCE"} for light in ("SIDE", "TOP", "MID")
+        },
+    }
     # After 1414 is removed, 1416 is the closest confirmed OK SIDE.
     d["knn_c_light_observer_votes"]["SIDE"].update(
         status="REVISAO", reason="DISCORDANCIA_KNN_A_B",
@@ -264,6 +277,135 @@ class RetiredWrongNGTests(unittest.TestCase):
             self.assertEqual(policy["reason"],
                              "supervised_operator_corrected_archive_ok_auto_v1")
             self.assertEqual(verdict_feedback_state(actual), ("FALHA FALSA", "ok"))
+
+    def test_oct28_recovered_ok_triggers_and_passes_physical_audit(self):
+        analysis, visual = event()
+        analysis["detail"].pop("physical_missing_veto")
+        self.assertTrue(canonical_ok_review_needs_physical_probe(analysis))
+        samples = {
+            light: {
+                "lighting_mode": light,
+                "sample_image": np.zeros((48, 48, 3), dtype=np.uint8),
+                "test_image": np.zeros((48, 48, 3), dtype=np.uint8),
+            } for light in ("SIDE", "TOP", "MID")
+        }
+        calls = []
+        def probe(reference, test):
+            calls.append((reference.shape, test.shape))
+            return {"status": "NO_STRONG_EVIDENCE", "scales": []}
+        analysis = apply_physical_missing_veto(
+            analysis, samples, "FALTANDO", probe=probe
+        )
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(analysis["detail"]["physical_missing_veto"]["status"],
+                         "NO_STRONG_EVIDENCE")
+        with patch(
+            "src.core.operator_confirmed_archive_labels.verified_canonical_ok_source",
+            return_value=True,
+        ), patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=deepcopy(visual),
+        ):
+            analysis = apply_knn_visual_corroboration(
+                analysis, samples, "FALTANDO", object()
+            )
+            self.assertEqual(analysis["verdict"], "FALHA FALSA")
+            self.assertFalse(analysis["detail"]["operator_corrected_archive_ok_recall"][
+                "current_pair_exact_match"])
+            analysis["detail"]["production_continuous_auto"] = True
+            self.assertEqual(production_decision_policy(analysis)[
+                "proposed_decision"], "OK")
+
+    def test_geometry_review_recognizes_ok_but_requires_operator(self):
+        analysis, visual = event()
+        analysis["detail"].pop("physical_missing_veto")
+        # Size difference from 28/10 debug: 318x570 versus 317x567.
+        samples = {
+            light: {
+                "lighting_mode": light,
+                "sample_image": np.zeros((318, 570, 3), dtype=np.uint8),
+                "test_image": np.zeros((317, 567, 3), dtype=np.uint8),
+            } for light in ("SIDE", "TOP", "MID")
+        }
+        probes = []
+        def geometry_probe(reference, test):
+            probes.append((reference.shape, test.shape))
+            return {"status": "GEOMETRY_REVIEW", "scales": []}
+        analysis = apply_physical_missing_veto(
+            analysis, samples, "FALTANDO", probe=geometry_probe
+        )
+        self.assertEqual(len(probes), 3)
+        self.assertEqual(analysis["detail"]["physical_missing_veto"]["status"],
+                         "GEOMETRY_REVIEW")
+        with patch(
+            "src.core.operator_confirmed_archive_labels.verified_canonical_ok_source",
+            return_value=True,
+        ), patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=deepcopy(visual),
+        ):
+            analysis = apply_knn_visual_corroboration(
+                analysis, samples, "FALTANDO", object()
+            )
+            self.assertEqual(analysis["verdict"], "FALHA FALSA")
+            self.assertEqual(analysis["detail"]["operator_corrected_archive_ok_recall"][
+                "physical_probe_status"], "GEOMETRY_REVIEW")
+            analysis["detail"]["production_continuous_auto"] = True
+            policy = production_decision_policy(analysis)
+            self.assertFalse(policy["auto_allowed"])
+            self.assertEqual(policy["proposed_decision"], "")
+            self.assertEqual(policy["verdict"], "FALHA FALSA")
+            self.assertEqual(policy["reason"],
+                             "operator_corrected_archive_ok_requires_operator")
+
+    def test_missing_or_suspect_physical_capture_never_recalls_ok(self):
+        samples = {
+            light: {
+                "lighting_mode": light,
+                "sample_image": np.zeros((48, 48, 3), dtype=np.uint8),
+                "test_image": np.zeros((48, 48, 3), dtype=np.uint8),
+            } for light in ("SIDE", "TOP", "MID")
+        }
+        for status in ("SUSPECT_ABSENCE", "UNAVAILABLE"):
+            with self.subTest(status=status):
+                analysis, visual = event()
+                analysis["detail"].pop("physical_missing_veto")
+                def probe(reference, test):
+                    return {"status": status, "scales": []}
+                analysis = apply_physical_missing_veto(
+                    analysis, samples, "FALTANDO", probe=probe
+                )
+                with patch(
+                    "src.core.operator_confirmed_archive_labels.verified_canonical_ok_source",
+                    return_value=True,
+                ), patch(
+                    "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+                    return_value=deepcopy(visual),
+                ):
+                    analysis = apply_knn_visual_corroboration(
+                        analysis, samples, "FALTANDO", object()
+                    )
+                self.assertEqual(analysis["verdict"], "REVISÃO OBRIGATÓRIA")
+                self.assertEqual(
+                    analysis["detail"]["operator_corrected_archive_ok_diagnostic"]["reason"],
+                    "PHYSICAL_VETO_NOT_CLEAR"
+                )
+                analysis["detail"]["production_continuous_auto"] = True
+                self.assertNotEqual(production_decision_policy(analysis)[
+                    "proposed_decision"], "OK")
+
+    def test_nonmatching_reference_does_not_trigger_probe(self):
+        analysis, _ = event()
+        analysis["detail"].pop("physical_missing_veto")
+        analysis["detail"]["knn_c_light_neighbor_evidence"]["SIDE"][
+            "neighbors_A"][0]["path"] = RETIRED_SOURCE
+        self.assertFalse(canonical_ok_review_needs_physical_probe(analysis))
+        def never_probe(*args):
+            self.fail("Unqualified recall should not execute physical probe")
+        apply_physical_missing_veto(
+            analysis, {}, "FALTANDO", probe=never_probe
+        )
+        self.assertNotIn("physical_missing_veto", analysis["detail"])
 
     def test_side_review_variant_from_old_test_is_still_supported(self):
         # Avoid regressing events where SIDE is also in local review.
