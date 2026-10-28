@@ -25,7 +25,7 @@ from src.ui.decision_verdict_feedback import verdict_feedback_state
 from tests.test_knn_three_light_ok_counterevidence import fused, report
 
 
-def event():
+def event(side_local_verdict="FALHA FALSA"):
     a = fused()
     a.update(verdict="REVISÃO OBRIGATÓRIA", is_defect=False,
              production_review_required=True, confidence=.5)
@@ -40,7 +40,10 @@ def event():
                 "route": "NEW_CNN", "category": "FALTANDO",
                 "cnn_active": True, "checkpoint_verified": True,
                 "cnn_status": "INFERENCE_OK",
-                "verdict": "REVISÃO OBRIGATÓRIA",
+                "verdict": (
+                    side_local_verdict if light == "SIDE"
+                    else "REVISÃO OBRIGATÓRIA"
+                ),
                 "checkpoint_sha256": "c13ca3296eee5e7741c58f29a6ef035296c0fe84a5651a9481462d72042b120c",
                 "ng_score_uncalibrated": score,
             } for light, score in (
@@ -51,8 +54,8 @@ def event():
     )
     # After 1414 is removed, 1416 is the closest confirmed OK SIDE.
     d["knn_c_light_observer_votes"]["SIDE"].update(
-        status="REVISAO", reason="SEM_SUGESTAO_CONFIAVEL",
-        vote_A="OK", vote_B="OK", suggestion_A="REVISAO",
+        status="REVISAO", reason="DISCORDANCIA_KNN_A_B",
+        vote_A="NG", vote_B="OK", suggestion_A="REVISAO",
         suggestion_B="REVISAO", similarity_A=.86618201,
         similarity_B=.83100362,
     )
@@ -68,12 +71,12 @@ def event():
     side_a = [
         n("OK", .86618201, CANONICAL_OK_SOURCE, CANONICAL_OK_PIXEL_SHA256),
         n("NG", .82163046), n("OK", .82143573),
-        n("NG", .81505456), n("OK", .803),
+        n("NG", .81505456), n("NG", .81477241),
     ]
     side_b = [
         n("OK", .83100362, CANONICAL_OK_SOURCE, CANONICAL_OK_PIXEL_SHA256),
         n("OK", .78586923), n("OK", .78237802),
-        n("OK", .77834246), n("NG", .770),
+        n("OK", .77834246), n("OK", .77572797),
     ]
     def group(ng_slot):
         return [n("NG" if i == ng_slot else "OK", .87-i*.02)
@@ -195,6 +198,48 @@ class RetiredWrongNGTests(unittest.TestCase):
             self.assertEqual(policy["reason"],
                              "supervised_operator_corrected_archive_ok_auto_v1")
             self.assertEqual(verdict_feedback_state(actual), ("FALHA FALSA", "ok"))
+
+    def test_side_review_variant_from_old_test_is_still_supported(self):
+        # Avoid regressing events where SIDE is also in local review.
+        a, visual = event(side_local_verdict="REVISÃO OBRIGATÓRIA")
+        with patch(
+            "src.core.operator_confirmed_archive_labels.verified_canonical_ok_source",
+            return_value=True,
+        ), patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=deepcopy(visual),
+        ):
+            actual = apply_knn_visual_corroboration(a, {}, "FALTANDO", object())
+            self.assertEqual(actual["verdict"], "FALHA FALSA")
+            actual["detail"]["production_continuous_auto"] = True
+            self.assertEqual(production_decision_policy(actual)["proposed_decision"], "OK")
+
+    def test_side_local_ng_or_untrusted_checkpoint_does_not_auto_approve(self):
+        for local, score, allowed in (
+            ("DEFEITO REAL", .0343675725, False),
+            ("FALHA FALSA", .97, False),
+            ("FALHA FALSA", .0343675725, True),
+        ):
+            with self.subTest(local=local, score=score):
+                a, visual = event(side_local_verdict=local)
+                a["detail"]["cnn_v2_light_diagnostics"]["SIDE"][
+                    "ng_score_uncalibrated"
+                ] = score
+                with patch(
+                    "src.core.operator_confirmed_archive_labels.verified_canonical_ok_source",
+                    return_value=True,
+                ), patch(
+                    "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+                    return_value=deepcopy(visual),
+                ):
+                    actual = apply_knn_visual_corroboration(
+                        a, {}, "FALTANDO", object(),
+                    )
+                    actual["detail"]["production_continuous_auto"] = True
+                    policy = production_decision_policy(actual)
+                    self.assertEqual(
+                        policy["proposed_decision"] == "OK", allowed,
+                    )
 
     def test_forged_source_ng_or_physical_defect_blocks_auto_ok(self):
         variants = (

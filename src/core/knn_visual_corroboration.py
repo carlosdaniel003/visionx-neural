@@ -1207,7 +1207,10 @@ def _operator_corrected_side_ok_recall(
             and item.get("cnn_active") is True
             and item.get("checkpoint_verified") is True
             and item.get("cnn_status") == "INFERENCE_OK"
-            and item.get("verdict") == "REVISÃO OBRIGATÓRIA"
+            and item.get("verdict") in (
+                {"FALHA FALSA", "REVISÃO OBRIGATÓRIA"}
+                if light == "SIDE" else {"REVISÃO OBRIGATÓRIA"}
+            )
         ):
             return None
         checksum = item.get("checkpoint_sha256")
