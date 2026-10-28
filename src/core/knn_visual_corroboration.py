@@ -1295,7 +1295,7 @@ def _operator_corrected_side_ok_recall(
         return None
     supports = {}
     for light, min_ok, max_margin in (
-        ("SIDE", .97, .025), ("TOP", .97, -.03), ("MID", .96, -.025),
+        ("SIDE", .97, .015), ("TOP", .97, -.03), ("MID", .96, -.025),
     ):
         item = lights[light]
         if not isinstance(item, dict) or (
