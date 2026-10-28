@@ -285,6 +285,10 @@ class ProductionAutonomyController(QObject):
             detail["knn_c_supervised_armed"] = bool(
                 self.knn_c_supervised_armed and not self.paused
             )
+            # All completed Production inspections receive an automatic
+            # OK/NG decision. Uncertain results fail closed to NG without
+            # creating a false training label; incomplete capture halts.
+            detail["production_continuous_auto"] = True
 
         self._cancel_pending()
         self.pending_analysis = analysis
@@ -561,6 +565,14 @@ class ProductionAutonomyController(QObject):
             is_trial_side = str(policy.get("reason", "")).startswith(
                 "side_trial_verified_auto_"
             )
+            is_recurrent_ok = policy.get("reason") in {
+                "supervised_recurrent_ok_top_mid_auto_v1",
+                "supervised_mixed_light_ok_auto_v1",
+            }
+            is_safe_rejection = (
+                policy.get("reason")
+                == "production_uncertain_auto_ng_quarantine_v1"
+            )
             if is_knn_c and not self.knn_c_supervised_armed:
                 self.state = "operator_review"
                 enter_production_review(self.panel, analysis)
@@ -573,6 +585,8 @@ class ProductionAutonomyController(QObject):
                     + (
                         "KNN C supervisionada (5s)." if is_knn_c
                         else "SIDE experimental validada (5s)." if is_trial_side
+                        else "Memória recorrente supervisionada (5s)." if is_recurrent_ok
+                        else "Rejeição preventiva sem confirmação física (5s)." if is_safe_rejection
                         else ""
                     ),
                     True,
@@ -580,7 +594,7 @@ class ProductionAutonomyController(QObject):
             except Exception:
                 pass
             self._schedule_stage(
-                KNN_C_SUPERVISED_DELAY_MS if is_knn_c
+                KNN_C_SUPERVISED_DELAY_MS if is_knn_c or is_recurrent_ok or is_safe_rejection
                 else TRIAL_SIDE_AUTO_DELAY_MS if is_trial_side
                 else AUTO_DECISION_DELAY_MS,
                 lambda g=generation, d=decision: self._emit_auto_decision(g, d),

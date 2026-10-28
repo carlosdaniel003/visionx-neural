@@ -80,8 +80,8 @@ def _verdict(analysis: dict | None) -> str:
     return "REVISÃO OBRIGATÓRIA"
 
 
-def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
-    """Resolve a política v1 sem limiar mínimo de confiança."""
+def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
+    """Preserve all independently validated legacy recognition contracts."""
     verdict = _verdict(analysis)
     confidence = normalized_confidence(analysis)
 
@@ -197,16 +197,38 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             and detail.get("physical_score") == 0.0
             and detail.get("cnn_v2_consensus") == "REVIEW"
         ):
+            # Autorização específica do operador (28/10/2026): somente as
+            # DUAS rotas supervisionadas de TOP+MID OK recorrente e
+            # SIDE NG fraco / TOP+MID OK podem transmitir 0/OK.
+            # O contrato é recalculado ACIMA usando evidências brutas.
+            # Não libera outras falhas falsas, KNN genérica ou defeitos.
+            supervised_auto_ok = (
+                detail.get("production_continuous_auto") is True
+                and (valid_two_light or valid_mixed)
+                and not valid_known_ok and not valid_pattern
+                and detail.get("hard_missing_evidence") is not True
+                and analysis.get("hard_missing_evidence") is not True
+                and detail.get("multilight_physical_disagreement") is False
+                and detail.get("multilight_missing_verified_presence") is False
+                and detail.get("physical_score") == 0.0
+                and detail.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
+                and detail.get("recognition_route") == "NEW_CNN"
+                and analysis.get("multilight_final") is True
+            )
             return {
                 "mode": "production",
                 "confidence": confidence,
                 "threshold": None,
                 "verdict": "FALHA FALSA",
-                "auto_allowed": False,
-                "operator_review_required": True,
-                "proposed_decision": "",
+                "auto_allowed": bool(supervised_auto_ok),
+                "operator_review_required": not supervised_auto_ok,
+                "proposed_decision": "OK" if supervised_auto_ok else "",
                 "reason": (
-                    "operator_confirmed_recurring_ok_requires_operator"
+                    "supervised_recurrent_ok_top_mid_auto_v1"
+                    if supervised_auto_ok and valid_two_light
+                    else "supervised_mixed_light_ok_auto_v1"
+                    if supervised_auto_ok and valid_mixed
+                    else "operator_confirmed_recurring_ok_requires_operator"
                     if valid_known_ok
                     else "operator_recurrent_ok_top_mid_requires_operator"
                     if valid_two_light
@@ -419,6 +441,52 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         "proposed_decision": proposed_decision,
         "reason": reason,
         "operator_shortcuts": {"0": "OK", "1": "NG"},
+    }
+
+
+def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
+    """Production: automatic qualified OK/NG; uncertain inspections reject.
+
+    Fail-closed NEVER means auto-OK: when a *complete* three-light capture
+    cannot be trusted as OK, route NG and quarantine the unverified label.
+    Missing/incomplete capture or transport errors still halt without 0/1.
+    """
+    policy = _base_production_decision_policy(analysis)
+    if not isinstance(analysis, dict):
+        return policy
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict) or detail.get("production_continuous_auto") is not True:
+        return policy
+    if policy.get("auto_allowed") is True:
+        return policy
+    if (
+        analysis.get("multilight_final") is not True
+        or detail.get("multilight_final") is not True
+        or detail.get("multilight_physical_disagreement") is True
+    ):
+        return policy
+    route_info = detail.get("recognition_light_routes")
+    if not isinstance(route_info, dict) or set(route_info) != {"SIDE", "TOP", "MID"}:
+        return policy
+    if any(route_info[light] not in {"NEW_CNN", "NEW_EXPERTS", "MEMORY_EXACT"}
+           for light in ("SIDE", "TOP", "MID")):
+        return policy
+    if detail.get("category_unknown") is True or detail.get("capture_error") is True:
+        return policy
+    # No uncertain observation is promoted to OK. A conservative reject
+    # still needs a complete capture and validated routing from all lights.
+    return {
+        **policy,
+        "verdict": (
+            "DEFEITO REAL" if policy.get("verdict") == "DEFEITO REAL"
+            else "NG PREVENTIVO"
+        ),
+        "auto_allowed": True,
+        "operator_review_required": False,
+        "proposed_decision": "NG",
+        "reason": "production_uncertain_auto_ng_quarantine_v1",
+        "unverified_physical_label": True,
+        "source_verdict": policy.get("verdict", ""),
     }
 
 

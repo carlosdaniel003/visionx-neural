@@ -494,6 +494,14 @@ class KNNOKCounterevidenceTests(unittest.TestCase):
             policy["reason"], "operator_recurrent_ok_top_mid_requires_operator",
         )
         self.assertEqual(verdict_feedback_state(result), ("FALHA FALSA", "ok"))
+        live = deepcopy(result)
+        live["detail"]["production_continuous_auto"] = True
+        approved = production_decision_policy(live)
+        self.assertTrue(approved["auto_allowed"])
+        self.assertFalse(approved["operator_review_required"])
+        self.assertEqual(approved["proposed_decision"], "OK")
+        self.assertEqual(approved["reason"], "supervised_recurrent_ok_top_mid_auto_v1")
+        self.assertEqual(verdict_feedback_state(live), ("FALHA FALSA", "ok"))
 
         # A comparação é restrita a esse episódio e precisa falhar
         # diante de fonte falsificada, NG forte ou ausência física.
@@ -652,6 +660,14 @@ class KNNOKCounterevidenceTests(unittest.TestCase):
         self.assertTrue(policy["operator_review_required"])
         self.assertEqual(policy["proposed_decision"], "")
         self.assertEqual(verdict_feedback_state(result), ("FALHA FALSA", "ok"))
+        live = deepcopy(result)
+        live["detail"]["production_continuous_auto"] = True
+        approved = production_decision_policy(live)
+        self.assertTrue(approved["auto_allowed"])
+        self.assertFalse(approved["operator_review_required"])
+        self.assertEqual(approved["proposed_decision"], "OK")
+        self.assertEqual(approved["reason"], "supervised_mixed_light_ok_auto_v1")
+        self.assertEqual(verdict_feedback_state(live), ("FALHA FALSA", "ok"))
 
         # A sugestão não pode aceitar defeito físico, vizinho NG forte,
         # CNN desfavorável ou ausência de concordância visual.

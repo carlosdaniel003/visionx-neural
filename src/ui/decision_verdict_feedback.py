@@ -75,6 +75,16 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
     detail = detail if isinstance(detail, dict) else {}
     trace = detail.get("decision_trace", {})
     trace = trace if isinstance(trace, dict) else {}
+    if detail.get("production_continuous_auto") is True:
+        from src.ui.production_confidence_gate import production_decision_policy
+        continuous_policy = production_decision_policy(analysis)
+        if (
+            continuous_policy.get("auto_allowed") is True
+            and continuous_policy.get("proposed_decision") == "NG"
+            and continuous_policy.get("reason")
+            == "production_uncertain_auto_ng_quarantine_v1"
+        ):
+            return "NG PREVENTIVO", "ng"
     review_required = bool(
         analysis.get("production_review_required", False)
         or trace.get("operator_review_required", False)
@@ -121,8 +131,16 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
                 "operator_confirmed_ok_pattern_requires_operator",
                 "operator_recurrent_ok_top_mid_requires_operator",
                 "mixed_light_knn_ok_requires_operator",
+                "supervised_recurrent_ok_top_mid_auto_v1",
+                "supervised_mixed_light_ok_auto_v1",
             }
-            and policy.get("auto_allowed") is False
+            and (
+                policy.get("auto_allowed") is False
+                or (
+                    policy.get("auto_allowed") is True
+                    and policy.get("proposed_decision") == "OK"
+                )
+            )
         ):
             return "FALHA FALSA", "ok"
 
