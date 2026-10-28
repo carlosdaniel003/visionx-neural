@@ -1188,10 +1188,47 @@ def _operator_corrected_side_ok_recall(
     if d.get("physical_score") != 0.0:
         return reject("PHYSICAL_SCORE_NOT_ZERO")
     physical = d.get("physical_missing_veto")
-    if not isinstance(physical, dict) or physical.get("status") in {
-        "SUSPECT_ABSENCE", "NG_CORROBORATED", "UNAVAILABLE", "GEOMETRY_REVIEW",
-    }:
+    from src.core.physical_missing_veto import POLICY as PHYSICAL_PROBE_POLICY
+    if not isinstance(physical, dict) or not (
+        physical.get("policy") == PHYSICAL_PROBE_POLICY
+        and physical.get("diagnostic_only") is True
+        and physical.get("authorizes_ng") is False
+        and physical.get("authorizes_ok") is False
+        and physical.get("suspect_lights") == []
+        and physical.get("unavailable_lights") == []
+        and physical.get("status") in {"NO_STRONG_EVIDENCE", "GEOMETRY_REVIEW"}
+    ):
         return reject("PHYSICAL_VETO_NOT_CLEAR")
+    physical_rows = physical.get("lights")
+    geometry_lights = physical.get("geometry_review_lights")
+    if not isinstance(physical_rows, dict) or set(physical_rows) != set(LIGHTS):
+        return reject("PHYSICAL_VETO_LIGHTS_INCOMPLETE")
+    if not isinstance(geometry_lights, list) or any(
+        light not in LIGHTS for light in geometry_lights
+    ):
+        return reject("PHYSICAL_VETO_GEOMETRY_INVALID")
+    observed_geometry = {
+        light for light in LIGHTS
+        if isinstance(physical_rows[light], dict)
+        and physical_rows[light].get("status") == "GEOMETRY_REVIEW"
+    }
+    if (
+        any(
+            not isinstance(physical_rows[light], dict)
+            or physical_rows[light].get("status") not in {
+                "NO_STRONG_EVIDENCE", "GEOMETRY_REVIEW"
+            }
+            for light in LIGHTS
+        )
+        or set(geometry_lights) != observed_geometry
+        or (physical.get("status") == "NO_STRONG_EVIDENCE"
+            and observed_geometry)
+        or (physical.get("status") == "GEOMETRY_REVIEW"
+            and not observed_geometry)
+        or physical.get("review_required")
+        is not (physical.get("status") == "GEOMETRY_REVIEW")
+    ):
+        return reject("PHYSICAL_VETO_INCONSISTENT")
     trace = d.get("decision_trace")
     if not isinstance(trace, dict) or (
         trace.get("raw_hard_missing_evidence") is True
@@ -1355,6 +1392,8 @@ def _operator_corrected_side_ok_recall(
         "visual_support": supports, "cnn_scores": cnn_scores,
         "current_pair_exact_match": False,
         "source_human_quality_verified": True,
+        "physical_probe_status": physical["status"],
+        "physical_geometry_review_lights": sorted(observed_geometry),
         "automatic_ok_only_by_production_gate": True,
     }
 
@@ -1392,7 +1431,10 @@ def apply_knn_visual_corroboration(
             "ok_archive com SHA verificado; rótulo NG histórico incorreto "
             "retirado da memória. TOP/MID têm maioria OK e assinaturas "
             "favoráveis, sem evidência física de ausência. "
-            "Correspondência visual aproximada, não par exato."
+            "Correspondência visual aproximada, não par exato. "
+            + ("Aparagem geométrica: confirmação humana necessária."
+               if corrected["physical_probe_status"] == "GEOMETRY_REVIEW"
+               else "Sonda física verificada em três luzes.")
         )
         detail["fusion_rule"] = "operator_corrected_archive_ok_three_light_v1"
         detail["operator_review_required"] = True
