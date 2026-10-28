@@ -123,12 +123,13 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         # o flag calculado pela fusão não basta para liberar a placa.
         from src.core.knn_visual_corroboration import (
             _operator_confirmed_ok_pattern_review, _recognized_recurrent_ok,
-            _recognized_two_light_operator_ok,
+            _recognized_two_light_operator_ok, _mixed_light_ok_candidate,
         )
         recalled = detail.get("recognized_recurrent_ok")
         pattern = detail.get("operator_confirmed_ok_pattern_review")
         counterevidence = detail.get("knn_ok_counterevidence")
         two_light = detail.get("recognized_two_light_operator_ok")
+        mixed = detail.get("mixed_light_ok_candidate")
         trace = detail.get("decision_trace")
         verified_recall = _recognized_recurrent_ok(detail, counterevidence)
         verified_pattern = _operator_confirmed_ok_pattern_review(
@@ -165,9 +166,27 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             and detail.get("fusion_rule")
             == "operator_recurrent_ok_top_mid_review_v1"
         )
+        validated_mixed = _mixed_light_ok_candidate(
+            {
+                **analysis,
+                "verdict": detail.get("verdict_before_mixed_light_ok"),
+                "is_defect": False,
+                "detail": {**detail, "fusion_rule": "multilight_local_review"},
+            } if isinstance(analysis, dict) else {},
+            detail.get("knn_visual_corroboration"),
+            "FALTANDO",
+        )
+        valid_mixed = bool(
+            detail.get("verdict_before_mixed_light_ok") == "REVISÃO OBRIGATÓRIA"
+            and detail.get("fusion_rule")
+            == "mixed_light_knn_ok_cnn_review_manual_v1"
+            and isinstance(mixed, dict)
+            and validated_mixed is not None
+            and mixed == validated_mixed
+        )
         if (
             verdict == "FALHA FALSA"
-            and (valid_known_ok or valid_pattern or valid_two_light)
+            and (valid_known_ok or valid_pattern or valid_two_light or valid_mixed)
             and detail.get("operator_review_required") is True
             and isinstance(analysis, dict)
             and analysis.get("production_review_required") is True
@@ -191,6 +210,8 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                     if valid_known_ok
                     else "operator_recurrent_ok_top_mid_requires_operator"
                     if valid_two_light
+                    else "mixed_light_knn_ok_requires_operator"
+                    if valid_mixed
                     else "operator_confirmed_ok_pattern_requires_operator"
                 ),
                 "operator_shortcuts": {"0": "OK", "1": "NG"},

@@ -552,6 +552,158 @@ class KNNOKCounterevidenceTests(unittest.TestCase):
             verdict_feedback_state(forged), ("REVISÃO OBRIGATÓRIA", "ng"),
         )
 
+    def test_oct28_second_false_alarm_mixed_cnn_knn_requires_manual_xp(self):
+        # Evento 4f7da09d175846fdb468f57f084c6e9e.
+        # SIDE KNN vota NG FRACO; TOP e MID votam OK; comparação visual
+        # separada favorece OK nas três; CNN está sem consenso válido.
+        base = fused()
+        base.update(
+            verdict="REVISÃO OBRIGATÓRIA", is_defect=False,
+            production_review_required=True, confidence=.5,
+        )
+        d = base["detail"]
+        d.update(
+            fusion_rule="multilight_local_review",
+            multilight_positive_modes=[],
+            multilight_strong_positive_modes=[],
+            multilight_review_modes=list(LIGHTS),
+            cnn_v2_light_diagnostics={
+                light: {
+                    "route": "NEW_CNN", "cnn_active": True,
+                    "checkpoint_verified": True, "cnn_status": "INFERENCE_OK",
+                    "checkpoint_sha256": "c13ca3296eee5e7741c58f29a6ef035296c0fe84a5651a9481462d72042b120c",
+                    "ng_score_uncalibrated": value,
+                    "verdict": "REVISÃO OBRIGATÓRIA",
+                    "category": "FALTANDO",
+                }
+                for light, value in (
+                    ("SIDE", .25600528717),
+                    ("TOP", .25600528717),
+                    ("MID", .85979676247),
+                )
+            },
+        )
+        # Os cinco vizinhos por descritor e luz têm a composição do log.
+        labels = {
+            "SIDE": (["NG", "NG", "OK", "OK", "NG"],
+                     ["NG", "OK", "NG", "NG", "NG"]),
+            "TOP": (["OK", "OK", "OK", "OK", "OK"],
+                    ["OK", "OK", "OK", "OK", "NG"]),
+            "MID": (["OK", "NG", "OK", "OK", "OK"],
+                    ["OK", "NG", "OK", "OK", "OK"]),
+        }
+        sims = {
+            "SIDE": (.85431065, .80228127),
+            "TOP": (.86890537, .83383537),
+            "MID": (.79180394, .77044361),
+        }
+        for light in LIGHTS:
+            obs = d["knn_c_light_observer_votes"][light]
+            obs.update(
+                vote_A="NG" if light == "SIDE" else "OK",
+                vote_B="NG" if light == "SIDE" else "OK",
+                similarity_A=sims[light][0], similarity_B=sims[light][1],
+            )
+        d["knn_c_light_neighbor_evidence"] = {
+            light: {
+                key: [
+                    {"label": label, "path": f"public/{label.lower()}_archive/{light}_{index}.png"}
+                    for index, label in enumerate(labels[light][n])
+                ]
+                for n, key in enumerate(("neighbors_A", "neighbors_B"))
+            }
+            for light in LIGHTS
+        }
+        visual = report()
+        visual["trend_ng_lights"] = []
+        for light, ok, ng in (
+            ("SIDE", .944720, .930544),
+            ("TOP", .972946, .935611),
+            ("MID", .960225, .932796),
+        ):
+            visual["lights"][light].update({
+                "ok": {"best_similarity": ok},
+                "ng": {"best_similarity": ng},
+                "ng_margin_over_ok": round(ng - ok, 6),
+            })
+        with patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=deepcopy(visual),
+        ):
+            result = apply_knn_visual_corroboration(
+                deepcopy(base), {}, "FALTANDO", object(),
+            )
+        self.assertEqual(result["verdict"], "FALHA FALSA")
+        self.assertIs(result["is_defect"], False)
+        self.assertTrue(result["production_review_required"])
+        self.assertFalse(result["eligible_for_final_decision"])
+        self.assertEqual(
+            result["detail"]["fusion_rule"],
+            "mixed_light_knn_ok_cnn_review_manual_v1",
+        )
+        self.assertIs(
+            result["detail"]["mixed_light_ok_candidate"]["automatic_ok_authorized"],
+            False,
+        )
+        policy = production_decision_policy(result)
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertEqual(policy["reason"], "mixed_light_knn_ok_requires_operator")
+        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "")
+        self.assertEqual(verdict_feedback_state(result), ("FALHA FALSA", "ok"))
+
+        # A sugestão não pode aceitar defeito físico, vizinho NG forte,
+        # CNN desfavorável ou ausência de concordância visual.
+        mutations = (
+            ("physical_ng", lambda a, r: a["detail"].update(physical_score=.7)),
+            ("raw_missing", lambda a, r:
+             a["detail"]["decision_trace"].update(raw_hard_missing_evidence=True)),
+            ("cnn_ng", lambda a, r:
+             a["detail"]["cnn_v2_light_diagnostics"]["TOP"].update(
+                 ng_score_uncalibrated=.95)),
+            ("cnn_consensus", lambda a, r:
+             a["detail"].update(cnn_v2_consensus="NG")),
+            ("top_knn_ng", lambda a, r:
+             a["detail"]["knn_c_light_observer_votes"]["TOP"].update(vote_B="NG")),
+            ("mid_insufficient_ok", lambda a, r:
+             a["detail"]["knn_c_light_neighbor_evidence"]["MID"]
+             ["neighbors_B"][3].update(label="NG")),
+            ("side_strong_ng", lambda a, r:
+             a["detail"]["knn_c_light_observer_votes"]["SIDE"].update(
+                 similarity_A=.91)),
+            ("visual_side_ng", lambda a, r:
+             r["lights"]["SIDE"].update(
+                 ok={"best_similarity": .90},
+                 ng={"best_similarity": .96},
+                 ng_margin_over_ok=.06)),
+            ("two_lights_only", lambda a, r:
+             a["detail"]["knn_c_light_observer_votes"].pop("MID")),
+        )
+        for name, mut in mutations:
+            with self.subTest(name=name):
+                alt, rep = deepcopy(base), deepcopy(visual)
+                mut(alt, rep)
+                with patch(
+                    "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+                    return_value=rep,
+                ):
+                    outcome = apply_knn_visual_corroboration(
+                        alt, {}, "FALTANDO", object(),
+                    )
+                self.assertEqual(outcome["verdict"], "REVISÃO OBRIGATÓRIA")
+                self.assertFalse(production_decision_policy(outcome)["auto_allowed"])
+
+        # Gate de produção recalcula a hipótese; flag forjado não vale.
+        forged = deepcopy(result)
+        forged["detail"]["mixed_light_ok_candidate"]["cnn_ng_scores_uncalibrated"]["MID"] = .1
+        self.assertEqual(
+            production_decision_policy(forged)["verdict"], "REVISÃO OBRIGATÓRIA",
+        )
+        self.assertEqual(
+            verdict_feedback_state(forged), ("REVISÃO OBRIGATÓRIA", "ng"),
+        )
+
     def test_multilight_fusion_retains_distinct_per_light_c_votes_for_arbitration(self):
         def local(light):
             return {

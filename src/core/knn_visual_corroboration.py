@@ -946,6 +946,205 @@ def _recognized_two_light_operator_ok(
     }
 
 
+def _mixed_light_ok_candidate(
+    fused: dict, report: dict, category: str,
+) -> dict | None:
+    """Tentative false-alarm label for the supervised three-light pattern.
+
+    Does not assert an exact KNN pair or physical certainty. Two CNN lights
+    lean OK, two KNN-C lights vote OK, three independent visual comparisons
+    lean OK, and SIDE has only *weak* NG neighbors. XP stays manual.
+    """
+    if canonical_memory_category(category) != "FALTANDO":
+        return None
+    d = fused.get("detail")
+    if not isinstance(d, dict) or not (
+        fused.get("multilight_final") is True
+        and fused.get("verdict") == "REVISÃO OBRIGATÓRIA"
+        and fused.get("is_defect") is False
+        and fused.get("production_review_required") is True
+        and d.get("fusion_rule") == "multilight_local_review"
+        and d.get("recognition_route") == "NEW_CNN"
+        and d.get("cnn_v2_trial_manual_only") is True
+        and d.get("cnn_v2_consensus") == "REVIEW"
+        and d.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
+        and d.get("multilight_positive_modes") == []
+        and d.get("multilight_strong_positive_modes") == []
+        and set(d.get("multilight_review_modes") or ()) == set(LIGHTS)
+        and d.get("multilight_physical_disagreement") is False
+        and d.get("multilight_missing_verified_presence") is False
+        and d.get("hard_missing_evidence") is not True
+        and fused.get("hard_missing_evidence") is not True
+    ):
+        return None
+    try:
+        physical_score = float(d["physical_score"])
+    except (TypeError, ValueError, KeyError):
+        return None
+    if not math.isfinite(physical_score) or physical_score != 0:
+        return None
+    physical = d.get("physical_missing_veto")
+    if not isinstance(physical, dict) or physical.get("status") in {
+        "SUSPECT_ABSENCE", "NG_CORROBORATED",
+    }:
+        return None
+    trace = d.get("decision_trace")
+    if not isinstance(trace, dict) or (
+        trace.get("raw_hard_missing_evidence") is True
+        or trace.get("hard_missing_evidence") is True
+    ):
+        return None
+
+    diagnostics = d.get("cnn_v2_light_diagnostics")
+    if not isinstance(diagnostics, dict) or set(diagnostics) != set(LIGHTS):
+        return None
+    ng_scores = {}
+    checkpoints = set()
+    for light in LIGHTS:
+        item = diagnostics[light]
+        if not isinstance(item, dict) or not (
+            item.get("cnn_active") is True
+            and item.get("checkpoint_verified") is True
+            and item.get("cnn_status") == "INFERENCE_OK"
+            and item.get("route") == "NEW_CNN"
+            and item.get("verdict") == "REVISÃO OBRIGATÓRIA"
+            and item.get("category") == "FALTANDO"
+        ):
+            return None
+        sha = item.get("checkpoint_sha256")
+        if not isinstance(sha, str) or len(sha) != 64:
+            return None
+        checkpoints.add(sha)
+        try:
+            score = float(item["ng_score_uncalibrated"])
+        except (TypeError, ValueError, KeyError):
+            return None
+        if not math.isfinite(score) or not 0 <= score <= 1:
+            return None
+        ng_scores[light] = round(score, 8)
+    # Reject a different checkpoint per light or a materially stronger
+    # NG signal in either of the two independent dark-light captures.
+    if len(checkpoints) != 1 or not (
+        ng_scores["SIDE"] <= .30
+        and ng_scores["TOP"] <= .30
+        and ng_scores["MID"] <= .90
+    ):
+        return None
+
+    votes = d.get("knn_c_light_observer_votes")
+    neighbor_sets = d.get("knn_c_light_neighbor_evidence")
+    if not isinstance(votes, dict) or set(votes) != set(LIGHTS):
+        return None
+    if not isinstance(neighbor_sets, dict) or set(neighbor_sets) != set(LIGHTS):
+        return None
+    matched_knn = {}
+    for light in LIGHTS:
+        vote = votes[light]
+        if not isinstance(vote, dict) or not (
+            vote.get("schema") == "visionx.knn_c_live_review_gated.v1"
+            and vote.get("bank_status") == "READY"
+            and vote.get("status") == "REVISAO"
+            and vote.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+            and vote.get("diagnostic_only") is True
+            and vote.get("auto_decision_authorized") is False
+            and vote.get("suggestion_A") == "REVISAO"
+            and vote.get("suggestion_B") == "REVISAO"
+        ):
+            return None
+        try:
+            similarity_a = float(vote["similarity_A"])
+            similarity_b = float(vote["similarity_B"])
+        except (TypeError, ValueError, KeyError):
+            return None
+        if not all(math.isfinite(v) and 0 <= v <= 1
+                   for v in (similarity_a, similarity_b)):
+            return None
+        if light == "SIDE":
+            if not (
+                vote.get("vote_A") == "NG"
+                and vote.get("vote_B") == "NG"
+                and similarity_a <= .88
+                and similarity_b <= .83
+            ):
+                return None
+        elif not (vote.get("vote_A") == "OK" and vote.get("vote_B") == "OK"):
+            return None
+        groups = neighbor_sets.get(light)
+        if not isinstance(groups, dict):
+            return None
+        result = {}
+        for key in ("neighbors_A", "neighbors_B"):
+            rows = groups.get(key)
+            if not isinstance(rows, list) or len(rows) != 5:
+                return None
+            if not all(isinstance(row, dict) and row.get("label") in {"OK", "NG"}
+                       for row in rows):
+                return None
+            if light != "SIDE":
+                if rows[0].get("label") != "OK" or sum(
+                    row["label"] == "OK" for row in rows
+                ) < 4:
+                    return None
+            result[key] = {
+                "ok_count": sum(row["label"] == "OK" for row in rows),
+                "ng_count": sum(row["label"] == "NG" for row in rows),
+            }
+        matched_knn[light] = result
+
+    if not isinstance(report, dict) or not (
+        report.get("schema") == SCHEMA
+        and report.get("status") == "CONFLICT"
+        and report.get("strong_ng_lights") == []
+        and report.get("trend_ng_lights") == []
+    ):
+        return None
+    lights = report.get("lights")
+    if not isinstance(lights, dict) or set(lights) != set(LIGHTS):
+        return None
+    support = {}
+    limits = {"SIDE": (.94, .012), "TOP": (.97, .030), "MID": (.96, .025)}
+    for light in LIGHTS:
+        item = lights[light]
+        if not isinstance(item, dict) or not (
+            item.get("status") == "CONFLICT"
+            and item.get("cross_category_ng") is False
+            and isinstance(item.get("ok"), dict)
+            and isinstance(item.get("ng"), dict)
+        ):
+            return None
+        try:
+            ok = float(item["ok"]["best_similarity"])
+            ng = float(item["ng"]["best_similarity"])
+            margin = float(item["ng_margin_over_ok"])
+        except (TypeError, ValueError, KeyError):
+            return None
+        if not (
+            all(math.isfinite(v) and 0 <= v <= 1 for v in (ok, ng))
+            and math.isfinite(margin)
+            and abs((ng - ok) - margin) <= .00001
+            and ok >= limits[light][0]
+            and -margin >= limits[light][1]
+        ):
+            return None
+        support[light] = {
+            "best_ok_similarity": round(ok, 6),
+            "best_ng_similarity": round(ng, 6),
+            "ng_minus_ok": round(margin, 6),
+        }
+    return {
+        "schema": "visionx.mixed_light_false_alarm_review.v1",
+        "status": "SUGESTAO_FALHA_FALSA_COM_REVISÃO_HUMANA",
+        "cnn_ng_scores_uncalibrated": ng_scores,
+        "knn_c_neighbor_votes": matched_knn,
+        "three_light_visual_support": support,
+        "exact_pair_verified": False,
+        "current_capture_operator_confirmed": False,
+        "operator_review_required": True,
+        "automatic_ok_authorized": False,
+        "xp_command_authorized": False,
+    }
+
+
 def apply_knn_visual_corroboration(
     fused: dict | None, samples: dict | None, category: str, knn,
 ) -> dict | None:
@@ -965,6 +1164,36 @@ def apply_knn_visual_corroboration(
         return fused
     report = evaluate_knn_visual_corroboration(samples, category, knn)
     detail["knn_visual_corroboration"] = report
+    mixed_ok = _mixed_light_ok_candidate(fused, report, category)
+    if mixed_ok is not None:
+        detail["mixed_light_ok_candidate"] = mixed_ok
+        detail["verdict_before_mixed_light_ok"] = fused["verdict"]
+        fused["verdict"] = "FALHA FALSA"
+        fused["is_defect"] = False
+        fused["production_review_required"] = True
+        fused["eligible_for_final_decision"] = False
+        fused["confidence"] = .5
+        fused["reason"] = (
+            "FALHA FALSA • SUGESTÃO MULTILIGHT PARA OPERADOR: CNN "
+            "inconclusiva e baixa nas luzes SIDE/TOP, KNN visual favorece "
+            "OK nas 3 luzes, KNN C TOP/MID recupera 4+ OK em cada descritor. "
+            "KNN C SIDE ainda votou NG com semelhança fraca. "
+            "Sem par exato ou evidência física de ausência; confirmar "
+            "0=OK / 1=NG manualmente antes de qualquer comando ao XP."
+        )
+        detail["fusion_rule"] = "mixed_light_knn_ok_cnn_review_manual_v1"
+        detail["operator_review_required"] = True
+        detail["eligible_for_final_decision"] = False
+        detail["cnn_v2_supervised_auto_eligible"] = False
+        detail["final_score"] = .5
+        trace = detail.get("decision_trace")
+        if isinstance(trace, dict):
+            trace["verdict"] = "FALHA FALSA"
+            trace["physical_defect"] = False
+            trace["operator_review_required"] = True
+            trace["fusion_rule"] = detail["fusion_rule"]
+            trace["final_score"] = .5
+        return fused
     # A referência recorrente pode ser muito forte em TOP e MID
     # enquanto SIDE empata; essa rota precede a antiga exigência
     # rígida de três luzes CONFLICT e KNN C em REVISAO.
