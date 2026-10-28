@@ -105,6 +105,21 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             ) for data in diagnostics.values()
         )
     )
+    # Conhecimento visual SIDE aproximado pode economizar TOP/MID para a
+    # conferência humana. Jamais equiparar isso a par exato nem a auto-OK.
+    from src.core.side_recurrent_ok_review import side_recurrent_review_valid
+    if side_recurrent_review_valid(analysis):
+        return {
+            "mode": "production",
+            "confidence": confidence,
+            "threshold": None,
+            "verdict": "FALHA FALSA",
+            "auto_allowed": False,
+            "operator_review_required": True,
+            "proposed_decision": "",
+            "reason": "side_verified_archive_visual_requires_operator",
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+        }
     trial_side = side_trial_automatic_decision(analysis) if trial_used else None
     if trial_side in {"OK", "NG"}:
         return {
