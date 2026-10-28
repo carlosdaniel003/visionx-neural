@@ -289,6 +289,15 @@ class ProductionAutonomyController(QObject):
             # OK/NG decision. Uncertain results fail closed to NG without
             # creating a false training label; incomplete capture halts.
             detail["production_continuous_auto"] = True
+            # Re-render the final Production classification after the
+            # decision policy is armed. Otherwise a transient REVIEW label
+            # from the original CNN can remain visible during auto-NG.
+            refresh_verdict = getattr(self.panel, "_update_confidence_panel", None)
+            if callable(refresh_verdict):
+                refresh_verdict(analysis)
+            show_verdict = getattr(self.panel, "show_ai_verdict_feedback", None)
+            if callable(show_verdict):
+                show_verdict(analysis)
 
         self._cancel_pending()
         self.pending_analysis = analysis

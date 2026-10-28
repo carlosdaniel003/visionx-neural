@@ -520,6 +520,14 @@ class ControlPanel(QWidget):
     def _update_confidence_panel(self, analysis: dict):
         verdict = analysis.get("verdict", "?")
         is_defect = analysis.get("is_defect", False)
+        detail = analysis.get("detail", {})
+        if isinstance(detail, dict) and detail.get("production_continuous_auto") is True:
+            from src.ui.production_confidence_gate import production_decision_policy
+            policy = production_decision_policy(analysis)
+            if (policy.get("reason") == "production_uncertain_auto_ng_quarantine_v1"
+                    and policy.get("auto_allowed") is True):
+                verdict = "NG PREVENTIVO"
+                is_defect = True
         conf_float = analysis.get("confidence", 0.5)
 
         conf_main = int(conf_float * 100)
