@@ -140,7 +140,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             _operator_confirmed_ok_pattern_review, _recognized_recurrent_ok,
             _recognized_two_light_operator_ok, _mixed_light_ok_candidate,
             _operator_corrected_side_ok_recall,
-            _recognized_recurrent_ok_20261029,
+            _recognized_recurrent_visual_only_20261029,
         )
         recalled = detail.get("recognized_recurrent_ok")
         pattern = detail.get("operator_confirmed_ok_pattern_review")
@@ -179,7 +179,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         # Reavaliar o padrão TOP/MID histórico a partir dos votos e vetores.
         # O Modo Produção pode automatizar 0 sob gate reforçado, mas o marcador
         # da memória sozinho continua sem autorização de saída XP.
-        verified_newer = _recognized_recurrent_ok_20261029(
+        verified_newer = _recognized_recurrent_visual_only_20261029(
             {
                 **analysis,
                 "verdict": detail.get("cnn_ng_verdict_before_knn_review"),
