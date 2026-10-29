@@ -589,6 +589,24 @@ class VerifiedKNNMemory:
             )
         if durable["status"] in {"CONFLICT", "UNAVAILABLE"}:
             return durable
+        # A estação pode receber uma imagem TOP marcada SIDE. A segunda
+        # consulta só reconhece o MESMO par RGB exato em outra iluminação,
+        # incluindo todas as classes para bloquear rótulos contraditórios.
+        cross_lookup = getattr(self.archive_store, "lookup_exact_any_light", None)
+        if callable(cross_lookup):
+            cross = cross_lookup(reference, test, info)
+            if cross["status"] in {"CONFLICT", "UNAVAILABLE"}:
+                return cross
+            if cross["status"] == "KNOWN":
+                if durable["status"] == "KNOWN" and durable["label"] != cross["label"]:
+                    return {
+                        "status": "CONFLICT",
+                        "reason": "Memória persistente contraditória entre iluminações",
+                    }
+                if durable["status"] != "KNOWN":
+                    durable = cross
+                profile["cross_light_exact_matches"] = cross["matches"]
+                profile["cross_light_exact_source"] = cross["source_lighting_mode"]
         hashes_started_at = time.perf_counter()
         try:
             reference_hash = image_fingerprint(reference)
@@ -610,10 +628,22 @@ class VerifiedKNNMemory:
             else "legacy_metadata" if key is not None else "unavailable"
         )
         if key is None:
+            # Uma chave incompleta nunca pode pular a auditoria de rótulos
+            # humanos de todas as luzes só por existir um registro TOP.
+            if durable.get("cross_light_verified"):
+                return {
+                    "status": "UNAVAILABLE",
+                    "reason": "Metadados incompletos impedem auditoria cross-light",
+                }
             return durable if durable["status"] == "KNOWN" else {
                 "status": "NEW", "reason": "Categoria ou par AOI inválido"
             }
         if knn is None:
+            if durable.get("cross_light_verified"):
+                return {
+                    "status": "UNAVAILABLE",
+                    "reason": "Reconhecimento entre iluminações exige auditoria KNN completa",
+                }
             return durable if durable["status"] == "KNOWN" else {
                 "status": "NEW", "reason": "Nenhuma memória KNN carregada"
             }
@@ -628,9 +658,27 @@ class VerifiedKNNMemory:
                 if category_only else self._index.get(key, ())
             )
             profile["warmup"] = dict(self._warmup_status)
+            cross_legacy = []
+            if durable.get("cross_light_verified"):
+                # Nunca aprovar o arquivo TOP se outro registro humano
+                # legado classificar o MESMO par RGB como NG em SIDE/MID.
+                # Somente o índice integral auditado cobre as três luzes.
+                if not self._all_scopes_indexed:
+                    return {
+                        "status": "UNAVAILABLE",
+                        "reason": "Índice humano multilight ainda não está auditado",
+                    }
+                cross_legacy = [
+                    item
+                    for light in ("SIDE", "TOP", "MID")
+                    for item in self._visual_index.get(
+                        (key[0], light, key[5], key[6]), ()
+                    )
+                ]
+                profile["cross_light_legacy_checked"] = True
             stale_match = any(
                 not self._matched_legacy_still_verified(item)
-                for item in matched
+                for item in (*matched, *cross_legacy)
             )
             if stale_match:
                 self.invalidate(reason="legacy_source_changed_during_session")
@@ -643,6 +691,12 @@ class VerifiedKNNMemory:
             return {
                 "status": "UNAVAILABLE",
                 "reason": "Origem KNN mudou durante a verificação exata",
+            }
+        if (durable.get("cross_light_verified")
+                and any(row["label"] != durable["label"] for row in cross_legacy)):
+            return {
+                "status": "CONFLICT",
+                "reason": "Memória humana contradiz o arquivo entre iluminações",
             }
         profile["matched_count"] = len(matched)
         if not matched:
@@ -677,6 +731,8 @@ def _recognized_result(match: dict, mode: str) -> dict:
     label = match["label"]
     ng = label == "NG"
     score = 1.0 if ng else 0.0
+    cross_light = match.get("cross_light_verified") is True
+    source_light = str(match.get("source_lighting_mode", "") or "")
     trace = {
         "schema": RECOGNITION_SCHEMA,
         "dominant_engine": "knn_verified_exact",
@@ -699,7 +755,10 @@ def _recognized_result(match: dict, mode: str) -> dict:
         "verdict": "DEFEITO REAL" if ng else "FALHA FALSA",
         "reason": (
             f"MEMÓRIA KNN: caso já analisado e confirmado como {label}. "
-            "Gabarito/teste, categoria e iluminação idênticos."
+            + (f"Gabarito/teste RGB e categoria idênticos; origem {source_light}, "
+               f"evento {mode}. Luz do XP divergente, sem usar similaridade."
+               if cross_light else
+               "Gabarito/teste, categoria e iluminação idênticos.")
         ),
         "production_review_required": False,
         "active_engines": ["knn_expert.py"],
@@ -714,12 +773,18 @@ def _recognized_result(match: dict, mode: str) -> dict:
             "recognition_memory_matches": match["matches"],
             "recognition_memory_verified": True,
             "recognition_memory_source": match.get("memory_source", "HUMAN_VERIFIED_PAIR"),
+            "recognition_memory_cross_light_exact": cross_light,
+            "recognition_memory_source_lighting": source_light,
+            "recognition_memory_source_png": match.get("source_png", ""),
             "recognition_specialists_skipped": True,
             "has_memory": True, "memory_available": True,
             "best_similarity": 1.0, "best_match_label": label,
             "best_ok_similarity": 0.0 if ng else 1.0,
             "best_ng_similarity": 1.0 if ng else 0.0,
-            "memory_scope": "categoria_e_luz_exata",
+            "memory_scope": (
+                "categoria_par_rgb_exato_entre_iluminacoes" if cross_light
+                else "categoria_e_luz_exata"
+            ),
             "memory_mode": "verified_pair",
             "vote_defect": score,
             "final_score": score, "physical_score": 0.0,

@@ -151,6 +151,82 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
         self.assertEqual(system.specialist_calls, [])
         self.assertEqual(production_decision_policy(result)["proposed_decision"], "OK")
 
+    def test_persistent_top_exact_ok_can_recall_side_without_cnn(self):
+        from src.core.archive_persistent_memory import (
+            PersistentArchiveKNN, make_record,
+        )
+        from src.core.anomaly_signature import build_anomaly_signature
+
+        store = PersistentArchiveKNN(self.root)
+        store.add([make_record(
+            label="OK",
+            source_path="public/ok_archive/2026-10-08_0725_FALTANDO_TOP.png",
+            source_sha256=sha256(b"operator-approved-top").hexdigest(),
+            category="FALTANDO", lighting="TOP",
+            reference=self.reference, test=self.test,
+            anomaly_signature=build_anomaly_signature(
+                self.reference, self.test, {}, self.info,
+            ),
+            aoi_info=self.info,
+        )])
+        class System(FakeOrchestrator):
+            pass
+        install_memory_first_router(
+            System, memory=VerifiedKNNMemory(archive_store=store),
+        )
+        system = System()
+        # A recuperação entre luzes só autoriza decisão após auditar
+        # possíveis rótulos humanos contraditórios nas três iluminações.
+        system.prepare_verified_memory_index()
+        result = self.inspect(system)
+        self.assertEqual(result["verdict"], "FALHA FALSA")
+        self.assertEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+        self.assertEqual(result["detail"]["recognition_match"], "EXACT_PAIR")
+        self.assertTrue(result["detail"]["recognition_memory_cross_light_exact"])
+        self.assertEqual(result["detail"]["recognition_memory_source_lighting"], "TOP")
+        self.assertEqual(result["detail"]["recognition_memory_source_png"],
+                         "public/ok_archive/2026-10-08_0725_FALTANDO_TOP.png")
+        self.assertEqual(system.specialist_calls, [])
+        self.assertEqual(production_decision_policy(result)["proposed_decision"], "OK")
+
+        changed = self.test.copy()
+        changed[0, 0, 0] ^= 1
+        changed_result = self.inspect(system, tst=changed)
+        self.assertEqual(changed_result["detail"]["recognition_route"], "NEW_CNN")
+        self.assertEqual(len(system.specialist_calls), 1)
+
+    def test_crosslight_archive_ok_opposite_legacy_ng_blocks_auto_ok(self):
+        from src.core.archive_persistent_memory import (
+            PersistentArchiveKNN, make_record,
+        )
+        from src.core.anomaly_signature import build_anomaly_signature
+
+        store = PersistentArchiveKNN(self.root)
+        store.add([make_record(
+            label="OK", source_path="public/ok_archive/top.png",
+            source_sha256=sha256(b"top-source").hexdigest(),
+            category="FALTANDO", lighting="TOP",
+            reference=self.reference, test=self.test,
+            anomaly_signature=build_anomaly_signature(
+                self.reference, self.test, {}, self.info,
+            ),
+        )])
+        class System(FakeOrchestrator):
+            pass
+        install_memory_first_router(
+            System, memory=VerifiedKNNMemory(archive_store=store),
+        )
+        system = System()
+        system.experts["knn"].signatures_ng.append(
+            self.make_record("NG", info=dict(self.info, lighting_mode="MID"))
+        )
+        system.prepare_verified_memory_index()
+        result = self.inspect(system)
+        self.assertEqual(result["verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertEqual(result["detail"]["recognition_route"], "MEMORY_CONFLICT")
+        self.assertFalse(production_decision_policy(result)["auto_allowed"])
+        self.assertEqual(system.specialist_calls, [])
+
     def test_new_faltando_uses_cnn_only_without_knn(self):
         system = self.create_router()
         system.experts["knn"].signatures_ok.append(self.make_record("OK"))

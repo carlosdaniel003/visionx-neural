@@ -53,6 +53,59 @@ def _uncorroborated_missing_ng_vs_two_knn_ok(analysis: dict, category: str) -> b
     )
 
 
+
+def _ng_with_stronger_nearest_ok(analysis: dict, category: str) -> bool:
+    """Acquire TOP/MID when independent nearest OK neighbors contradict SIDE NG.
+
+    This only prevents a premature 1/NG: similarity never authorizes 0/OK.
+    It also preserves the immediate NG path for physical missing evidence.
+    """
+    if (canonical_memory_category(category) != "FALTANDO"
+            or analysis.get("is_defect") is not True
+            or analysis.get("hard_missing_evidence") is True):
+        return False
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict) or detail.get("hard_missing_evidence") is True:
+        return False
+    physical = detail.get("physical_missing_veto")
+    if isinstance(physical, dict) and physical.get("status") == "SUSPECT_ABSENCE":
+        return False
+    knn = detail.get("knn_c")
+    if not (isinstance(knn, dict)
+            and knn.get("schema") == "visionx.knn_c_live_review_gated.v1"
+            and knn.get("bank_status") == "READY"
+            and knn.get("diagnostic_only") is True
+            and knn.get("auto_decision_authorized") is False):
+        return False
+    support = knn.get("reference_support")
+    if not (isinstance(support, dict)
+            and support.get("OK", 0) > 0 and support.get("NG", 0) > 0):
+        return False
+    for key, minimum_ok in (("neighbors_A", .90), ("neighbors_B", .85)):
+        rows = knn.get(key)
+        if (not isinstance(rows, list) or len(rows) < 5
+                or any(not isinstance(row, dict)
+                       or row.get("label") not in {"OK", "NG"}
+                       for row in rows[:5])):
+            return False
+        try:
+            first = rows[0]
+            if first.get("label") != "OK":
+                return False
+            ok_score = float(first["similarity"])
+            ng_scores = [
+                float(row["similarity"]) for row in rows[1:5]
+                if row.get("label") == "NG"
+            ]
+        except (TypeError, ValueError, KeyError, AttributeError, OverflowError):
+            return False
+        if (not isfinite(ok_score) or ok_score < minimum_ok
+                or not ng_scores or any(not isfinite(v) for v in ng_scores)
+                or ok_score - max(ng_scores) < .04):
+            return False
+    return True
+
+
 def _eligible_side_analysis(analysis: dict | None) -> bool:
     """Revalida a classificação SIDE sem depender de flags de UI ou Produção."""
     if not isinstance(analysis, dict):
@@ -184,6 +237,10 @@ def _eligible_trial_side_for_review(
     # KNN A/B vote OK but both still REVISAO). High, uncalibrated CNN
     # confidence cannot by itself skip the two independent lights.
     if _uncorroborated_missing_ng_vs_two_knn_ok(analysis, category):
+        return False
+    # Mesmo com maioria KNN NG, dois vizinhos OK visualmente mais próximos
+    # exigem observar TOP/MID antes de uma rejeição XP irreversível.
+    if _ng_with_stronger_nearest_ok(analysis, category):
         return False
     try:
         confidence = float(analysis["confidence"])
