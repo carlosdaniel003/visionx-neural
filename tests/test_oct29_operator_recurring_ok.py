@@ -5,6 +5,7 @@ AOI station. Historical OK identity is supported by the recorded KNN
 hashes. The current physical board is still NOT individually certified.
 """
 from copy import deepcopy
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -13,6 +14,8 @@ from src.core.knn_visual_corroboration import (
 )
 from src.ui.production_confidence_gate import production_decision_policy
 from src.ui.decision_verdict_feedback import verdict_feedback_state
+from src.ui.neural_influence_model import neural_influence_rows
+from src.ui.network_xp_debug import format_multilight_debug_report
 from tests.test_knn_three_light_ok_counterevidence import fused, report
 
 
@@ -134,6 +137,111 @@ def apply(fused_analysis, visual):
 
 
 class Oct29RecurringOkTests(unittest.TestCase):
+    def test_live_0822_memory_corrects_raw_cnn_and_auto_gate_remains_available(self):
+        """New 08:22 capture: same pinned TOP/MID sources, changed SIDE score."""
+        a, visual = real_event()
+        d = a["detail"]
+        d["cnn_v2_light_diagnostics"]["SIDE"][
+            "ng_score_uncalibrated"
+        ] = .999821126461029
+        d["knn_c_light_neighbor_evidence"]["SIDE"] = {
+            "neighbors_A": [
+                neighbor("OK", .99018946),
+                neighbor("NG", .86514910),
+                neighbor("OK", .86385871),
+                neighbor("OK", .84639380),
+                neighbor("NG", .83738332),
+            ],
+            "neighbors_B": [
+                neighbor("OK", .97433490),
+                neighbor("OK", .84477406),
+                neighbor("NG", .82577236),
+                neighbor("OK", .81288249),
+                neighbor("OK", .81165862),
+            ],
+        }
+        visual["lights"]["SIDE"].update(
+            ok={"best_similarity": .995509},
+            ng={"best_similarity": .951698},
+            ng_margin_over_ok=-.043811,
+        )
+        final = apply(a, visual)
+        self.assertEqual(final["verdict"], "FALHA FALSA")
+        before_arm = neural_influence_rows(final)
+        self.assertEqual([r["id"] for r in before_arm], [
+            "cnn_side", "cnn_top", "cnn_mid", "knn_visual_summary"
+        ])
+        self.assertTrue(all(
+            r["overruled_by_memory"] is True for r in before_arm[:3]
+        ))
+        self.assertTrue(before_arm[-1]["knn_historical_ok"])
+        self.assertEqual(before_arm[-1]["knn_visual_label"], "OK")
+        self.assertEqual(before_arm[-1]["known_memory_label"], "")
+        self.assertAlmostEqual(
+            before_arm[0]["ng_score_uncalibrated"], .999821126461029
+        )
+        self.assertFalse(before_arm[0]["production_auto_ok_authorized"])
+        final["detail"]["production_continuous_auto"] = True
+        policy = production_decision_policy(final)
+        self.assertEqual(
+            policy["reason"],
+            "supervised_operator_known_top_mid_ok_20261029_auto_v1",
+        )
+        self.assertEqual(policy["proposed_decision"], "OK")
+        self.assertTrue(policy["auto_allowed"])
+        self.assertFalse(policy["operator_review_required"])
+        after_arm = neural_influence_rows(final)
+        self.assertTrue(after_arm[0]["production_auto_ok_authorized"])
+        self.assertTrue(after_arm[-1]["production_auto_ok_authorized"])
+        self.assertAlmostEqual(
+            after_arm[0]["ng_score_uncalibrated"], .999821126461029
+        )
+
+    def test_debug_distinguishes_cnn_review_from_armed_xp_auto_decision(self):
+        a, visual = real_event()
+        final = apply(a, visual)
+        panel = SimpleNamespace(
+            combo_mode=SimpleNamespace(currentText=lambda: "Modo Produção"),
+            adhesive_multilight_last_category="FALTANDO",
+            adhesive_multilight_last_final_analysis=final,
+            adhesive_multilight_last_analyses={},
+            adhesive_multilight_last_event_id="a614cc6e056746d88b41f417a978c6a5",
+            production_autonomy_controller=SimpleNamespace(
+                state="auto_decision_pending", paused=False
+            ),
+            last_decision_command_success=None,
+        )
+        with patch(
+            "src.ui.network_xp_debug._multilight_event_matches",
+            return_value=True,
+        ):
+            before = format_multilight_debug_report(panel)
+            self.assertIn("Requer tecla 0/1 humana: N/D", before)
+            self.assertIn("Política armada: False", before)
+            final["detail"]["production_continuous_auto"] = True
+            after = format_multilight_debug_report(panel)
+        self.assertIn("Política armada: True", after)
+        self.assertIn("Autoriza automático: True", after)
+        self.assertIn("Requer tecla 0/1 humana: False", after)
+        self.assertIn("Comando XP proposto: 0/OK", after)
+        self.assertIn(
+            "supervised_operator_known_top_mid_ok_20261029_auto_v1", after
+        )
+        self.assertIn("Envio XP confirmado: None", after)
+
+    def test_invalid_archive_anchor_never_paints_memory_ok_or_authorizes_xp_zero(self):
+        a, visual = real_event()
+        final = apply(a, visual)
+        final["detail"]["production_continuous_auto"] = True
+        final["detail"]["recognized_top_mid_ok_20261029"][
+            "per_light_reference"]["TOP"]["source_pixel_sha256"] = "0" * 64
+        rows = neural_influence_rows(final)
+        self.assertFalse(any(row.get("knn_historical_ok") for row in rows))
+        self.assertFalse(any(row.get("overruled_by_memory") for row in rows))
+        self.assertNotEqual(
+            production_decision_policy(final).get("proposed_decision"), "OK"
+        )
+
     def test_human_known_top_mid_auto_zero_only_in_continuous_production(self):
         raw, visual = real_event()
         result = apply(raw, visual)

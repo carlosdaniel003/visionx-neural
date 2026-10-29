@@ -41,6 +41,22 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
         and (neighbor_report.get("status") in {"NG_CORROBORATED", "NG_TREND_THREE_LIGHTS"}
              or physical.get("status") == "SUSPECT_ABSENCE")
     )
+    # A CNN deve continuar expondo o score bruto; a memória corrigiu o
+    # VEREDITO consolidado, não os pesos ou as inferências individuais.
+    # Revalidar a fonte TOP/MID original em vez de confiar apenas num
+    # "fusion_rule" ou num rótulo arbitrário da interface.
+    known_ok_policy = None
+    if detail.get("fusion_rule") == "operator_known_top_mid_ok_review_20261029_v1":
+        from src.ui.production_confidence_gate import production_decision_policy
+        policy = production_decision_policy(analysis)
+        if (
+            policy.get("verdict") == "FALHA FALSA"
+            and policy.get("reason") in {
+                "operator_known_top_mid_ok_20261029_requires_operator",
+                "supervised_operator_known_top_mid_ok_20261029_auto_v1",
+            }
+        ):
+            known_ok_policy = policy
     if m["cnn_per_light"]:
         for light in LIGHTS:
             it = _map(m["cnn_per_light"].get(light))
@@ -62,6 +78,15 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
                 )
                 entry["ng_score_uncalibrated"] = score
                 entry["contradicted"] = bool(contradictory and vote == "FALHA FALSA")
+                entry["overruled_by_memory"] = bool(
+                    known_ok_policy and vote == "DEFEITO REAL"
+                )
+                if known_ok_policy:
+                    entry["consolidated_verdict"] = "FALHA FALSA"
+                    entry["production_auto_ok_authorized"] = bool(
+                        known_ok_policy.get("auto_allowed") is True
+                        and known_ok_policy.get("proposed_decision") == "OK"
+                    )
                 rows.append(entry)
             elif it.get("route") == "KNOWN_KNN":
                 label = it.get("human_memory_label") or "-"
@@ -114,6 +139,33 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
             item["known_memory_label"] = ""
             item["ng_score_uncalibrated"] = None
             item["similarity_score"] = strongest
+            if known_ok_policy:
+                ok_similarities = [
+                    _finite_score(_map(_map(by_light.get(light)).get("ok")).get(
+                        "best_similarity"
+                    ))
+                    for light in LIGHTS
+                ]
+                best_ok = max(
+                    (value for value in ok_similarities if value is not None),
+                    default=None,
+                )
+                item.update(
+                    label="KNN • MEMÓRIA VISUAL",
+                    summary="OK HISTÓRICO TOP/MID RECUPERADO",
+                    display_text=(
+                        "Referências TOP/MID OK recuperadas; evidência independente "
+                        "favorece OK nas três luzes • não é par exato"
+                    ),
+                    knn_visual_label="OK",
+                    knn_historical_ok=True,
+                    similarity_score=best_ok,
+                    consolidated_verdict="FALHA FALSA",
+                    production_auto_ok_authorized=bool(
+                        known_ok_policy.get("auto_allowed") is True
+                        and known_ok_policy.get("proposed_decision") == "OK"
+                    ),
+                )
             rows.append(item)
         if rows:
             return rows
