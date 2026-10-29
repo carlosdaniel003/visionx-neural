@@ -602,8 +602,10 @@ def format_multilight_debug_report(panel) -> str:
             "Regra XP: " + str(policy.get("reason", "-")),
             "Veredito da política XP: " + str(policy.get("verdict", "-")),
             "Autoriza automático: " + str(policy.get("auto_allowed", False)),
-            "Requer tecla 0/1 humana: " + str(
-                policy.get("operator_review_required", True)
+            "Requer tecla 0/1 humana: " + (
+                str(policy.get("operator_review_required", True))
+                if final_detail.get("production_continuous_auto") is True
+                else "N/D — controlador ainda não armou a política"
             ),
             "Comando XP proposto: " + (
                 "0/OK" if policy.get("proposed_decision") == "OK"
