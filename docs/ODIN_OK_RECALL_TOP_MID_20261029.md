@@ -214,3 +214,35 @@ a classificação visual `FALHA FALSA`, separada do bloqueio físico da
 transmissão. **Não autoriza 0/OK**, nem transforma comparação aproximada
 em evidência física ou par exato. A pausa/intervenção ainda são exigidas
 pelo veto, e nenhuma modificação foi feita nos limiares ou pesos.
+
+
+## Evento 10:22 — painel principal de veredito ainda apresentava REVISÃO OBRIGATÓRIA
+
+Evento `c9cd1dc0ac824062aaf9b01391b369c4`: o log e o
+cabeçalho da inspeção registram `verdict=FALHA FALSA`, e o gate
+`production_decision_policy` já retorna
+`verdict=FALHA FALSA`, mas o cartão flutuante no canto direito
+exibia `REVISÃO OBRIGATÓRIA` + `VI SEMELHANTE`.
+
+Causa concreta: `verdict_feedback_state` possui lista de razões da
+política XP que permitem exibir o OK visual **já revalidado**. Essa
+lista não contemplava `known_top_mid_ok_physical_veto_suspect_absence`
+introduzida pela auditoria física. Assim, o flag legado de revisão
+prevalecia sobre a classe visual. A interface não estava mostrando a
+decisão efetiva do gate de produção.
+
+A apresentação agora aceita **somente** as razões específicas de veto
+físico da mesma rota TOP/MID de 29/10 retornadas pela política
+recalculada (suspeita de ausência, geometria, indisponibilidade e NG
+corroborado). Exibe **FALHA FALSA** verde com memória visual semelhante,
+sem fabricar par exato. O rótulo adulterado continua revisão.
+
+**Nenhuma mudança de autorização XP:** o evento tem `SUSPECT_ABSENCE`
+na MID (ROI de 58% positiva, 76% negativa), `GEOMETRY_REVIEW` SIDE/TOP
+e a automação estava pausada pelo espaço. Permanece
+`auto_allowed=false`, `proposed_decision=""` e a intervenção
+humana necessária; nem 0/OK nem 1/NG é enviado automaticamente.
+
+Regressão automatizada cobre a política, UI flutuante, memória e
+integridade de referência histórica. Não altera dataset, pesos CNN,
+veto físico, critérios de classificação nem protocolo do XP.
