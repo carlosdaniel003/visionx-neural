@@ -261,6 +261,18 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             # contínua: 28/10 e o padrão TOP/MID confirmado em 29/10.
             # O contrato é recalculado ACIMA a partir das evidências brutas.
             # Outras recomendações de revisão continuam sem 0 automático.
+            from src.core.historical_ok_mid_probe_exception import (
+                historical_ok_mid_probe_disagreement,
+            )
+            # Somente a rota TOP/MID de fonte OK revalidada pode tolerar
+            # a discordância conhecida de uma ROI MID em geometria com
+            # aparagem mínima; a auditoria SUSPECT_ABSENCE NÃO é apagada.
+            limited_mid_exception = bool(
+                valid_newer
+                and historical_ok_mid_probe_disagreement(
+                    detail.get("physical_missing_veto")
+                )
+            )
             supervised_auto_ok = (
                 detail.get("production_continuous_auto") is True
                 and (valid_two_light or valid_mixed or valid_corrected or valid_newer)
@@ -286,10 +298,13 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                         "SIDE": "NEW_CNN", "TOP": "NEW_CNN", "MID": "NEW_CNN",
                     }
                     and isinstance(detail.get("physical_missing_veto"), dict)
-                    and detail["physical_missing_veto"].get("status") not in {
-                        "SUSPECT_ABSENCE", "UNAVAILABLE",
-                        "NG_CORROBORATED", "GEOMETRY_REVIEW",
-                    }
+                    and (
+                        detail["physical_missing_veto"].get("status") not in {
+                            "SUSPECT_ABSENCE", "UNAVAILABLE",
+                            "NG_CORROBORATED", "GEOMETRY_REVIEW",
+                        }
+                        or limited_mid_exception
+                    )
                 ))
                 and detail.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
                 and detail.get("recognition_route") == "NEW_CNN"
@@ -315,7 +330,9 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 "operator_review_required": not supervised_auto_ok,
                 "proposed_decision": "OK" if supervised_auto_ok else "",
                 "reason": (
-                    "supervised_operator_known_top_mid_ok_20261029_auto_v1"
+                    "supervised_operator_known_top_mid_ok_mid_probe_disagreement_auto_v1"
+                    if supervised_auto_ok and valid_newer and limited_mid_exception
+                    else "supervised_operator_known_top_mid_ok_20261029_auto_v1"
                     if supervised_auto_ok and valid_newer
                     else "supervised_operator_corrected_archive_ok_auto_v1"
                     if supervised_auto_ok and valid_corrected
@@ -338,6 +355,10 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                     else "operator_confirmed_ok_pattern_requires_operator"
                 ),
                 "operator_shortcuts": {"0": "OK", "1": "NG"},
+                "physical_probe_exception": (
+                    "KNOWN_OK_TOP_MID_SINGLE_SCALE_MID_DISAGREEMENT"
+                    if supervised_auto_ok and limited_mid_exception else ""
+                ),
             }
         # Preserve the validated historical visual verdict (not XP release).
         # The physical veto still requires intervention and blocks 0/OK.
