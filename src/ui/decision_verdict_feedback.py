@@ -133,6 +133,13 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
                 "operator_confirmed_ok_pattern_requires_operator",
                 "operator_recurrent_ok_top_mid_requires_operator",
                 "operator_known_top_mid_ok_20261029_requires_operator",
+                # O veto físico atual bloqueia o comando XP, não substitui
+                # o veredito visual TOP/MID OK já revalidado pelo gate.
+                # Apenas a política recomputada pode produzir estas razões.
+                "known_top_mid_ok_physical_veto_suspect_absence",
+                "known_top_mid_ok_physical_veto_geometry_review",
+                "known_top_mid_ok_physical_veto_unavailable",
+                "known_top_mid_ok_physical_veto_ng_corroborated",
                 "mixed_light_knn_ok_requires_operator",
                 "supervised_recurrent_ok_top_mid_auto_v1",
                 "supervised_mixed_light_ok_auto_v1",
