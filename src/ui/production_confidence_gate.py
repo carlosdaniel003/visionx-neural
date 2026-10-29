@@ -140,6 +140,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             _operator_confirmed_ok_pattern_review, _recognized_recurrent_ok,
             _recognized_two_light_operator_ok, _mixed_light_ok_candidate,
             _operator_corrected_side_ok_recall,
+            _recognized_recurrent_ok_20261029,
         )
         recalled = detail.get("recognized_recurrent_ok")
         pattern = detail.get("operator_confirmed_ok_pattern_review")
@@ -147,6 +148,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         two_light = detail.get("recognized_two_light_operator_ok")
         mixed = detail.get("mixed_light_ok_candidate")
         corrected = detail.get("operator_corrected_archive_ok_recall")
+        newer = detail.get("recognized_top_mid_ok_20261029")
         trace = detail.get("decision_trace")
         verified_recall = _recognized_recurrent_ok(detail, counterevidence)
         verified_pattern = _operator_confirmed_ok_pattern_review(
@@ -173,6 +175,26 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 == "DEFEITO REAL",
             } if isinstance(analysis, dict) else {},
             detail.get("knn_visual_corroboration"), "FALTANDO",
+        )
+        # Re-evaluate the recurrent 29 Oct archive match from raw vectors.
+        # This path is deliberately manual-only despite Production auto mode.
+        verified_newer = _recognized_recurrent_ok_20261029(
+            {
+                **analysis,
+                "verdict": detail.get("cnn_ng_verdict_before_knn_review"),
+                "is_defect": (
+                    detail.get("cnn_ng_verdict_before_knn_review")
+                    == "DEFEITO REAL"
+                ),
+            } if isinstance(analysis, dict) else {},
+            detail.get("knn_visual_corroboration"), "FALTANDO",
+        )
+        valid_newer = bool(
+            isinstance(newer, dict)
+            and verified_newer is not None
+            and newer == verified_newer
+            and detail.get("fusion_rule")
+            == "operator_known_top_mid_ok_review_20261029_v1"
         )
         # Recompute using original CNN NG evidence rather than trusting
         # a final UI label; the helper accepts only raw NG multilight.
@@ -223,7 +245,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         if (
             verdict == "FALHA FALSA"
             and (valid_known_ok or valid_pattern or valid_two_light
-                 or valid_mixed or valid_corrected)
+                 or valid_mixed or valid_corrected or valid_newer)
             and detail.get("operator_review_required") is True
             and isinstance(analysis, dict)
             and analysis.get("production_review_required") is True
@@ -242,6 +264,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             supervised_auto_ok = (
                 detail.get("production_continuous_auto") is True
                 and (valid_two_light or valid_mixed or valid_corrected)
+                and not valid_newer
                 and not valid_known_ok and not valid_pattern
                 and detail.get("hard_missing_evidence") is not True
                 and analysis.get("hard_missing_evidence") is not True
@@ -280,6 +303,8 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                     if valid_two_light
                     else "mixed_light_knn_ok_requires_operator"
                     if valid_mixed
+                    else "operator_known_top_mid_ok_20261029_requires_operator"
+                    if valid_newer
                     else "operator_confirmed_ok_pattern_requires_operator"
                 ),
                 "operator_shortcuts": {"0": "OK", "1": "NG"},
@@ -504,6 +529,19 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     if not isinstance(detail, dict) or detail.get("production_continuous_auto") is not True:
         return policy
     if policy.get("auto_allowed") is True:
+        return policy
+    # O padrão OK de 29/10 tem CNN invalidada mas referência TOP/MID
+    # humana forte e sem prova física de ausência. Não converter a revisão
+    # de FALHA FALSA em NG PREVENTIVO no modo contínuo.
+    # O gate-base deve REVALIDAR o contrato e nunca emitir 0/XP.
+    if (
+        detail.get("fusion_rule") == "operator_known_top_mid_ok_review_20261029_v1"
+        and policy.get("reason")
+        == "operator_known_top_mid_ok_20261029_requires_operator"
+        and policy.get("verdict") == "FALHA FALSA"
+        and policy.get("auto_allowed") is False
+        and policy.get("operator_review_required") is True
+    ):
         return policy
     # Reconhecimento visual OK com geometria inconclusiva não deve
     # virar nem 0 automático nem 1 preventivo. Preservar a revisão humana.
