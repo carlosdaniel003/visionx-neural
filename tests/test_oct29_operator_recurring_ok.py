@@ -134,7 +134,7 @@ def apply(fused_analysis, visual):
 
 
 class Oct29RecurringOkTests(unittest.TestCase):
-    def test_human_known_top_mid_recovers_false_alarm_but_not_auto_xp(self):
+    def test_human_known_top_mid_auto_zero_only_in_continuous_production(self):
         raw, visual = real_event()
         result = apply(raw, visual)
         self.assertEqual(result["verdict"], "FALHA FALSA")
@@ -153,13 +153,44 @@ class Oct29RecurringOkTests(unittest.TestCase):
         result["detail"]["production_continuous_auto"] = True
         policy = production_decision_policy(result)
         self.assertEqual(policy["verdict"], "FALHA FALSA")
-        self.assertFalse(policy["auto_allowed"])
-        self.assertTrue(policy["operator_review_required"])
-        self.assertEqual(policy["proposed_decision"], "")
+        self.assertTrue(policy["auto_allowed"])
+        self.assertFalse(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "OK")
         self.assertEqual(policy["reason"],
-                         "operator_known_top_mid_ok_20261029_requires_operator")
+                         "supervised_operator_known_top_mid_ok_20261029_auto_v1")
         self.assertEqual(verdict_feedback_state(result),
                          ("FALHA FALSA", "ok"))
+        # Teste/Sombra não recebem o armamento do controlador Produção.
+        result["detail"].pop("production_continuous_auto")
+        manual = production_decision_policy(result)
+        self.assertFalse(manual["auto_allowed"])
+        self.assertTrue(manual["operator_review_required"])
+        self.assertEqual(manual["proposed_decision"], "")
+        self.assertEqual(manual["reason"],
+                         "operator_known_top_mid_ok_20261029_requires_operator")
+
+    def test_auto_ok_requires_complete_verified_capture_and_clean_physical_evidence(self):
+        raw, visual = real_event()
+        baseline = apply(raw, visual)
+        baseline["detail"]["production_continuous_auto"] = True
+        for name, change in (
+            ("missing_top_route", lambda a: a["detail"]["recognition_light_routes"].pop("TOP")),
+            ("mixed_route", lambda a: a["detail"]["recognition_light_routes"].update(SIDE="MEMORY_EXACT")),
+            ("physical_review", lambda a: a["detail"]["physical_missing_veto"].update(status="GEOMETRY_REVIEW")),
+            ("physical_unavailable", lambda a: a["detail"]["physical_missing_veto"].update(status="UNAVAILABLE")),
+            ("physical_suspect", lambda a: a["detail"]["physical_missing_veto"].update(status="SUSPECT_ABSENCE")),
+            ("trial_not_verified", lambda a: a["detail"].update(cnn_v2_trial_manual_only=False)),
+            ("hard_ng", lambda a: a["detail"].update(hard_missing_evidence=True)),
+            ("other_category", lambda a: a["detail"].update(multilight_category="DESLOCADO")),
+            ("missing_light", lambda a: a["detail"].update(multilight_final=False)),
+            ("wrong_anchor", lambda a: a["detail"]["knn_c_light_neighbor_evidence"]["TOP"]["neighbors_A"][0].update(source_pixel_sha256="0"*64)),
+        ):
+            with self.subTest(name=name):
+                invalid = deepcopy(baseline)
+                change(invalid)
+                policy = production_decision_policy(invalid)
+                self.assertNotEqual(policy.get("proposed_decision"), "OK")
+                self.assertFalse(policy.get("auto_allowed"))
 
     def test_failure_of_any_independent_proof_blocks_recall(self):
         cases = (
