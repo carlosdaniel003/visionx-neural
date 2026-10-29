@@ -294,7 +294,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 and detail.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
                 and detail.get("recognition_route") == "NEW_CNN"
                 and analysis.get("multilight_final") is True
-                and detail.get("multilight_final") is True
+                and (not valid_newer or detail.get("multilight_final") is True)
             )
             return {
                 "mode": "production",
