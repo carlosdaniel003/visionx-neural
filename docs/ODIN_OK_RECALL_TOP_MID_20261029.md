@@ -246,3 +246,48 @@ humana necessária; nem 0/OK nem 1/NG é enviado automaticamente.
 Regressão automatizada cobre a política, UI flutuante, memória e
 integridade de referência histórica. Não altera dataset, pesos CNN,
 veto físico, critérios de classificação nem protocolo do XP.
+
+## Experimento 10:49 — auto-OK supervisionado na discordância MID entre ROIs
+
+No evento `be500d46a61144d5a4ea6db84d2b3858`, o ODIN
+continua classificando **FALHA FALSA** pela mesma memória histórica
+TOP/MID validada com dois descritores e SHA de fonte. A contraprova
+física gravou `SUSPECT_ABSENCE` somente na MID, com geometria aparada
+de 318×570 para 317×567 em todas as luzes. A ROI MID 58% acusou
+suspeita de ausência (`distinctness=0.32298`), mas a ROI 76% não
+(`direct_similarity=0.61903`). SIDE e TOP ficaram em `GEOMETRY_REVIEW`,
+sem suspeita de ausência em suas ROIs.
+
+**Autorização experimental restrita ao Modo Produção contínuo:** a
+rota histórica TOP/MID já validada pode emitir **0/OK** após a
+janela normal de 5 segundos, se uma contraprova física INTEGRAL tiver:
+- status `SUSPECT_ABSENCE` restrito a MID, status `GEOMETRY_REVIEW`
+  em SIDE/TOP e nenhuma luz indisponível;
+- geometria central aparada até 3 pixels/2%, metadados e 2 ROIs íntegras
+  em cada iluminação;
+- exatamente a ROI MID 58% suspeita, MID 76% não suspeita, referência
+  de baixa distinção na ROI suspeita (até 0.35), similaridade direta
+  MID 76% pelo menos 0.60;
+- TOP/MID históricos autenticados (fontes e SHA de pixels pinados),
+  três luzes válidas, KNN C/visual consistente com OK, CNN sem consenso
+  válido, nenhuma evidência física NG forte independente;
+- sessão em Produção contínua armada e não pausada; mesma peça/geração,
+  revalidação completa antes do único comando XP.
+
+A regra de saída `supervised_operator_known_top_mid_ok_mid_probe_disagreement_auto_v1`
+é audível em `production_decision_policy`, com campo
+`physical_probe_exception=KNOWN_OK_TOP_MID_SINGLE_SCALE_MID_DISAGREEMENT`.
+O registro original `SUSPECT_ABSENCE` não é reescrito/apagado.
+Suspeita nas duas ROIs MID, em SIDE/TOP, falha de geometria, dados
+ausentes, rótulo adulterado ou luz indisponível continuam impedindo
+aprovação automática. Modo Teste/Sombra permanecem sem esse atalho.
+
+**Risco residual:** a divergência entre duas ROIs não comprova presença
+física; defeitos NG com aparência muito próxima ao padrão OK podem
+passar pela exceção. Este é um experimento controlado autorizado pelo
+operador, **não uma homologação industrial**. Testes estruturados e
+UI simulada não medem falso-OK real. Antes de integrar XP ao fluxo
+produtivo físico, confrontar capturas OK/NG com ausência real na MID e
+testar com o XP isolado. A barra de espaço é pausa de software, não
+intertravamento físico. As decisões automáticas seguem fora do
+treinamento supervisionado, em `reports/production_auto_unverified`.
