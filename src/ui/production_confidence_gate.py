@@ -294,6 +294,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 and detail.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
                 and detail.get("recognition_route") == "NEW_CNN"
                 and analysis.get("multilight_final") is True
+                and detail.get("multilight_final") is True
             )
             return {
                 "mode": "production",
@@ -547,18 +548,11 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         return policy
     if policy.get("auto_allowed") is True:
         return policy
-    # O padrão OK de 29/10 tem CNN invalidada mas referência TOP/MID
-    # humana forte e sem prova física de ausência. Não converter a revisão
-    # de FALHA FALSA em NG PREVENTIVO no modo contínuo.
-    # O gate-base deve REVALIDAR o contrato e nunca emitir 0/XP.
-    if (
-        detail.get("fusion_rule") == "operator_known_top_mid_ok_review_20261029_v1"
-        and policy.get("reason")
-        == "operator_known_top_mid_ok_20261029_requires_operator"
-        and policy.get("verdict") == "FALHA FALSA"
-        and policy.get("auto_allowed") is False
-        and policy.get("operator_review_required") is True
-    ):
+    # Um marcador histórico de OK de 29/10 não é prova suficiente para
+    # rejeição preventiva genérica: em conflito, adulteração de hash,
+    # captura incompleta ou falha de sonda, PARE SEM ENVIAR 0/1.
+    # O auto-OK válido já teria retornado acima do gate-base.
+    if detail.get("fusion_rule") == "operator_known_top_mid_ok_review_20261029_v1":
         return policy
     # Reconhecimento visual OK com geometria inconclusiva não deve
     # virar nem 0 automático nem 1 preventivo. Preservar a revisão humana.
