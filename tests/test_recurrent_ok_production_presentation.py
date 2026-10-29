@@ -11,7 +11,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from src.core.knn_visual_corroboration import apply_knn_visual_corroboration
-from src.ui.decision_verdict_feedback import verdict_feedback_state
+from src.ui.decision_verdict_feedback import (
+    AIVerdictFeedbackOverlay, verdict_feedback_state,
+)
+from tests.test_oct29_operator_recurring_ok import real_event, apply
 from src.ui.production_autonomy_controller import ProductionAutonomyController
 from src.ui.production_confidence_gate import production_decision_policy
 from src.ui.production_session_feedback import ProductionInterventionFeedbackOverlay
@@ -105,6 +108,28 @@ class RecurrentOKPresentationTests(unittest.TestCase):
         overlay.show_reason("DEFEITO REAL")
         self.assertEqual(overlay.reason_label.text(), "DEFEITO REAL")
         overlay.clear()
+        panel.close()
+
+    def test_1022_floating_verdict_displays_visual_ok_with_mid_veto(self):
+        """The top-right card must show the final class, not the XP hold."""
+        raw, visual = real_event()
+        final = apply(raw, visual)
+        final["detail"]["production_continuous_auto"] = True
+        final["detail"]["physical_missing_veto"] = {
+            "status": "SUSPECT_ABSENCE",
+            "suspect_lights": ["MID"],
+            "geometry_review_lights": ["SIDE", "TOP"],
+            "unavailable_lights": [],
+        }
+        panel = QWidget()
+        panel.resize(1100, 700)
+        overlay = AIVerdictFeedbackOverlay(panel)
+        self.assertTrue(overlay.show_analysis(final))
+        self.assertEqual(overlay.verdict_label.text(), "FALHA FALSA")
+        self.assertEqual(overlay.verdict_label.property("tone"), "ok")
+        self.assertEqual(overlay.memory_state_label.text(), "VI SEMELHANTE")
+        self.assertFalse(production_decision_policy(final)["auto_allowed"])
+        overlay.clear_verdict(force=True)
         panel.close()
 
     def test_controller_keeps_recurring_ok_class_without_emitting_xp(self):
