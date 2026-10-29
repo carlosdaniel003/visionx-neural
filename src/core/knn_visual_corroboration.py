@@ -955,7 +955,7 @@ def _recognized_recurrent_ok_20261029(
     The experimental CNN votes NG on the same component under all lights,
     but its own three-light consensus is invalid. Two PINNED archival
     identities and an independent visual comparison are required. This
-    function classifies for a human; it NEVER authorizes automatic XP OK.
+    function only classifies visual evidence; the production policy must independently revalidate it before XP automation.
     """
     d = fused.get("detail")
     if canonical_memory_category(category) != "FALTANDO" or not isinstance(d, dict):
@@ -1685,7 +1685,7 @@ def apply_knn_visual_corroboration(
         return fused
     # Revisão de 29/10: a CNN experimental dispara NG nas três luzes,
     # mas TOP/MID recuperam a MESMA fonte humana OK em A/B com grande
-    # separação dos NG. Não confundir isso com par exato ou auto-OK XP.
+    # separação dos NG. Não confundir isso com par exato; o gate de Produção decide se 0/OK é autorizado.
     known_pair = _recognized_recurrent_ok_20261029(fused, report, category)
     if known_pair is not None:
         detail["recognized_top_mid_ok_20261029"] = known_pair
@@ -1701,8 +1701,9 @@ def apply_knn_visual_corroboration(
             "pelos dois descritores; a comparação visual independente "
             "favorece OK nas três iluminações e não há evidência física "
             "registrada de ausência. A CNN experimental contradiz a "
-            "memória, com consenso inválido. Classificação visual para "
-            "confirmação humana: 0=OK / 1=NG. Nenhum XP automático."
+            "memória, com consenso inválido. A política de Produção "
+            "contínua pode autorizar 0/OK com revalidação e pausa; "
+            "Teste/Sombra e evidência vetada continuam sem XP automático."
         )
         detail["fusion_rule"] = "operator_known_top_mid_ok_review_20261029_v1"
         detail["operator_review_required"] = True
