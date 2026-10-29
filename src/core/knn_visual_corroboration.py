@@ -1604,6 +1604,32 @@ def _operator_corrected_side_ok_recall(
     }
 
 
+def _recognized_recurrent_visual_only_20261029(
+    fused: dict, report: dict, category: str,
+) -> dict | None:
+    """Revalidate archived TOP/MID visual evidence independently of an XP veto.
+
+    The existing strict helper combines visual recognition with a *current*
+    physical veto. This variant removes only that one derived physical
+    observation from a temporary copy, so the UI can truthfully display
+    recovered historic OK while the production gate still evaluates the
+    untouched original physical audit before authorizing 0/OK.
+
+    A forged archival reference/hash, bad CNN/KNN vote or invalid capture
+    still fails the original strict visual checks.
+    """
+    if not isinstance(fused, dict):
+        return None
+    detail = fused.get("detail")
+    if not isinstance(detail, dict):
+        return None
+    visual_detail = {**detail}
+    visual_detail.pop("physical_missing_veto", None)
+    return _recognized_recurrent_ok_20261029(
+        {**fused, "detail": visual_detail}, report, category,
+    )
+
+
 def apply_knn_visual_corroboration(
     fused: dict | None, samples: dict | None, category: str, knn,
 ) -> dict | None:

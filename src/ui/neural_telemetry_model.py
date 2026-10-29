@@ -211,9 +211,35 @@ def memory_seen_state(analysis: dict | None) -> dict:
                 and len(approximate_lights) == 3)
         )
     )
+    # The multilight classifier can recover an operator-labelled OK source
+    # even when the exact-pixel KNN route remains NEW_CNN. Revalidate the
+    # complete evidence through the production policy; a bare marker, filename
+    # or KNN similarity alone must never make the UI claim "seen OK".
+    historical_ok = False
+    physical_veto = _map(detail.get("physical_missing_veto"))
+    if (
+        _map(detail.get("recognized_top_mid_ok_20261029"))
+        and detail.get("fusion_rule")
+        == "operator_known_top_mid_ok_review_20261029_v1"
+        and _map(analysis).get("verdict") == "FALHA FALSA"
+    ):
+        from src.ui.production_confidence_gate import production_decision_policy
+        recalled_policy = production_decision_policy(analysis)
+        historical_ok = bool(
+            recalled_policy.get("verdict") == "FALHA FALSA"
+            and recalled_policy.get("reason") in {
+                "supervised_operator_known_top_mid_ok_20261029_auto_v1",
+                "operator_known_top_mid_ok_20261029_requires_operator",
+            } or (
+                recalled_policy.get("verdict") == "FALHA FALSA"
+                and str(recalled_policy.get("reason", "")).startswith(
+                    "known_top_mid_ok_physical_veto_"
+                )
+            )
+        )
     status = (
         "JA_VI" if known else
-        "VI_SEMELHANTE" if similar_ng or archive_matched else
+        "VI_SEMELHANTE" if similar_ng or archive_matched or historical_ok else
         "CONSULTANDO_ACERVO" if archive_status == "PENDING" else
         "ACERVO_AMBIGUO" if archive_status == "AMBIGUOUS" else
         "NUNCA_VI" if queried else None
@@ -222,13 +248,16 @@ def memory_seen_state(analysis: dict | None) -> dict:
         "status": status,
         "label": (
             "JÁ VI" if known else
-            "VI SEMELHANTE" if similar_ng or archive_matched else
+            "VI SEMELHANTE" if similar_ng or archive_matched or historical_ok else
             "CONSULTANDO ACERVO" if archive_status == "PENDING" else
             "ACERVO AMBÍGUO" if archive_status == "AMBIGUOUS" else
             "SEM PAR EXATO" if queried else ""
         ),
-        "archive_visual_seen": archive_matched,
-        "archive_label": archive_label if archive_matched else "",
+        "archive_visual_seen": archive_matched or historical_ok,
+        "archive_label": "OK" if historical_ok else archive_label if archive_matched else "",
+        "archive_visual_lights": ["TOP", "MID"] if historical_ok else ["SIDE"] if archive_matched else [],
+        "historical_ok_recall": historical_ok,
+        "physical_veto_status": str(physical_veto.get("status", "") or "") if historical_ok else "",
         "archive_visual_status": archive_status,
         "approximate_ng_seen": similar_ng,
         "approximate_ng_lights": approximate_lights if similar_ng else [],
@@ -265,6 +294,23 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
             "JÁ VI • KNN EXATO",
             f"Par humano registrado • Rótulo {memory['human_label'] or '?'}. "
             "Correspondência exata gabarito/teste.",
+        )
+    if result == "VI_SEMELHANTE" and memory["historical_ok_recall"]:
+        physical = memory["physical_veto_status"]
+        suffix = (
+            " A captura atual permanece bloqueada por contraprova física "
+            + physical + "; não há autorização de envio XP 0/OK."
+            if physical in {
+                "SUSPECT_ABSENCE", "UNAVAILABLE", "GEOMETRY_REVIEW",
+                "NG_CORROBORATED",
+            } else ""
+        )
+        return (
+            "VI SEMELHANTE • MEMÓRIA OK • TOP/MID",
+            "O julgamento visual já registrado como OK no ok_archive foi "
+            "recuperado e revalidado pelos descritores A/B de TOP/MID. "
+            "Não houve igualdade pixel a pixel com o par atual."
+            + suffix,
         )
     if result == "VI_SEMELHANTE" and memory["archive_visual_seen"]:
         label = memory["archive_label"]

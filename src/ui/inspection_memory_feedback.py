@@ -20,6 +20,8 @@ def memory_feedback_state(analysis: dict | None) -> tuple[str, str, str]:
     memory = memory_seen_state(analysis)
     if memory["status"] == "JA_VI":
         return "JÁ VI", memory_panel_text(analysis)[1], "known"
+    if memory.get("historical_ok_recall"):
+        return "MEMÓRIA OK • TOP/MID", memory_panel_text(analysis)[1], "similar"
     if memory["status"] == "VI_SEMELHANTE":
         return "VI SEMELHANTE", memory_panel_text(analysis)[1], "similar"
     if memory["status"] == "CONSULTANDO_ACERVO":

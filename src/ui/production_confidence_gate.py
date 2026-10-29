@@ -140,7 +140,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             _operator_confirmed_ok_pattern_review, _recognized_recurrent_ok,
             _recognized_two_light_operator_ok, _mixed_light_ok_candidate,
             _operator_corrected_side_ok_recall,
-            _recognized_recurrent_ok_20261029,
+            _recognized_recurrent_visual_only_20261029,
         )
         recalled = detail.get("recognized_recurrent_ok")
         pattern = detail.get("operator_confirmed_ok_pattern_review")
@@ -179,7 +179,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         # Reavaliar o padrão TOP/MID histórico a partir dos votos e vetores.
         # O Modo Produção pode automatizar 0 sob gate reforçado, mas o marcador
         # da memória sozinho continua sem autorização de saída XP.
-        verified_newer = _recognized_recurrent_ok_20261029(
+        verified_newer = _recognized_recurrent_visual_only_20261029(
             {
                 **analysis,
                 "verdict": detail.get("cnn_ng_verdict_before_knn_review"),
@@ -296,6 +296,16 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 and analysis.get("multilight_final") is True
                 and (not valid_newer or detail.get("multilight_final") is True)
             )
+            live_veto = detail.get("physical_missing_veto")
+            live_veto = live_veto if isinstance(live_veto, dict) else {}
+            live_veto_status = live_veto.get("status")
+            has_historical_physical_veto = bool(
+                valid_newer
+                and live_veto_status in {
+                    "SUSPECT_ABSENCE", "UNAVAILABLE", "GEOMETRY_REVIEW",
+                    "NG_CORROBORATED",
+                }
+            )
             return {
                 "mode": "production",
                 "confidence": confidence,
@@ -321,20 +331,25 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                     if valid_two_light
                     else "mixed_light_knn_ok_requires_operator"
                     if valid_mixed
+                    else "known_top_mid_ok_physical_veto_" + live_veto_status.lower()
+                    if has_historical_physical_veto
                     else "operator_known_top_mid_ok_20261029_requires_operator"
                     if valid_newer
                     else "operator_confirmed_ok_pattern_requires_operator"
                 ),
                 "operator_shortcuts": {"0": "OK", "1": "NG"},
             }
+        # Preserve the validated historical visual verdict (not XP release).
+        # The physical veto still requires intervention and blocks 0/OK.
+        # A forged historical marker is not sufficient: valid_newer above
+        # is recomputed from KNN/CNN observations and pinned reference hashes.
         # Distinguish a verified visual memory from a failed physical veto.
         # A current MID absence suspicion cannot be cleared by merely
         # locating a historical TOP/MID OK neighbor.
         veto = detail.get("physical_missing_veto")
         veto_status = veto.get("status") if isinstance(veto, dict) else None
         historical_conflict = bool(
-            detail.get("fusion_rule") == "operator_known_top_mid_ok_review_20261029_v1"
-            and isinstance(detail.get("recognized_top_mid_ok_20261029"), dict)
+            valid_newer
             and veto_status in {
                 "SUSPECT_ABSENCE", "GEOMETRY_REVIEW", "UNAVAILABLE",
                 "NG_CORROBORATED",
@@ -343,7 +358,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         return {
             "mode": "production", "confidence": confidence, "threshold": None,
             "verdict": (
-                "REVISÃO OBRIGATÓRIA" if historical_conflict
+                "FALHA FALSA" if historical_conflict
                 else verdict if verdict == "DEFEITO REAL"
                 else "REVISÃO OBRIGATÓRIA"
             ),
