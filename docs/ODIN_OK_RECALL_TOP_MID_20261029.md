@@ -190,3 +190,27 @@ controles OK e NG reais, revisar a qualidade do sensor MID e a geometria
 dos recortes. Esta alteração é de observabilidade: **não muda**
 checkpoint, KNN, acervo, limiares de ausência ou a política de bloqueio
 de `0/OK` quando a sonda suspeita de NG.
+
+
+## Evento 09:57 — o overlay "sem par exato" ignorava memória visual OK
+
+O evento `55eeeb08997644ea8363fa4f99226954` repetiu a referência TOP/MID
+OK de 27/10. A regra final recuperou `FALHA FALSA`, mas o painel de
+memória dizia `SEM PAR EXATO`, pois `memory_seen_state()` reconhecia
+apenas `KNOWN_KNN`, a busca SIDE do acervo ou NG visual corroborado.
+Ele não contemplava a recuperação humana TOP/MID feita pela fusão.
+A consulta estritamente exata `NOT_FOUND` continua correta e distinta
+da busca visual de vizinhos.
+
+A interface agora revalida a rota `operator_known_top_mid_ok_review_20261029_v1`
+pelos votos/caminhos/hashes originais através da política, e apresenta
+`MEMÓRIA OK • TOP/MID` e `VI SEMELHANTE`, sem afirmar igualdade dos
+pixels. Se os dados ou hashes forem adulterados, não declara memória OK.
+
+O mesmo evento teve `SUSPECT_ABSENCE` MID em uma ROI de 58%, não
+corroborada na escala de 76%, além de `GEOMETRY_REVIEW` SIDE/TOP
+devido a recortes 318×570 versus 317×567. A política deixa explícita
+a classificação visual `FALHA FALSA`, separada do bloqueio físico da
+transmissão. **Não autoriza 0/OK**, nem transforma comparação aproximada
+em evidência física ou par exato. A pausa/intervenção ainda são exigidas
+pelo veto, e nenhuma modificação foi feita nos limiares ou pesos.
