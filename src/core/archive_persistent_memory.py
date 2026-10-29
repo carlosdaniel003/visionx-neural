@@ -365,6 +365,54 @@ class PersistentArchiveKNN:
             "memory_source": "ARCHIVE_PERSISTENT",
         }
 
+    def lookup_exact_any_light(self, reference, test, info: dict) -> dict:
+        """Find the same RGB reference+test pair across SIDE/TOP/MID.
+
+        Lighting metadata may be wrong on the XP capture. This is NOT
+        a similarity search: both image fingerprints and the AOI category
+        must agree exactly. Opposite labels in any light block the shortcut.
+        """
+        if (reference is None or test is None
+                or getattr(reference, "size", 0) == 0
+                or getattr(test, "size", 0) == 0):
+            return {"status": "UNAVAILABLE", "reason": "Par visual indisponível"}
+        try:
+            key = identity(
+                info.get("category"), info.get("lighting_mode"),
+                image_fingerprint(reference), image_fingerprint(test),
+            )
+        except ValueError as exc:
+            return {"status": "NEW", "reason": str(exc)}
+        matches = [
+            record for record in self.records()
+            if record["identity"][0] == key[0]
+            and record["identity"][2:] == key[2:]
+        ]
+        if not matches:
+            return {"status": "NEW", "reason": "Nenhum par RGB exato nas três iluminações"}
+        labels = {record["label"] for record in matches}
+        if len(labels) != 1:
+            return {
+                "status": "CONFLICT", "matches": len(matches),
+                "reason": "Par RGB exato tem rótulos OK e NG entre iluminações",
+            }
+        lights = sorted({record["identity"][1] for record in matches})
+        cross_light = key[1] not in lights
+        source = matches[0]["sources"][0]
+        return {
+            "status": "KNOWN", "label": labels.pop(),
+            "matches": len(matches), "source_json": str(self.path),
+            "source_png": source["source_path"],
+            "source_lighting_mode": matches[0]["identity"][1],
+            "source_lighting_modes": lights,
+            "cross_light_verified": cross_light,
+            "reason": (
+                "Par RGB pixel-idêntico auditado em outra iluminação"
+                if cross_light else "Par RGB pixel-idêntico auditado nesta iluminação"
+            ),
+            "memory_source": "ARCHIVE_PERSISTENT",
+        }
+
     def lookup(self, reference, test, info: dict) -> dict:
         if (reference is None or test is None
                 or getattr(reference, "size", 0) == 0
