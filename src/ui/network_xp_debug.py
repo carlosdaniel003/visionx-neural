@@ -580,6 +580,81 @@ def format_multilight_debug_report(panel) -> str:
     else:
         lines.append("Julgamento final: aguardando SIDE/TOP/MID.")
 
+    # Keep strict pixel identity and recovered *visual* history separate.
+    # A physical veto on the current capture outranks historic similarity.
+    known = final_detail.get("recognized_top_mid_ok_20261029")
+    if isinstance(known, dict):
+        physical = final_detail.get("physical_missing_veto")
+        physical = physical if isinstance(physical, dict) else {}
+        status = physical.get("status", "NOT_EVALUATED")
+        lines.extend([
+            "",
+            "MEMÓRIA OK RECORRENTE / AUDITORIA FÍSICA ATUAL",
+            "-" * 72,
+            "Referência visual TOP/MID: RECONHECIDA NO ok_archive",
+            "Par pixel-idêntico atual: NÃO COMPROVADO (NOT_FOUND)",
+            "Resultado da contraprova física: " + str(status),
+            "Luzes com possível ausência: " + str(
+                physical.get("suspect_lights", [])),
+            "Luzes com geometria em revisão: " + str(
+                physical.get("geometry_review_lights", [])),
+            "Luzes indisponíveis: " + str(
+                physical.get("unavailable_lights", [])),
+        ])
+        for light in MULTILIGHT_DEBUG_ORDER:
+            groups = known.get("per_light_reference")
+            reference = groups.get(light) if isinstance(groups, dict) else None
+            if isinstance(reference, dict):
+                lines.append(
+                    f"Referência {light}: {reference.get('path', '-')}"
+                    + " | A=" + str(reference.get("neighbors_A", "-"))
+                    + " B=" + str(reference.get("neighbors_B", "-"))
+                )
+            light_report = physical.get("lights")
+            record = (light_report.get(light) if
+                      isinstance(light_report, dict) else None)
+            if not isinstance(record, dict):
+                lines.append(f"Sonda {light}: sem métricas individuais")
+                continue
+            geometry = record.get("geometry")
+            geometry = geometry if isinstance(geometry, dict) else {}
+            lines.append(
+                f"Sonda {light}: {record.get('status', '-')} "
+                f"| geometria={geometry.get('method', '-')} "
+                f"| gabarito={geometry.get('reference_hw', '-')} "
+                f"| teste={geometry.get('test_hw', '-')} "
+                f"| comparado={geometry.get('comparison_hw', '-')}"
+            )
+            scales = record.get("scales")
+            if isinstance(scales, list):
+                for idx, roi in enumerate(scales[:2], start=1):
+                    if not isinstance(roi, dict):
+                        continue
+                    keys = (
+                        "focus_fraction", "suspected_absence", "classification",
+                        "score", "coverage", "background", "distinctness",
+                        "direct_similarity", "nearby_similarity",
+                    )
+                    lines.append(
+                        f"  ROI {idx}: " +
+                        ", ".join(
+                            str(key) + "=" + str(roi.get(key))
+                            for key in keys if key in roi
+                        )
+                    )
+        if status in {
+            "SUSPECT_ABSENCE", "GEOMETRY_REVIEW", "UNAVAILABLE",
+            "NG_CORROBORATED",
+        }:
+            lines.append(
+                "XP 0/OK BLOQUEADO PELA CONTRAPROVA DA CAPTURA ATUAL; "
+                "NÃO pela ausência de exemplos OK no acervo."
+            )
+            lines.append(
+                "Comparação visual histórica não atesta presença física "
+                "no componente atual."
+            )
+
     # A revisão no trace CNN é um dado de inferência, NÃO necessariamente
     # um pedido humano no controlador de Produção. Ler o gate efetivo
     # separadamente, sem armar o controlador ou simular comandos XP.
