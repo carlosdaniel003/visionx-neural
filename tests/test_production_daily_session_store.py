@@ -166,7 +166,7 @@ class ProductionDailySessionStoreTests(unittest.TestCase):
         self.assertEqual(metrics["auto_ok"], 0)
         self.assertEqual(metrics["auto_ng"], 0)
         self.assertEqual(metrics["manual_judgments"], 2)
-        self.assertEqual(metrics["analysis_count"], 0)
+        self.assertEqual(metrics["analysis_count"], 2)
         self.assertEqual(metrics["analysis_time_total"], 0.0)
 
 
