@@ -28,6 +28,7 @@ from src.ui.production_autonomy_controller import (
     ProductionAutonomyController,
 )
 from tests.test_production_autonomy_controller import _Panel
+from tests.test_oct29_operator_recurring_ok import real_event, apply as apply_oct29
 
 
 def uncertain_three_light():
@@ -113,6 +114,51 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         controller._emit_auto_decision(controller.generation, "NG")
         self.assertEqual(panel.saved, [("NG", "production_auto")])
 
+    def test_verified_oct29_recurring_ok_sends_zero_once_after_pause_window(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        raw, visual = real_event()
+        analysis = apply_oct29(raw, visual)
+        panel.current_analysis = analysis
+        self.assertTrue(controller.analysis_ready(analysis))
+        self.assertTrue(analysis["detail"]["production_continuous_auto"])
+        controller._stage_timer.stop()
+        controller.pending_analysis = analysis
+        controller._finish_presentation(controller.generation)
+        self.assertEqual(controller.state, "auto_decision_pending")
+        self.assertEqual(controller._stage_remaining_ms, KNN_C_SUPERVISED_DELAY_MS)
+        self.assertEqual(panel.saved, [])
+        controller._stage_timer.stop()
+        controller._emit_auto_decision(controller.generation, "OK")
+        self.assertEqual(panel.saved, [("OK", "production_auto")])
+        self.assertEqual(panel.auto_records, ["OK"])
+        controller._emit_auto_decision(controller.generation, "OK")
+        self.assertEqual(panel.saved, [("OK", "production_auto")])
+
+    def test_verified_oct29_auto_zero_cannot_bypass_pause_or_event_change(self):
+        for state in ("pause", "new_event", "exit_production"):
+            with self.subTest(state=state):
+                panel = _Panel()
+                controller = ProductionAutonomyController(panel)
+                panel.combo_mode.setCurrentText("Modo Produção")
+                raw, visual = real_event()
+                analysis = apply_oct29(raw, visual)
+                analysis["detail"]["production_continuous_auto"] = True
+                panel.current_analysis = analysis
+                controller.pending_analysis = analysis
+                controller.generation += 1
+                controller._finish_presentation(controller.generation)
+                controller._stage_timer.stop()
+                if state == "pause":
+                    controller.toggle_pause()
+                elif state == "new_event":
+                    panel.current_analysis = deepcopy(analysis)
+                else:
+                    panel.combo_mode.setCurrentText("Modo Teste")
+                controller._emit_auto_decision(controller.generation, "OK")
+                self.assertEqual(panel.saved, [])
+
     def test_pause_or_changed_capture_cancels_auto_ng(self):
         for scenario in ("pause", "change", "mode"):
             with self.subTest(scenario=scenario):
@@ -175,6 +221,7 @@ class QuarantineUnverifiedLabelsTests(unittest.TestCase):
         for reason in (
             "supervised_recurrent_ok_top_mid_auto_v1",
             "supervised_mixed_light_ok_auto_v1",
+            "supervised_operator_known_top_mid_ok_20261029_auto_v1",
         ):
             with self.subTest(reason=reason):
                 self.assertTrue(_is_unverified_automatic({
