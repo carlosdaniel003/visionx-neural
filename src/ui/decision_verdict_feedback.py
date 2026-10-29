@@ -145,6 +145,7 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
                 "supervised_mixed_light_ok_auto_v1",
                 "supervised_operator_corrected_archive_ok_auto_v1",
                 "supervised_operator_known_top_mid_ok_20261029_auto_v1",
+                "supervised_operator_known_top_mid_ok_mid_probe_disagreement_auto_v1",
                 "operator_corrected_archive_ok_requires_operator",
             }
             and (
