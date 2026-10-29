@@ -25,10 +25,11 @@ class DecisionInfluenceWidget(QWidget):
         self.rows = neural_influence_rows(analysis) or influence_rows(self.trace)
         if self.rows and self.rows[0].get("telemetry_row"):
             self.setToolTip(
-                "Verde: voto CNN OK não contradito; vermelho: NG. "
-                "A barra representa os scores brutos da CNN por iluminação, "
-                "não acurácia nem probabilidade calibrada. "
-                "KNN exato recupera somente rótulos humanos confirmados."
+                "Vermelho: score bruto CNN NG; amarelo: voto CNN em conflito "
+                "com outra evidência; verde: evidência OK verificada. "
+                "Memória visual aproximada NÃO é par exato. "
+                "O veredito consolidado pode corrigir os votos CNN "
+                "sem alterar nem esconder seus valores originais."
             )
         else:
             self.setToolTip("Influência dos especialistas ativos na decisão.")
@@ -109,10 +110,23 @@ class DecisionInfluenceWidget(QWidget):
         )
         painter.setFont(QFont("Consolas", 7))
         painter.setPen(QColor("#9aa6b2"))
+        verified_historical_ok = any(
+            row.get("knn_historical_ok") is True for row in self.rows
+        )
+        auto_ok = any(
+            row.get("production_auto_ok_authorized") is True for row in self.rows
+        )
+        caption = (
+            "FINAL: FALHA FALSA • memória TOP/MID OK"
+            + (" • XP 0 automático após pausa" if auto_ok
+               else " • XP sujeito ao gate de Produção")
+            if verified_historical_ok
+            else "Verde: sinal OK  |  Vermelho: sinal NG  |  Amarelo: conflito"
+        )
         painter.drawText(
             QRectF(12, 28, width - 24, 20),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-            "Verde: sinal OK  |  Vermelho: sinal NG  |  Amarelo: revisão",
+            self._elide(painter, caption, width - 24),
         )
 
         n = len(self.rows)
@@ -128,6 +142,9 @@ class DecisionInfluenceWidget(QWidget):
             if known_label in {"OK", "NG"}:
                 state = known_label
                 status_text = f"MEMÓRIA HUMANA • {known_label} • PAR EXATO"
+            elif row.get("knn_historical_ok"):
+                state = "OK"
+                status_text = "OK HISTÓRICO • TOP/MID RECONHECIDOS (NÃO EXATO)"
             elif row.get("knn_approximate"):
                 corroborated = row.get("knn_visual_label") == "NG"
                 state = "NG" if corroborated else "REVISÃO"
@@ -135,6 +152,9 @@ class DecisionInfluenceWidget(QWidget):
                     "KNN • NG SEMELHANTE (NÃO EXATO)"
                     if corroborated else "KNN • VIZINHOS INCONCLUSIVOS"
                 )
+            elif row.get("overruled_by_memory"):
+                state = "REVISÃO"
+                status_text = "CNN VOTOU NG • CONTRARIADA PELA MEMÓRIA OK"
             elif row.get("contradicted"):
                 state = "REVISÃO"
                 status_text = "CNN VOTOU OK • CONTRADITA POR OUTRO MOTOR"
@@ -192,8 +212,9 @@ class DecisionInfluenceWidget(QWidget):
                     QRectF(rect.x() + 10, y + 39, rect.width() - 20, 15),
                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                     f"Score NG bruto {score * 100:.4f}% (não calibrado)"
-                    + (" • VOTO CNN CONTESTADO" if row.get("contradicted")
-                       else " • voto CNN, não conclusão final"),
+                    + (" • VOTO CNN CONTESTADO" if (
+                        row.get("contradicted") or row.get("overruled_by_memory")
+                    ) else " • voto CNN, não conclusão final"),
                 )
             else:
                 painter.setFont(QFont("Consolas", 7))
@@ -214,7 +235,7 @@ class DecisionInfluenceWidget(QWidget):
         painter.drawText(
             QRectF(10, max(0, height - 29), width - 20, 25),
             Qt.AlignmentFlag.AlignCenter,
-            "CNN verde = apenas voto OK; amarelo = contradição. KNN ≠ probabilidade.",
+            "CNN = voto bruto, não veredito final. Memória KNN ≠ probabilidade.",
         )
 
     def paintEvent(self, event):
