@@ -946,6 +946,212 @@ def _recognized_two_light_operator_ok(
     }
 
 
+
+def _recognized_recurrent_ok_20261029(
+    fused: dict, report: dict, category: str,
+) -> dict | None:
+    """Recovery of the previously human-confirmed 27 Oct TOP/MID OK event.
+
+    The experimental CNN votes NG on the same component under all lights,
+    but its own three-light consensus is invalid. Two PINNED archival
+    identities and an independent visual comparison are required. This
+    function classifies for a human; it NEVER authorizes automatic XP OK.
+    """
+    d = fused.get("detail")
+    if canonical_memory_category(category) != "FALTANDO" or not isinstance(d, dict):
+        return None
+    if not (
+        fused.get("multilight_final") is True
+        and fused.get("verdict") == "DEFEITO REAL"
+        and fused.get("is_defect") is True
+        and d.get("recognition_route") == "NEW_CNN"
+        and d.get("cnn_v2_trial_manual_only") is True
+        and d.get("cnn_v2_consensus") == "REVIEW"
+        and d.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
+        and set(d.get("multilight_strong_positive_modes") or ()) == set(LIGHTS)
+        and d.get("multilight_physical_disagreement") is False
+        and d.get("multilight_missing_verified_presence") is False
+        and d.get("hard_missing_evidence") is not True
+        and fused.get("hard_missing_evidence") is not True
+        and d.get("physical_score") == 0.0
+    ):
+        return None
+    trace = d.get("decision_trace")
+    if not isinstance(trace, dict) or any(
+        trace.get(k) is True for k in ("raw_hard_missing_evidence",
+                                      "hard_missing_evidence")
+    ):
+        return None
+    physical = d.get("physical_missing_veto")
+    if isinstance(physical, dict) and physical.get("status") in {
+        "SUSPECT_ABSENCE", "UNAVAILABLE", "NG_CORROBORATED",
+    }:
+        return None
+
+    # All three CNN outputs must be genuine, same checkpoint and category.
+    # A very high uncalibrated CNN score is NOT physical NG confirmation.
+    cnn = d.get("cnn_v2_light_diagnostics")
+    if not isinstance(cnn, dict) or set(cnn) != set(LIGHTS):
+        return None
+    checkpoints = set()
+    for light in LIGHTS:
+        item = cnn[light]
+        if not isinstance(item, dict) or not (
+            item.get("cnn_active") is True
+            and item.get("checkpoint_verified") is True
+            and item.get("cnn_status") == "INFERENCE_OK"
+            and item.get("route") == "NEW_CNN"
+            and item.get("verdict") == "DEFEITO REAL"
+            and item.get("category") == "FALTANDO"
+        ):
+            return None
+        sha = item.get("checkpoint_sha256")
+        try:
+            score = float(item["ng_score_uncalibrated"])
+        except (TypeError, ValueError, KeyError, OverflowError):
+            return None
+        if not (
+            isinstance(sha, str) and len(sha) == 64
+            and all(ch in "0123456789abcdef" for ch in sha.lower())
+            and math.isfinite(score) and .95 <= score <= 1.0
+        ):
+            return None
+        checkpoints.add(sha)
+    if len(checkpoints) != 1:
+        return None
+
+    votes = d.get("knn_c_light_observer_votes")
+    neighbors = d.get("knn_c_light_neighbor_evidence")
+    if not isinstance(votes, dict) or set(votes) != set(LIGHTS):
+        return None
+    if not isinstance(neighbors, dict) or set(neighbors) != set(LIGHTS):
+        return None
+    matched = {}
+    for light in LIGHTS:
+        vote = votes[light]
+        if not isinstance(vote, dict) or not (
+            vote.get("schema") == "visionx.knn_c_live_review_gated.v1"
+            and vote.get("bank_status") == "READY"
+            and vote.get("diagnostic_only") is True
+            and vote.get("auto_decision_authorized") is False
+            and vote.get("vote_A") == "OK"
+            and vote.get("vote_B") == "OK"
+        ):
+            return None
+        if light in {"SIDE", "TOP"}:
+            if not (
+                vote.get("status") == "REVISAO"
+                and vote.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+                and vote.get("suggestion_A") == "REVISAO"
+                and vote.get("suggestion_B") == "REVISAO"
+            ):
+                return None
+        elif not (
+            vote.get("status") == "SUGERE_OK"
+            and vote.get("reason") == "B_SELETIVA_E_VOTOS_A_B_CONCORDAM"
+            and vote.get("suggestion_A") == "REVISAO"
+            and vote.get("suggestion_B") == "SUGERE_OK"
+        ):
+            return None
+        groups = neighbors.get(light)
+        if not isinstance(groups, dict):
+            return None
+        for key in ("neighbors_A", "neighbors_B"):
+            rows = groups.get(key)
+            if not isinstance(rows, list) or len(rows) != 5 or not all(
+                isinstance(row, dict) and row.get("label") in {"OK", "NG"}
+                for row in rows
+            ):
+                return None
+            min_ok = 3 if light == "SIDE" else 4
+            if sum(row.get("label") == "OK" for row in rows) < min_ok:
+                return None
+            def valid_score(row):
+                try:
+                    value = float(row["similarity"])
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    return None
+                return value if math.isfinite(value) and 0 <= value <= 1 else None
+            if any(valid_score(row) is None for row in rows):
+                return None
+            ng_scores = [valid_score(row) for row in rows if row["label"] == "NG"]
+            if ng_scores and max(ng_scores) >= .93:
+                return None
+            if light != "SIDE":
+                first = rows[0]
+                expected = _OPERATOR_OK_MULTI_LIGHT_REFERENCES[light]
+                if not (
+                    first["label"] == "OK"
+                    and (first.get("path"), first.get("source_pixel_sha256"))
+                        == expected
+                ):
+                    return None
+                minimum = {
+                    "TOP": {"neighbors_A": .985, "neighbors_B": .975},
+                    "MID": {"neighbors_A": .98, "neighbors_B": .97},
+                }[light][key]
+                sim = valid_score(first)
+                if sim < minimum or (ng_scores and sim - max(ng_scores) < .06):
+                    return None
+                matched.setdefault(light, {
+                    "path": expected[0], "source_pixel_sha256": expected[1],
+                })[key] = round(sim, 8)
+
+    if not isinstance(report, dict) or not (
+        report.get("schema") == SCHEMA
+        and report.get("status") == "CONFLICT"
+        and report.get("strong_ng_lights") == []
+        and report.get("trend_ng_lights") == []
+    ):
+        return None
+    evidence = report.get("lights")
+    if not isinstance(evidence, dict) or set(evidence) != set(LIGHTS):
+        return None
+    support = {}
+    minimum_ok = {"SIDE": .99, "TOP": .99, "MID": .985}
+    minimum_gap = {"SIDE": .04, "TOP": .045, "MID": .06}
+    for light in LIGHTS:
+        item = evidence[light]
+        if not isinstance(item, dict) or not (
+            item.get("cross_category_ng") is False
+            and item.get("status") == (
+                "NO_CONCLUSION" if light == "MID" else "CONFLICT"
+            )
+            and isinstance(item.get("ok"), dict)
+            and isinstance(item.get("ng"), dict)
+        ):
+            return None
+        try:
+            ok = float(item["ok"]["best_similarity"])
+            ng = float(item["ng"]["best_similarity"])
+            margin = float(item["ng_margin_over_ok"])
+        except (KeyError, ValueError, TypeError, OverflowError):
+            return None
+        if not (
+            all(math.isfinite(x) and 0 <= x <= 1 for x in (ok, ng))
+            and math.isfinite(margin) and abs((ng - ok) - margin) < .00001
+            and ok >= minimum_ok[light]
+            and ok - ng >= minimum_gap[light]
+        ):
+            return None
+        support[light] = {
+            "ok": round(ok, 6), "ng": round(ng, 6),
+            "ok_advantage": round(ok - ng, 6),
+        }
+    return {
+        "schema": "visionx.known_two_light_ok_20261029_review.v1",
+        "status": "HUMAN_CONFIRMED_TOP_MID_OK_PATTERN",
+        "reference_event": "2026-10-27_1318_FALTANDO",
+        "per_light_reference": matched,
+        "independent_visual_support": support,
+        "current_pair_exact_match": False,
+        "current_capture_operator_confirmed": False,
+        "operator_review_required": True,
+        "automatic_ok_authorized": False,
+        "xp_command_authorized": False,
+    }
+
+
 def _mixed_light_ok_candidate(
     fused: dict, report: dict, category: str,
 ) -> dict | None:
@@ -1476,6 +1682,40 @@ def apply_knn_visual_corroboration(
             trace["operator_review_required"] = True
             trace["fusion_rule"] = detail["fusion_rule"]
             trace["final_score"] = .5
+        return fused
+    # Revisão de 29/10: a CNN experimental dispara NG nas três luzes,
+    # mas TOP/MID recuperam a MESMA fonte humana OK em A/B com grande
+    # separação dos NG. Não confundir isso com par exato ou auto-OK XP.
+    known_pair = _recognized_recurrent_ok_20261029(fused, report, category)
+    if known_pair is not None:
+        detail["recognized_top_mid_ok_20261029"] = known_pair
+        detail["cnn_ng_verdict_before_knn_review"] = fused["verdict"]
+        fused["verdict"] = "FALHA FALSA"
+        fused["is_defect"] = False
+        fused["production_review_required"] = True
+        fused["eligible_for_final_decision"] = False
+        fused["confidence"] = .5
+        fused["reason"] = (
+            "FALHA FALSA • PADRÃO OK HISTÓRICO RECUPERADO: TOP e MID "
+            "reconhecem as imagens 2026-10-27_1318_FALTANDO no acervo OK "
+            "pelos dois descritores; a comparação visual independente "
+            "favorece OK nas três iluminações e não há evidência física "
+            "registrada de ausência. A CNN experimental contradiz a "
+            "memória, com consenso inválido. Classificação visual para "
+            "confirmação humana: 0=OK / 1=NG. Nenhum XP automático."
+        )
+        detail["fusion_rule"] = "operator_known_top_mid_ok_review_20261029_v1"
+        detail["operator_review_required"] = True
+        detail["eligible_for_final_decision"] = False
+        detail["cnn_v2_supervised_auto_eligible"] = False
+        detail["final_score"] = .5
+        trace = detail.get("decision_trace")
+        if isinstance(trace, dict):
+            trace.update(
+                verdict="FALHA FALSA", physical_defect=False,
+                operator_review_required=True,
+                fusion_rule=detail["fusion_rule"], final_score=.5,
+            )
         return fused
     # A referência recorrente pode ser muito forte em TOP e MID
     # enquanto SIDE empata; essa rota precede a antiga exigência
