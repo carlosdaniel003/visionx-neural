@@ -185,6 +185,51 @@ class DurableMemoryTests(unittest.TestCase):
             {r["label"] for r in persisted.records()}, {"OK", "NG"}
         )
 
+    def test_cross_light_exact_pair_only_if_both_rgb_images_are_identical(self):
+        self.store.add([entry(
+            "OK", path="public/ok_archive/2026-10-08_0725_FALTANDO_TOP.png",
+            lighting="TOP",
+        )])
+        reference, test = images("OK")
+        side = info()
+        # O contrato antigo de lookup por mesma luz continua estrito.
+        self.assertEqual(self.store.lookup(reference, test, side)["status"], "NEW")
+        result = self.store.lookup_exact_any_light(reference, test, side)
+        self.assertEqual(result["status"], "KNOWN")
+        self.assertEqual(result["label"], "OK")
+        self.assertTrue(result["cross_light_verified"])
+        self.assertEqual(result["source_lighting_mode"], "TOP")
+        self.assertEqual(result["source_png"],
+                         "public/ok_archive/2026-10-08_0725_FALTANDO_TOP.png")
+
+        changed = test.copy()
+        changed[0, 0, 0] ^= 1
+        self.assertEqual(
+            self.store.lookup_exact_any_light(reference, changed, side)["status"],
+            "NEW",
+        )
+        self.assertEqual(self.store.lookup_exact_any_light(
+            reference, test, {**side, "category": "DESLOCADO"},
+        )["status"], "NEW")
+
+    def test_cross_light_label_conflict_never_auto_approves(self):
+        same = images("OK")
+        self.store.add([
+            entry("OK", override_pair=same, lighting="TOP"),
+            entry("NG", override_pair=same, lighting="MID"),
+        ])
+        self.assertEqual(self.store.lookup_exact_any_light(
+            *same, info()
+        )["status"], "CONFLICT")
+        class EmptyKNN:
+            signatures_ok = []
+            signatures_ng = []
+        router = VerifiedKNNMemory(archive_store=self.store)
+        router.warmup(EmptyKNN())
+        self.assertEqual(router.lookup(
+            EmptyKNN(), *same, info()
+        )["status"], "CONFLICT")
+
     def test_match_only_exact_and_same_light(self):
         self.store.add([entry("OK")])
         ref, test = images("OK")
