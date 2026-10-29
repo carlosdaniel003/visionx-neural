@@ -25,7 +25,7 @@ class DecisionInfluenceWidget(QWidget):
         self.rows = neural_influence_rows(analysis) or influence_rows(self.trace)
         if self.rows and self.rows[0].get("telemetry_row"):
             self.setToolTip(
-                "Vermelho: score bruto CNN NG; amarelo: voto CNN em conflito "
+                "Vermelho: score bruto CNN NG; Amarelo: voto CNN em conflito "
                 "com outra evidência; verde: evidência OK verificada. "
                 "Memória visual aproximada NÃO é par exato. "
                 "O veredito consolidado pode corrigir os votos CNN "
