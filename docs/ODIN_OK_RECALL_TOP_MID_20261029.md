@@ -157,3 +157,36 @@ A validação inclui replay estruturado de 08:22, verificações da
 apresentação CNN/KNN, política armada e desarmada, rejeição de hashes
 adulterados e visibilidade do comando XP (proposto ≠ enviado).
 O teste na estação física continua necessário.
+
+
+## Evento de 08:58 — memória OK validada, veto físico contraditório
+
+No evento `bdf7a338f7e94aaba09697cd568f9f10`, a fusão identificou
+`FALHA FALSA` pela fonte histórica TOP/MID de 27/10. As referências
+foram recuperadas em primeiro lugar nas duas assinaturas: TOP
+0,98621705 / 0,97805809; MID 0,9825117 / 0,9710344.
+A KNN exata permaneceu `NOT_FOUND`, pois sua semântica exige igualdade
+de pixels, e a similaridade visual não a substitui.
+
+Após a alteração de sonda física do PR #98, a verificação real obteve
+`SUSPECT_ABSENCE`, com suspeita na MID, `GEOMETRY_REVIEW` em SIDE e TOP,
+e nenhuma luz indisponível. A política XP efetiva recusou `0/OK`, com
+`auto_allowed=False`; o controlador também estava
+`paused=True`. A causa não foi ausência de vizinhos OK.
+
+A contraprova física usa duas ROIs centrais 58%/76% e contém medidas
+de score, cobertura, fundo, contraste e semelhanças. O relatório anterior
+expunha apenas as listas de status: não permite concluir se o alerta MID
+foi causado por saturação, desalinhamento ou componente realmente ausente.
+A alteração atual exibe o status, geometria e métricas de cada ROI no
+botão `Copiar debug`. A política passa a indicar razão explícita
+`known_top_mid_ok_physical_veto_suspect_absence`, em vez da mensagem
+genérica de CNN não qualificada.
+
+**Não se deve equiparar a referência OK histórica a um par pixel-exato,
+nem apagar um alerta físico apenas para forçar comando automático.**
+Primeiro comparar os pares originais SIDE/TOP/MID deste evento com
+controles OK e NG reais, revisar a qualidade do sensor MID e a geometria
+dos recortes. Esta alteração é de observabilidade: **não muda**
+checkpoint, KNN, acervo, limiares de ausência ou a política de bloqueio
+de `0/OK` quando a sonda suspeita de NG.
