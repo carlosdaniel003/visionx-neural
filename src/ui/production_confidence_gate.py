@@ -296,6 +296,16 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 and analysis.get("multilight_final") is True
                 and (not valid_newer or detail.get("multilight_final") is True)
             )
+            live_veto = detail.get("physical_missing_veto")
+            live_veto = live_veto if isinstance(live_veto, dict) else {}
+            live_veto_status = live_veto.get("status")
+            has_historical_physical_veto = bool(
+                valid_newer
+                and live_veto_status in {
+                    "SUSPECT_ABSENCE", "UNAVAILABLE", "GEOMETRY_REVIEW",
+                    "NG_CORROBORATED",
+                }
+            )
             return {
                 "mode": "production",
                 "confidence": confidence,
@@ -321,6 +331,8 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                     if valid_two_light
                     else "mixed_light_knn_ok_requires_operator"
                     if valid_mixed
+                    else "known_top_mid_ok_physical_veto_" + live_veto_status.lower()
+                    if has_historical_physical_veto
                     else "operator_known_top_mid_ok_20261029_requires_operator"
                     if valid_newer
                     else "operator_confirmed_ok_pattern_requires_operator"
