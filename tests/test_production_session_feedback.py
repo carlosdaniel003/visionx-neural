@@ -182,7 +182,7 @@ class ProductionSessionFeedbackTests(unittest.TestCase):
         self.overlay.record_judgment("OK", "automatic", 1.25)
 
         tooltip = self.overlay.toolTip()
-        self.assertIn("Precisão =", tooltip)
+        self.assertIn("Precisão autônoma (taxa de automação) =", tooltip)
         self.assertIn("julgamentos automáticos", tooltip)
         self.assertIn("Tempo médio de análise", tooltip)
         self.assertIn("Scroll, pausas", tooltip)
