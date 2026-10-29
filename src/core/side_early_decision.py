@@ -83,7 +83,10 @@ def _ng_with_stronger_nearest_ok(analysis: dict, category: str) -> bool:
         return False
     for key, minimum_ok in (("neighbors_A", .90), ("neighbors_B", .85)):
         rows = knn.get(key)
-        if not isinstance(rows, list) or len(rows) < 2:
+        if (not isinstance(rows, list) or len(rows) < 5
+                or any(not isinstance(row, dict)
+                       or row.get("label") not in {"OK", "NG"}
+                       for row in rows[:5])):
             return False
         try:
             first = rows[0]
