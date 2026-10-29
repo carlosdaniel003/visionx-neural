@@ -192,7 +192,7 @@ def format_network_debug_report(record: dict | None) -> str:
                 f"Score físico: {decision.get('physical_score', '-')}",
                 f"Regra de fusão: {decision.get('fusion_rule', '-')}",
                 f"Motor dominante: {decision.get('dominant_engine', '-')}",
-                f"Revisão obrigatória: {decision.get('operator_review_required', '-')}",
+                f"Revisão da evidência (antes do gate XP): {decision.get('operator_review_required', '-')}",
                 f"Ausência física forte efetiva: {decision.get('hard_missing_evidence', '-')}",
                 f"Ausência física forte bruta: {decision.get('raw_hard_missing_evidence', '-')}",
                 f"Hard missing contradito por OK quase exato: {decision.get('hard_missing_contradicted_by_exact_ok', '-')}",
@@ -565,6 +565,9 @@ def format_multilight_debug_report(panel) -> str:
                 f"Consenso CNN: {final_detail.get('cnn_v2_consensus', 'não calculado')}",
                 f"Consenso CNN motivo: {final_detail.get('cnn_v2_consensus_reason', '-')}",
                 f"Consenso CNN elegível automático: {final_detail.get('cnn_v2_supervised_auto_eligible', False)}",
+                "Sinal CNN de revisão ≠ pedido de operador: "
+                "verificar abaixo a política de Produção e seu comando.",
+
                 f"Motivo final: {final_analysis.get('reason', '-')}",
                 "Referência OK 14:16 — diagnóstico: "
                 + str(final_detail.get(
@@ -575,6 +578,44 @@ def format_multilight_debug_report(panel) -> str:
         )
     else:
         lines.append("Julgamento final: aguardando SIDE/TOP/MID.")
+
+    # A revisão no trace CNN é um dado de inferência, NÃO necessariamente
+    # um pedido humano no controlador de Produção. Ler o gate efetivo
+    # separadamente, sem armar o controlador ou simular comandos XP.
+    if final_analysis and getattr(
+        getattr(panel, "combo_mode", None), "currentText", lambda: ""
+    )() == "Modo Produção":
+        from src.ui.production_confidence_gate import production_decision_policy
+        policy = production_decision_policy(final_analysis)
+        controller = getattr(panel, "production_autonomy_controller", None)
+        lines.extend([
+            "",
+            "POLÍTICA EFETIVA DE PRODUÇÃO / XP",
+            "-" * 72,
+            "Controller: " + str(getattr(controller, "state", "indisponível")),
+            "Pausado por espaço: " + str(
+                getattr(controller, "paused", "indisponível")
+            ),
+            "Política armada: " + str(
+                final_detail.get("production_continuous_auto") is True
+            ),
+            "Regra XP: " + str(policy.get("reason", "-")),
+            "Veredito da política XP: " + str(policy.get("verdict", "-")),
+            "Autoriza automático: " + str(policy.get("auto_allowed", False)),
+            "Requer tecla 0/1 humana: " + str(
+                policy.get("operator_review_required", True)
+            ),
+            "Comando XP proposto: " + (
+                "0/OK" if policy.get("proposed_decision") == "OK"
+                else "1/NG" if policy.get("proposed_decision") == "NG"
+                else "NENHUM"
+            ),
+            "Envio XP confirmado: " + str(
+                getattr(panel, "last_decision_command_success", None)
+            ),
+            "Nota: política ainda não armada não representa "
+            "uma intervenção humana efetivamente solicitada.",
+        ])
 
     for mode in MULTILIGHT_DEBUG_ORDER:
         analysis = analyses.get(mode)
