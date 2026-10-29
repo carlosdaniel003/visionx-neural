@@ -105,7 +105,7 @@ class ProductionDailySessionStoreTests(unittest.TestCase):
 
         self.assertEqual(
             payload["schema"],
-            "visionx.production_daily_session.v1",
+            "visionx.production_daily_session.v2",
         )
         self.assertEqual(payload["date"], "2026-10-07")
         self.assertAlmostEqual(
@@ -116,6 +116,40 @@ class ProductionDailySessionStoreTests(unittest.TestCase):
             payload["metrics"]["average_analysis_time_seconds"],
             2.0,
         )
+
+    def test_27_analyses_but_17_judgments_migrate_to_17_without_false_average(self):
+        path = self.store.today_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "schema": "visionx.production_daily_session.v1",
+            "date": "2026-10-07",
+            "metrics": {
+                "auto_ok": 2, "auto_ng": 15, "manual_judgments": 0,
+                "analysis_count": 27,
+                "analysis_time_count": 27,
+                "analysis_time_total": 27 * 4.41,
+            },
+        }), encoding="utf-8")
+        m = self.store.load_today()["metrics"]
+        self.assertEqual(m["analysis_count"], 17)
+        self.assertEqual(m["auto_ok"], 2)
+        self.assertEqual(m["auto_ng"], 15)
+        self.assertEqual(m["accuracy_percent"], 100.0)
+        self.assertEqual(m["analysis_time_count"], 0)
+        self.assertEqual(m["analysis_time_total"], 0.0)
+        self.assertIsNone(m["average_analysis_time_seconds"])
+        # Historical v1 file is untouched by reading.
+        self.assertEqual(json.loads(path.read_text())["metrics"]["analysis_count"], 27)
+
+    def test_legacy_fully_judged_times_preserved(self):
+        m = normalize_metrics({
+            "auto_ok": 1, "auto_ng": 1, "manual_judgments": 1,
+            "analysis_count": 3, "analysis_time_count": 3,
+            "analysis_time_total": 9,
+        })
+        self.assertEqual(m["analysis_count"], 3)
+        self.assertEqual(m["analysis_time_total"], 9)
+        self.assertEqual(m["average_analysis_time_seconds"], 3)
 
     def test_normalization_rejects_negative_and_invalid_values(self):
         metrics = normalize_metrics(
