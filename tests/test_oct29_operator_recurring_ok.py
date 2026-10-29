@@ -10,7 +10,9 @@ import unittest
 from unittest.mock import patch
 
 from src.core.knn_visual_corroboration import (
-    _recognized_recurrent_ok_20261029, apply_knn_visual_corroboration,
+    _recognized_recurrent_ok_20261029,
+    _recognized_recurrent_visual_only_20261029,
+    apply_knn_visual_corroboration,
 )
 from src.ui.production_confidence_gate import production_decision_policy
 from src.ui.decision_verdict_feedback import verdict_feedback_state
@@ -337,6 +339,21 @@ class Oct29RecurringOkTests(unittest.TestCase):
             "geometry_review_lights": ["SIDE", "TOP"],
             "unavailable_lights": [],
         }
+        # The strict classifier must not disregard current physical NG
+        # suspicion, but the read-only UI may validate visual history
+        # without accidentally treating the veto as absence of memory.
+        raw_for_recall = {
+            **final,
+            "verdict": final["detail"]["cnn_ng_verdict_before_knn_review"],
+            "is_defect": True,
+        }
+        report_for_recall = final["detail"]["knn_visual_corroboration"]
+        self.assertIsNone(_recognized_recurrent_ok_20261029(
+            raw_for_recall, report_for_recall, "FALTANDO"
+        ))
+        self.assertIsNotNone(_recognized_recurrent_visual_only_20261029(
+            raw_for_recall, report_for_recall, "FALTANDO"
+        ))
         seen = memory_seen_state(final)
         self.assertEqual(seen["status"], "VI_SEMELHANTE")
         self.assertEqual(seen["archive_label"], "OK")
