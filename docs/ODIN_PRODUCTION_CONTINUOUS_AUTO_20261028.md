@@ -46,3 +46,21 @@ diminuem o risco, mas não são um sistema independente de intertravamento
 do equipamento. A instalação deve ser testada com o XP desconectado
 antes de usar a saída física e é necessário verificar o significado
 e retorno de comandos 0/1 com a TI/manutenção da estação.
+
+
+## Extensão autorizada de 29/10/2026
+
+O operador autorizou também o reconhecimento de falha falsa
+`operator_known_top_mid_ok_review_20261029_v1` para **0=OK automático**
+somente no Modo Produção contínuo. A revalidação preserva as provas
+TOP/MID, as três iluminações, os vetos físicos e a janela de **5 segundos
+para espaço**. A nova razão auditável é
+`supervised_operator_known_top_mid_ok_20261029_auto_v1`.
+As decisões desta rota são isoladas do treinamento da mesma forma que as
+outras decisões OK aproximadas. Em Teste e Sombra, a regra é só leitura e
+continua sujeita a operador.
+
+A autorização não se estende ao atalho SIDE
+`side_verified_archive_visual_review_v1`, que permanece manual: essa
+outra rota tem somente uma iluminação e evidência de geometria que pode
+exigir revisão. Alterá-la exige avaliação separada.
