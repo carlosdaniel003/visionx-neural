@@ -579,6 +579,7 @@ class ProductionAutonomyController(QObject):
                 "supervised_mixed_light_ok_auto_v1",
                 "supervised_operator_corrected_archive_ok_auto_v1",
                 "supervised_operator_known_top_mid_ok_20261029_auto_v1",
+                "supervised_operator_known_top_mid_ok_mid_probe_disagreement_auto_v1",
             }
             is_safe_rejection = (
                 policy.get("reason")
