@@ -491,6 +491,23 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
             getattr(panel, "adhesive_multilight_learning_samples", None),
             category, knn,
         )
+        # A recuperação TOP/MID de 29/10 só é reconhecida DEPOIS do
+        # primeiro exame físico (que inspeciona o veredito CNN original).
+        # Coletar a contraprova física da captura atual antes do gate XP.
+        # Em falta de pares/gabarito, a sonda retorna UNAVAILABLE e
+        # nenhuma autorização 0/OK é concedida.
+        detail = fused.get("detail") if isinstance(fused, dict) else None
+        if (
+            isinstance(detail, dict)
+            and detail.get("fusion_rule")
+            == "operator_known_top_mid_ok_review_20261029_v1"
+            and "physical_missing_veto" not in detail
+        ):
+            fused = apply_physical_missing_veto(
+                fused,
+                getattr(panel, "adhesive_multilight_learning_samples", None),
+                category,
+            )
 
     if side_only:
         # A consulta ao acervo é visual e assíncrona: o veredito não espera.

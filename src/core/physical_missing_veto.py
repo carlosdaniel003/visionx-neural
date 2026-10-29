@@ -221,7 +221,19 @@ def apply_physical_missing_veto(
     # O padrão OK 14:16 não satisfaz "dois OK, um NG em revisão":
     # SIDE é OK, TOP/MID revisão. Auditar fisicamente antes de reconhecê-lo.
     corrected_ok_review = canonical_ok_review_needs_physical_probe(fused)
-    if not (auto_ok or mixed_review or corrected_ok_review):
+    # A recuperação TOP/MID pode ocorrer somente após a primeira sonda,
+    # quando a CNN bruta ainda classificava NG nas três luzes. Reexecutar
+    # a verificação física para o resultado recuperado evita autorização
+    # XP baseada num relatório inexistente. A sonda continua diagnóstica.
+    known_top_mid_review = bool(
+        fused.get("multilight_final") is True
+        and fused.get("verdict") == "FALHA FALSA"
+        and fused.get("production_review_required") is True
+        and detail.get("multilight_category") == "FALTANDO"
+        and detail.get("fusion_rule") == "operator_known_top_mid_ok_review_20261029_v1"
+        and isinstance(detail.get("recognized_top_mid_ok_20261029"), dict)
+    )
+    if not (auto_ok or mixed_review or corrected_ok_review or known_top_mid_review):
         return fused
 
     by_light = {}
@@ -269,7 +281,7 @@ def apply_physical_missing_veto(
         "geometry_review_lights": geometry_review, "lights": by_light,
     }
     detail["physical_missing_veto"] = audit
-    if mixed_review or corrected_ok_review:
+    if mixed_review or corrected_ok_review or known_top_mid_review:
         # O resultado da sonda fica disponível à corroboração visual;
         # não classificar o componente sem o contrato completo de evidência.
         return fused
