@@ -54,6 +54,7 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
             and policy.get("reason") in {
                 "operator_known_top_mid_ok_20261029_requires_operator",
                 "supervised_operator_known_top_mid_ok_20261029_auto_v1",
+                "supervised_operator_known_top_mid_ok_mid_probe_disagreement_auto_v1",
             }
         ):
             known_ok_policy = policy
