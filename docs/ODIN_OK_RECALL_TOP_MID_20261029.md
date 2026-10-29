@@ -81,3 +81,36 @@ Ao atualizar, executar teste na estação com XP isolado e registrar
 veredito `FALHA FALSA`, nome da regra e resultado do gate.
 Apenas após testar contra OK e NG reais da mesma geometria será
 possível concluir se o reconhecimento generaliza.
+
+
+## Autorização posterior do operador — Produção contínua (29/10/2026)
+
+Após o reconhecimento acima, o operador autorizou explicitamente decisão
+automática **0=OK** para esse caso, no Modo Produção supervisionado,
+sem confirmação manual de cada placa. A rota continua confinada ao
+contrato `operator_known_top_mid_ok_review_20261029_v1`; o marcador de
+memória não é autorização suficiente por si só.
+
+O gate `production_decision_policy` recalcula a correspondência TOP/MID
+pelas evidências originais e somente libera
+`supervised_operator_known_top_mid_ok_20261029_auto_v1` quando:
+- `production_continuous_auto=True` (armado exclusivamente no controlador de Produção);
+- há três iluminações completas e rotas `NEW_CNN` válidas para FALTANDO;
+- TOP/MID se relacionam com as referências históricas OK e hashes pinados,
+  sem vizinhos NG fortes, com KNN C READY e contraprova independente OK;
+- consenso CNN é inválido, sem ausência física comprovada, discordância
+  física ou marca de geometria que exige revisão (`GEOMETRY_REVIEW`);
+- a peça e a geração de análise ainda são as mesmas, não há pausa/intervenção
+  e a política continua válida no instante de transmitir.
+
+O controlador preserva **5 segundos de janela para barra de espaço**, envia
+uma única vez via fluxo normal `save_label("OK", source="production_auto")`
+e exige confirmação de êxito do comando XP. Se XP falhar, bloqueia a
+continuidade e solicita intervenção, sem transmitir outro comando presumido.
+Teste e Sombra continuam sem autorização automática.
+
+A decisão não comprova que os pixels da captura atual sejam idênticos
+ao arquivo histórico, nem equivale a rótulo humano de treinamento. O evento
+automático fica em `reports/production_auto_unverified/` e não entra na
+KNN/CNN. Nenhum arquivo do acervo nem peso de rede foi alterado.
+A pausa é um controle do software, não intertravamento de segurança.
