@@ -185,11 +185,15 @@ class SideEarlyDecisionTests(unittest.TestCase):
                 {"label": "OK", "similarity": .91192131},
                 {"label": "NG", "similarity": .86743278},
                 {"label": "NG", "similarity": .84959013},
+                {"label": "NG", "similarity": .84890596},
+                {"label": "NG", "similarity": .84849204},
             ],
             "neighbors_B": [
                 {"label": "OK", "similarity": .86549428},
                 {"label": "NG", "similarity": .80695629},
                 {"label": "NG", "similarity": .79329265},
+                {"label": "NG", "similarity": .78208431},
+                {"label": "OK", "similarity": .78146806},
             ],
         }
         analysis["detail"]["knn_c"] = c
