@@ -176,8 +176,9 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             } if isinstance(analysis, dict) else {},
             detail.get("knn_visual_corroboration"), "FALTANDO",
         )
-        # Re-evaluate the recurrent 29 Oct archive match from raw vectors.
-        # This path is deliberately manual-only despite Production auto mode.
+        # Reavaliar o padrão TOP/MID histórico a partir dos votos e vetores.
+        # O Modo Produção pode automatizar 0 sob gate reforçado, mas o marcador
+        # da memória sozinho continua sem autorização de saída XP.
         verified_newer = _recognized_recurrent_ok_20261029(
             {
                 **analysis,
@@ -256,15 +257,13 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             and detail.get("physical_score") == 0.0
             and detail.get("cnn_v2_consensus") == "REVIEW"
         ):
-            # Autorização específica do operador (28/10/2026): somente as
-            # DUAS rotas supervisionadas de TOP+MID OK recorrente e
-            # SIDE NG fraco / TOP+MID OK podem transmitir 0/OK.
-            # O contrato é recalculado ACIMA usando evidências brutas.
-            # Não libera outras falhas falsas, KNN genérica ou defeitos.
+            # Rotas de memória explicitamente autorizadas em Produção
+            # contínua: 28/10 e o padrão TOP/MID confirmado em 29/10.
+            # O contrato é recalculado ACIMA a partir das evidências brutas.
+            # Outras recomendações de revisão continuam sem 0 automático.
             supervised_auto_ok = (
                 detail.get("production_continuous_auto") is True
-                and (valid_two_light or valid_mixed or valid_corrected)
-                and not valid_newer
+                and (valid_two_light or valid_mixed or valid_corrected or valid_newer)
                 and not valid_known_ok and not valid_pattern
                 and detail.get("hard_missing_evidence") is not True
                 and analysis.get("hard_missing_evidence") is not True
@@ -275,6 +274,22 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                     isinstance(detail.get("physical_missing_veto"), dict)
                     and detail["physical_missing_veto"].get("status")
                     == "NO_STRONG_EVIDENCE"
+                ))
+                # A rota de 29/10 só vale com as três capturas NEW_CNN
+                # válidas, nenhuma sonda física suspeita ou geometria
+                # obrigatoriamente revisável e reconhecimento íntegro.
+                and (not valid_newer or (
+                    detail.get("multilight_category") == "FALTANDO"
+                    and detail.get("cnn_v2_trial_manual_only") is True
+                    and isinstance(detail.get("recognition_light_routes"), dict)
+                    and detail["recognition_light_routes"] == {
+                        "SIDE": "NEW_CNN", "TOP": "NEW_CNN", "MID": "NEW_CNN",
+                    }
+                    and isinstance(detail.get("physical_missing_veto"), dict)
+                    and detail["physical_missing_veto"].get("status") not in {
+                        "SUSPECT_ABSENCE", "UNAVAILABLE",
+                        "NG_CORROBORATED", "GEOMETRY_REVIEW",
+                    }
                 ))
                 and detail.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
                 and detail.get("recognition_route") == "NEW_CNN"
@@ -289,7 +304,9 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 "operator_review_required": not supervised_auto_ok,
                 "proposed_decision": "OK" if supervised_auto_ok else "",
                 "reason": (
-                    "supervised_operator_corrected_archive_ok_auto_v1"
+                    "supervised_operator_known_top_mid_ok_20261029_auto_v1"
+                    if supervised_auto_ok and valid_newer
+                    else "supervised_operator_corrected_archive_ok_auto_v1"
                     if supervised_auto_ok and valid_corrected
                     else "supervised_recurrent_ok_top_mid_auto_v1"
                     if supervised_auto_ok and valid_two_light
