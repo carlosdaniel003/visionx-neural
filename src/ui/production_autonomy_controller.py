@@ -50,6 +50,9 @@ class ProductionAutonomyController(QObject):
         self._scroll_animation = None
         self.pause_shortcut = None
         self._recorded_analysis_keys = set()
+        self._timed_analysis = None
+        self._timed_analysis_seconds = 0.0
+        self._timed_analysis_key = None
 
         self._stage_timer = QTimer(self)
         self._stage_timer.setSingleShot(True)
@@ -126,6 +129,9 @@ class ProductionAutonomyController(QObject):
     def _cancel_pending(self) -> None:
         self.generation += 1
         self.pending_analysis = None
+        self._timed_analysis = None
+        self._timed_analysis_seconds = 0.0
+        self._timed_analysis_key = None
         self.state = "idle"
         self._clear_stage()
         if self._scroll_animation is not None:
@@ -252,22 +258,54 @@ class ProductionAutonomyController(QObject):
         )
 
     def _record_analysis_metrics(self, analysis: dict) -> None:
-        key = self._analysis_key(analysis)
+        """Conserva o tempo SEM contar uma inspeção ainda não julgada."""
+        self._timed_analysis = analysis
+        self._timed_analysis_key = self._analysis_key(analysis)
+        try:
+            elapsed = float(
+                getattr(self.panel, "last_analysis_time_seconds", 0.0) or 0.0
+            )
+        except (ValueError, TypeError):
+            elapsed = 0.0
+        import math
+        self._timed_analysis_seconds = (
+            elapsed if math.isfinite(elapsed) and elapsed > 0 else 0.0
+        )
+
+    def _record_completed_judgment(
+        self, analysis: dict | None, decision: str, origin: str,
+    ) -> None:
+        """Registra somente 0/1 efetivado; sem duplicar eventos ou tempos."""
+        if not isinstance(analysis, dict) or decision not in {"OK", "NG"}:
+            return
+        key = (
+            self._timed_analysis_key
+            if self._timed_analysis is analysis
+            else self._analysis_key(analysis)
+        )
         if key in self._recorded_analysis_keys:
             return
         self._recorded_analysis_keys.add(key)
-
-        elapsed = float(
-            getattr(self.panel, "last_analysis_time_seconds", 0.0)
-            or 0.0
+        elapsed = (
+            self._timed_analysis_seconds
+            if self._timed_analysis is analysis else 0.0
         )
-        record = getattr(
-            self.panel,
-            "record_production_analysis_feedback",
-            None,
+        commit = getattr(
+            self.panel, "record_production_judgment_feedback", None,
         )
-        if callable(record):
-            record(elapsed)
+        if callable(commit):
+            commit(decision, origin, elapsed)
+        else:
+            # Mantém integrações legadas de mock sem tocar no XP.
+            old = getattr(
+                self.panel,
+                "record_production_automatic_feedback"
+                if origin == "automatic"
+                else "record_production_manual_feedback",
+                None,
+            )
+            if callable(old):
+                old(decision)
 
     def analysis_ready(self, analysis: dict | None) -> bool:
         """Agenda a apresentação após o resultado final já estar renderizado."""
@@ -278,7 +316,6 @@ class ProductionAutonomyController(QObject):
             return False
 
         self.cycle_started()
-        self._record_analysis_metrics(analysis)
         detail = analysis.get("detail")
         if isinstance(detail, dict):
             # Armamento da sessão deve preceder a apresentação da peça.
@@ -300,6 +337,7 @@ class ProductionAutonomyController(QObject):
                 show_verdict(analysis)
 
         self._cancel_pending()
+        self._record_analysis_metrics(analysis)
         self.pending_analysis = analysis
         self.generation += 1
         generation = self.generation
@@ -705,11 +743,9 @@ class ProductionAutonomyController(QObject):
                 show("REVISÃO OBRIGATÓRIA")
             return
 
-        record_auto = getattr(
-            self.panel, "record_production_automatic_feedback", None
+        self._record_completed_judgment(
+            self.pending_analysis, decision, "automatic",
         )
-        if callable(record_auto):
-            record_auto(decision)
         show_key = getattr(self.panel, "show_decision_key_feedback", None)
         if callable(show_key):
             show_key(decision, source="production_auto")
@@ -727,13 +763,9 @@ class ProductionAutonomyController(QObject):
         source: str = "",
     ) -> None:
         """Conta a intervenção como falha da autonomia e rearma a sessão."""
-        record_manual = getattr(
-            self.panel,
-            "record_production_manual_feedback",
-            None,
+        self._record_completed_judgment(
+            self.pending_analysis, str(decision or "").strip().upper(), "manual",
         )
-        if callable(record_manual):
-            record_manual(decision)
 
         self._cancel_pending()
 

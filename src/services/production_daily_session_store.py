@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Callable
 
 
-SCHEMA = "visionx.production_daily_session.v1"
+SCHEMA = "visionx.production_daily_session.v2"
 
 
 def _default_root_dir() -> Path:
@@ -74,21 +74,29 @@ def normalize_metrics(value: dict | None) -> dict:
     normalized["manual_judgments"] = _safe_int(
         source.get("manual_judgments")
     )
-    normalized["analysis_count"] = _safe_int(
-        source.get("analysis_count")
-    )
-    normalized["analysis_time_total"] = _safe_float(
-        source.get("analysis_time_total")
-    )
-    normalized["analysis_time_count"] = _safe_int(
-        source.get("analysis_time_count")
-    )
-
     completed = (
         normalized["auto_ok"]
         + normalized["auto_ng"]
         + normalized["manual_judgments"]
     )
+    # v1 counted rendered results, including inspections never concluded
+    # with 0/1. In v2 ANÁLISES is exactly the number of confirmed
+    # decisions, not the number of classifier evaluations.
+    previous_analysis_count = _safe_int(source.get("analysis_count"))
+    previous_time_count = _safe_int(source.get("analysis_time_count"))
+    previous_time_total = _safe_float(source.get("analysis_time_total"))
+    normalized["analysis_count"] = completed
+    if previous_analysis_count == completed and previous_time_count <= completed:
+        normalized["analysis_time_count"] = previous_time_count
+        normalized["analysis_time_total"] = previous_time_total if previous_time_count else 0.0
+    else:
+        # The old aggregate mixed completed and unjudged inspections.
+        # Without original per-event timings, subtracting the unjudged
+        # entries or scaling the sum would invent a historical average.
+        # Preserve 0/1 counts, restart the *timed* sample with the next
+        # confirmed decision. Never delete or rewrite previous-day files.
+        normalized["analysis_time_count"] = 0
+        normalized["analysis_time_total"] = 0.0
     automatic = normalized["auto_ok"] + normalized["auto_ng"]
     normalized["accuracy_percent"] = (
         (float(automatic) / float(completed)) * 100.0

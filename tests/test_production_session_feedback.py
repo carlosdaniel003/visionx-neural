@@ -57,9 +57,9 @@ class ProductionSessionFeedbackTests(unittest.TestCase):
         self.assertEqual(self.overlay.auto_ok, 0)
 
     def test_metrics_survive_overlay_recreation_same_day(self):
-        self.overlay.record_analysis(1.5)
-        self.overlay.record_automatic("OK")
-        self.overlay.record_manual("NG")
+        self.overlay.record_analysis(1.5)  # unjudged => must not count
+        self.overlay.record_judgment("OK", "automatic", 1.5)
+        self.overlay.record_judgment("NG", "manual", 3.5)
 
         second_panel = QWidget()
         second_overlay = ProductionSessionFeedbackOverlay(
@@ -70,15 +70,14 @@ class ProductionSessionFeedbackTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(second_overlay.analysis_count, 1)
+        self.assertEqual(second_overlay.analysis_count, 2)
         self.assertEqual(second_overlay.auto_ok, 1)
         self.assertEqual(second_overlay.manual_judgments, 1)
         self.assertAlmostEqual(second_overlay.accuracy_percent, 50.0)
-        self.assertAlmostEqual(second_overlay.average_analysis_time, 1.5)
+        self.assertAlmostEqual(second_overlay.average_analysis_time, 2.5)
 
     def test_new_day_automatically_starts_zero_on_next_piece(self):
-        self.overlay.record_analysis(1.0)
-        self.overlay.record_automatic("OK")
+        self.overlay.record_judgment("OK", "automatic", 1.0)
         self.assertEqual(self.overlay.auto_ok, 1)
 
         self.clock.value = date(2026, 10, 8)
@@ -109,9 +108,10 @@ class ProductionSessionFeedbackTests(unittest.TestCase):
         self.assertEqual(self.overlay.manual_judgments, 1)
 
     def test_average_uses_only_registered_analysis_times(self):
-        self.overlay.record_analysis(1.0)
-        self.overlay.record_analysis(2.0)
-        self.overlay.record_analysis(3.0)
+        self.overlay.record_analysis(99.0)  # never judged: ignored
+        self.overlay.record_judgment("OK", "automatic", 1.0)
+        self.overlay.record_judgment("NG", "automatic", 2.0)
+        self.overlay.record_judgment("OK", "manual", 3.0)
 
         self.assertEqual(self.overlay.analysis_count, 3)
         self.assertEqual(self.overlay.analysis_time_count, 3)
@@ -122,8 +122,8 @@ class ProductionSessionFeedbackTests(unittest.TestCase):
         self.assertIn("2.00 s", self.overlay.time_label.text())
 
     def test_invalid_zero_time_does_not_distort_average(self):
-        self.overlay.record_analysis(0.0)
-        self.overlay.record_analysis(2.5)
+        self.overlay.record_judgment("NG", "automatic", 0.0)
+        self.overlay.record_judgment("OK", "manual", 2.5)
 
         self.assertEqual(self.overlay.analysis_count, 2)
         self.assertEqual(self.overlay.analysis_time_count, 1)
@@ -131,6 +131,41 @@ class ProductionSessionFeedbackTests(unittest.TestCase):
             self.overlay.average_analysis_time,
             2.5,
         )
+
+    def test_only_judged_events_change_total_and_mean_with_one_atomic_store(self):
+        self.overlay.record_analysis(17.5)
+        self.assertEqual(self.overlay.analysis_count, 0)
+        self.assertIsNone(self.overlay.average_analysis_time)
+        self.assertEqual(self.overlay.auto_ok, 0)
+        self.overlay.record_judgment("OK", "automatic", 2.4)
+        self.overlay.record_analysis(80)
+        self.overlay.record_judgment("NG", "automatic", 3.6)
+        self.overlay.record_judgment("OK", "manual", 5.0)
+        self.assertFalse(self.overlay.record_judgment("?", "manual", 8.0))
+        self.assertFalse(self.overlay.record_judgment("OK", "analysis", 8.0))
+        self.assertEqual(self.overlay.analysis_count, 3)
+        self.assertEqual(self.overlay.auto_ok, 1)
+        self.assertEqual(self.overlay.auto_ng, 1)
+        self.assertEqual(self.overlay.manual_judgments, 1)
+        self.assertAlmostEqual(self.overlay.accuracy_percent, 200/3)
+        self.assertEqual(self.overlay.analysis_time_count, 3)
+        self.assertAlmostEqual(self.overlay.average_analysis_time, 11/3)
+        saved = self.store.load_today()["metrics"]
+        self.assertEqual(saved["analysis_count"], 3)
+        self.assertEqual(saved["analysis_time_count"], 3)
+
+    def test_migrate_current_day_legacy_27_to_17_and_restart_timing_on_next_judgment(self):
+        self.store.save_today({
+            "auto_ok": 2, "auto_ng": 15, "manual_judgments": 0,
+            "analysis_count": 27, "analysis_time_count": 27,
+            "analysis_time_total": 27 * 4.41,
+        })
+        self.overlay.restore_daily_session()
+        self.assertEqual(self.overlay.analysis_count, 17)
+        self.assertIsNone(self.overlay.average_analysis_time)
+        self.overlay.record_judgment("NG", "automatic", 7.0)
+        self.assertEqual(self.overlay.analysis_count, 18)
+        self.assertAlmostEqual(self.overlay.average_analysis_time, 7.0)
 
     def test_pause_updates_fixed_message(self):
         self.overlay.set_paused(True)
@@ -144,14 +179,13 @@ class ProductionSessionFeedbackTests(unittest.TestCase):
         self.assertIn("ATIVA", self.overlay.state_label.text())
 
     def test_dynamic_tooltip_explains_precision_and_time_contract(self):
-        self.overlay.record_analysis(1.25)
-        self.overlay.record_automatic("OK")
+        self.overlay.record_judgment("OK", "automatic", 1.25)
 
         tooltip = self.overlay.toolTip()
-        self.assertIn("Precisão =", tooltip)
-        self.assertIn("julgamentos automáticos", tooltip)
+        self.assertIn("Precisão autônoma (taxa de automação) =", tooltip)
+        self.assertIn("Julgamentos automáticos", tooltip)
         self.assertIn("Tempo médio de análise", tooltip)
-        self.assertIn("Scroll, pausas", tooltip)
+        self.assertIn("não inclui scroll, pausas", tooltip)
         self.assertIn("permanecem durante todo o mesmo dia", tooltip)
         self.assertIn("07/10/2026", tooltip)
 

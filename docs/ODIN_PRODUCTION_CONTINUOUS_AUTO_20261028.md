@@ -64,3 +64,36 @@ A autorização não se estende ao atalho SIDE
 `side_verified_archive_visual_review_v1`, que permanece manual: essa
 outra rota tem somente uma iluminação e evidência de geometria que pode
 exigir revisão. Alterá-la exige avaliação separada.
+
+## Métricas da sessão diária — apenas julgamentos 0/1 (29/10/2026)
+
+Problema identificado em Produção: o cartão mostrava **27 ANÁLISES**
+porque contava todo resultado renderizado, enquanto só **17 inspeções**
+foram efetivamente julgadas (2 OK AUTO e 15 NG AUTO; nenhuma MANUAL).
+Dez análises sem comando também entravam indevidamente no tempo médio.
+
+**Contrato novo:** ANÁLISES = OK AUTO + NG AUTO + MANUAL. O contador
+e o tempo são atualizados **somente após o julgamento 0/1 confirmado**;
+uma captura analisada e descartada, parada, pausa ou falha de envio XP
+não conta e não compõe a média. A duração continua sendo o tempo da
+captura ao resultado renderizado, sem espera do operador nem scroll.
+A gravação de cada decisão, contagem e tempo é atômica no JSON diário,
+sem duplicar julgamento da mesma geração/evento.
+
+O rótulo legado `PRECISÃO` significa **taxa de decisões automáticas
+entre decisões 0/1 concluídas**, não acurácia do classificador contra
+verdade física independente. Análises sem julgamento não fazem parte
+do denominador; decisão manual entra no denominador, não no numerador.
+
+**Migração de sessões v1:** o arquivo legado preserva o histórico
+de OK AUTO/NG AUTO/MANUAL. O contador ANÁLISES é recomposto a partir
+desses registros; por exemplo, 27 vira 17 neste caso. Quando o
+arquivo antigo contém tempos de análises sem decisão, **não há como
+subtrair precisamente esses tempos de um somatório agregado**.
+O programa reinicia só o acumulador da média (exibe `—` até novo
+0/1 com tempo válido), sem inventar média histórica nem apagar os
+arquivos de dias anteriores. Se todas as análises antigas já tinham
+0/1, preserva a média histórica válida. Formato novo: schema v2.
+
+A mudança não altera evidências, julgamentos, memória IA, parâmetros
+KNN/CNN, comandos 0/1, pausa nem política de produção.

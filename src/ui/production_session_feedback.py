@@ -313,18 +313,20 @@ class ProductionSessionFeedbackOverlay(QFrame):
 
         tooltip = (
             f"Desempenho diário do Modo Produção • {display_day}.\n\n"
-            f"Análises finalizadas: {self.analysis_count}\n"
+            f"Análises julgadas (0/1): {self.analysis_count}\n"
             f"Julgamentos automáticos: {self.automatic_judgments}\n"
             f"Julgamentos manuais: {self.manual_judgments}\n"
             f"Precisão autônoma: {accuracy_text}\n"
             f"Tempo médio de análise: {average_text}\n\n"
-            "Precisão = julgamentos automáticos / julgamentos concluídos. "
-            "Toda análise que exige decisão humana é contabilizada como falha "
-            "da autonomia no dia.\n\n"
-            "O tempo médio usa o mesmo tempo exibido em 'Tempo de análise': "
-            "do recebimento/captura da imagem até o resultado final "
-            "FALHA FALSA, DEFEITO REAL ou REVISÃO OBRIGATÓRIA estar renderizado. "
-            "Scroll, pausas e tempo de decisão do operador não entram na média.\n\n"
+            "Precisão autônoma (taxa de automação) = decisões automáticas "
+            "/ julgamentos concluídos com 0/1. Análises sem julgamento "
+            "não afetam o indicador. Julgamentos manuais contam no "
+            "denominador. Não é a acurácia física do classificador.\n\n"
+            "O tempo médio inclui apenas eventos com julgamento 0/1 concluído "
+            "e tempo válido. Mede da primeira imagem até a análise renderizada; "
+            "não inclui scroll, pausas nem espera do operador. Tempos legados "
+            "misturados com análises sem julgamento não podem ser recuperados "
+            "sem dados por evento e são reiniciados, sem estimativa fictícia.\n\n"
             "Os números permanecem durante todo o mesmo dia, inclusive após "
             "fechar o ODIN, trocar de modo ou atualizar o código. "
             "Uma nova sessão começa somente quando a data local muda.\n"
@@ -343,38 +345,51 @@ class ProductionSessionFeedbackOverlay(QFrame):
             child.setToolTip(tooltip)
 
     def record_analysis(self, elapsed_seconds: float) -> None:
+        """Compatibilidade: uma análise isolada NÃO é julgamento 0/1.
+
+        O controlador conserva o tempo da captura até a decisão concluída.
+        Este método legado não deve persistir nem contaminar a média.
+        """
+        return None
+
+    def record_judgment(
+        self, decision: str, source: str, elapsed_seconds: float = 0.0,
+    ) -> bool:
+        """Confirma um 0/1 e seu tempo na mesma atualização diária atômica."""
+        normalized = str(decision or "").strip().upper()
+        origin = str(source or "").strip().lower()
+        if normalized not in {"OK", "NG"} or origin not in {"automatic", "manual"}:
+            return False
         self._ensure_current_day()
-        self.analysis_count += 1
+        if origin == "automatic":
+            if normalized == "OK":
+                self.auto_ok += 1
+            else:
+                self.auto_ng += 1
+        else:
+            self.manual_judgments += 1
+
+        # O total de análises julgadas nunca diverge dos comandos 0/1
+        # aceitos, mesmo após carregar registros de versões anteriores.
+        self.analysis_count = self.completed_judgments
+        import math
         try:
             elapsed = float(elapsed_seconds)
         except (TypeError, ValueError):
             elapsed = 0.0
-        if elapsed > 0.0:
+        if math.isfinite(elapsed) and elapsed > 0.0:
             self.analysis_time_total += elapsed
             self.analysis_time_count += 1
         self._persist()
         self._refresh()
+        return True
 
     def record_automatic(self, decision: str) -> None:
-        self._ensure_current_day()
-        normalized = str(decision or "").strip().upper()
-        if normalized == "OK":
-            self.auto_ok += 1
-        elif normalized == "NG":
-            self.auto_ng += 1
-        else:
-            return
-        self._persist()
-        self._refresh()
+        # Compatibilidade com conexões de teste/integrações antigas.
+        self.record_judgment(decision, "automatic")
 
     def record_manual(self, decision: str) -> None:
-        self._ensure_current_day()
-        normalized = str(decision or "").strip().upper()
-        if normalized not in {"OK", "NG"}:
-            return
-        self.manual_judgments += 1
-        self._persist()
-        self._refresh()
+        self.record_judgment(decision, "manual")
 
     def set_paused(self, paused: bool) -> None:
         # Pausa é estado operacional transitório; as métricas diárias persistem.
@@ -482,6 +497,7 @@ def install_production_session_feedback(panel) -> None:
     panel.record_production_analysis_feedback = session.record_analysis
     panel.record_production_automatic_feedback = session.record_automatic
     panel.record_production_manual_feedback = session.record_manual
+    panel.record_production_judgment_feedback = session.record_judgment
     panel.set_production_paused_feedback = session.set_paused
     panel.show_production_intervention_feedback = intervention.show_reason
     panel.clear_production_intervention_feedback = intervention.clear
