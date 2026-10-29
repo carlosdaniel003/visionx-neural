@@ -23,6 +23,9 @@ from src.ui.network_xp_debug import format_multilight_debug_report
 from src.core.physical_missing_veto import (
     POLICY as PHYSICAL_VETO_POLICY, apply_physical_missing_veto,
 )
+from src.core.historical_ok_mid_probe_exception import (
+    historical_ok_mid_probe_disagreement,
+)
 from tests.test_knn_three_light_ok_counterevidence import fused, report
 
 
@@ -141,6 +144,54 @@ def apply(fused_analysis, visual):
         return apply_knn_visual_corroboration(
             deepcopy(fused_analysis), {}, "FALTANDO", object(),
         )
+
+
+def _weak_mid_probe_from_1049_debug():
+    """Real 10:49 ROI metrics, not fabricated strong physical confirmation."""
+    values = {
+        "SIDE": [
+            (.58, False, "DIVERGÊNCIA PARCIAL NA ROI", .93345, .63082, .15931,
+             .84643, .41689, .42809),
+            (.76, False, "DIVERGÊNCIA PARCIAL NA ROI", .85275, .46991, .0,
+             .80990, .53963, .40265),
+        ],
+        "TOP": [
+            (.58, False, "DIVERGÊNCIA PARCIAL NA ROI", .92162, .52483, .16551,
+             .83546, .47945, .435),
+            (.76, False, "DIVERGÊNCIA PARCIAL NA ROI", .84726, .44644, .27027,
+             .78241, .53343, .44429),
+        ],
+        "MID": [
+            (.58, True, "CONTEÚDO ESPERADO AUSENTE", .86895, .42299, .38877,
+             .32298, .51276, .28066),
+            (.76, False, "CONTEÚDO ESPERADO AUSENTE", .72255, .28026, .66428,
+             .44947, .61903, .37212),
+        ],
+    }
+    lights = {}
+    for light, observations in values.items():
+        lights[light] = {
+            "status": "SUSPECT_ABSENCE" if light == "MID" else "GEOMETRY_REVIEW",
+            "geometry": {
+                "method": "center_trim_no_rescale", "requires_review": True,
+                "reference_hw": [318, 570], "test_hw": [317, 567],
+                "comparison_hw": [317, 567],
+            },
+            "scales": [
+                dict(zip((
+                    "focus_fraction", "suspected_absence", "classification",
+                    "score", "coverage", "background", "distinctness",
+                    "direct_similarity", "nearby_similarity",
+                ), row)) for row in observations
+            ],
+        }
+    return {
+        "policy": PHYSICAL_VETO_POLICY, "status": "SUSPECT_ABSENCE",
+        "diagnostic_only": True, "authorizes_ok": False,
+        "authorizes_ng": False, "review_required": True,
+        "suspect_lights": ["MID"], "geometry_review_lights": ["SIDE", "TOP"],
+        "unavailable_lights": [], "lights": lights,
+    }
 
 
 class Oct29RecurringOkTests(unittest.TestCase):
@@ -370,6 +421,121 @@ class Oct29RecurringOkTests(unittest.TestCase):
         )
         self.assertFalse(policy["auto_allowed"])
         self.assertEqual(policy["proposed_decision"], "")
+
+    def test_1049_known_ok_single_weak_mid_scale_auto_zero_in_production(self):
+        raw, visual = real_event()
+        final = apply(raw, visual)
+        final["detail"]["production_continuous_auto"] = True
+        audit = _weak_mid_probe_from_1049_debug()
+        final["detail"]["physical_missing_veto"] = audit
+        self.assertTrue(historical_ok_mid_probe_disagreement(audit))
+        policy = production_decision_policy(final)
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertTrue(policy["auto_allowed"])
+        self.assertFalse(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "OK")
+        self.assertEqual(
+            policy["reason"],
+            "supervised_operator_known_top_mid_ok_mid_probe_disagreement_auto_v1",
+        )
+        self.assertEqual(
+            policy["physical_probe_exception"],
+            "KNOWN_OK_TOP_MID_SINGLE_SCALE_MID_DISAGREEMENT",
+        )
+        self.assertEqual(audit["status"], "SUSPECT_ABSENCE")
+        self.assertEqual(verdict_feedback_state(final), ("FALHA FALSA", "ok"))
+        final["detail"].pop("production_continuous_auto")
+        self.assertFalse(production_decision_policy(final)["auto_allowed"])
+
+    def test_1049_exception_rejects_both_scale_suspects_and_untrusted_audit(self):
+        baseline = _weak_mid_probe_from_1049_debug()
+        modifications = (
+            ("two_mid_scales", lambda v: v["lights"]["MID"]["scales"][1].update(
+                suspected_absence=True)),
+            ("mid_unconvincing", lambda v: v["lights"]["MID"]["scales"][0].update(
+                distinctness=.50)),
+            ("no_second_scale", lambda v: v["lights"]["MID"]["scales"].pop()),
+            ("unavailable", lambda v: v.update(unavailable_lights=["SIDE"])),
+            ("another_absence", lambda v: v["lights"]["TOP"]["scales"][0].update(
+                suspected_absence=True)),
+            ("suspicious_geom", lambda v: v["lights"]["MID"]["geometry"].update(
+                test_hw=[298, 540])),
+            ("forged_policy", lambda v: v.update(policy="any")),
+            ("untrusted_fraction", lambda v: v["lights"]["MID"]["scales"][1].update(
+                focus_fraction=.91)),
+            ("invalid_metric", lambda v: v["lights"]["MID"]["scales"][0].update(
+                background=float("nan"))),
+            ("wrong_status", lambda v: v["lights"]["SIDE"].update(
+                status="SUSPECT_ABSENCE")),
+            ("no_audit_lights", lambda v: v.pop("lights")),
+        )
+        a, visual = real_event()
+        final = apply(a, visual)
+        final["detail"]["production_continuous_auto"] = True
+        for name, modify in modifications:
+            with self.subTest(name=name):
+                invalid = deepcopy(baseline)
+                modify(invalid)
+                self.assertFalse(historical_ok_mid_probe_disagreement(invalid))
+                final["detail"]["physical_missing_veto"] = invalid
+                self.assertFalse(production_decision_policy(final)["auto_allowed"])
+        final["detail"]["physical_missing_veto"] = baseline
+        final["detail"]["recognized_top_mid_ok_20261029"][
+            "per_light_reference"]["MID"]["source_pixel_sha256"] = "0" * 64
+        self.assertFalse(production_decision_policy(final)["auto_allowed"])
+
+    def test_1049_controller_emits_one_supervised_zero_and_revalidates_probe(self):
+        import os
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+        from src.ui.production_autonomy_controller import (
+            KNN_C_SUPERVISED_DELAY_MS, ProductionAutonomyController,
+        )
+        from tests.test_production_autonomy_controller import _Panel
+        app = QApplication.instance() or QApplication([])
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        a, visual = real_event()
+        final = apply(a, visual)
+        final["detail"]["production_continuous_auto"] = True
+        final["detail"]["physical_missing_veto"] = _weak_mid_probe_from_1049_debug()
+        panel.current_analysis = final
+        controller.pending_analysis = final
+        controller.generation += 1
+        generation = controller.generation
+        controller._finish_presentation(generation)
+        self.assertEqual(controller.state, "auto_decision_pending")
+        self.assertEqual(controller._stage_remaining_ms, KNN_C_SUPERVISED_DELAY_MS)
+        self.assertEqual(panel.saved, [])
+        controller._emit_auto_decision(generation, "OK")
+        self.assertEqual(panel.saved, [("OK", "production_auto")])
+        self.assertEqual(panel.auto_records, ["OK"])
+        controller._emit_auto_decision(generation, "OK")
+        self.assertEqual(len(panel.saved), 1)
+        panel.close()
+
+        # Revalidação antes do envio: uma segunda ROI MID que passa a
+        # suspeitar de ausência bloqueia a autorização já agendada.
+        panel2 = _Panel()
+        controller2 = ProductionAutonomyController(panel2)
+        panel2.combo_mode.setCurrentText("Modo Produção")
+        b, visual2 = real_event()
+        pending = apply(b, visual2)
+        pending["detail"]["production_continuous_auto"] = True
+        pending["detail"]["physical_missing_veto"] = _weak_mid_probe_from_1049_debug()
+        panel2.current_analysis = pending
+        controller2.pending_analysis = pending
+        controller2.generation += 1
+        gen2 = controller2.generation
+        controller2._finish_presentation(gen2)
+        pending["detail"]["physical_missing_veto"]["lights"]["MID"][
+            "scales"][1]["suspected_absence"] = True
+        controller2._emit_auto_decision(gen2, "OK")
+        self.assertEqual(panel2.saved, [])
+        self.assertEqual(controller2.state, "operator_review")
+        panel2.close()
+        app.processEvents()
 
     def test_1022_final_overlay_shows_false_alarm_even_with_mid_suspect_veto(self):
         """The 10:22 UI must not turn an accepted visual OK into REVIEW.
