@@ -260,6 +260,71 @@ class Oct29RecurringOkTests(unittest.TestCase):
                 self.assertFalse(policy["auto_allowed"])
                 self.assertNotEqual(policy["proposed_decision"], "OK")
 
+    def test_0858_historic_visual_ok_cannot_clear_current_mid_absence_probe(self):
+        # The actual 08:58 debug had pinned TOP/MID OK memory, but SIDE/TOP
+        # geometry review, MID suspect absence, and controller paused.
+        a, visual = real_event()
+        final = apply(a, visual)
+        self.assertEqual(final["verdict"], "FALHA FALSA")
+        final["detail"]["production_continuous_auto"] = True
+        final["detail"]["physical_missing_veto"] = {
+            "policy": PHYSICAL_VETO_POLICY,
+            "status": "SUSPECT_ABSENCE",
+            "suspect_lights": ["MID"],
+            "geometry_review_lights": ["SIDE", "TOP"],
+            "unavailable_lights": [],
+            "lights": {
+                "SIDE": {"status": "GEOMETRY_REVIEW",
+                         "geometry": {"method": "center_trim_no_rescale",
+                                      "reference_hw": [318, 570],
+                                      "test_hw": [317, 567]},
+                         "scales": []},
+                "TOP": {"status": "GEOMETRY_REVIEW", "scales": []},
+                "MID": {"status": "SUSPECT_ABSENCE",
+                        "geometry": {"method": "exact"},
+                        "scales": [
+                            {"focus_fraction": .58, "suspected_absence": True,
+                             "score": .8, "coverage": .4},
+                            {"focus_fraction": .76, "suspected_absence": False},
+                        ]},
+            },
+        }
+        policy = production_decision_policy(final)
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "")
+        self.assertEqual(
+            policy["reason"], "known_top_mid_ok_physical_veto_suspect_absence"
+        )
+        panel = SimpleNamespace(
+            combo_mode=SimpleNamespace(currentText=lambda: "Modo Produção"),
+            adhesive_multilight_last_category="FALTANDO",
+            adhesive_multilight_last_final_analysis=final,
+            adhesive_multilight_last_analyses={},
+            adhesive_multilight_last_event_id="bdf7a338f7e94aaba09697cd568f9f10",
+            production_autonomy_controller=SimpleNamespace(
+                state="scrolling", paused=True
+            ),
+            last_decision_command_success=None,
+        )
+        with patch(
+            "src.ui.network_xp_debug._multilight_event_matches",
+            return_value=True,
+        ):
+            output = format_multilight_debug_report(panel)
+        for expected in (
+            "MEMÓRIA OK RECORRENTE / AUDITORIA FÍSICA ATUAL",
+            "Referência visual TOP/MID: RECONHECIDA NO ok_archive",
+            "Par pixel-idêntico atual: NÃO COMPROVADO (NOT_FOUND)",
+            "Resultado da contraprova física: SUSPECT_ABSENCE",
+            "Sonda MID: SUSPECT_ABSENCE",
+            "suspected_absence=True",
+            "XP 0/OK BLOQUEADO PELA CONTRAPROVA",
+            "Pausado por espaço: True",
+            "Regra XP: known_top_mid_ok_physical_veto_suspect_absence",
+            "Comando XP proposto: NENHUM",
+        ):
+            self.assertIn(expected, output)
+
     def test_late_physical_probe_missing_pair_does_not_approve(self):
         a, visual = real_event()
         final = apply(a, visual)
