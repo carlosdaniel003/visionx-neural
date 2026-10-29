@@ -114,3 +114,46 @@ ao arquivo histórico, nem equivale a rótulo humano de treinamento. O evento
 automático fica em `reports/production_auto_unverified/` e não entra na
 KNN/CNN. Nenhum arquivo do acervo nem peso de rede foi alterado.
 A pausa é um controle do software, não intertravamento de segurança.
+
+
+## Diagnóstico e apresentação — evento 08:22 de 29/10/2026
+
+O evento `a614cc6e056746d88b41f417a978c6a5` teve, segundo
+o debug, **veredito final FALHA FALSA** pela regra
+`operator_known_top_mid_ok_review_20261029_v1`. A CNN emitiu NG
+bruto em SIDE 0,9998211, TOP 0,9987717 e MID 0,9998896; isso não
+constitui consenso CNN validado. A KNN C recuperou novamente TOP
+0,986217/0,978058 e MID 0,982512/0,971034 da fonte OK histórica.
+A evidência independente favoreceu OK em SIDE 0,995509 contra
+0,951698 NG, TOP 0,991922 contra 0,942076 e MID 0,988892
+contra 0,924092. Não houve corroboração física forte NG.
+
+**Correção de visualização:** a seção `INFLUÊNCIA DOS MOTORES` mantém
+as barras e escores CNN originais, mas marca os três votos como
+**CNN NG CONTRARIADA PELA MEMÓRIA OK**, e a KNN como reconhecimento
+histórico visual **não exato**. O cabeçalho informa `FALHA FALSA`
+como veredito **consolidado**; a apresentação não reescreve resultados
+internos da CNN nem cria correspondência exata falsa.
+
+**Correção de debug:** `Revisão da evidência (antes do gate XP)` não é
+equivalente a solicitação humana. O relatório multilight passa a expor
+separadamente o controlador, estado de armamento, regra da política,
+permissão automática, comando proposto e confirmação real do envio.
+O controlador arma `production_continuous_auto` após a conclusão da
+análise e antes da apresentação da decisão; um snapshot tomado antes
+disso não pode ser lido como envio proibido nem revisão exigida.
+
+Para esta regra, a política **já existente na central** autoriza
+`0/OK` automático quando as evidências originais são novamente
+validadas, aguardando a janela de 5 s para pausa por espaço e
+revalidando antes de enviar. A alteração atual é de **observabilidade
+e testes**, não muda limiares, treinamento, comandos XP ou a pausa.
+Capturas inválidas, falhas de comunicação, pausa ou contrato não
+verificado não podem ser convertidos em liberação 0/OK por conveniência.
+Uma parada por anomalia operacional não deve ser confundida com revisão
+de rotina da classificação.
+
+A validação inclui replay estruturado de 08:22, verificações da
+apresentação CNN/KNN, política armada e desarmada, rejeição de hashes
+adulterados e visibilidade do comando XP (proposto ≠ enviado).
+O teste na estação física continua necessário.
