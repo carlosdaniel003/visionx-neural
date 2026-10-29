@@ -327,14 +327,17 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 ),
                 "operator_shortcuts": {"0": "OK", "1": "NG"},
             }
+        # Preserve the validated historical visual verdict (not XP release).
+        # The physical veto still requires intervention and blocks 0/OK.
+        # A forged historical marker is not sufficient: valid_newer above
+        # is recomputed from KNN/CNN observations and pinned reference hashes.
         # Distinguish a verified visual memory from a failed physical veto.
         # A current MID absence suspicion cannot be cleared by merely
         # locating a historical TOP/MID OK neighbor.
         veto = detail.get("physical_missing_veto")
         veto_status = veto.get("status") if isinstance(veto, dict) else None
         historical_conflict = bool(
-            detail.get("fusion_rule") == "operator_known_top_mid_ok_review_20261029_v1"
-            and isinstance(detail.get("recognized_top_mid_ok_20261029"), dict)
+            valid_newer
             and veto_status in {
                 "SUSPECT_ABSENCE", "GEOMETRY_REVIEW", "UNAVAILABLE",
                 "NG_CORROBORATED",
@@ -343,7 +346,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         return {
             "mode": "production", "confidence": confidence, "threshold": None,
             "verdict": (
-                "REVISÃO OBRIGATÓRIA" if historical_conflict
+                "FALHA FALSA" if historical_conflict
                 else verdict if verdict == "DEFEITO REAL"
                 else "REVISÃO OBRIGATÓRIA"
             ),
