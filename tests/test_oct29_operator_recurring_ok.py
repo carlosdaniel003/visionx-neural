@@ -16,6 +16,9 @@ from src.ui.production_confidence_gate import production_decision_policy
 from src.ui.decision_verdict_feedback import verdict_feedback_state
 from src.ui.neural_influence_model import neural_influence_rows
 from src.ui.network_xp_debug import format_multilight_debug_report
+from src.core.physical_missing_veto import (
+    POLICY as PHYSICAL_VETO_POLICY, apply_physical_missing_veto,
+)
 from tests.test_knn_three_light_ok_counterevidence import fused, report
 
 
@@ -196,6 +199,77 @@ class Oct29RecurringOkTests(unittest.TestCase):
         self.assertAlmostEqual(
             after_arm[0]["ng_score_uncalibrated"], .999821126461029
         )
+
+    def test_0841_realistic_missing_probe_is_collected_after_ok_recovery(self):
+        """Reproduce the field missing in XP event 91d181b3 (08:41)."""
+        a, visual = real_event()
+        fused = apply(a, visual)
+        self.assertEqual(fused["verdict"], "FALHA FALSA")
+        fused["detail"].pop("physical_missing_veto", None)
+        fused["detail"]["production_continuous_auto"] = True
+
+        samples = {
+            light: {
+                "lighting_mode": light,
+                "sample_image": object(),
+                "test_image": object(),
+            }
+            for light in ("SIDE", "TOP", "MID")
+        }
+        def clean_physical_probe(_reference, _test):
+            return {"status": "NO_STRONG_EVIDENCE", "scales": [
+                {"focus_fraction": .58}, {"focus_fraction": .76},
+            ]}
+        self.assertFalse(production_decision_policy(fused)["auto_allowed"])
+        physically_checked = apply_physical_missing_veto(
+            fused, samples, "FALTANDO", probe=clean_physical_probe,
+        )
+        physical = physically_checked["detail"]["physical_missing_veto"]
+        self.assertEqual(physical["policy"], PHYSICAL_VETO_POLICY)
+        self.assertEqual(physical["status"], "NO_STRONG_EVIDENCE")
+        self.assertEqual(set(physical["lights"]), {"SIDE", "TOP", "MID"})
+        self.assertEqual(physically_checked["verdict"], "FALHA FALSA")
+        policy = production_decision_policy(physically_checked)
+        self.assertTrue(policy["auto_allowed"])
+        self.assertFalse(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "OK")
+
+    def test_late_physical_probe_blocks_0841_auto_ok_on_any_unverified_light(self):
+        a, visual = real_event()
+        for problem in ("UNAVAILABLE", "GEOMETRY_REVIEW", "SUSPECT_ABSENCE"):
+            with self.subTest(problem=problem):
+                final = apply(a, visual)
+                final["detail"].pop("physical_missing_veto", None)
+                final["detail"]["production_continuous_auto"] = True
+                samples = {
+                    light: {
+                        "lighting_mode": light,
+                        "sample_image": object(), "test_image": object(),
+                    }
+                    for light in ("SIDE", "TOP", "MID")
+                }
+                def probe(_reference, _test):
+                    return {"status": problem, "scales": []}
+                checked = apply_physical_missing_veto(
+                    final, samples, "FALTANDO", probe=probe,
+                )
+                self.assertEqual(
+                    checked["detail"]["physical_missing_veto"]["status"], problem
+                )
+                policy = production_decision_policy(checked)
+                self.assertFalse(policy["auto_allowed"])
+                self.assertNotEqual(policy["proposed_decision"], "OK")
+
+    def test_late_physical_probe_missing_pair_does_not_approve(self):
+        a, visual = real_event()
+        final = apply(a, visual)
+        final["detail"].pop("physical_missing_veto", None)
+        final["detail"]["production_continuous_auto"] = True
+        checked = apply_physical_missing_veto(final, {}, "FALTANDO")
+        self.assertEqual(
+            checked["detail"]["physical_missing_veto"]["status"], "UNAVAILABLE"
+        )
+        self.assertFalse(production_decision_policy(checked)["auto_allowed"])
 
     def test_debug_distinguishes_cnn_review_from_armed_xp_auto_decision(self):
         a, visual = real_event()
