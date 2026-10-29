@@ -628,6 +628,13 @@ class VerifiedKNNMemory:
             else "legacy_metadata" if key is not None else "unavailable"
         )
         if key is None:
+            # Uma chave incompleta nunca pode pular a auditoria de rótulos
+            # humanos de todas as luzes só por existir um registro TOP.
+            if durable.get("cross_light_verified"):
+                return {
+                    "status": "UNAVAILABLE",
+                    "reason": "Metadados incompletos impedem auditoria cross-light",
+                }
             return durable if durable["status"] == "KNOWN" else {
                 "status": "NEW", "reason": "Categoria ou par AOI inválido"
             }
