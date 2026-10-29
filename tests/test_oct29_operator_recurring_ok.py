@@ -14,6 +14,8 @@ from src.core.knn_visual_corroboration import (
 )
 from src.ui.production_confidence_gate import production_decision_policy
 from src.ui.decision_verdict_feedback import verdict_feedback_state
+from src.ui.inspection_memory_feedback import memory_feedback_state
+from src.ui.neural_telemetry_model import memory_seen_state, memory_panel_text
 from src.ui.neural_influence_model import neural_influence_rows
 from src.ui.network_xp_debug import format_multilight_debug_report
 from src.core.physical_missing_veto import (
@@ -324,6 +326,46 @@ class Oct29RecurringOkTests(unittest.TestCase):
             "Comando XP proposto: NENHUM",
         ):
             self.assertIn(expected, output)
+
+    def test_0957_historical_ok_is_shown_as_seen_similar_not_unseen(self):
+        raw, visual = real_event()
+        final = apply(raw, visual)
+        final["detail"]["production_continuous_auto"] = True
+        final["detail"]["physical_missing_veto"] = {
+            "status": "SUSPECT_ABSENCE",
+            "suspect_lights": ["MID"],
+            "geometry_review_lights": ["SIDE", "TOP"],
+            "unavailable_lights": [],
+        }
+        seen = memory_seen_state(final)
+        self.assertEqual(seen["status"], "VI_SEMELHANTE")
+        self.assertEqual(seen["archive_label"], "OK")
+        self.assertTrue(seen["historical_ok_recall"])
+        self.assertFalse(seen["exact_pair_seen"])
+        self.assertEqual(seen["archive_visual_lights"], ["TOP", "MID"])
+        self.assertIn("MEMÓRIA OK", memory_panel_text(final)[0])
+        self.assertIn("SUSPECT_ABSENCE", memory_panel_text(final)[1])
+        self.assertEqual(memory_feedback_state(final)[0], "MEMÓRIA OK • TOP/MID")
+        policy = production_decision_policy(final)
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertEqual(
+            policy["reason"], "known_top_mid_ok_physical_veto_suspect_absence"
+        )
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "")
+
+    def test_recovery_panel_requires_valid_original_archive_evidence(self):
+        a, visual = real_event()
+        original = apply(a, visual)
+        invalid = deepcopy(original)
+        invalid["detail"]["production_continuous_auto"] = True
+        invalid["detail"]["recognized_top_mid_ok_20261029"][
+            "per_light_reference"]["MID"]["source_pixel_sha256"] = "0" * 64
+        seen = memory_seen_state(invalid)
+        self.assertFalse(seen.get("historical_ok_recall"))
+        self.assertEqual(seen["status"], "NUNCA_VI")
+        self.assertIn("SEM PAR EXATO", memory_panel_text(invalid)[0])
+        self.assertNotEqual(memory_feedback_state(invalid)[0], "MEMÓRIA OK • TOP/MID")
 
     def test_late_physical_probe_missing_pair_does_not_approve(self):
         a, visual = real_event()
