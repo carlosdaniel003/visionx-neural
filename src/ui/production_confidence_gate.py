@@ -327,13 +327,34 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 ),
                 "operator_shortcuts": {"0": "OK", "1": "NG"},
             }
+        # Distinguish a verified visual memory from a failed physical veto.
+        # A current MID absence suspicion cannot be cleared by merely
+        # locating a historical TOP/MID OK neighbor.
+        veto = detail.get("physical_missing_veto")
+        veto_status = veto.get("status") if isinstance(veto, dict) else None
+        historical_conflict = bool(
+            detail.get("fusion_rule") == "operator_known_top_mid_ok_review_20261029_v1"
+            and isinstance(detail.get("recognized_top_mid_ok_20261029"), dict)
+            and veto_status in {
+                "SUSPECT_ABSENCE", "GEOMETRY_REVIEW", "UNAVAILABLE",
+                "NG_CORROBORATED",
+            }
+        )
         return {
             "mode": "production", "confidence": confidence, "threshold": None,
-            "verdict": verdict if verdict == "DEFEITO REAL"
-                       else "REVISÃO OBRIGATÓRIA",
+            "verdict": (
+                "REVISÃO OBRIGATÓRIA" if historical_conflict
+                else verdict if verdict == "DEFEITO REAL"
+                else "REVISÃO OBRIGATÓRIA"
+            ),
             "auto_allowed": False, "operator_review_required": True,
-            "proposed_decision": "NG" if verdict == "DEFEITO REAL" else "",
-            "reason": "cnn_97p70_unqualified_operator_review_only",
+            "proposed_decision": "" if historical_conflict else
+                ("NG" if verdict == "DEFEITO REAL" else ""),
+            "reason": (
+                "known_top_mid_ok_physical_veto_" + veto_status.lower()
+                if historical_conflict else
+                "cnn_97p70_unqualified_operator_review_only"
+            ),
             "operator_shortcuts": {"0": "OK", "1": "NG"},
         }
     physical_veto = detail.get("physical_missing_veto", {})
