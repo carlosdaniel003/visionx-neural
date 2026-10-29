@@ -48,6 +48,7 @@ class _Panel(QWidget):
         self.manual_records = []
         self.analysis_records = []
         self.paused_records = []
+        self.judgments = []
         self.interventions = []
         self.intervention_clears = 0
 
@@ -81,6 +82,15 @@ class _Panel(QWidget):
 
     def record_production_manual_feedback(self, decision):
         self.manual_records.append(str(decision))
+
+    def record_production_judgment_feedback(self, decision, origin, elapsed):
+        self.judgments.append((str(decision), str(origin), float(elapsed)))
+        if origin == "automatic":
+            self.auto_records.append(str(decision))
+        else:
+            self.manual_records.append(str(decision))
+        if elapsed > 0:
+            self.analysis_records.append(float(elapsed))
 
     def set_production_paused_feedback(self, paused):
         self.paused_records.append(bool(paused))
@@ -142,11 +152,63 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         panel.last_analysis_time_seconds = 1.37
 
         self.assertTrue(controller.analysis_ready(analysis))
-        self.assertEqual(panel.analysis_records, [1.37])
-
-        # A mesma análise não pode entrar duas vezes na média da sessão.
+        self.assertEqual(panel.analysis_records, [])
+        self.assertEqual(panel.judgments, [])
+        # A mesma análise, reapresentada, não deve alterar os indicadores.
         self.assertTrue(controller.analysis_ready(analysis))
-        self.assertEqual(panel.analysis_records, [1.37])
+        self.assertEqual(panel.analysis_records, [])
+        self.assertEqual(panel.judgments, [])
+
+    def test_only_confirmed_auto_or_manual_0_1_commits_timing_once(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        a = {"verdict": "FALHA FALSA", "is_defect": False}
+        panel.current_analysis = a
+        panel.last_analysis_time_seconds = 4.0
+        self.assertTrue(controller.analysis_ready(a))
+        self.assertEqual(panel.judgments, [])
+        gen = controller.generation
+        controller._stage_timer.stop()
+        controller._emit_auto_decision(gen, "OK")
+        self.assertEqual(panel.judgments, [("OK", "automatic", 4.0)])
+        controller._emit_auto_decision(gen, "OK")
+        self.assertEqual(len(panel.judgments), 1)
+
+        b = {"verdict": "DEFEITO REAL", "is_defect": True}
+        panel.current_analysis = b
+        panel.last_analysis_time_seconds = 6.0
+        self.assertTrue(controller.analysis_ready(b))
+        self.assertEqual(len(panel.judgments), 1)
+        controller.operator_decision_completed("NG", source="xp_keyboard")
+        self.assertEqual(panel.judgments[-1], ("NG", "manual", 6.0))
+        self.assertEqual(panel.analysis_records, [4.0, 6.0])
+        panel.close()
+
+    def test_unjudged_cancel_discards_time_and_failed_auto_never_counts(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        a = {"verdict": "FALHA FALSA", "is_defect": False}
+        panel.current_analysis = a
+        panel.last_analysis_time_seconds = 99.0
+        self.assertTrue(controller.analysis_ready(a))
+        controller.cancel_current()
+        self.assertEqual(panel.judgments, [])
+
+        b = {"verdict": "FALHA FALSA", "is_defect": False}
+        panel.current_analysis = b
+        panel.last_analysis_time_seconds = 2.25
+        self.assertTrue(controller.analysis_ready(b))
+        def failed_save(_decision, source="button"):
+            panel.last_decision_command_success = False
+            return False
+        panel.save_label = failed_save
+        controller._stage_timer.stop()
+        controller._emit_auto_decision(controller.generation, "OK")
+        self.assertEqual(panel.judgments, [])
+        self.assertEqual(panel.analysis_records, [])
+        panel.close()
 
     def test_space_pause_stops_and_resumes_pending_stage(self):
         panel = _Panel()
