@@ -119,6 +119,7 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
             "operator_confirmed_recurrent_ok_three_light_review_v1",
             "operator_confirmed_ok_pattern_three_light_review_v1",
             "operator_recurrent_ok_top_mid_review_v1",
+            "operator_known_top_mid_ok_review_20261029_v1",
             "mixed_light_knn_ok_cnn_review_manual_v1",
             "operator_corrected_archive_ok_three_light_v1",
         }
@@ -131,6 +132,7 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
                 "operator_confirmed_recurring_ok_requires_operator",
                 "operator_confirmed_ok_pattern_requires_operator",
                 "operator_recurrent_ok_top_mid_requires_operator",
+                "operator_known_top_mid_ok_20261029_requires_operator",
                 "mixed_light_knn_ok_requires_operator",
                 "supervised_recurrent_ok_top_mid_auto_v1",
                 "supervised_mixed_light_ok_auto_v1",
