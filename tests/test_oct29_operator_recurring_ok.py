@@ -371,6 +371,43 @@ class Oct29RecurringOkTests(unittest.TestCase):
         self.assertFalse(policy["auto_allowed"])
         self.assertEqual(policy["proposed_decision"], "")
 
+    def test_1022_final_overlay_shows_false_alarm_even_with_mid_suspect_veto(self):
+        """The 10:22 UI must not turn an accepted visual OK into REVIEW.
+
+        Historical signature is close but not pixel-exact. The same cycle
+        remains blocked by MID physical suspicion and by the operator pause.
+        """
+        raw, visual = real_event()
+        final = apply(raw, visual)
+        self.assertEqual(final["verdict"], "FALHA FALSA")
+        final["detail"]["production_continuous_auto"] = True
+        final["detail"]["physical_missing_veto"] = {
+            "status": "SUSPECT_ABSENCE",
+            "suspect_lights": ["MID"],
+            "geometry_review_lights": ["SIDE", "TOP"],
+            "unavailable_lights": [],
+        }
+        policy = production_decision_policy(final)
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertEqual(
+            policy["reason"], "known_top_mid_ok_physical_veto_suspect_absence"
+        )
+        self.assertEqual(verdict_feedback_state(final), ("FALHA FALSA", "ok"))
+        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "")
+        self.assertEqual(memory_feedback_state(final)[2], "similar")
+
+        # A visual label must never grant XP 0 if the physical audit vetoes.
+        tampered = deepcopy(final)
+        tampered["detail"]["recognized_top_mid_ok_20261029"][
+            "per_light_reference"]["TOP"]["source_pixel_sha256"] = "0" * 64
+        self.assertEqual(
+            verdict_feedback_state(tampered),
+            ("REVISÃO OBRIGATÓRIA", "ng"),
+        )
+        self.assertFalse(production_decision_policy(tampered)["auto_allowed"])
+
     def test_recovery_panel_requires_valid_original_archive_evidence(self):
         a, visual = real_event()
         original = apply(a, visual)
