@@ -166,6 +166,61 @@ class SideEarlyDecisionTests(unittest.TestCase):
         self.assertEqual(original, analysis)  # sem corrigir para OK artificial
         self.assertEqual(analysis["verdict"], "DEFEITO REAL")
 
+    def test_oct29_nearest_ok_in_both_descriptors_defers_side_ng(self):
+        # Evento a062c9850a144976a62591e5bfa726a4, 29/10 16:00.
+        # Maioria KNN vota NG, mas o vizinho visual mais próximo é OK.
+        # A evidência justifica TOP/MID, NÃO aprovação OK automática.
+        from copy import deepcopy
+        analysis = self._trial_ng_side()
+        analysis["confidence"] = .9999750852584839
+        analysis["detail"]["cnn_v2_ng_score_uncalibrated"] = .9999750852584839
+        c = {
+            "schema": "visionx.knn_c_live_review_gated.v1",
+            "bank_status": "READY", "status": "SUGERE_NG",
+            "vote_A": "NG", "vote_B": "NG",
+            "suggestion_A": "SUGERE_NG", "suggestion_B": "REVISAO",
+            "diagnostic_only": True, "auto_decision_authorized": False,
+            "reference_support": {"OK": 176, "NG": 467},
+            "neighbors_A": [
+                {"label": "OK", "similarity": .91192131},
+                {"label": "NG", "similarity": .86743278},
+                {"label": "NG", "similarity": .84959013},
+            ],
+            "neighbors_B": [
+                {"label": "OK", "similarity": .86549428},
+                {"label": "NG", "similarity": .80695629},
+                {"label": "NG", "similarity": .79329265},
+            ],
+        }
+        analysis["detail"]["knn_c"] = c
+        original = deepcopy(analysis)
+        self.assertIsNone(build_side_early_decision(analysis, "FALTANDO"))
+        self.assertEqual(analysis, original)
+        self.assertEqual(analysis["verdict"], "DEFEITO REAL")
+
+        # Contraexemplos devem preservar o encerramento NG original.
+        for change in ("ng_closer", "weak_ok", "no_ready", "bad_provenance"):
+            trial = deepcopy(analysis)
+            trial_c = trial["detail"]["knn_c"]
+            if change == "ng_closer":
+                trial_c["neighbors_A"][1]["similarity"] = .90
+            elif change == "weak_ok":
+                trial_c["neighbors_B"][0]["similarity"] = .80
+            elif change == "no_ready":
+                trial_c["bank_status"] = "LOADING"
+            else:
+                trial_c["diagnostic_only"] = False
+            with self.subTest(change=change):
+                self.assertIsNotNone(
+                    build_side_early_decision(trial, "FALTANDO")
+                )
+        physical = deepcopy(analysis)
+        physical["hard_missing_evidence"] = True
+        self.assertIsNotNone(build_side_early_decision(physical, "FALTANDO"))
+        other = deepcopy(analysis)
+        other["detail"]["cnn_v2_aoi_category"] = "DESLOCADO"
+        self.assertIsNotNone(build_side_early_decision(other, "DESLOCADO"))
+
     def test_defer_on_two_weak_ok_votes_only_not_on_one_vote_or_missing_knn(self):
         from copy import deepcopy
         sample = self._trial_ng_side()
