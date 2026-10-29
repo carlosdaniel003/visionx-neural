@@ -5,6 +5,7 @@ AOI station. Historical OK identity is supported by the recorded KNN
 hashes. The current physical board is still NOT individually certified.
 """
 from copy import deepcopy
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -14,6 +15,7 @@ from src.core.knn_visual_corroboration import (
 from src.ui.production_confidence_gate import production_decision_policy
 from src.ui.decision_verdict_feedback import verdict_feedback_state
 from src.ui.neural_influence_model import neural_influence_rows
+from src.ui.network_xp_debug import format_multilight_debug_report
 from tests.test_knn_three_light_ok_counterevidence import fused, report
 
 
@@ -194,6 +196,38 @@ class Oct29RecurringOkTests(unittest.TestCase):
         self.assertAlmostEqual(
             after_arm[0]["ng_score_uncalibrated"], .999821126461029
         )
+
+    def test_debug_distinguishes_cnn_review_from_armed_xp_auto_decision(self):
+        a, visual = real_event()
+        final = apply(a, visual)
+        panel = SimpleNamespace(
+            combo_mode=SimpleNamespace(currentText=lambda: "Modo Produção"),
+            adhesive_multilight_last_category="FALTANDO",
+            adhesive_multilight_last_final_analysis=final,
+            adhesive_multilight_last_analyses={},
+            adhesive_multilight_last_event_id="a614cc6e056746d88b41f417a978c6a5",
+            production_autonomy_controller=SimpleNamespace(
+                state="auto_decision_pending", paused=False
+            ),
+            last_decision_command_success=None,
+        )
+        with patch(
+            "src.ui.network_xp_debug._multilight_event_matches",
+            return_value=True,
+        ):
+            before = format_multilight_debug_report(panel)
+            self.assertIn("Requer tecla 0/1 humana: N/D", before)
+            self.assertIn("Política armada: False", before)
+            final["detail"]["production_continuous_auto"] = True
+            after = format_multilight_debug_report(panel)
+        self.assertIn("Política armada: True", after)
+        self.assertIn("Autoriza automático: True", after)
+        self.assertIn("Requer tecla 0/1 humana: False", after)
+        self.assertIn("Comando XP proposto: 0/OK", after)
+        self.assertIn(
+            "supervised_operator_known_top_mid_ok_20261029_auto_v1", after
+        )
+        self.assertIn("Envio XP confirmado: None", after)
 
     def test_invalid_archive_anchor_never_paints_memory_ok_or_authorizes_xp_zero(self):
         a, visual = real_event()
