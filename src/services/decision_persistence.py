@@ -49,6 +49,7 @@ _UNVERIFIED_AUTOMATIC_REASONS = frozenset({
     "supervised_operator_corrected_archive_ok_auto_v1",
     "supervised_operator_known_top_mid_ok_20261029_auto_v1",
     "production_uncertain_auto_ng_quarantine_v1",
+    "production_binary_unverified_ng_v1",
     "side_strong_human_ok_supervised_probe_override_auto_ok",
 })
 
