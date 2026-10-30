@@ -54,6 +54,7 @@ QLabel#operationActionCount {
 
 QPushButton#captureActionButton,
 QPushButton#discardActionButton,
+QPushButton#reinspectActionButton,
 QPushButton#approveActionButton,
 QPushButton#rejectActionButton,
 QPushButton#cameraLightButton,
@@ -87,6 +88,15 @@ QPushButton#discardActionButton {
     color: #e2e2e2;
     background-color: #181818;
     border: 1px solid #444444;
+}
+QPushButton#reinspectActionButton {
+    color: #f5c518;
+    background-color: #181818;
+    border: 1px solid #8a751c;
+}
+QPushButton#reinspectActionButton:hover {
+    color: #080808;
+    background-color: #f5c518;
 }
 QPushButton#discardActionButton:hover {
     color: #f5c518;
@@ -212,6 +222,8 @@ class OperationalControlsPresenter:
         panel = self.panel
         panel.btn_start.setObjectName("captureActionButton")
         panel.btn_skip.setObjectName("discardActionButton")
+        if hasattr(panel, "btn_reinspect"):
+            panel.btn_reinspect.setObjectName("reinspectActionButton")
         panel.btn_save_ok.setObjectName("approveActionButton")
         panel.btn_save_ng.setObjectName("rejectActionButton")
 
@@ -249,6 +261,8 @@ class OperationalControlsPresenter:
         )
 
         panel.btn_skip.setEnabled(False)
+        if hasattr(panel, "btn_reinspect"):
+            panel.btn_reinspect.setEnabled(False)
         panel.btn_save_ok.setEnabled(False)
         panel.btn_save_ng.setEnabled(False)
 
@@ -440,6 +454,22 @@ class OperationalControlsPresenter:
 
         self._set_enabled(panel.btn_start, state.capture_enabled)
         self._set_enabled(panel.btn_skip, state.discard_enabled)
+        reinspect = getattr(panel, "btn_reinspect", None)
+        reinspect_enabled = False
+        if reinspect is not None:
+            controller = getattr(panel, "production_autonomy_controller", None)
+            reinspect_enabled = bool(
+                mode == "Modo Produção"
+                and state.name == "production_auto"
+                and getattr(panel, "capture_cycle_source", None) == "network"
+                and bool(getattr(panel, "capture_cycle_active", False))
+                and getattr(controller, "pending_analysis", None)
+                is getattr(panel, "current_analysis", None)
+                and getattr(controller, "state", "") != "emitting_auto_decision"
+                and not bool(getattr(panel, "capture_cycle_discarding", False))
+            )
+            reinspect.setVisible(mode == "Modo Produção")
+            self._set_enabled(reinspect, reinspect_enabled)
         self._set_enabled(panel.btn_save_ok, state.approve_enabled)
         self._set_enabled(panel.btn_save_ng, state.reject_enabled)
 
@@ -472,7 +502,7 @@ class OperationalControlsPresenter:
         )
         panel.lbl_operation_hint.setText(hint)
 
-        count = available_action_count(state)
+        count = available_action_count(state) + int(reinspect_enabled)
         suffix = "AÇÃO DISPONÍVEL" if count == 1 else "AÇÕES DISPONÍVEIS"
         panel.lbl_operation_actions.setText(f"{count} {suffix}")
 
