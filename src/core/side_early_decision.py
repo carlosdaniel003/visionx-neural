@@ -106,6 +106,34 @@ def _ng_with_stronger_nearest_ok(analysis: dict, category: str) -> bool:
     return True
 
 
+def _confirmed_human_ok_requires_other_lights(analysis: dict, category: str) -> bool:
+    """A previous human OK requires corroboration before a new SIDE 1/NG.
+
+    Only prevents premature rejection. Never authorizes 0/OK or changes
+    the current CNN's NG label. Explicit physical missing evidence wins.
+    """
+    if (canonical_memory_category(category) != "FALTANDO"
+            or analysis.get("is_defect") is not True
+            or analysis.get("hard_missing_evidence") is True):
+        return False
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict) or detail.get("hard_missing_evidence") is True:
+        return False
+    physical = detail.get("physical_missing_veto")
+    if isinstance(physical, dict) and physical.get("status") == "SUSPECT_ABSENCE":
+        return False
+    visual = detail.get("confirmed_visual_recall")
+    if not isinstance(visual, dict):
+        return False
+    return (
+        visual.get("schema") == "visionx.human_visual_recall.v1"
+        and visual.get("status") == "HUMAN_OK_VISUAL_CANDIDATE"
+        and visual.get("diagnostic_only") is True
+        and visual.get("auto_ok_authorized") is False
+        and visual.get("source") == "PERSISTENT_HUMAN_LABELS"
+    )
+
+
 def _eligible_side_analysis(analysis: dict | None) -> bool:
     """Revalida a classificação SIDE sem depender de flags de UI ou Produção."""
     if not isinstance(analysis, dict):
@@ -262,6 +290,10 @@ def _eligible_trial_side_for_review(
 
 def build_side_early_decision(analysis: dict | None, category: str) -> dict | None:
     """Finaliza a inspeção pela SIDE; separa classificação de comando XP."""
+    if (isinstance(analysis, dict)
+            and _confirmed_human_ok_requires_other_lights(analysis, category)):
+        # Uma fonte OK humana APROXIMADA precisa de TOP/MID antes de rejeitar.
+        return None
     automatic = _eligible_side_analysis(analysis)
     trial_review = (
         not automatic and _eligible_trial_side_for_review(analysis, category)
