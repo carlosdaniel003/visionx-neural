@@ -147,3 +147,20 @@ testes de CI trabalham com pares sintéticos e regras de regressão;
 **não há comprovação de que o evento 08:47 tenha atingido 97% nessa
 pista adicional sem os PNGs e o JSON locais reais**. Validar com
 XP isolado e NG reais difíceis das cinco categorias antes da linha.
+
+## 30/10/2026 — Correção de ordem: conciliação KNN C pós-diagnóstico
+
+O roteador de memória (`verified_memory_router.py`) é interno ao
+wrapper da KNN C. Portanto, ao procurar `detail.knn_c` durante a
+recuperação da memória humana, o diagnóstico ainda não havia sido
+adicionado. A conciliação `aligned_archive` agora é executada
+em `knn_c_live.py`, imediatamente após `bank.diagnose()`, quando
+o índice está READY e existe `confirmed_visual_recall`.
+A chamada anterior, prematura e redundante foi retirada.
+
+A mudança não dispensa os limiares atuais de 97%/4pp nem a
+confirmação pela fonte archive, não altera classificação CNN,
+veto físico, regras XP, nem a janela de pausa por espaço.
+Há regressão de integração em `test_knn_c_archive_alignment.py`
+para garantir que o diagnóstico READY exponha `aligned_archive`.
+O caso real 08:47 depende da reavaliação com PNGs e JSON locais.
