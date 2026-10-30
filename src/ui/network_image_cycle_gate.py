@@ -70,6 +70,14 @@ def _release_cycle(panel) -> None:
     if receiver is not None and hasattr(receiver, "release_image_gate"):
         try:
             receiver.release_image_gate()
+            if was_network:
+                # Ja arma DOWN para a PROXIMA peca, sem aguardar seu
+                # primeiro payload. O gate so deixa passar frames SIDE
+                # novos apos o envio e a estabilizacao existentes.
+                prime = getattr(receiver, "prime_side_preflight", None)
+                ip = str(getattr(panel, "last_xp_ip", "") or "").strip()
+                if callable(prime) and ip:
+                    prime(ip)
         except Exception as exc:
             print(f"Falha não fatal ao liberar entrada de imagens: {exc}")
     # O cleanup forçado pode limpar capture_cycle_source ANTES desta função.

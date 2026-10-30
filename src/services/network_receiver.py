@@ -95,9 +95,10 @@ class NetworkReceiver(QThread):
         self.last_delivered_image_received_at = 0.0
 
         # Antes de CADA captura principal, solicitar PRESS_DOWN na AOI.
-        # A primeira imagem que disparou a sincronizacao e descartada:
-        # apenas frames novos, apos o intervalo de acomodacao, podem
-        # entrar na analise. Nao e usado para TOP/MID auxiliares.
+        # O primeiro comando deve ser disparado assim que o XP for
+        # identificado ou o ciclo anterior terminar, SEM depender de
+        # uma nova imagem. Se isso ainda nao ocorreu, o primeiro payload
+        # dispara o fallback e e descartado. TOP/MID auxiliares sao isoladas.
         self._side_preflight_phase = "PENDING"
         self._side_preflight_serial = 0
         self._side_preflight_requested_at = 0.0
@@ -236,6 +237,25 @@ class NetworkReceiver(QThread):
 
         self._image_gate.release()
         self._last_ignored_log_at = 0.0
+
+    def prime_side_preflight(self, ip: str) -> bool:
+        """Solicita SIDE antecipadamente, antes de receber qualquer imagem.
+
+        Usado ao descobrir o XP e imediatamente apos liberar um ciclo.
+        Mantem a mesma maquina de estados, tokens, retries e bloqueio
+        de frames de _side_preflight_ready, sem criar segunda rota TCP.
+        """
+        target_ip = str(ip or "").strip()
+        if not target_ip or not self._image_gate.is_open():
+            return False
+        self._side_preflight_ready(
+            target_ip, received_at=time.perf_counter(),
+        )
+        with self._state_lock:
+            return bool(
+                self._side_preflight_ip == target_ip
+                and self._side_preflight_phase in {"WAITING", "SETTLING", "READY"}
+            )
 
     def _side_preflight_ready(self, ip: str, *, received_at: float) -> bool:
         """Exige DOWN ANTES da primeira imagem encaminhada ao painel.

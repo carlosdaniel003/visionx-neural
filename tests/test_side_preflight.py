@@ -30,6 +30,114 @@ class SidePreflightTests(unittest.TestCase):
         )
         self.ip = "169.254.95.200"
 
+    def test_preflight_requests_down_before_any_image_arrives(self):
+        # O primeiro comando deve existir sem _side_preflight_ready nem PNG.
+        self.assertEqual(self.receiver.last_delivered_image_received_at, 0.0)
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=5.0):
+            self.assertTrue(self.receiver.prime_side_preflight(self.ip))
+        self.assertEqual(len(self.requests), 1)
+        token = self.requests[0][1]
+        self.assertTrue(self.receiver.is_side_preflight_pending(token))
+        self.assertFalse(self.receiver.prime_side_preflight(""))
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=5.1):
+            self.assertTrue(self.receiver.prime_side_preflight(self.ip))
+        self.assertEqual(len(self.requests), 1, "nao repetir DOWN no mesmo ciclo")
+
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=5.2):
+            self.assertTrue(self.receiver.complete_side_preflight(token, True))
+        self.assertFalse(self.receiver._side_preflight_ready(
+            self.ip, received_at=5.549,
+        ))
+        self.assertTrue(self.receiver._side_preflight_ready(
+            self.ip, received_at=5.551,
+        ))
+
+    def test_peer_discovery_primes_down_before_capture_rate_negotiation(self):
+        class Mode:
+            def currentText(self):
+                return "Modo Produção"
+
+        class Panel:
+            def __init__(self, receiver):
+                self.network_receiver = receiver
+                self.last_xp_ip = ""
+                self.combo_mode = Mode()
+                self.events = []
+
+            def send_command_to_xp(self, key):
+                self.events.append("send_" + key)
+                return True
+
+            def change_lighting(self, lighting, source):
+                self.events.append("visual_" + lighting)
+
+            def _send_xp_shadow_control(self, enabled):
+                self.events.append("capture_rate_" + str(enabled))
+
+        panel = Panel(self.receiver)
+        self.receiver.side_preflight_requested.connect(
+            lambda ip, token: ControlPanel.handle_side_preflight_requested(
+                panel, ip, token,
+            )
+        )
+        ControlPanel.handle_xp_peer_discovered(panel, self.ip)
+        self.assertEqual(panel.events, [
+            "send_DOWN", "visual_SIDE", "capture_rate_True",
+        ])
+        self.assertEqual(panel.last_xp_ip, self.ip)
+        ControlPanel.handle_xp_peer_discovered(panel, self.ip)
+        self.assertEqual(panel.events.count("send_DOWN"), 1)
+
+    def test_network_cycle_release_primes_next_down_without_next_frame(self):
+        from src.ui.network_image_cycle_gate import _release_cycle
+
+        class Panel:
+            def __init__(self, receiver, ip):
+                self.network_receiver = receiver
+                self.last_xp_ip = ip
+                self.capture_cycle_source = "network"
+                self.events = []
+
+            def send_command_to_xp(self, key):
+                self.events.append("send_" + key)
+                return True
+
+            def change_lighting(self, lighting, source):
+                self.events.append("visual_" + lighting)
+
+        panel = Panel(self.receiver, self.ip)
+        self.receiver.side_preflight_requested.connect(
+            lambda ip, token: ControlPanel.handle_side_preflight_requested(
+                panel, ip, token,
+            )
+        )
+        self.receiver.lock_image_gate()
+        with patch(
+            "src.services.knn_archive_auto_memory.resume_archive_auto_memory_after_inspection"
+        ):
+            _release_cycle(panel)
+        self.assertEqual(panel.events, ["send_DOWN", "visual_SIDE"])
+        self.assertIsNone(panel.capture_cycle_source)
+        self.assertEqual(self.receiver.last_delivered_image_received_at, 0.0)
+        self.assertEqual(
+            self.receiver.last_side_preflight["status"], "SETTLING",
+        )
+        self.assertEqual(len(self.requests), 1)
+        self.assertFalse(self.receiver._side_preflight_ready(
+            self.ip, received_at=0.0,
+        ))
+        self.assertEqual(panel.events.count("send_DOWN"), 1)
+
+    def test_missing_peer_or_locked_gate_does_not_send_down(self):
+        self.assertFalse(self.receiver.prime_side_preflight(""))
+        self.assertEqual(self.requests, [])
+        self.receiver.lock_image_gate()
+        self.assertFalse(self.receiver.prime_side_preflight(self.ip))
+        self.assertEqual(self.requests, [])
+
     def test_first_image_is_dropped_until_down_and_new_settled_image(self):
         with patch("src.services.network_receiver.time.perf_counter",
                    return_value=10.0):

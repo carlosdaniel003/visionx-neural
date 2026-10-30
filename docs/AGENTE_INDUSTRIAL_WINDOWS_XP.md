@@ -1202,6 +1202,29 @@ Essa alteração não modifica o agente XP; requer somente atualizar o
 ODIN no computador moderno. Validar com operador e XP isolado antes de
 qualquer retorno à liberação autônoma.
 
+### Ajuste de ordem — pré-comando antes do primeiro frame
+
+Na identificação inicial do XP, o `ControlPanel` chama
+`NetworkReceiver.prime_side_preflight(ip)` antes da negociação de taxa:
+o pedido `PRESS_DOWN` ocorre sem precisar receber um PNG completo.
+Depois de um julgamento ou descarte de peça recebida pela rede,
+`network_image_cycle_gate._release_cycle` libera o gate e solicita
+imediatamente um novo `PRESS_DOWN`, antes de aguardar o próximo frame.
+A lógica anterior de disparar o preflight pelo primeiro payload é
+mantida como **fallback** caso o IP ainda não esteja disponível, ocorra
+erro de envio ou o comando não tenha sido solicitado a tempo.
+
+A máquina de estados permanece única (token por ciclo, espera de 350 ms,
+dois frames estáveis, descarte de fotos anteriores à confirmação, retry,
+invalidação de respostas tardias e isolamento de TOP/MID auxiliares).
+Uma solicitação repetida no mesmo ciclo não duplica a tecla. Em falha de
+TCP, o sistema continua sem encaminhar imagem à análise.
+
+A nova ordem vale para o fluxo de rede em Teste, Sombra e Produção.
+Não altera o comando 0/1 nem o programa instalado no XP. A confirmação
+de transporte não comprova, por si só, que a iluminação real é SIDE;
+validar com XP isolado antes do uso em linha.
+
 Testes: `tests/test_side_preflight.py`,
 `tests/test_lighting_status_feedback.py`,
 `tests/test_decision_key_feedback.py` e workflow
