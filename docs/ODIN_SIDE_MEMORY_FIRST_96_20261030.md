@@ -348,3 +348,61 @@ Reproduzir a situação física com o XP em modo supervisionado
 e coletar o novo debug da sonda. As regressões com `SUSPECT_ABSENCE`,
 `UNAVAILABLE`, exceção, marcadores adulterados, pausa e saída 0/1
 estão em `tests/test_side_memory_first.py`.
+
+
+## 30/10/2026 — Liberação supervisionada opt-in de OK SIDE com conflito físico
+
+Evento `37a68aae712646b9a758dd8ff3be823b`, Modo Produção:
+SIDE **FALHA FALSA**, memória humana OK `0.99019399`, NG
+`0.95938641`, KNN A OK `0.98084619`, KNN B OK `0.95345213`.
+O operador confirmou pessoalmente o falso positivo da AOI e solicitou
+liberação automática sob supervisão. A física registrou
+`SUSPECT_ABSENCE` **somente na escala 0.58**:
+score `0.95587`, coverage `0.71882`, background `0.84268`;
+escala 0.76 sem suspeita (`background=0.28904`), geometria
+`[318,570]` x `[317,567]`. **Isto é uma contradição física real
+no algoritmo e NÃO pode ser tratado como detector de presença validado**.
+
+### Uso restrito
+
+- `Ctrl+Shift+O`: **arma/desarma** um experimento de liberação
+  supervisionada quando estiver em `Modo Produção` **entre peças**
+  (sem análise pendente). Inicia **desarmado**; não persiste.
+- Se a memória SIDE reconhecer OK humano >=99% + margem >=3pp,
+  KNN A>=98% e B>=95% no mesmo PNG/SHA, sem NG concorrente forte,
+  e o veto físico for `SUSPECT_ABSENCE` em **exatamente uma**
+  das duas escalas verificadas, com geometria exata ou aparagem
+  máxima de 3px/1%, a política poderá propor `0/OK` mesmo com a
+  contradição física, **somente enquanto explicitamente armada**.
+- Propostas da nova rota `side_strong_human_ok_supervised_probe_override_auto_ok`
+  aguardam a apresentação e mais **5 segundos** antes do envio XP.
+  A emissão revalida o armamento, a captura atual, a política e o
+  estado de pausa, garantindo no máximo uma tentativa por geração.
+- **Espaço pausa e desarma imediatamente** tanto essa rota quanto
+  a KNN C supervisionada. Retomar não rearma; rearmar exige uma nova
+  ação entre peças. Mudança de modo desarma. A UI exibe armamento
+  e que se trata de autorização apesar de alerta físico.
+- `SUSPECT_ABSENCE` nas **duas** escalas, geometria fora do contrato,
+  `UNAVAILABLE`, ausência física forte, conflito de memória, categoria
+  inválida, fonte adulterada ou inspeção pendente **não autorizam** a
+  nova rota. Não se cria exceção por nome de arquivo, categoria OCR
+  ou ID do evento.
+- O julgamento automático nesta rota **não é dado de verdade para
+  treinamento**. Vai para `reports/production_auto_unverified/`, com
+  a única luz SIDE realmente observada quando disponível; não inventa
+  imagens TOP/MID. O histórico da política registra que foi override
+  supervisionado de um veto físico.
+- Sem armamento, mantém `FALHA FALSA` visual na SIDE, interrompe TOP/MID,
+  **aguarda 0/1 humano**; não emite NG preventivo nem 0 automático.
+- Esse modo aumenta explicitamente o risco de liberar um NG físico.
+  Requer bancada/ambiente isolado, operador olhando as imagens reais,
+  validação com NG difícil e parada imediata se houver divergência.
+  O temporizador de 5s não substitui julgamento humano nem garante
+  interrupção a tempo.
+
+Implementação: `src/core/side_memory_first.py` valida elegibilidade;
+`src/ui/production_confidence_gate.py` propõe/revalida 0/OK;
+`src/ui/production_autonomy_controller.py` guarda armamento efêmero,
+executa temporizador e desarma; `src/services/decision_persistence.py`
+impede o treinamento de aprovações ainda não confirmadas.
+Regressões: `tests/test_side_supervised_release.py`.
