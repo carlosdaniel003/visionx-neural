@@ -519,6 +519,37 @@ class PersistentArchiveKNN:
         matches = [r for r in self.records() if r["identity"] == key]
         if not matches:
             return {"status": "NEW", "reason": "Par não consta da memória durável"}
+        human_times = [
+            (source["confirmed_at_ns"], record, source)
+            for record in matches
+            for source in record["sources"]
+            if source.get("source_kind") == "OPERATOR_CONFIRMED"
+            and source.get("source_label") == record["label"]
+            and type(source.get("confirmed_at_ns")) is int
+        ]
+        if human_times:
+            latest_at = max(item[0] for item in human_times)
+            candidates = [item for item in human_times if item[0] == latest_at]
+            winners = {item[1]["label"] for item in candidates}
+            if len(winners) != 1:
+                return {
+                    "status": "CONFLICT", "matches": len(matches),
+                    "reason": "Dois julgamentos humanos opostos no mesmo instante",
+                }
+            selected = candidates[-1]
+            return {
+                "status": "KNOWN", "label": selected[1]["label"],
+                "matches": len(matches), "source_json": str(self.path),
+                "memory_source": "LATEST_OPERATOR_EXACT_PAIR",
+                "record_id": selected[1]["id"],
+                "confirmed_at_ns": latest_at,
+                "source_event_id": selected[2].get("event_id", ""),
+                "superseded_labels": sorted(
+                    {row["label"] for row in matches
+                     if row["label"] != selected[1]["label"]}
+                ),
+                "reason": "Última confirmação humana para identidade RGB exata",
+            }
         labels = {r["label"] for r in matches}
         if len(labels) != 1:
             return {
