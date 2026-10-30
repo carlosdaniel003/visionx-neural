@@ -178,6 +178,64 @@ class AnalysisTimingContractTests(unittest.TestCase):
         )
 
 
+class ProductionMemoryProvenanceTests(unittest.TestCase):
+    def test_preventive_ng_names_nearest_ok_and_ng_without_false_causality(self):
+        from src.ui.network_xp_debug import format_memory_decision_provenance
+        knn = {
+            "neighbors_A": [
+                {"label": "OK", "similarity": .99278238,
+                 "path": "public/ok_archive/2026-10-27_1318_FALTANDO_MID.png"},
+                {"label": "NG", "similarity": .844,
+                 "path": "public/ng_archive/older_ng.png"},
+            ],
+            "neighbors_B": [
+                {"label": "OK", "similarity": .98172473,
+                 "path": "public/ok_archive/2026-10-27_1318_FALTANDO_MID.png"},
+                {"label": "NG", "similarity": .799,
+                 "path": "public/ng_archive/older_ng.png"},
+            ],
+        }
+        analyses = {"MID": {"detail": {
+            "knn_c": knn,
+            "confirmed_visual_recall": {
+                "schema": "visionx.human_visual_recall.v1",
+                "status": "HUMAN_OK_VISUAL_CANDIDATE",
+                "best_ok_source": {
+                    "record_id": "confirmed-record", "lighting_mode": "TOP"},
+                "best_ok_similarity": .99657963,
+            },
+        }}}
+        final = {"detail": {
+            "recognition_route": "NEW_CNN",
+            "recognition_memory_verified": False,
+        }}
+        output = "\n".join(format_memory_decision_provenance(
+            analyses, final, xp_policy={
+                "reason": "production_uncertain_auto_ng_quarantine_v1",
+                "proposed_decision": "NG",
+            },
+        ))
+        self.assertIn("política de rejeição preventiva", output)
+        self.assertIn("não foi usada", output.lower().replace("foi usada como", "foi usada"))
+        self.assertIn("2026-10-27_1318_FALTANDO_MID.png", output)
+        self.assertIn("older_ng.png", output)
+        self.assertIn("confirmed-record", output)
+        self.assertIn("sem par RGB exato", output)
+
+    def test_exact_source_is_reported_as_decisive(self):
+        from src.ui.network_xp_debug import format_memory_decision_provenance
+        result = "\n".join(format_memory_decision_provenance(
+            {}, {"detail": {
+                "recognition_route": "KNOWN_KNN",
+                "recognition_memory_verified": True,
+                "recognition_known_label": "NG",
+                "recognition_memory_source_png": "public/ng_archive/exact.png",
+            }},
+        ))
+        self.assertIn("ORIGEM DECISIVA: PAR RGB EXATO", result)
+        self.assertIn("public/ng_archive/exact.png", result)
+
+
 class NetworkXPDebugFormatTests(unittest.TestCase):
     def test_report_exposes_dedicated_missing_footprint_route(self):
         analysis = {
