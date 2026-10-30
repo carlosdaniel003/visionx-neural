@@ -593,10 +593,13 @@ class ControlPanel(QWidget):
         if isinstance(detail, dict) and detail.get("production_continuous_auto") is True:
             from src.ui.production_confidence_gate import production_decision_policy
             policy = production_decision_policy(analysis)
-            if (policy.get("reason") == "production_uncertain_auto_ng_quarantine_v1"
-                    and policy.get("auto_allowed") is True):
-                verdict = "NG PREVENTIVO"
-                is_defect = True
+            if policy.get("auto_allowed") is True:
+                decision = policy.get("proposed_decision")
+                verdict = "FALHA FALSA" if decision == "OK" else "DEFEITO REAL"
+                is_defect = decision == "NG"
+            elif policy.get("operational_error") is True:
+                verdict = "CAPTURA INVÁLIDA"
+                is_defect = False
         conf_float = analysis.get("confidence", 0.5)
 
         conf_main = int(conf_float * 100)
@@ -846,7 +849,7 @@ class ControlPanel(QWidget):
             # O Modo Produção v1 não decide no mesmo instante em que a análise
             # termina. Primeiro toda a interface é renderizada; depois o
             # ProductionAutonomyController percorre a tela e só então aplica a
-            # política: FALHA FALSA -> 0 automático; NG/revisão -> operador.
+            # política: inspeção completa -> 0/1; falha técnica -> parada sem tecla.
             self.update_brain_status(
                 "Análise concluída • preparando apresentação do Modo Produção.",
                 True,
@@ -933,7 +936,7 @@ class ControlPanel(QWidget):
                     self.is_locked = True
                     self.update_brain_status(
                         "Falha ao enviar decisão automática ao XP. "
-                        "Aguardando operador.",
+                        "Inspeção interrompida por erro de comunicação.",
                         True,
                     )
                     return False
