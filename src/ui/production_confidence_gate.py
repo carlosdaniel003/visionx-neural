@@ -119,7 +119,7 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "auto_allowed": True,
             "operator_review_required": False,
             "proposed_decision": memory_decision,
-            "reason": "side_operator_memory_first_96pct_auto_" + memory_decision.lower(),
+            "reason": "side_operator_memory_first_97pct_auto_" + memory_decision.lower(),
             "operator_shortcuts": {"0": "OK", "1": "NG"},
             "unverified_physical_label": True,
         }
