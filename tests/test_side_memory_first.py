@@ -6,7 +6,8 @@ from copy import deepcopy
 import unittest
 
 from src.core.side_memory_first import (
-    RULE, build_side_memory_first, memory_first_side_decision,
+    RULE, KNOWN_MEMORY_CATEGORIES, PHYSICAL_PROBE_SCOPE,
+    build_side_memory_first, memory_first_side_decision,
 )
 from src.ui.production_confidence_gate import production_decision_policy
 
@@ -19,10 +20,10 @@ def _source(label="OK", light="SIDE"):
     }
 
 
-def _row(label, score, path=None):
+def _row(label, score, path=None, *, category="FALTANDO"):
     path = path or (
         "public/" + ("ok_archive" if label == "OK" else "ng_archive")
-        + "/archive_FALTANDO.png"
+        + "/archive_" + category + ".png"
     )
     return {
         "label": label, "similarity": score, "path": path,
@@ -30,19 +31,21 @@ def _row(label, score, path=None):
     }
 
 
-def case(label="OK"):
+def case(label="OK", category="FALTANDO"):
     other = "NG" if label == "OK" else "OK"
     # SIDE do evento 88584d..., 30/10. KNN A/B escolheram o MESMO PNG OK.
-    a = [_row(label, .98236720), _row(other, .86601348),
-         _row(label, .86592282), _row(label, .85552766), _row(label, .84238623)]
-    b = [_row(label, .96262484), _row(label, .84250628),
-         _row(other, .82652949), _row(label, .81967648), _row(label, .8171847)]
+    a = [_row(label, .98236720, category=category), _row(other, .86601348, category=category),
+         _row(label, .86592282, category=category), _row(label, .85552766, category=category),
+         _row(label, .84238623, category=category)]
+    b = [_row(label, .96262484, category=category), _row(label, .84250628, category=category),
+         _row(other, .82652949, category=category), _row(label, .81967648, category=category),
+         _row(label, .8171847, category=category)]
     human = {
         "schema": "visionx.human_visual_recall.v1",
         "status": "HUMAN_" + label + "_VISUAL_CANDIDATE",
         "source": "PERSISTENT_HUMAN_LABELS",
         "diagnostic_only": True, "auto_ok_authorized": False,
-        "category": "FALTANDO",
+        "category": category,
         "best_" + label.lower() + "_similarity": .99798172,
         "best_" + other.lower() + "_similarity": .95079253,
         "best_" + label.lower() + "_source": _source(label),
@@ -53,10 +56,12 @@ def case(label="OK"):
         "is_defect": label == "OK", "confidence": .99980789,
         "production_review_required": True, "lighting_mode": "SIDE",
         "detail": {
-            "recognition_route": "NEW_CNN", "recognition_match": "NOT_FOUND",
+            "recognition_route": "NEW_EXPERTS" if category == "MUITOADESIVO" else "NEW_CNN",
+            "recognition_match": "NOT_FOUND",
             "recognition_memory_verified": False,
-            "cnn_v2_aoi_category": "FALTANDO",
-            "cnn_v2_active": True, "cnn_v2_experimental": True,
+            "cnn_v2_aoi_category": category,
+            "cnn_v2_active": category != "MUITOADESIVO",
+            "cnn_v2_experimental": category != "MUITOADESIVO",
             "cnn_v2_status": "INFERENCE_OK",
             "hard_missing_evidence": False,
             "decision_trace": {
@@ -95,11 +100,12 @@ def good_probe(trim=False):
 
 
 class SideMemoryPriorityTests(unittest.TestCase):
-    def decide(self, data=None, probe=None):
+    def decide(self, data=None, probe=None, category="FALTANDO"):
         # A sonda real trabalha sobre os pares da captura; aqui só isolamos
         # o contrato, sem fingir que esses PNGs existem no ambiente CI.
         return build_side_memory_first(
-            case() if data is None else data, "FALTANDO", object(), object(),
+            case(category=category) if data is None else data,
+            category, object(), object(),
             probe=lambda *_: good_probe() if probe is None else probe,
         )
 
@@ -124,6 +130,74 @@ class SideMemoryPriorityTests(unittest.TestCase):
         self.assertTrue(policy["auto_allowed"])
         self.assertTrue(policy["unverified_physical_label"])
         self.assertEqual(policy["reason"], "side_operator_memory_first_96pct_auto_ok")
+
+    def test_memory_priority_covers_all_five_aoi_categories(self):
+        categories = (
+            "FALTANDO", "DESLOCADO", "INVERTIDO", "EMBORCADO", "MUITOADESIVO",
+        )
+        self.assertEqual(KNOWN_MEMORY_CATEGORIES, set(categories))
+        for category in categories:
+            for label in ("OK", "NG"):
+                with self.subTest(category=category, label=label):
+                    raw = case(label, category)
+                    final = self.decide(raw, category=category)
+                    self.assertIsNotNone(final)
+                    self.assertEqual(final["multilight_category"], category)
+                    self.assertEqual(final["detail"]["side_memory_first"]["physical_probe_scope"],
+                                     PHYSICAL_PROBE_SCOPE)
+                    self.assertEqual(final["detail"]["side_early_exit"]["skipped_lights"],
+                                     ["TOP", "MID"])
+                    self.assertEqual(memory_first_side_decision(final), label)
+                    policy = production_decision_policy(final)
+                    self.assertEqual(policy["proposed_decision"], label)
+                    self.assertTrue(policy["auto_allowed"])
+                    self.assertTrue(policy["unverified_physical_label"])
+                    self.assertIn("side_operator_memory_first_96pct_auto_", policy["reason"])
+
+    def test_category_aliases_route_to_same_canonical_memory(self):
+        for alias, canonical in (
+            ("MISALIGNED", "DESLOCADO"),
+            ("TOMBSTONE", "EMBORCADO"),
+            ("REVERSE", "INVERTIDO"),
+            ("MISSING", "FALTANDO"),
+            ("MUITO ADESIVO", "MUITOADESIVO"),
+        ):
+            with self.subTest(alias=alias):
+                self.assertIsNotNone(self.decide(
+                    case(category=canonical), category=alias,
+                ))
+
+    def test_unknown_category_or_category_conflict_never_auto_approves(self):
+        for category in ("UNKNOWN", "DESCONHECIDO", "ABCNAOEXISTE", ""):
+            with self.subTest(category=category):
+                raw = case(category=category)
+                self.assertIsNone(self.decide(raw, category=category))
+        raw = case(category="INVERTIDO")
+        self.assertIsNone(self.decide(raw, category="DESLOCADO"))
+        raw["detail"]["cnn_v2_aoi_category"] = "FALTANDO"
+        self.assertIsNone(self.decide(raw, category="INVERTIDO"))
+
+    def test_generic_absence_veto_blocks_other_category_auto_ok(self):
+        for category in ("DESLOCADO", "EMBORCADO", "INVERTIDO", "MUITOADESIVO"):
+            with self.subTest(category=category):
+                absent = good_probe()
+                absent["status"] = "SUSPECT_ABSENCE"
+                absent["scales"][0]["suspected_absence"] = True
+                self.assertIsNone(self.decide(
+                    case(category=category), probe=absent, category=category,
+                ))
+                # A ausência pode reforçar uma rejeição NG já confirmada
+                # pela memória, mas nunca criar OK.
+                ng = self.decide(case(label="NG", category=category),
+                                 probe=absent, category=category)
+                self.assertIsNotNone(ng)
+                self.assertEqual(memory_first_side_decision(ng), "NG")
+
+    def test_cross_category_probe_marker_is_required_before_xp(self):
+        final = self.decide(case(category="DESLOCADO"), category="DESLOCADO")
+        final["detail"]["side_memory_first"]["physical_probe_scope"] = "OTHER"
+        self.assertIsNone(memory_first_side_decision(final))
+        self.assertFalse(production_decision_policy(final)["auto_allowed"])
 
     def test_small_aoi_crop_mismatch_still_requires_two_scale_veto(self):
         self.assertEqual(memory_first_side_decision(
