@@ -82,6 +82,78 @@ class DurableMemoryTests(unittest.TestCase):
         self.assertEqual(router.lookup(EmptyKNN(), *images("NG"), info())["label"], "NG")
         self.assertEqual(router.lookup(EmptyKNN(), *images("OK"), info())["label"], "OK")
 
+    def test_retire_deleted_ng_requires_explicit_apply_and_backup(self):
+        obsolete = "public/ng_archive/2026-10-21_1443_FALTANDO.png"
+        self.store.add([entry("NG", path=obsolete)])
+        preview = self.store.retire_deleted_ng_archive_source(obsolete)
+        self.assertEqual(preview["archive_sources_retired"], 1)
+        self.assertEqual(preview["records_deleted_without_other_sources"], 1)
+        self.assertTrue(preview["dry_run"])
+        self.assertEqual(len(self.store.records()), 1)
+        saved = self.store.retire_deleted_ng_archive_source(
+            obsolete, apply=True,
+        )
+        self.assertEqual(saved["archive_sources_retired"], 1)
+        self.assertTrue(saved["changed"])
+        self.assertFalse(saved["dry_run"])
+        self.assertEqual(self.store.records(), [])
+        self.assertTrue(self.store.path.with_suffix(".json.bak").exists())
+        self.assertEqual(
+            PersistentArchiveKNN(self.root).records(), []
+        )
+        again = self.store.retire_deleted_ng_archive_source(
+            obsolete, apply=True,
+        )
+        self.assertFalse(again["changed"])
+        self.assertEqual(again["archive_sources_retired"], 0)
+
+    def test_retire_ng_source_preserves_other_png_and_human_confirmation(self):
+        from src.core.archive_persistent_memory import make_operator_record
+        bad = "public/ng_archive/2026-10-21_1443_FALTANDO.png"
+        another = "public/ng_archive/another_real_ng.png"
+        self.store.add([entry("NG", path=bad), entry("NG", path=another)])
+        reference, test = images("NG")
+        signature = build_anomaly_signature(reference, test, {}, info())
+        human = make_operator_record(
+            label="NG", source="button", event_id="historical-human",
+            category="FALTANDO", lighting="SIDE", reference=reference,
+            test=test, anomaly_signature=signature, aoi_info=info(),
+        )
+        self.store.add([human])
+        result = self.store.retire_deleted_ng_archive_source(bad, apply=True)
+        self.assertEqual(result["archive_sources_retired"], 1)
+        self.assertEqual(result["records_deleted_without_other_sources"], 0)
+        remaining = self.store.records()
+        self.assertEqual(len(remaining), 1)
+        sources = remaining[0]["sources"]
+        self.assertEqual({s["source_path"] for s in sources}, {
+            another, human["sources"][0]["source_path"],
+        })
+        self.assertEqual(
+            remaining[0]["id"], human["id"]
+        )
+
+    def test_retire_ng_blocks_png_still_present_and_bad_paths(self):
+        bad = "public/ng_archive/2026-10-21_1443_FALTANDO.png"
+        original = self.root / bad
+        original.parent.mkdir(parents=True, exist_ok=True)
+        original.write_bytes(b"still-present")
+        self.store.add([entry("NG", path=bad)])
+        with self.assertRaisesRegex(ValueError, "Exclua primeiro"):
+            self.store.retire_deleted_ng_archive_source(bad, apply=True)
+        original.unlink()
+        for bad_path in (
+            "public/ok_archive/example.png",
+            "public/ng_archive/../ok_archive/example.png",
+            "../public/ng_archive/example.png",
+            "C:\\\\temp\\\\file.png",
+            "public/ng_archive/one.json",
+        ):
+            with self.subTest(path=bad_path):
+                with self.assertRaises(ValueError):
+                    self.store.retire_deleted_ng_archive_source(bad_path)
+        self.assertEqual(len(self.store.records()), 1)
+
     def test_duplicate_import_is_idempotent_and_does_not_forget(self):
         ok = entry("OK")
         self.store.add([ok])
