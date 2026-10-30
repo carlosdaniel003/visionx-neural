@@ -558,3 +558,53 @@ Referências OK aproximadas na captura:
 (A `0.89339169` / B `0.84526245`).
 São aproximações, **não prova de par RGB exato**, e seus
 PNG locais não puderam ser inspecionados pelo GitHub.
+
+## 30/10/2026 — Retificação humana cronológica de par RGB exato (Modo Teste)
+
+**Fluxo solicitado:** ODIN classificou NG; no Modo Teste, o operador
+seleciona manualmente **OK** na captura atual. Quando o mesmo par
+RGB gabarito/teste, a mesma categoria canônica e a mesma iluminação
+forem reconhecidos novamente, o julgamento humano **mais recente**
+prevalece, mesmo que o snapshot ainda contenha um NG humano antigo,
+um NG do `ng_archive` ou outro rótulo automático. Uma nova decisão
+humana NG poderá, posteriormente, voltar a prevalecer.
+
+- `immediate_confirmed_memory` grava `confirmed_at_ns` UMA VEZ por
+  julgamento humano real e replica esse instante em SIDE/TOP/MID
+  efetivamente capturadas. `event_id` continua apenas como
+  proveniência: a memória **não** usa o ID variável da AOI como
+  identidade da peça.
+- `PersistentArchiveKNN.latest_confirmed_human_for_pair` encontra
+  exclusivamente a mesma identidade de **dois hashes RGB**, categoria
+  e iluminação, e retorna o último `OPERATOR_CONFIRMED` válido.
+  `lookup_identity` aplica a mesma regra. Registros anteriores
+  continuam preservados para auditoria; não são apagados, nem o
+  arquivo NG é recategorizado automaticamente.
+- `VerifiedKNNMemory` consulta o último humano **antes** da antiga
+  arbitragem conflituosa entre arquivo e legado. A resposta
+  `KNOWN_KNN` exibe `recognition_latest_operator_override`,
+  `recognition_latest_operator_record_id`,
+  `recognition_latest_operator_confirmed_at_ns`,
+  `recognition_latest_operator_event_id` e
+  `recognition_superseded_labels`. Uma inferência automática **não**
+  cria esses campos nem altera o último julgamento humano.
+- A Produção binária aceita `KNOWN_KNN` como rota de luz
+  verificada (o código antigo listava somente `MEMORY_EXACT`),
+  exigindo três iluminações completas e prova de rótulo por luz
+  no diagnóstico multilight, além das proteções de pausa,
+  geração e transmissão XP preexistentes.
+- Snapshots **legados sem `confirmed_at_ns`** continuam válidos;
+  registros contraditórios somente legados seguem em conflito,
+  até receberem uma nova correção humana datada.
+- Não altera checkpoint ou treinamento da CNN nem transforma
+  coincidência **aproximada** em par exato. Repetições que mudam
+  pixels, geometria do recorte ou iluminação podem continuar
+  classificadas como caso novo. Identificação segura de quase
+  duplicatas exige um contrato visual separado e testes com
+  OK/NG fisicamente semelhantes, não simples prioridade temporal.
+
+Regressões: `tests/test_live_session_learning.py` e
+`tests/test_production_continuous_auto.py` cobrem NG → OK → NG,
+outra ocorrência com novo event_id, persistência após reinício,
+override sobre fonte `ng_archive`, isolamento entre pares/categorias/
+luzes e operação em Produção apenas com trinca comprovada.
