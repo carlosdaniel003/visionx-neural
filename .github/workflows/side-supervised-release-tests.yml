@@ -8,6 +8,7 @@ on:
       - "src/ui/production_confidence_gate.py"
       - "src/ui/production_autonomy_controller.py"
       - "src/services/decision_persistence.py"
+      - "src/ui/decision_verdict_feedback.py"
       - "tests/test_side_memory_first.py"
       - "tests/test_side_supervised_release.py"
       - "tests/test_production_autonomy_controller.py"
@@ -20,6 +21,7 @@ on:
       - "src/ui/production_confidence_gate.py"
       - "src/ui/production_autonomy_controller.py"
       - "src/services/decision_persistence.py"
+      - "src/ui/decision_verdict_feedback.py"
       - "tests/test_side_memory_first.py"
       - "tests/test_side_supervised_release.py"
       - ".github/workflows/side-supervised-release-tests.yml"
@@ -42,7 +44,7 @@ jobs:
           python -m pip install numpy opencv-python-headless scipy scikit-image PyQt6 pillow mss pytesseract
       - name: Syntax
         run: |
-          python -m py_compile src/core/side_memory_first.py src/ui/production_confidence_gate.py src/ui/production_autonomy_controller.py src/services/decision_persistence.py tests/test_side_supervised_release.py
+          python -m py_compile src/core/side_memory_first.py src/ui/production_confidence_gate.py src/ui/production_autonomy_controller.py src/services/decision_persistence.py src/ui/decision_verdict_feedback.py tests/test_side_supervised_release.py
       - name: SIDE visual and supervised XP regressions
         run: |
           python -m unittest tests.test_side_memory_first tests.test_side_supervised_release tests.test_production_autonomy_controller tests.test_production_continuous_auto -v
