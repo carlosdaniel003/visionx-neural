@@ -105,6 +105,9 @@ class ControlPanel(QWidget):
         self.network_receiver.image_received.connect(self.handle_network_image)
         self.network_receiver.command_received.connect(self.handle_physical_keyboard)
         self.network_receiver.xp_peer_discovered.connect(self.handle_xp_peer_discovered)
+        self.network_receiver.side_preflight_requested.connect(
+            self.handle_side_preflight_requested
+        )
         self.network_receiver.log_updated.connect(self.update_network_status)
         
         self.network_receiver.start()
@@ -147,6 +150,27 @@ class ControlPanel(QWidget):
         self._send_xp_shadow_control(
             uses_fast_xp_capture(self.combo_mode.currentText())
         )
+
+    def handle_side_preflight_requested(self, ip: str, request_id: int) -> None:
+        """Solicita SIDE antes de aceitar um frame principal do XP.
+
+        A imagem que originou o pedido nao sera analisada. O receptor
+        exige espera de estabilizacao e novos frames apos este comando.
+        """
+        receiver = self.network_receiver
+        # Nunca enviar um comando obsoleto de uma inspecao ja encerrada.
+        if not receiver.is_side_preflight_pending(request_id):
+            return
+        target_ip = str(ip or "").strip()
+        if not target_ip:
+            receiver.complete_side_preflight(request_id, False)
+            return
+        self.last_xp_ip = target_ip
+        sent = bool(self.send_command_to_xp("DOWN"))
+        accepted = receiver.complete_side_preflight(request_id, sent)
+        if accepted and sent:
+            # Somente indicador e aviso: o comando ja foi enviado.
+            self.change_lighting("SIDE", "side_preflight")
 
     def _report_xp_capture_rate(self, ip: str, fast_active: bool) -> None:
         """Relata apenas mudanças do ACK de captura rápida por estação XP."""
