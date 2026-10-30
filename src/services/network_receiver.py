@@ -103,6 +103,7 @@ class NetworkReceiver(QThread):
         self._side_preflight_requested_at = 0.0
         self._side_preflight_not_before = 0.0
         self._side_preflight_retry_at = 0.0
+        self._side_preflight_ip = ""
         self.last_side_preflight = {}
 
         # Frames auxiliares SIDE/TOP/MID da mesma peça podem atravessar a trava
@@ -214,6 +215,7 @@ class NetworkReceiver(QThread):
                 self._side_preflight_requested_at = 0.0
                 self._side_preflight_not_before = 0.0
                 self._side_preflight_retry_at = 0.0
+                self._side_preflight_ip = ""
                 self.last_side_preflight = {}
             if self._reserved_signature is not None:
                 self._last_rejected_signature = self._reserved_signature.copy()
@@ -246,12 +248,22 @@ class NetworkReceiver(QThread):
         with self._state_lock:
             now = time.perf_counter()
             phase = self._side_preflight_phase
+            if phase in {"SETTLING", "READY"} and (
+                self._side_preflight_ip != str(ip)
+            ):
+                # Outro XP nao herda a sincronizacao feita para o primeiro.
+                self._side_preflight_phase = "PENDING"
+                self._side_preflight_retry_at = 0.0
+                self._clear_candidate_locked()
+                phase = "PENDING"
             if phase == "READY":
                 return True
             if phase == "SETTLING":
                 if received_at < self._side_preflight_not_before:
                     return False
                 self._side_preflight_phase = "READY"
+                if isinstance(self.last_side_preflight, dict):
+                    self.last_side_preflight["status"] = "READY_FOR_STABLE_FRAMES"
                 self._clear_candidate_locked()
                 return True
             if phase == "WAITING":
@@ -270,6 +282,7 @@ class NetworkReceiver(QThread):
             self._side_preflight_serial += 1
             self._side_preflight_phase = "WAITING"
             self._side_preflight_requested_at = now
+            self._side_preflight_ip = str(ip)
             self._clear_candidate_locked()
             request = self._side_preflight_serial
 
