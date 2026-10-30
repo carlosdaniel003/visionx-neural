@@ -947,14 +947,6 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
                 full_gab, full_test, info,
             )
             detail["confirmed_visual_recall"] = human_recall
-            knn_c = detail.get("knn_c")
-            if isinstance(knn_c, dict) and knn_c.get("bank_status") == "READY":
-                # Não eleva artificialmente A/B. Acrescenta prova de
-                # associação do mesmo padrão JSON humano/arquivo em outra
-                # pista KNN, pesquisável mesmo que os PNGs tenham outra luz.
-                knn_c["aligned_archive"] = index.recall_knn_c_archive_alignment(
-                    full_gab, full_test, info, human_recall,
-                )
         detail.update({
             "specialist_candidate": (
                 None
