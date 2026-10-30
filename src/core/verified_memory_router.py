@@ -807,7 +807,7 @@ def _recognized_result(match: dict, mode: str) -> dict:
             f"Gabarito/teste RGB e categoria idênticos; origem {source_light}, "
                f"evento {mode}. Luz do XP divergente, sem usar similaridade."
                if cross_light else
-               "Gabarito/teste, categoria e iluminação idênticos.")
+               "Gabarito/teste, categoria e iluminação idênticos."
         ),
         "production_review_required": False,
         "active_engines": ["knn_expert.py"],
