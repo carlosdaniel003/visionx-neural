@@ -279,6 +279,15 @@ class NetworkReceiver(QThread):
         self.side_preflight_requested.emit(str(ip), request)
         return False
 
+    def is_side_preflight_pending(self, request_id: int) -> bool:
+        """Evita enviar PRESS_DOWN de um request Qt antigo."""
+        with self._state_lock:
+            return bool(
+                self._side_preflight_phase == "WAITING"
+                and self._side_preflight_serial == request_id
+                and self._image_gate.is_open()
+            )
+
     def complete_side_preflight(self, request_id: int, sent: bool) -> bool:
         """Aceita somente a confirmacao do pedido do ciclo corrente.
 
