@@ -80,7 +80,7 @@ def operational_state(
             ),
             tone="busy",
             capture_enabled=False,
-            discard_enabled=False,
+            discard_enabled=True,
             approve_enabled=False,
             reject_enabled=False,
             lighting_enabled=False,

@@ -118,6 +118,102 @@ def _knn_c_evidence_lines(knn: dict | None) -> list[str]:
     return lines
 
 
+def _best_labeled_neighbor(knn: dict, algo: str, label: str) -> dict | None:
+    rows = knn.get(f"neighbors_{algo}")
+    if not isinstance(rows, list):
+        return None
+    matches = [
+        row for row in rows
+        if isinstance(row, dict) and row.get("label") == label
+        and isinstance(row.get("similarity"), (int, float))
+        and isinstance(row.get("path"), str)
+    ]
+    return max(matches, key=lambda row: row["similarity"]) if matches else None
+
+
+def format_memory_decision_provenance(
+    analyses: dict | None, final_analysis: dict | None,
+    *, xp_policy: dict | None = None,
+) -> list[str]:
+    """Indica QUAL fonte foi recuperada e se ela determinou o julgamento.
+
+    Candidatos de arquivo e assinaturas humanas são evidências auditáveis,
+    mas não o motivo de uma rejeição preventiva pela política da Produção.
+    """
+    cases = analyses if isinstance(analyses, dict) else {}
+    final = final_analysis if isinstance(final_analysis, dict) else {}
+    detail = final.get("detail")
+    detail = detail if isinstance(detail, dict) else {}
+    policy = xp_policy if isinstance(xp_policy, dict) else {}
+    route = str(detail.get("recognition_route", "") or "")
+    reason = str(policy.get("reason", "") or "")
+    lines = ["", "PROVENIÊNCIA: POR QUE O ODIN DECIDIU ASSIM?", "-" * 72]
+    if route == "KNOWN_KNN" and detail.get("recognition_memory_verified") is True:
+        lines.extend([
+            "ORIGEM DECISIVA: PAR RGB EXATO verificado na memória.",
+            "Rótulo recuperado: " + str(detail.get("recognition_known_label", "-")),
+            "Arquivo/registro: " + str(
+                detail.get("recognition_memory_source_png")
+                or detail.get("recognition_memory_path") or "registro KNN verificado"
+            ),
+        ])
+    else:
+        lines.append(
+            "ORIGEM DECISIVA: sem par RGB exato; nenhuma foto NG abaixo "
+            "foi usada como prova de correspondência exata."
+        )
+    if reason == "production_uncertain_auto_ng_quarantine_v1":
+        lines.extend([
+            "CAUSA DO 1/NG: política de rejeição preventiva da Produção "
+            "após inspeção inconclusiva completa.",
+            "Não foi porque o ODIN encontrou um arquivo NG idêntico.",
+        ])
+    elif reason:
+        lines.append("Regra de autorização XP: " + reason)
+    else:
+        lines.append(
+            "Regra de autorização XP não registrada; ver resultado da CNN/fusão."
+        )
+    if not cases:
+        cases = {"INSPEÇÃO": final}
+    for light in ("SIDE", "TOP", "MID", "INSPEÇÃO"):
+        analysis = cases.get(light)
+        if not isinstance(analysis, dict):
+            continue
+        local = analysis.get("detail")
+        local = local if isinstance(local, dict) else {}
+        knn = local.get("knn_c")
+        knn = knn if isinstance(knn, dict) else {}
+        lines.append(f"{light} — referências visuais do archive (diagnóstico):")
+        for algo in ("A", "B"):
+            for label in ("OK", "NG"):
+                row = _best_labeled_neighbor(knn, algo, label)
+                if row:
+                    lines.append(
+                        f"  KNN {algo} {label}: {row['path']} "
+                        f"(similaridade {float(row['similarity']):.6f})"
+                    )
+                else:
+                    lines.append(f"  KNN {algo} {label}: não encontrado no top-5")
+        human = local.get("confirmed_visual_recall")
+        if isinstance(human, dict) and human.get("schema") == "visionx.human_visual_recall.v1":
+            lines.append(
+                "  Memória humana visual: "
+                + str(human.get("status", "UNAVAILABLE"))
+                + " (aproximada, não é decisão XP)"
+            )
+            for label in ("ok", "ng"):
+                source = human.get(f"best_{label}_source")
+                if isinstance(source, dict):
+                    lines.append(
+                        f"    {label.upper()}: registro JSON "
+                        f"{source.get('record_id', '-')}, "
+                        f"luz {source.get('lighting_mode', '-')}, "
+                        f"similaridade {human.get(f'best_{label}_similarity', '-')}"
+                    )
+    return lines
+
+
 def format_network_debug_report(record: dict | None) -> str:
     data = _json_safe(record if isinstance(record, dict) else {})
     source = str(data.get("source", "") or "").strip().lower()
@@ -295,6 +391,20 @@ def format_network_debug_report(record: dict | None) -> str:
 
     if isinstance(decision, dict) and decision:
         lines.extend(_knn_c_evidence_lines(decision.get("knn_c")))
+        # Inspeções de uma só luz também devem distinguir a fonte do NG.
+        if not decision.get("multilight_final"):
+            pseudo_detail = {
+                "knn_c": decision.get("knn_c", {}),
+                "confirmed_visual_recall": decision.get("confirmed_visual_recall", {}),
+            }
+            lines.extend(format_memory_decision_provenance(
+                {"INSPEÇÃO": {"detail": pseudo_detail}},
+                {"detail": {
+                    "recognition_route": (decision.get("recognition") or {}).get("route"),
+                    "recognition_memory_verified": (decision.get("recognition") or {}).get("verified"),
+                    "recognition_known_label": (decision.get("recognition") or {}).get("known_label"),
+                }},
+            ))
         marker = decision.get("test_mode_side_knn_disagreement")
         if isinstance(marker, dict) and marker:
             lines.extend([
@@ -654,6 +764,16 @@ def format_multilight_debug_report(panel) -> str:
                 "Comparação visual histórica não atesta presença física "
                 "no componente atual."
             )
+
+    if analyses and final_analysis:
+        active_policy = None
+        if getattr(getattr(panel, "combo_mode", None), "currentText",
+                   lambda: "")() == "Modo Produção":
+            from src.ui.production_confidence_gate import production_decision_policy
+            active_policy = production_decision_policy(final_analysis)
+        lines.extend(format_memory_decision_provenance(
+            analyses, final_analysis, xp_policy=active_policy,
+        ))
 
     # A revisão no trace CNN é um dado de inferência, NÃO necessariamente
     # um pedido humano no controlador de Produção. Ler o gate efetivo

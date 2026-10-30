@@ -758,9 +758,15 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
         return original_handle_network_image(self, *args, **kwargs)
 
     def wrapped_skip_image(self, *args, **kwargs):
-        if getattr(self, "production_review_pending", False):
+        # A camada externa de ciclo autoriza explicitamente o descarte XP
+        # somente depois de invalidar todos os callbacks automáticos.
+        authorized = bool(getattr(self, "_production_discard_authorized", False))
+        if getattr(self, "production_review_pending", False) and not authorized:
             _show_pending_message(self)
             return None
+        if authorized:
+            _clear_pending(self)
+            self.production_review_policy = None
         return original_skip_image(self, *args, **kwargs)
 
     def wrapped_save_label(self, user_decision: str, source="button"):
@@ -867,7 +873,15 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
             return
 
         self._set_enabled(panel.btn_start, False)
-        self._set_enabled(panel.btn_skip, False)
+        self._set_enabled(
+            panel.btn_skip,
+            bool(getattr(panel, "capture_cycle_active", False))
+            and getattr(panel, "capture_cycle_source", None) == "network"
+            and getattr(
+                getattr(panel, "production_autonomy_controller", None),
+                "state", "",
+            ) != "emitting_auto_decision",
+        )
         self._set_enabled(panel.btn_save_ok, True)
         self._set_enabled(panel.btn_save_ng, True)
 

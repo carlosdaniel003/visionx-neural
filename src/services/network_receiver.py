@@ -62,6 +62,8 @@ class NetworkReceiver(QThread):
         # Última anomalia realmente validada pelo painel.
         self._last_accepted_signature: np.ndarray | None = None
         self._require_image_change = False
+        # Exceção manual de uso único para repetir o MESMO frame XP.
+        self._allow_same_frame_once = False
         self._duplicate_frames = 0
 
         # Tela que chegou ao painel, mas foi classificada como central/transição.
@@ -210,6 +212,33 @@ class NetworkReceiver(QThread):
 
         self._image_gate.release()
         self._last_ignored_log_at = 0.0
+
+    def _should_ignore_accepted_repeat(self, signature: np.ndarray) -> bool:
+        """Regra da thread XP: protege contra repetição salvo armamento manual."""
+        with self._state_lock:
+            return bool(
+                self._require_image_change
+                and not self._allow_same_frame_once
+                and self._same_signature(signature, self._last_accepted_signature)
+            )
+
+    def arm_same_frame_reinspection_once(self) -> bool:
+        """Permite uma única nova reserva do frame aceito, após descarte manual.
+
+        Não desativa a validação AOI, estabilidade de dois frames ou gate.
+        Não deve ser usado após julgamento 0/1 transmitido.
+        """
+        with self._state_lock:
+            if (self._last_accepted_signature is None
+                    or self._image_gate.is_open()
+                    or self._reserved_signature is not None):
+                return False
+            self._allow_same_frame_once = True
+            return True
+
+    def cancel_same_frame_reinspection(self) -> None:
+        with self._state_lock:
+            self._allow_same_frame_once = False
 
     def confirm_reserved_image(self) -> bool:
         """Confirma que a reserva atual contém epicentro válido."""
@@ -372,6 +401,8 @@ class NetworkReceiver(QThread):
     def _reserve_candidate(self, signature: np.ndarray) -> None:
         with self._state_lock:
             self._reserved_signature = signature.copy()
+            # Exceção consumida na PRIMEIRA reserva, nunca perpetuada.
+            self._allow_same_frame_once = False
             self._last_rejected_reason = ""
             self._clear_candidate_locked()
 
@@ -579,10 +610,7 @@ class NetworkReceiver(QThread):
                         continue
 
                     signature = self._frame_signature(img)
-                    if self._require_image_change and self._same_signature(
-                        signature,
-                        self._last_accepted_signature,
-                    ):
+                    if self._should_ignore_accepted_repeat(signature):
                         self._log_duplicate_frame()
                         continue
 

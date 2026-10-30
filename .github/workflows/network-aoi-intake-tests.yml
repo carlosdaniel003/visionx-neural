@@ -17,6 +17,18 @@ on:
       - "tests/test_image_cycle_gate.py"
       - "tests/test_qt_button_signal_adapter.py"
       - ".github/workflows/network-aoi-intake-tests.yml"
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/services/network_receiver.py"
+      - "src/ui/network_image_cycle_gate.py"
+      - "src/ui/production_confidence_gate.py"
+      - "src/ui/operational_controls_model.py"
+      - "src/ui/operational_controls.py"
+      - "src/ui/control_panel_ui.py"
+      - "tests/test_image_cycle_gate.py"
+      - "tests/test_network_aoi_intake_filter.py"
+      - ".github/workflows/network-aoi-intake-tests.yml"
   workflow_dispatch:
 
 jobs:

@@ -141,6 +141,38 @@ class NetworkLatestCandidateTests(unittest.TestCase):
             )
         )
 
+    def test_same_frame_reinspection_is_explicit_one_shot(self):
+        sig = self.receiver._frame_signature(self.first)
+        self.receiver._image_gate.lock()
+        self.receiver._reserved_signature = sig.copy()
+        self.assertTrue(self.receiver.confirm_reserved_image())
+        self.receiver.release_image_gate()
+
+        # Fluxo normal deve impedir repetição indefinida.
+        self.assertTrue(self.receiver._should_ignore_accepted_repeat(sig))
+        self.receiver.lock_image_gate()
+        self.assertTrue(self.receiver.arm_same_frame_reinspection_once())
+        self.receiver.release_image_gate()
+        self.assertFalse(self.receiver._should_ignore_accepted_repeat(sig))
+
+        # A primeira reserva, e não um timer arbitrário, consome a exceção.
+        self.receiver._reserve_candidate(sig)
+        self.assertTrue(self.receiver._should_ignore_accepted_repeat(sig))
+        self.assertTrue(self.receiver.confirm_reserved_image())
+        self.receiver.release_image_gate()
+        self.assertTrue(self.receiver._should_ignore_accepted_repeat(sig))
+
+    def test_one_shot_reinspection_cannot_arm_outside_active_capture(self):
+        sig = self.receiver._frame_signature(self.first)
+        self.assertFalse(self.receiver.arm_same_frame_reinspection_once())
+        self.receiver._last_accepted_signature = sig.copy()
+        self.assertFalse(self.receiver.arm_same_frame_reinspection_once())
+        self.receiver.lock_image_gate()
+        self.assertTrue(self.receiver.arm_same_frame_reinspection_once())
+        self.receiver.cancel_same_frame_reinspection()
+        self.receiver.release_image_gate()
+        self.assertTrue(self.receiver._should_ignore_accepted_repeat(sig))
+
     def test_rejected_central_is_ignored_until_screen_changes(self):
         signature = self.receiver._frame_signature(self.first)
         self.receiver._reserved_signature = signature.copy()
