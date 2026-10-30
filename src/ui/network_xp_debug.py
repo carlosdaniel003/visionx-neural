@@ -157,7 +157,10 @@ def format_memory_decision_provenance(
             "SEM PAR RGB EXATO.",
             "Rótulo do julgamento anteriormente confirmado: " + recalled_side,
             "Arquivo OK/NG consultado: " + str(recalled["archive_source"]),
-            "SHA de pixels da fonte: " + str(recalled["archive_pixel_sha256"]),
+            "Caminho de reconhecimento: " + str(recalled.get("knn_agreement_mode", "-")),
+            "SHA de pixels da fonte (A/B): " + str(recalled.get("archive_pixel_sha256") or "-"),
+            "SHA do arquivo histórico (JSON archive): "
+            + str(recalled.get("archive_file_sha256") or "-"),
             "Registro humano JSON: " + str(recalled["human_source"]["record_id"]),
             "Similaridade humana: " + str(recalled["human_similarity"]),
             "KNN A: " + str(recalled["knn_a_similarity"])
@@ -215,6 +218,22 @@ def format_memory_decision_provenance(
                     )
                 else:
                     lines.append(f"  KNN {algo} {label}: não encontrado no top-5")
+        aligned = knn.get("aligned_archive")
+        if isinstance(aligned, dict) and aligned.get("schema") == "visionx.knn_c_archive_alignment.v1":
+            archive_ref = aligned.get("archive_source")
+            archive_ref = archive_ref if isinstance(archive_ref, dict) else {}
+            lines.extend([
+                "  KNN C alinhada com JSON archive: " + str(aligned.get("status", "-"))
+                + " | " + str(aligned.get("reason", "-")),
+                "    arquivo: " + str(archive_ref.get("path", "-"))
+                + " | rótulo: " + str(archive_ref.get("label", "-")),
+                "    atual x archive: " + str(aligned.get("archive_similarity", "-"))
+                + " | humano x archive: " + str(aligned.get("human_archive_similarity", "-"))
+                + " | contraprova archive: " +
+                str(aligned.get("best_opposite_archive_similarity", "-")),
+                "    julgamento humano: " + str(aligned.get("human_record_id", "-"))
+                + " | comparação na mesma assinatura, NÃO par RGB exato",
+            ])
         human = local.get("confirmed_visual_recall")
         if isinstance(human, dict) and human.get("schema") == "visionx.human_visual_recall.v1":
             lines.append(

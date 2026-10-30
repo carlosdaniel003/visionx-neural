@@ -1,6 +1,6 @@
 """Roteamento SIDE: memória humana qualificada precede a CNN por similaridade.
 
-95% isolados NÃO equivalem a uma identidade física: exige >=96% em A e B
+95% isolados NÃO equivalem a uma identidade física: exige >=97% em A e B
 para o mesmo PNG, confirmação persistida >=97,5% com margem >=4pp e
 ausência de contraevidência NG significativa.
 
@@ -22,9 +22,9 @@ from src.core.strict_category_memory import canonical_memory_category
 from src.core.physical_missing_veto import physical_absence_probe
 from src.utils.text_normalizer import CATEGORIES
 
-RULE = "side_operator_memory_first_96pct_v1"
-MEMORY_SCHEMA = "visionx.side_memory_first.v1"
-MIN_KNN = 0.96
+RULE = "side_operator_memory_first_97pct_v2"
+MEMORY_SCHEMA = "visionx.side_memory_first.v2"
+MIN_KNN = 0.97
 MIN_HUMAN = 0.975
 MIN_MARGIN = 0.04
 KNOWN_MEMORY_CATEGORIES = frozenset(
@@ -109,54 +109,103 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
         or len(human_source["record_id"]) != 64
     ):
         return None
-    # A/B devem escolher o MESMO objeto arquivado, sem misturar peças.
+    # Estratégia primária: os dois descritores originais concordam num PNG.
     witnesses = []
+    rows_by_method = []
     for key in ("neighbors_A", "neighbors_B"):
         rows = knn.get(key)
-        if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        if not isinstance(rows, list) or not rows:
             return None
-        top = rows[0]
-        best = _number(top.get("similarity"))
-        if top.get("label") != label or best is None or best < MIN_KNN:
-            return None
-        path = top.get("path")
-        digest = top.get("source_pixel_sha256")
-        if (
-            not isinstance(path, str) or not isinstance(digest, str)
-            or len(digest) != 64
-            or not path.startswith("public/" + ("ok_archive" if label == "OK" else "ng_archive") + "/")
-            or ".." in PurePosixPath(path).parts
+        if any(
+            not isinstance(row, dict)
+            or row.get("label") not in {"OK", "NG"}
+            or _number(row.get("similarity")) is None
+            for row in rows[:5]
         ):
             return None
-        for row in rows:
-            if not isinstance(row, dict) or row.get("label") not in {"OK", "NG"}:
-                return None
-            score = _number(row.get("similarity"))
-            if score is None:
-                return None
-            if row["label"] == other and best - score < MIN_MARGIN:
-                return None
-        witnesses.append((best, path, digest))
-    if witnesses[0][1:] != witnesses[1][1:]:
-        return None
-    if knn.get("vote_A") != label or knn.get("vote_B") != label:
+        rows_by_method.append(rows)
+        top = rows[0]
+        score = _number(top.get("similarity"))
+        path = top.get("path")
+        digest = top.get("source_pixel_sha256")
+        witnesses.append((top.get("label"), score, path, digest))
+    prefix = "public/" + ("ok_archive" if label == "OK" else "ng_archive") + "/"
+    a, b = witnesses
+    original_agrees = bool(
+        a[0] == b[0] == label
+        and a[1] >= MIN_KNN and b[1] >= MIN_KNN
+        and a[2:] == b[2:]
+        and isinstance(a[2], str) and a[2].startswith(prefix)
+        and ".." not in PurePosixPath(a[2]).parts
+        and isinstance(a[3], str) and len(a[3]) == 64
+        and knn.get("vote_A") == knn.get("vote_B") == label
+        and all(
+            a_score - _number(row["similarity"]) >= MIN_MARGIN
+            for a_score, rows in ((a[1], rows_by_method[0]), (b[1], rows_by_method[1]))
+            for row in rows if row["label"] == other
+        )
+    )
+
+    # Uma SEGUNDA rota compara JSON humano e JSON archive na MESMA métrica:
+    # os scores brutos de foco/geometria A/B permanecem inalterados.
+    # Esta rota só existe com fonte PNG original + fonte humana verificadas
+    # e é vetada se A/B detectarem adversário forte (>=90%).
+    aligned = knn.get("aligned_archive")
+    source = aligned.get("archive_source") if isinstance(aligned, dict) else None
+    aligned_ok = bool(
+        not original_agrees
+        and isinstance(aligned, dict)
+        and aligned.get("schema") == "visionx.knn_c_archive_alignment.v1"
+        and aligned.get("source") == "VERIFIED_ARCHIVE_JSON"
+        and aligned.get("diagnostic_only") is True
+        and aligned.get("auto_decision_authorized") is False
+        and aligned.get("status") == "RECONCILED_" + label
+        and aligned.get("label") == label
+        and aligned.get("category") == scope
+        and aligned.get("human_record_id") == human_source["record_id"]
+        and _number(aligned.get("archive_similarity")) is not None
+        and _number(aligned.get("archive_similarity")) >= MIN_KNN
+        and _number(aligned.get("human_archive_similarity")) is not None
+        and _number(aligned.get("human_archive_similarity")) >= MIN_KNN
+        and _number(aligned.get("best_opposite_archive_similarity")) is not None
+        and _number(aligned.get("archive_similarity"))
+            - _number(aligned.get("best_opposite_archive_similarity")) >= MIN_MARGIN
+        and isinstance(source, dict)
+        and source.get("label") == label
+        and isinstance(source.get("path"), str)
+        and source["path"].startswith(prefix)
+        and ".." not in PurePosixPath(source["path"]).parts
+        and isinstance(source.get("source_sha256"), str)
+        and len(source["source_sha256"]) == 64
+        and all(
+            _number(row["similarity"]) < 0.90
+            for rows in rows_by_method for row in rows[:5]
+            if row["label"] == other
+        )
+    )
+    if not original_agrees and not aligned_ok:
         return None
 
-    return {
+    mode = "KNN_AB_SAME_PNG" if original_agrees else "ALIGNED_HUMAN_ARCHIVE_JSON"
+    evidence = {
         "schema": MEMORY_SCHEMA, "rule": RULE, "label": label,
         "human_source": deepcopy(human_source),
         "human_similarity": human_score,
         "opposite_human_similarity": opposed,
-        "knn_a_similarity": witnesses[0][0],
-        "knn_b_similarity": witnesses[1][0],
-        "archive_source": witnesses[0][1],
-        "archive_pixel_sha256": witnesses[0][2],
+        "knn_a_similarity": a[1],
+        "knn_b_similarity": b[1],
+        "knn_agreement_mode": mode,
+        "archive_source": a[2] if original_agrees else source["path"],
+        "archive_pixel_sha256": a[3] if original_agrees else None,
+        "archive_file_sha256": None if original_agrees else source["source_sha256"],
+        "aligned_archive": deepcopy(aligned) if aligned_ok else None,
         "min_similarity": MIN_KNN,
         "min_human_similarity": MIN_HUMAN,
         "min_opposite_margin": MIN_MARGIN,
         "approximate": True,
         "exact_pair_claimed": False,
     }
+    return evidence
 
 
 def _verified_probe(probe: dict, label: str) -> bool:
@@ -239,7 +288,8 @@ def build_side_memory_first(
     final["production_review_required"] = False
     final["reason"] = (
         "SIDE • memória humana previamente julgada " + label
-        + "; KNN A/B concordam >=96% com a mesma fonte, "
+        + "; KNN A/B concordam >=97% com a mesma fonte, "
+        "ou JSON de arquivo e julgamento humano na mesma métrica, "
         "margem >4pp; sonda de ausência física aplicada como veto, "
         "não como validação de toda categoria; TOP/MID dispensadas. "
         "Similaridade não é probabilidade."

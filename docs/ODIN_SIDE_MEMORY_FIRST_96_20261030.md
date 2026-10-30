@@ -88,3 +88,62 @@ desvio geométrico real, a seção PROVENIÊNCIA e a janela de pausa.
 O novo roteador tem risco de aprovar NG como OK se houver parecidos
 não distinguíveis pelos descritores; meta de 97% de taxa de autojulgamento
 não equivale a precisão industrial medida por ground truth.
+
+
+## 30/10/2026 — KNN C com alinhamento de memória e novo limiar 97%
+
+O limiar de autorização dos descritores originais **A e B** foi elevado
+de `0.96` para **`0.97`** (`side_operator_memory_first_97pct_v2`).
+O score da memória humana continua com mínimo `0.975`, margem >=`0.04`.
+Elevar o limiar isoladamente NÃO resolve a captura de 08:47, pois a KNN C
+encontrou A/B na faixa 0.80–0.84, enquanto a memória humana encontrou
+OK 0.9774185 / NG 0.93243586.
+
+### Correção da divergência de representação, sem manipular porcentagens
+
+As medidas anteriores não representam o mesmo fenômeno:
+- **KNN C A/B:** descritores de foco/forma e geometria extraídos do PNG AOI;
+- **Memória humana:** vetor persistido `anomaly_signature` de diferenças
+  entre gabarito/teste (JSON `memory.json`).
+
+`src/core/knn_c_archive_alignment.py` agora cria uma pista adicional
+**na mesma métrica da memória humana**: percorre os registros persistentes
+validados de origem `ARCHIVE_PNG`, organiza vetores por categoria,
+associa cada hipótese humana a sua fonte `OPERATOR_CONFIRMED` e compara:
+1. captura atual versus assinatura de um registro de archive;
+2. assinatura humana selecionada versus a mesma assinatura do archive;
+3. melhor fonte da classe contrária versus fonte preferida.
+
+Cada correspondência deve ser >=**97%** nos dois vínculos e conservar
+margem >=**4pp** sobre o archive da classe oposta. Trata-se de
+**semelhança de assinatura, não de par RGB exato**.
+O índice é atualizado por geração do snapshot persistente, não lê
+cada PNG a cada inspeção e não reatribui rótulos por algoritmo.
+
+O resultado é exibido em `detail.knn_c.aligned_archive`:
+`RECONCILED_OK`, `RECONCILED_NG`, `AMBIGUOUS`, `NO_MATCH`
+ou `UNAVAILABLE`, com IDs de registro, caminho da fonte,
+SHA de proveniência, scores comparáveis e origem da hipótese humana.
+
+### Encerramento SIDE
+
+A rota original continua disponível quando A/B >=97% concordam
+**no mesmo PNG/SHA**. Caso contrário, a nova pista alinhada pode
+corroborar o julgamento humano previamente confirmado, mas só se
+a KNN C estiver `READY` e nenhum dos cinco vizinhos A/B de classe
+contrária tiver score >=90%. A contraprova física independente,
+revalidação na política XP, janela de pausa e não-aprendizado de
+decisões automáticas permanecem ativos.
+
+A pista alinhada não fabrica `source_pixel_sha256` nem substitui
+os números A/B exibidos, que podem continuar em 80–84%.
+Uma memória humana forte sem um registro de archive correspondente
+continua insuficiente para `0/OK` automático. Se os vetores persistidos
+do arquivo não confirmarem o humano, o sistema segue para CNN/fusão.
+
+**Limite técnico:** a escala compacta de `anomaly_signature` pode
+confundir diferenças físicas distintas com mapas parecidos. Todos os
+testes de CI trabalham com pares sintéticos e regras de regressão;
+**não há comprovação de que o evento 08:47 tenha atingido 97% nessa
+pista adicional sem os PNGs e o JSON locais reais**. Validar com
+XP isolado e NG reais difíceis das cinco categorias antes da linha.
