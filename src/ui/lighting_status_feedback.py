@@ -317,6 +317,8 @@ def install_lighting_status_feedback_hooks(control_panel_cls) -> None:
             "button",
             "odin_control",
             "odin_keyboard",
+            "adhesive_automation",
+            "side_preflight",
             "network",
             "xp_keyboard",
         }:
@@ -325,6 +327,10 @@ def install_lighting_status_feedback_hooks(control_panel_cls) -> None:
             if callable(show_key) and command:
                 if normalized_source in {"network", "xp_keyboard"}:
                     visual_source = "xp_keyboard"
+                elif normalized_source in {
+                    "adhesive_automation", "side_preflight",
+                }:
+                    visual_source = "odin_automation"
                 elif normalized_source == "odin_keyboard":
                     visual_source = "odin_keyboard"
                 else:
