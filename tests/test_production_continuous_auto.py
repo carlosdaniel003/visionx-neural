@@ -39,6 +39,7 @@ def uncertain_three_light():
         "detail": {
             "multilight_final": True,
             "production_continuous_auto": True,
+            "production_binary_auto": True,
             "recognition_light_routes": {
                 "SIDE": "NEW_EXPERTS", "TOP": "NEW_EXPERTS",
                 "MID": "NEW_EXPERTS",
