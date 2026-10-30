@@ -990,7 +990,7 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
             ):
                 analysis = getattr(self, "current_analysis", None)
                 detail = analysis.get("detail", {}) if isinstance(analysis, dict) else {}
-                if isinstance(detail, dict) and detail.get("production_continuous_auto") is True:
+                if isinstance(detail, dict) and detail.get("production_binary_auto") is True:
                     # Comando inválido ou ciclo inconsistente: erro
                     # operacional, nunca solicitar 0/1 humano.
                     notice = getattr(self, "update_brain_status", None)
