@@ -123,11 +123,12 @@ class HumanMultilightPriorityTests(unittest.TestCase):
             "similarity": 0.81875214,
             "source_pixel_sha256": "a" * 64,
         }]
+        # No descritor B do log, o primeiro vizinho era OK.
         side_knn["neighbors_B"] = [{
-            "label": "NG",
-            "path": "public/ng_archive/2026-10-21_1442_FALTANDO.png",
-            "similarity": 0.77681943,
-            "source_pixel_sha256": "a" * 64,
+            "label": "OK",
+            "path": "public/ok_archive/2026-10-21_1416_FALTANDO.png",
+            "similarity": 0.8293933,
+            "source_pixel_sha256": "b" * 64,
         }]
         fused = fuse_multilight(analyses, "FALTANDO")
         final = build_human_multilight_priority(
