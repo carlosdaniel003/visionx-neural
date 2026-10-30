@@ -8,6 +8,8 @@ on:
       - "main.py"
       - "src/ui/production_confidence_gate.py"
       - "src/core/side_early_decision.py"
+      - "src/core/side_memory_first.py"
+      - "tests/test_side_memory_first.py"
       - "tests/test_side_early_decision.py"
       - "src/core/neural/faltando_category_scope.py"
       - "src/services/anomaly_learning.py"
@@ -19,8 +21,10 @@ on:
       - central
     paths:
       - "src/core/side_early_decision.py"
+      - "src/core/side_memory_first.py"
       - "src/ui/production_confidence_gate.py"
       - "tests/test_side_early_decision.py"
+      - "tests/test_side_memory_first.py"
       - "tests/test_production_confidence_gate.py"
       - ".github/workflows/production-confidence-tests.yml"
   workflow_dispatch:
@@ -43,8 +47,8 @@ jobs:
 
       - name: Compile policy
         run: |
-          python -m py_compile src/core/side_early_decision.py src/ui/production_confidence_gate.py
+          python -m py_compile src/core/side_early_decision.py src/core/side_memory_first.py tests/test_side_memory_first.py src/ui/production_confidence_gate.py
 
       - name: Unit tests
         run: |
-          python -m unittest tests.test_side_early_decision tests.test_production_confidence_gate -v
+          python -m unittest tests.test_side_early_decision tests.test_side_memory_first tests.test_production_confidence_gate -v
