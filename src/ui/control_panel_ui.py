@@ -624,16 +624,25 @@ class ControlPanelUI:
 
         window.btn_start = QPushButton("Capturar Local (MSS)")
         window.btn_skip = QPushButton("Descartar Imagem")
+        window.btn_reinspect = QPushButton("Analisar novamente (XP)")
         window.btn_save_ok = QPushButton("Salvar Dataset: OK")
         window.btn_save_ng = QPushButton("Confirmar Defeito (NG)")
 
         window.btn_start.setObjectName("primaryButton")
         window.btn_skip.setObjectName("secondaryButton")
+        window.btn_reinspect.setObjectName("secondaryButton")
+        window.btn_reinspect.setToolTip(
+            "Descarta a análise sem 0/1 e permite uma nova inspeção "
+            "do mesmo frame enviado pelo XP, somente uma vez."
+        )
+        window.btn_reinspect.setEnabled(False)
+        window.btn_reinspect.setVisible(False)
         window.btn_save_ok.setObjectName("outlineAccentButton")
         window.btn_save_ng.setObjectName("primaryButton")
         self.action_buttons = [
             window.btn_start,
             window.btn_skip,
+            window.btn_reinspect,
             window.btn_save_ok,
             window.btn_save_ng,
         ]
@@ -655,6 +664,9 @@ class ControlPanelUI:
 
         window.btn_start.clicked.connect(window.start_monitoring)
         window.btn_skip.clicked.connect(window.skip_image)
+        window.btn_reinspect.clicked.connect(
+            lambda _checked=False: window.reinspect_current_network_image()
+        )
         window.btn_save_ok.clicked.connect(lambda: window.save_label("OK", source="button"))
         window.btn_save_ng.clicked.connect(lambda: window.save_label("NG", source="button"))
 
