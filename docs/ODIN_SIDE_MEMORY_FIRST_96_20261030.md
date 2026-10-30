@@ -164,3 +164,51 @@ veto físico, regras XP, nem a janela de pausa por espaço.
 Há regressão de integração em `test_knn_c_archive_alignment.py`
 para garantir que o diagnóstico READY exponha `aligned_archive`.
 O caso real 08:47 depende da reavaliação com PNGs e JSON locais.
+
+
+## 30/10/2026 — Prioridade do OK humano na TOP após as três luzes
+
+Evento real `8dee2f1d331149eeb14718ff44386db3` de 10:07:57:
+a consulta de memória humana na TOP recuperou um OK confirmado com
+similaridade `0.9774185`, contra NG `0.93243586`. O arquivo de
+TOP associado pelo índice de assinaturas retornou `RECONCILED_OK`,
+`archive_similarity=0.9774185`, `human_archive_similarity=1.0`.
+O classificador local marcou SIDE e TOP como `FALHA FALSA`; MID
+permaneceu em `REVISÃO OBRIGATÓRIA`. Na SIDE, a memória humana tinha
+NG `0.98651746` e OK `0.97774325`, portanto status `AMBIGUOUS`.
+A regra de memória anterior só executava encerramento antecipado em SIDE;
+o julgamento TOP não participava da prioridade após a fusão.
+
+A rota geral `operator_human_multilight_97pct_v1` avalia a memória
+persistida `OPERATOR_CONFIRMED` nas três iluminações, sem codificar
+fonte, peça ou categoria específica. Exige: categoria reconhecida;
+capturas SIDE/TOP/MID completas; pelo menos duas classificações
+locais `FALHA FALSA`; nenhuma classificação local `DEFEITO REAL`
+ou ausência física forte; e pelo menos uma iluminação com memória humana
+OK >=97% e vantagem >=4 pontos percentuais sobre NG humano
+da **mesma iluminação**. Um candidato `HUMAN_NG_VISUAL_CANDIDATE`
+inequívoco em qualquer iluminação bloqueia a rota. Uma memória
+`AMBIGUOUS` de outra iluminação não apaga automaticamente
+o OK qualificado, mas fica preservada na auditoria.
+
+O resultado visual é `FALHA FALSA`, mesmo quando o veto físico
+atual impede uma decisão automática; nesse caso, solicita operador,
+**sem converter o OK reconhecido em NG PREVENTIVO**. O envio de
+`0/OK` em Produção contínua exige também revalidação no gate XP
+e verificação em duas escalas das capturas atuais SIDE/TOP/MID;
+`SUSPECT_ABSENCE`, `UNAVAILABLE`, geometria não admitida,
+captura incompleta, dados adulterados e pausa mantêm a liberação
+bloqueada. A tolerância de aparagem do comparador de memória é
+até 3 pixels e até 1% por eixo, sem resize. Preserva 5 segundos
+para a barra de espaço e grava as decisões automáticas sem
+transformá-las em julgamentos humanos de treinamento.
+
+**Risco e limite:** a similaridade de 97% é uma métrica de assinatura,
+não 97% de certeza de qualidade. A SIDE desse evento contém um NG
+humano ainda mais semelhante que o OK da SIDE, embora ambíguo.
+O reconhecimento TOP não prova por si só a qualidade física de uma
+nova peça, nem a sonda de ausência detecta inversão/deslocamento/
+adesivo. Antes de usar o comando real no XP, validar com XP isolado
+e com controles NG e OK difíceis, em especial pares conflitantes
+entre iluminações. Os testes usam fixtures de scores do log, não
+os PNGs originais da estação.

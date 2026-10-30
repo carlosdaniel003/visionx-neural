@@ -521,6 +521,23 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
                 category,
             )
 
+    if (
+        not side_only
+        and getattr(getattr(panel, "combo_mode", None), "currentText",
+                    lambda: "")() == "Modo Produção"
+    ):
+        # A SIDE ambigua nao pode esconder o OK previamente confirmado
+        # na TOP/MID. Rodar apos a fusao e a corroboração visual, sem
+        # sobrescrever provas KNN/CNN ou dispensar veto fisico no XP.
+        from src.core.human_multilight_priority import (
+            build_human_multilight_priority,
+        )
+        fused = build_human_multilight_priority(
+            fused, analyses,
+            getattr(panel, "adhesive_multilight_learning_samples", None),
+            category,
+        )
+
     if side_only:
         # A consulta ao acervo é visual e assíncrona: o veredito não espera.
         from src.ui.archive_visual_presence_feedback import (

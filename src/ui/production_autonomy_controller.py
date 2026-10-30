@@ -620,6 +620,7 @@ class ProductionAutonomyController(QObject):
                 "supervised_operator_known_top_mid_ok_mid_probe_disagreement_auto_v1",
                 "side_operator_memory_first_97pct_auto_ok",
                 "side_operator_memory_first_97pct_auto_ng",
+                "operator_human_multilight_97pct_auto_ok",
             }
             is_safe_rejection = (
                 policy.get("reason")

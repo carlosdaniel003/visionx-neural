@@ -105,6 +105,45 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             ) for data in diagnostics.values()
         )
     )
+    # Classificacao humana OK multilight: valida novamente o registro
+    # OPERATOR_CONFIRMED, as luzes, a margem e cada sonda fisica.
+    # O veto fisico preserva o OK visual, mas bloqueia o comando XP.
+    from src.core.human_multilight_priority import (
+        RULE as HUMAN_MULTILIGHT_RULE, verified_human_multilight_priority,
+        MIN_HUMAN as HUMAN_MULTILIGHT_THRESHOLD,
+    )
+    if detail.get("fusion_rule") == HUMAN_MULTILIGHT_RULE:
+        valid = verified_human_multilight_priority(analysis)
+        if valid is None:
+            return {
+                "mode": "production", "confidence": confidence,
+                "threshold": HUMAN_MULTILIGHT_THRESHOLD,
+                "verdict": "REVISÃO OBRIGATÓRIA",
+                "auto_allowed": False,
+                "operator_review_required": True,
+                "proposed_decision": "",
+                "reason": "operator_human_multilight_invalid_contract",
+                "operator_shortcuts": {"0": "OK", "1": "NG"},
+            }
+        auto = bool(
+            valid is True and detail.get("production_continuous_auto") is True
+        )
+        return {
+            "mode": "production", "confidence": confidence,
+            "threshold": HUMAN_MULTILIGHT_THRESHOLD,
+            "verdict": "FALHA FALSA",
+            "auto_allowed": auto,
+            "operator_review_required": not auto,
+            "proposed_decision": "OK" if auto else "",
+            "reason": (
+                "operator_human_multilight_97pct_auto_ok"
+                if auto else
+                "operator_human_multilight_97pct_requires_operator"
+            ),
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+            "unverified_physical_label": True,
+        }
+
     # Memória humana visual precede a CNN somente sob concordância
     # independente A/B e contraprova física da captura ATUAL.
     # O controlador valida este contrato novamente imediatamente antes
@@ -623,6 +662,11 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     if not isinstance(detail, dict) or detail.get("production_continuous_auto") is not True:
         return policy
     if policy.get("auto_allowed") is True:
+        return policy
+    # Um OK visual humano com veto fisico ou contrato invalido nunca
+    # pode ser transformado em NG PREVENTIVO no fallback continuo.
+    from src.core.human_multilight_priority import RULE as HUMAN_MULTILIGHT_RULE
+    if detail.get("fusion_rule") == HUMAN_MULTILIGHT_RULE:
         return policy
     # Um marcador histórico de OK de 29/10 não é prova suficiente para
     # rejeição preventiva genérica: em conflito, adulteração de hash,
