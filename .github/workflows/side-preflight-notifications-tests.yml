@@ -4,6 +4,7 @@ on:
   push:
     branches: [central]
     paths:
+      - "agente_industrial_xp.py"
       - "src/services/network_receiver.py"
       - "src/ui/control_panel.py"
       - "src/ui/lighting_status_feedback.py"
@@ -17,6 +18,7 @@ on:
   pull_request:
     branches: [central]
     paths:
+      - "agente_industrial_xp.py"
       - "src/services/network_receiver.py"
       - "src/ui/control_panel.py"
       - "src/ui/lighting_status_feedback.py"
@@ -46,7 +48,7 @@ jobs:
           python -m pip install PyQt6 mss numpy opencv-python-headless pillow pytesseract scipy scikit-image
       - name: Compile edited sources and tests
         run: |
-          python -m py_compile src/services/network_receiver.py src/ui/control_panel.py src/ui/lighting_status_feedback.py src/ui/decision_key_feedback.py src/ui/network_aoi_intake_filter.py src/ui/network_xp_debug.py tests/test_side_preflight.py tests/test_lighting_status_feedback.py tests/test_decision_key_feedback.py
+          python -m py_compile agente_industrial_xp.py src/services/network_receiver.py src/ui/control_panel.py src/ui/lighting_status_feedback.py src/ui/decision_key_feedback.py src/ui/network_aoi_intake_filter.py src/ui/network_xp_debug.py tests/test_side_preflight.py tests/test_lighting_status_feedback.py tests/test_decision_key_feedback.py
       - name: Preflight SIDE gate and failures
         run: python -m unittest tests.test_side_preflight -v
       - name: Operational lighting and decision overlays
