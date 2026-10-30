@@ -419,7 +419,7 @@ class PersistentArchiveKNN:
             temp_name = None
             try:
                 with tempfile.NamedTemporaryFile(
-                    mode="w", encoding="utf-8", newline="\\n",
+                    mode="w", encoding="utf-8", newline="\n",
                     dir=self.path.parent, prefix="._knn_retire_",
                     suffix=".tmp", delete=False,
                 ) as handle:
@@ -428,7 +428,7 @@ class PersistentArchiveKNN:
                         "schema": SCHEMA,
                         "checksum": _checksum(kept),
                         "records": kept,
-                    }) + "\\n")
+                    }) + "\n")
                     handle.flush()
                     os.fsync(handle.fileno())
                 shutil.copy2(self.path, self.path.with_suffix(".json.bak"))
