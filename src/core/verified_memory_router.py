@@ -79,6 +79,7 @@ class VerifiedKNNMemory:
         self.error = ""
         self._warmup_status = {"state": "not_started", "duration_ms": None}
         self._confirmed_visual_recall = None
+        self._knn_c_archive_alignment = None
 
     def invalidate(self, *, reason: str = "explicit_reload") -> None:
         with self._lock:
@@ -569,6 +570,17 @@ class VerifiedKNNMemory:
             recall = self._confirmed_visual_recall
         return recall.lookup(reference, test, info)
 
+    def recall_knn_c_archive_alignment(
+        self, reference, test, info: dict, human: dict,
+    ) -> dict:
+        """Relação humano/PNG na MESMA assinatura; A/B originais intocados."""
+        from src.core.knn_c_archive_alignment import KNNArchiveAlignment
+        with self._lock:
+            if self._knn_c_archive_alignment is None:
+                self._knn_c_archive_alignment = KNNArchiveAlignment(self.archive_store)
+            engine = self._knn_c_archive_alignment
+        return engine.diagnose(reference, test, info, human)
+
     def lookup(
         self, knn, reference, test, info: dict,
         *, timing: dict | None = None,
@@ -931,9 +943,18 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             # Persistência humana e KNN C de PNGs são bancos distintos:
             # recuperar agora também a experiência humana APROXIMADA,
             # antes do gate SIDE, sem transformar similaridade em KNOWN_KNN.
-            detail["confirmed_visual_recall"] = index.recall_confirmed_visual(
+            human_recall = index.recall_confirmed_visual(
                 full_gab, full_test, info,
             )
+            detail["confirmed_visual_recall"] = human_recall
+            knn_c = detail.get("knn_c")
+            if isinstance(knn_c, dict) and knn_c.get("bank_status") == "READY":
+                # Não eleva artificialmente A/B. Acrescenta prova de
+                # associação do mesmo padrão JSON humano/arquivo em outra
+                # pista KNN, pesquisável mesmo que os PNGs tenham outra luz.
+                knn_c["aligned_archive"] = index.recall_knn_c_archive_alignment(
+                    full_gab, full_test, info, human_recall,
+                )
         detail.update({
             "specialist_candidate": (
                 None
