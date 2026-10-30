@@ -406,3 +406,50 @@ Implementação: `src/core/side_memory_first.py` valida elegibilidade;
 executa temporizador e desarma; `src/services/decision_persistence.py`
 impede o treinamento de aprovações ainda não confirmadas.
 Regressões: `tests/test_side_supervised_release.py`.
+
+
+## 30/10/2026 — Evento 14:02, forte corroboracao SIDE com humano abaixo de 99%
+
+Evento `b55f5d0d6a4543c592bdbe4bfd3bdb16`: o operador confirmou
+**FALHA FALSA** no arquivo SIDE `2026-10-21_1436_FALTANDO_SIDE.png`.
+Antes da correcao, SIDE tinha CNN NG=9,3604% (veredito FALHA FALSA),
+mas a fusao TOP/MID produziu DEFEITO REAL e a politica de rejeicao
+preventiva confirmou XP `1/NG` (`Envio XP confirmado: True`).
+
+A recuperacao humana da SIDE estava em `AMBIGUOUS` (OK
+`0.98756365`, NG `0.94888621`, margem 3,867744pp, abaixo
+ dos 4pp gerais). KNN A e B selecionaram o MESMO PNG OK da SIDE,
+com SHA igual: A OK `0.98634805`, NG `0.89437767`; B OK
+`0.97369606`, NG `0.85322969`. Os dois votos eram OK, apesar de
+`status=REVISAO` da estrategia seletiva C, que nao basta sozinha
+para liberar nada. Nenhum par RGB exato foi encontrado.
+
+Nova modalidade **genérica**, independente de ID/data/PNG/categoria
+como fator de decisão: `KNN_AB_HIGH_CORROBORATED_HUMAN_OK`.
+Exige memória humana original `OPERATOR_CONFIRMED` da mesma SIDE,
+`status=AMBIGUOUS`, OK >=**98,5%** e margem OK-NG >=**3,5pp**;
+banco READY, votos KNN A/B OK e mesmo primeiro PNG OK + SHA válido;
+A >=**98,5%**, B >=**97%**, todos os NG de top-5 com score
+**estritamente inferior a 90%** e pelo menos **8pp abaixo** dos
+primeiros OK respectivos. Fontes, categorias canônicas, vetos de
+memória, integridade e hard missing seguem protegidos. A modalidade
+anterior para OK humano >=99% e as rotas NG não são afrouxadas.
+
+- Com sonda física aprovada em duas escalas e geometria válida: a
+  inspeção encerra na SIDE como FALHA FALSA, dispensa TOP/MID e o
+  gate revalida o marcador para autorizar **0/OK** automaticamente,
+  seguindo apresentação e estado de pausa da Produção.
+- Com veto físico, erro de sonda ou ausência suspeita: encerra SIDE
+  como FALHA FALSA **visual**, mas não autoriza 0 automático pela rota
+  normal, não remapeia para NG PREVENTIVO. A liberação experimental
+  supervisionada preexistente exige armamento explícito e seu contrato
+  específico de uma escala suspeita; falhas/duas escalas suspeitas
+  permanecem bloqueadas.
+- Os números são similaridade **não calibrada**, não probabilidade de
+  acerto; os testes com telemetria reproduzida não substituem validação
+  com pixels reais e peças NG difíceis. O log original não contém
+  o resultado da sonda porque a rota não chegou a executá-la.
+
+Regressões: `tests/test_side_memory_first.py` cobre os scores reais,
+KNN C em REVISAO com votos OK, saída antecipada, veto físico, falsos
+positivos próximos, fonte humana inválida e proteção XP.
