@@ -105,6 +105,13 @@ class FakeReceiver:
         self.locked = False
         self.release_count += 1
 
+    def arm_same_frame_reinspection_once(self):
+        self.armed = bool(self.locked)
+        return self.armed
+
+    def cancel_same_frame_reinspection(self):
+        self.armed = False
+
 
 class FakePanel:
     def __init__(self):
@@ -210,6 +217,76 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
 
         panel.handle_network_image(object(), "192.168.0.10")
         self.assertEqual(panel.accepted_images, 2)
+
+    def test_production_discard_cancels_pending_auto_without_xp(self):
+        panel = FakePanel()
+        panel.combo_mode = type("Combo", (), {
+            "currentText": lambda self: "Modo Produção",
+        })()
+        panel.handle_network_image(object(), "169.254.95.200")
+        panel.current_analysis = {"verdict": "DEFEITO REAL"}
+        panel.current_sample, panel.current_ng = object(), object()
+        class Controller:
+            def __init__(self, analysis):
+                self.pending_analysis = analysis
+                self.state = "auto_decision_pending"
+                self.cancel_calls = 0
+            def cancel_current(self):
+                self.cancel_calls += 1
+                self.pending_analysis = None
+                self.state = "idle"
+        controller = Controller(panel.current_analysis)
+        panel.production_autonomy_controller = controller
+        panel.cancel_production_autonomy = controller.cancel_current
+        self.assertTrue(panel.capture_cycle_active)
+        panel.skip_image()
+        self.assertEqual(controller.cancel_calls, 1)
+        self.assertFalse(panel.capture_cycle_active)
+        self.assertEqual(panel.network_receiver.release_count, 1)
+        self.assertIsNone(panel.current_analysis)
+        self.assertFalse(panel.network_receiver.armed)
+
+    def test_reinspect_consumes_one_operator_request_no_xp_command(self):
+        panel = FakePanel()
+        panel.combo_mode = type("Combo", (), {
+            "currentText": lambda self: "Modo Produção",
+        })()
+        panel.handle_network_image(object(), "169.254.95.200")
+        panel.current_analysis = {"verdict": "DEFEITO REAL"}
+        panel.current_sample, panel.current_ng = object(), object()
+        controller = type("Controller", (), {
+            "state": "rendered_wait",
+            "pending_analysis": panel.current_analysis,
+        })()
+        def cancel():
+            controller.pending_analysis = None
+            controller.state = "idle"
+        panel.cancel_production_autonomy = cancel
+        panel.production_autonomy_controller = controller
+        self.assertTrue(panel.reinspect_current_network_image())
+        self.assertFalse(panel.capture_cycle_active)
+        self.assertTrue(panel.network_receiver.armed)
+        self.assertIsNone(panel.current_analysis)
+        self.assertFalse(panel._reinspect_requested)
+        self.assertFalse(panel.reinspect_current_network_image())
+
+    def test_reinspect_not_available_during_xp_send(self):
+        panel = FakePanel()
+        panel.combo_mode = type("Combo", (), {
+            "currentText": lambda self: "Modo Produção",
+        })()
+        panel.handle_network_image(object(), "169.254.95.200")
+        panel.current_analysis = {"verdict": "DEFEITO REAL"}
+        panel.current_sample, panel.current_ng = object(), object()
+        controller = type("Controller", (), {
+            "state": "emitting_auto_decision",
+            "pending_analysis": panel.current_analysis,
+        })()
+        panel.production_autonomy_controller = controller
+        self.assertFalse(panel.reinspect_current_network_image())
+        self.assertFalse(panel.skip_image())
+        self.assertTrue(panel.capture_cycle_active)
+        self.assertTrue(panel.network_receiver.locked)
 
     def test_discard_exception_is_recovered_without_closing_application(self):
         panel = ExplodingDiscardPanel()
