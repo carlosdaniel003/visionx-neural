@@ -190,6 +190,7 @@ class SideMemoryPriorityTests(unittest.TestCase):
         policy = production_decision_policy(final)
         self.assertTrue(policy["auto_allowed"])
         self.assertEqual(policy["proposed_decision"], "OK")
+        self.assertEqual(policy["threshold"], .95)
 
     def test_strong_human_ok_needs_two_agreeing_pngs_and_clear_ng_margin(self):
         cases = (
