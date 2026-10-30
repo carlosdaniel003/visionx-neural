@@ -424,6 +424,24 @@ def install_live_knn_strategy_c(orchestrator_cls, *, strategy=None):
             full_gab, full_test, info.get("lighting_mode", "SIDE")
         )
         detail["knn_c"] = diagnosis
+        # O roteador da memória é interno à KNN C: o alinhamento com
+        # assinaturas humanas só pode ser calculado após diagnose().
+        if diagnosis.get("bank_status") == "READY":
+            index_getter = getattr(self, "_get_verified_memory_index", None)
+            human = detail.get("confirmed_visual_recall")
+            if callable(index_getter) and isinstance(human, dict):
+                from src.core.verified_memory_router import VerifiedKNNMemory
+                try:
+                    memory = index_getter()
+                    if isinstance(memory, VerifiedKNNMemory):
+                        diagnosis["aligned_archive"] = memory.recall_knn_c_archive_alignment(
+                            full_gab, full_test, info, human,
+                        )
+                except (ValueError, TypeError, KeyError, OSError) as exc:
+                    diagnosis["aligned_archive"] = {
+                        "status": "UNAVAILABLE",
+                        "reason": type(exc).__name__,
+                    }
         selected = diagnosis.get("status")
         if selected not in ("SUGERE_OK", "SUGERE_NG"):
             return result
