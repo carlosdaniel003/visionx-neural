@@ -167,9 +167,24 @@ def _verified_probe(probe: dict, label: str) -> bool:
         return True
     if probe.get("status") == "NO_STRONG_EVIDENCE":
         return geometry.get("method") == "exact" and geometry.get("requires_review") is False
-    # Pequena diferença de tamanho das ROIs AOI ainda é uma geometria
-    # revisável: não pode liberar OK automaticamente.
-    return False
+    # Aparagem central mínima produzida pela própria AOI: duas ROIs
+    # conferidas sem ausência e desvio máximo de 3 px / 1% por eixo.
+    # Nada de resize para mascarar uma região ausente.
+    if probe.get("status") != "GEOMETRY_REVIEW":
+        return False
+    if geometry.get("method") != "center_trim_no_rescale" or geometry.get("requires_review") is not True:
+        return False
+    shape_a, shape_b = geometry.get("reference_hw"), geometry.get("test_hw")
+    if not (
+        isinstance(shape_a, list) and isinstance(shape_b, list)
+        and len(shape_a) == len(shape_b) == 2
+        and all(type(v) is int and v >= 200 for v in shape_a + shape_b)
+    ):
+        return False
+    return all(
+        abs(a - b) <= 3 and abs(a - b) / min(a, b) <= 0.01
+        for a, b in zip(shape_a, shape_b)
+    )
 
 
 def build_side_memory_first(
@@ -230,6 +245,9 @@ def build_side_memory_first(
     if isinstance(trace, dict):
         trace["operator_review_required"] = False
         trace["fusion_rule"] = RULE
+    d["side_memory_first"]["geometry_small_trim_authorized"] = bool(
+        physical.get("status") == "GEOMETRY_REVIEW"
+    )
     return final
 
 
@@ -256,6 +274,9 @@ def memory_first_side_decision(analysis: dict | None) -> str | None:
     if (
         expected is None or label not in {"OK", "NG"}
         or any(marker.get(key) != value for key, value in expected.items())
+        or marker.get("geometry_small_trim_authorized") is not (
+            marker.get("physical_probe", {}).get("status") == "GEOMETRY_REVIEW"
+        )
         or not _verified_probe(marker.get("physical_probe"), label)
         or analysis.get("lighting_mode") != "SIDE"
         or analysis.get("multilight_final") is not True
