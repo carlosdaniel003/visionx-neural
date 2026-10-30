@@ -1229,3 +1229,48 @@ Testes: `tests/test_side_preflight.py`,
 `tests/test_lighting_status_feedback.py`,
 `tests/test_decision_key_feedback.py` e workflow
 `XP SIDE Preflight and Key Feedback`.
+
+
+## 30/10/2026 — Sincronizacao real de SIDE: TOP inicial nao pode virar SIDE por suposicao
+
+**Defeito operacional reportado:** a AOI pode iniciar a próxima inspeção ainda em TOP.
+No fluxo antigo, o ODIN enviava `PRESS_DOWN` e considerava `sendall()`
+como sucesso, sem saber se a tecla foi efetivamente pressionada. Os dois
+frames estaveis podiam pertencer a TOP, originando `TOP-TOP-MID` e
+rejeicao preventiva equivocada.
+
+**Protocolo do agente XP atualizado (instalacao MANUAL obrigatoria):**
+
+- `PRESS_DOWN_SYNC` na porta TCP 5000: o agente serializa capturas da
+  tela com o comando da tecla, pressiona e solta DOWN, aguarda 350 ms
+  para a AOI atualizar a imagem e responde `ACK_SIDE_KEYUP`. O ACK
+  so e enviado depois de `keybd_event` e da acomodacao.
+- O ODIN exige esse ACK **antes de liberar qualquer imagem principal**.
+  Ausencia de ACK/timeout/erro de rede bloqueia o ciclo e retenta;
+  nao produz `NG PREVENTIVO` a partir de imagem sem SIDE confirmada.
+- O DOWN antecipado ao detectar o XP e ao liberar o ciclo anterior continua,
+  mas **a primeira imagem observada do novo evento e descartada**,
+  mesmo com ACK inicial. Ela dispara outro `PRESS_DOWN_SYNC`, para
+  recuperar a SIDE caso a AOI tenha voltado a TOP entre os comandos.
+  O ODIN so encaminha frames posteriores ao segundo ACK, nova
+  acomodacao de 350 ms e dois frames estaveis.
+- O debug de recepcao informa `agent_keyup_ack`, `first_frame_discarded`
+  e `changed_after_down`. A diferenca visual e diagnostica: quando
+  o primeiro frame ja estava em SIDE, um DOWN repetido pode manter
+  os pixels iguais. A autorizacao da sequencia continua baseada no
+  protocolo confirmado, nao em supor que todo frame seja SIDE.
+- TOP/MID auxiliares, modos Teste/Sombra, reanalise do XP, julgamentos
+  0/1 e politicas de CNN/KNN sao preservados.
+
+**Implantacao:** atualizar a branch `central` no computador moderno;
+copiar manualmente o `agente_industrial_xp.py` atualizado para
+`C:\Documents and Settings\CCC\My Documents\VisionX Neural\Agente\`
+no XP, substituindo a copia do agente e reiniciando o processo.
+Nao ativar a linha com o cliente novo e agente antigo: o XP antigo
+ignora `PRESS_DOWN_SYNC`, nao devolve `ACK_SIDE_KEYUP`, e o
+gate de recepcao ficara bloqueado propositalmente.
+
+**Limite:** ACK de `keybd_event` prova que o agente executou o
+acionamento da tecla, mas nao certifica eletricamente que o hardware
+da AOI mudou para SIDE. Validar com fotos reais TOP/SIDE e XP isolado,
+inclusive quando o programa da AOI muda a luz depois do comando.
