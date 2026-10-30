@@ -21,7 +21,7 @@ from src.core.anomaly_signature import (
 from src.core.strict_category_memory import canonical_memory_category
 
 SCHEMA = "visionx.human_visual_recall.v1"
-MIN_VISUAL_SCORE = 0.975
+MIN_VISUAL_SCORE = 0.97
 MIN_OPPOSITE_MARGIN = 0.04
 
 
