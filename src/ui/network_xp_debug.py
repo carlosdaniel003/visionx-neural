@@ -162,7 +162,10 @@ def format_memory_decision_provenance(
             "Similaridade humana: " + str(recalled["human_similarity"]),
             "KNN A: " + str(recalled["knn_a_similarity"])
             + " | KNN B: " + str(recalled["knn_b_similarity"]),
-            "Sonda física: " + str(recalled["physical_probe"]["status"]),
+            "Sonda de ausência (NÃO verifica o defeito de todas as categorias): "
+            + str(recalled["physical_probe"]["status"]),
+            "Escopo da sonda física: "
+            + str(recalled.get("physical_probe_scope", "-")),
             "CNN não prevaleceu nesta captura SIDE; TOP/MID dispensadas.",
         ])
     elif route == "KNOWN_KNN" and detail.get("recognition_memory_verified") is True:

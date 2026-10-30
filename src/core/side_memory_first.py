@@ -1,8 +1,13 @@
 """Roteamento SIDE: memória humana qualificada precede a CNN por similaridade.
 
 95% isolados NÃO equivalem a uma identidade física: exige >=96% em A e B
-para o mesmo PNG, confirmação persistida >=97,5% com margem >=4pp,
-ausência de contraevidência NG significativa e sonda física atual válida.
+para o mesmo PNG, confirmação persistida >=97,5% com margem >=4pp e
+ausência de contraevidência NG significativa.
+
+Aplica-se às cinco categorias reconhecidas pela AOI. A sonda independente
+é um VETO TRANSVERSAL DE AUSÊNCIA, não um classificador de inversão,
+deslocamento, tombstone ou adesivo. Outras manifestações NG semelhantes
+a OK continuam sendo risco, exigindo replay físico antes da produção.
 
 A rota altera o julgamento do evento NOVO, não os pesos da CNN nem a
 classificação histórica. O comando XP continua sob o gate de Produção.
@@ -15,12 +20,17 @@ from pathlib import PurePosixPath
 
 from src.core.strict_category_memory import canonical_memory_category
 from src.core.physical_missing_veto import physical_absence_probe
+from src.utils.text_normalizer import CATEGORIES
 
 RULE = "side_operator_memory_first_96pct_v1"
 MEMORY_SCHEMA = "visionx.side_memory_first.v1"
 MIN_KNN = 0.96
 MIN_HUMAN = 0.975
 MIN_MARGIN = 0.04
+KNOWN_MEMORY_CATEGORIES = frozenset(
+    canonical_memory_category(value) for value in CATEGORIES
+)
+PHYSICAL_PROBE_SCOPE = "CROSS_CATEGORY_ABSENCE_VETO_ONLY"
 
 
 def _number(value):
@@ -41,8 +51,8 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
     if not isinstance(d, dict):
         return None
     scope = canonical_memory_category(category)
-    if scope != "FALTANDO":
-        # Não transportar a sonda física de ausência para outros defeitos.
+    if scope not in KNOWN_MEMORY_CATEGORIES:
+        # Categoria desconhecida/erro de OCR nunca pode receber atalho.
         return None
     if (
         d.get("recognition_route") not in {"NEW_CNN", "NEW_EXPERTS"}
@@ -158,13 +168,21 @@ def _verified_probe(probe: dict, label: str) -> bool:
         isinstance(scales, list) and len(scales) == 2
         and isinstance(geometry, dict)
         and geometry.get("method") in {"exact", "center_trim_no_rescale"}
-        and all(isinstance(row, dict) and row.get("suspected_absence") is False
-                for row in scales)
+        and all(
+            isinstance(row, dict)
+            and type(row.get("suspected_absence")) is bool
+            for row in scales
+        )
     ):
         return False
     if label == "NG":
-        # Para NG, sonda negativa não é requisito: ela é apenas veto de OK.
-        return True
+        # Se a ROI sugere ausência, isso não veta rejeição NG.
+        # Verificar integridade da medição antes de permitir 1/NG.
+        if probe.get("status") == "SUSPECT_ABSENCE":
+            return any(row.get("suspected_absence") is True for row in scales)
+        return probe.get("status") in {"NO_STRONG_EVIDENCE", "GEOMETRY_REVIEW"}
+    if any(row["suspected_absence"] for row in scales):
+        return False
     if probe.get("status") == "NO_STRONG_EVIDENCE":
         return geometry.get("method") == "exact" and geometry.get("requires_review") is False
     # Aparagem central mínima produzida pela própria AOI: duas ROIs
@@ -190,7 +208,12 @@ def _verified_probe(probe: dict, label: str) -> bool:
 def build_side_memory_first(
     analysis: dict | None, category: str, reference, test, *, probe=None,
 ) -> dict | None:
-    """Prioriza memória em uma luz quando a verificação física também passou."""
+    """Prioriza memória em uma luz e consulta veto físico de ausência.
+
+    Para outras categorias, a sonda NÃO descarta erros físicos de posição,
+    orientação e quantidade de adesivo. O gate do XP permanece responsável
+    por autorizar a decisão e o histórico deve ser validado com NGs difíceis.
+    """
     evidence = _candidate(analysis, category)
     if evidence is None:
         return None
@@ -217,13 +240,15 @@ def build_side_memory_first(
     final["reason"] = (
         "SIDE • memória humana previamente julgada " + label
         + "; KNN A/B concordam >=96% com a mesma fonte, "
-        "margem >4pp, inspeção física atual sem ausência; "
-        "TOP/MID dispensadas. Similaridade não é probabilidade."
+        "margem >4pp; sonda de ausência física aplicada como veto, "
+        "não como validação de toda categoria; TOP/MID dispensadas. "
+        "Similaridade não é probabilidade."
     )
     d = final["detail"]
     d["side_memory_first"] = {
         **evidence,
         "physical_probe": deepcopy(physical),
+        "physical_probe_scope": PHYSICAL_PROBE_SCOPE,
         "original_verdict": analysis.get("verdict"),
         "original_is_defect": analysis.get("is_defect"),
     }
@@ -277,6 +302,7 @@ def memory_first_side_decision(analysis: dict | None) -> str | None:
         or marker.get("geometry_small_trim_authorized") is not (
             marker.get("physical_probe", {}).get("status") == "GEOMETRY_REVIEW"
         )
+        or marker.get("physical_probe_scope") != PHYSICAL_PROBE_SCOPE
         or not _verified_probe(marker.get("physical_probe"), label)
         or analysis.get("lighting_mode") != "SIDE"
         or analysis.get("multilight_final") is not True
@@ -309,4 +335,7 @@ def memory_first_side_decision(analysis: dict | None) -> str | None:
     return label
 
 
-__all__ = ["RULE", "build_side_memory_first", "memory_first_side_decision"]
+__all__ = [
+    "RULE", "KNOWN_MEMORY_CATEGORIES", "PHYSICAL_PROBE_SCOPE",
+    "build_side_memory_first", "memory_first_side_decision",
+]
