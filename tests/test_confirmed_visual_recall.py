@@ -132,8 +132,11 @@ class ConfirmedVisualRecallTests(unittest.TestCase):
         install_memory_first_router(
             Runtime, memory=VerifiedKNNMemory(archive_store=self.store)
         )
+        ref, tst = pair()
+        slightly_changed = tst.copy()
+        slightly_changed[40, 80, 1] ^= 1
         result = Runtime().inspect(
-            *pair(), [], {"category": "FALTANDO",
+            ref, slightly_changed, [], {"category": "FALTANDO",
                          "lighting_mode": "SIDE"}, {}, [],
         )
         self.assertEqual(result["detail"]["recognition_route"], "NEW_CNN")
