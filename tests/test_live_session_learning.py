@@ -103,13 +103,154 @@ class LiveSessionLearningTests(unittest.TestCase):
             self.assertFalse(response["committed"])
         self.assertFalse(self.store.path.exists())
 
-    def test_opposite_operator_labels_same_pixels_are_conflict(self):
-        immediate_confirmed_memory(labeled_task("OK"), store=self.store)
-        immediate_confirmed_memory(labeled_task("NG"), store=self.store)
+    def test_latest_human_label_overwrites_old_for_same_rgb_without_erasing_history(self):
+        from unittest.mock import patch
+        first = labeled_task("NG")
+        first["event_id"] = "older-aoi-event"
+        newer = labeled_task("OK")
+        newer["event_id"] = "new-aoi-event"
+        with patch("src.services.live_session_learning.time.time_ns",
+                   side_effect=[100, 200]):
+            immediate_confirmed_memory(first, store=self.store)
+            immediate_confirmed_memory(newer, store=self.store)
+        result = self.store.lookup(
+            newer["sample_image"], newer["ng_image"], newer["aoi_info"],
+        )
+        self.assertEqual((result["status"], result["label"]), ("KNOWN", "OK"))
+        self.assertEqual(result["confirmed_at_ns"], 200)
+        self.assertEqual(result["source_event_id"], "new-aoi-event")
+        self.assertEqual(result["superseded_labels"], ["NG"])
+        self.assertEqual(len(self.store.records()), 2)  # History preserved
+        verified = VerifiedKNNMemory(archive_store=self.store)
+        looked_up = verified.lookup(
+            None, newer["sample_image"], newer["ng_image"], newer["aoi_info"],
+        )
+        self.assertEqual(looked_up["label"], "OK")
+        self.assertEqual(
+            looked_up["memory_source"], "LATEST_OPERATOR_EXACT_PAIR"
+        )
+        # All new processes must reach the same winner without retraining.
+        reboot = PersistentArchiveKNN(self.root)
+        self.assertEqual(reboot.lookup(
+            newer["sample_image"], newer["ng_image"], newer["aoi_info"],
+        )["label"], "OK")
+
+    def test_latest_human_can_switch_back_ng_and_keep_other_cases_unchanged(self):
+        from unittest.mock import patch
+        with patch("src.services.live_session_learning.time.time_ns",
+                   side_effect=[100, 200, 300]):
+            immediate_confirmed_memory(labeled_task("NG"), store=self.store)
+            immediate_confirmed_memory(labeled_task("OK"), store=self.store)
+            immediate_confirmed_memory(labeled_task("NG"), store=self.store)
         task = labeled_task()
         self.assertEqual(self.store.lookup(
-            task["sample_image"], task["ng_image"], task["aoi_info"]
-        )["status"], "CONFLICT")
+            task["sample_image"], task["ng_image"], task["aoi_info"],
+        )["label"], "NG")
+        different = labeled_task(value=120)
+        self.assertEqual(self.store.lookup(
+            different["sample_image"], different["ng_image"],
+            different["aoi_info"],
+        )["status"], "NEW")
+        different_category = labeled_task(category="INVERTIDO")
+        self.assertEqual(self.store.lookup(
+            different_category["sample_image"],
+            different_category["ng_image"],
+            different_category["aoi_info"],
+        )["status"], "NEW")
+        different_light = labeled_task(light="TOP")
+        self.assertEqual(self.store.lookup(
+            different_light["sample_image"], different_light["ng_image"],
+            different_light["aoi_info"],
+        )["status"], "NEW")
+
+    def test_latest_operator_overrides_exact_archived_ng_without_relabelling_png(self):
+        from src.core.archive_persistent_memory import make_record
+        from src.core.anomaly_signature import build_anomaly_signature
+        task = labeled_task("OK")
+        ref, test = task["sample_image"], task["ng_image"]
+        info = task["aoi_info"]
+        self.store.add([make_record(
+            label="NG",
+            source_path="public/ng_archive/old_wrong.png",
+            source_sha256="1" * 64,
+            category="FALTANDO", lighting="SIDE",
+            reference=ref, test=test, aoi_info=info,
+            anomaly_signature=build_anomaly_signature(ref, test, {}, info),
+        )])
+        self.assertEqual(self.store.lookup(ref, test, info)["label"], "NG")
+        immediate_confirmed_memory(task, store=self.store)
+        self.assertEqual(self.store.lookup(ref, test, info)["label"], "OK")
+        verified = VerifiedKNNMemory(archive_store=self.store)
+        result = verified.lookup(None, ref, test, info)
+        self.assertEqual((result["status"], result["label"]), ("KNOWN", "OK"))
+        self.assertEqual(len(self.store.records()), 2)
+        self.assertEqual(
+            {row["label"] for row in self.store.records()}, {"NG", "OK"}
+        )
+
+    def test_end_to_end_three_manual_ok_lights_production_prefers_latest(self):
+        from src.core.multilight_fusion import fuse_multilight
+        from src.core.verified_memory_router import _recognized_result
+        from src.ui.production_confidence_gate import production_decision_policy
+        from unittest.mock import patch
+
+        def event_task(label, event_id):
+            task = labeled_task(label)
+            task["event_id"] = event_id
+            task["multilight_samples"] = [
+                {
+                    "lighting_mode": light,
+                    "sample_image": task["sample_image"],
+                    "test_image": task["ng_image"],
+                }
+                for light in ("SIDE", "TOP", "MID")
+            ]
+            return task
+
+        with patch("src.services.live_session_learning.time.time_ns",
+                   side_effect=[101, 202]):
+            immediate_confirmed_memory(
+                event_task("NG", "older-ng"), store=self.store,
+            )
+            new = event_task("OK", "corrected-ok")
+            immediate_confirmed_memory(new, store=self.store)
+
+        router = VerifiedKNNMemory(archive_store=self.store)
+        analyses = {}
+        for light in ("SIDE", "TOP", "MID"):
+            info = {**new["aoi_info"], "lighting_mode": light}
+            match = router.lookup(
+                None, new["sample_image"], new["ng_image"], info,
+            )
+            self.assertEqual(match["label"], "OK")
+            self.assertEqual(match["source_event_id"], "corrected-ok")
+            analyses[light] = _recognized_result(match, light)
+
+        final = fuse_multilight(analyses, "FALTANDO")
+        self.assertEqual(final["verdict"], "FALHA FALSA")
+        final["detail"]["production_continuous_auto"] = True
+        final["detail"]["production_binary_auto"] = True
+        policy = production_decision_policy(final)
+        self.assertEqual(policy["proposed_decision"], "OK")
+        self.assertTrue(policy["auto_allowed"])
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+
+    def test_opposite_operator_labels_without_timestamps_still_conflict(self):
+        from src.core.archive_persistent_memory import make_operator_record
+        from src.core.anomaly_signature import build_anomaly_signature
+        task = labeled_task()
+        ref, test = task["sample_image"], task["ng_image"]
+        info = task["aoi_info"]
+        signature = build_anomaly_signature(ref, test, {}, info)
+        for label in ("OK", "NG"):
+            self.store.add([make_operator_record(
+                label=label, source="button", event_id=label,
+                category="FALTANDO", lighting="SIDE", reference=ref,
+                test=test, anomaly_signature=signature, aoi_info=info,
+            )])
+        self.assertEqual(
+            self.store.lookup(ref, test, info)["status"], "CONFLICT"
+        )
 
     def test_cnn_v2_experience_without_checkpoint_is_exact_only(self):
         task = labeled_task()

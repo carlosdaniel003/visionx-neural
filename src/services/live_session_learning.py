@@ -8,6 +8,8 @@ Nenhuma predição da IA vira gabarito por esta rotina.
 """
 from __future__ import annotations
 
+import time
+
 from src.core.anomaly_signature import build_anomaly_signature
 from src.core.archive_persistent_memory import (
     PersistentArchiveKNN, make_operator_record,
@@ -42,6 +44,9 @@ def immediate_confirmed_memory(task: dict, *, store=None) -> dict:
                }])
     if not isinstance(samples, list) or not samples:
         return {"committed": False, "reason": "EMPTY_SAMPLES", "new": 0}
+    # Um único instante para todas as iluminações do mesmo clique.
+    # A ordem é a dos julgamentos HUMANOS, nunca de inferências/XP.
+    confirmed_at_ns = time.time_ns()
     proposed = []
     for sample in samples:
         if not isinstance(sample, dict):
@@ -60,6 +65,7 @@ def immediate_confirmed_memory(task: dict, *, store=None) -> dict:
             category=category, lighting=lighting,
             reference=reference, test=test,
             anomaly_signature=signature, aoi_info=observed_info,
+            confirmed_at_ns=confirmed_at_ns,
         ))
     memory = store if store is not None else PersistentArchiveKNN()
     outcome = memory.add(proposed)
@@ -71,6 +77,7 @@ def immediate_confirmed_memory(task: dict, *, store=None) -> dict:
         "cnn_v2_experience": uses_faltando_v2(category),
         "source": source,
         "labels_conflict": outcome["conflicting_identities"],
+        "latest_human_at_ns": confirmed_at_ns,
     }
 
 
