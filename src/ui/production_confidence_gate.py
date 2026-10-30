@@ -105,6 +105,25 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             ) for data in diagnostics.values()
         )
     )
+    # Memória humana visual precede a CNN somente sob concordância
+    # independente A/B e contraprova física da captura ATUAL.
+    # O controlador valida este contrato novamente imediatamente antes
+    # de enviar qualquer comando XP; nenhuma decisão automática vira treino.
+    from src.core.side_memory_first import memory_first_side_decision, MIN_KNN
+    memory_decision = memory_first_side_decision(analysis)
+    if memory_decision in {"OK", "NG"}:
+        return {
+            "mode": "production", "confidence": confidence,
+            "threshold": MIN_KNN,
+            "verdict": "FALHA FALSA" if memory_decision == "OK" else "DEFEITO REAL",
+            "auto_allowed": True,
+            "operator_review_required": False,
+            "proposed_decision": memory_decision,
+            "reason": "side_operator_memory_first_96pct_auto_" + memory_decision.lower(),
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+            "unverified_physical_label": True,
+        }
+
     # Conhecimento visual SIDE aproximado pode economizar TOP/MID para a
     # conferência humana. Jamais equiparar isso a par exato nem a auto-OK.
     from src.core.side_recurrent_ok_review import side_recurrent_review_valid
