@@ -8,6 +8,7 @@ import unittest
 from src.core.side_memory_first import (
     RULE, KNOWN_MEMORY_CATEGORIES, PHYSICAL_PROBE_SCOPE,
     build_side_memory_first, memory_first_side_decision,
+    verified_side_memory_visual_review,
 )
 from src.ui.production_confidence_gate import production_decision_policy
 
@@ -227,12 +228,108 @@ class SideMemoryPriorityTests(unittest.TestCase):
                 change(raw)
                 self.assertIsNone(self.decide(raw))
 
-    def test_strong_human_ok_never_bypasses_physical_suspect_or_xp_gate(self):
+    def test_strong_human_ok_finishes_side_when_physical_probe_disagrees(self):
+        data = self._oct30_case()
+        for probe in (
+            {
+                **good_probe(),
+                "status": "SUSPECT_ABSENCE",
+                "scales": [
+                    {**good_probe()["scales"][0], "suspected_absence": True},
+                    good_probe()["scales"][1],
+                ],
+            },
+            {"status": "UNAVAILABLE", "reason": "INVALID_PHYSICAL_ROI",
+             "scales": [], "geometry": {}},
+            {"status": "UNAVAILABLE", "reason": "GEOMETRY_OUT_OF_RANGE",
+             "scales": [], "geometry": {}},
+        ):
+            with self.subTest(probe=probe["reason"]):
+                visual = self.decide(data, probe=probe)
+                self.assertIsNotNone(visual)
+                self.assertEqual(visual["verdict"], "FALHA FALSA")
+                self.assertEqual(
+                    visual["detail"]["side_early_exit"]["analyzed_lights"],
+                    ["SIDE"],
+                )
+                self.assertEqual(
+                    visual["detail"]["side_early_exit"]["skipped_lights"],
+                    ["TOP", "MID"],
+                )
+                self.assertTrue(visual["production_review_required"])
+                self.assertTrue(verified_side_memory_visual_review(visual))
+                self.assertIsNone(memory_first_side_decision(visual))
+                self.assertEqual(
+                    visual["detail"]["side_memory_first"]["physical_gate"],
+                    "OPERATOR_REQUIRED",
+                )
+                policy = production_decision_policy(visual)
+                self.assertEqual(policy["verdict"], "FALHA FALSA")
+                self.assertFalse(policy["auto_allowed"])
+                self.assertEqual(policy["proposed_decision"], "")
+                self.assertEqual(
+                    policy["reason"],
+                    "side_strong_human_ok_physical_probe_requires_operator",
+                )
+                # O modo continuo NUNCA converte esse OK em NG preventivo.
+                visual["detail"]["production_continuous_auto"] = True
+                self.assertEqual(
+                    production_decision_policy(visual)["verdict"],
+                    "FALHA FALSA",
+                )
+                self.assertFalse(
+                    production_decision_policy(visual)["auto_allowed"]
+                )
+                self.assertEqual(
+                    production_decision_policy(visual)["proposed_decision"],
+                    "",
+                )
+
+    def test_strong_human_ok_probe_exception_is_visually_ok_but_not_auto(self):
+        data = self._oct30_case()
+        def broken_probe(*_):
+            raise RuntimeError("AOI_PROBE_FAILURE")
+        visual = build_side_memory_first(
+            data, "FALTANDO", object(), object(), probe=broken_probe,
+        )
+        self.assertIsNotNone(visual)
+        self.assertEqual(visual["verdict"], "FALHA FALSA")
+        self.assertTrue(visual["production_review_required"])
+        self.assertEqual(
+            visual["detail"]["side_memory_first"]["physical_probe"]["status"],
+            "UNAVAILABLE",
+        )
+        self.assertEqual(
+            visual["detail"]["side_memory_first"]["physical_probe"]["reason"],
+            "RuntimeError",
+        )
+        self.assertFalse(production_decision_policy(visual)["auto_allowed"])
+
+    def test_visual_review_marker_tampering_cannot_authorize_xp(self):
         data = self._oct30_case()
         suspect = good_probe()
         suspect["status"] = "SUSPECT_ABSENCE"
         suspect["scales"][0]["suspected_absence"] = True
-        self.assertIsNone(self.decide(data, probe=suspect))
+        visual = self.decide(data, probe=suspect)
+        self.assertTrue(verified_side_memory_visual_review(visual))
+        for tamper in (
+            lambda x: x["detail"]["side_memory_first"].__setitem__(
+                "physical_gate", "VERIFIED"),
+            lambda x: x["detail"]["side_memory_first"].__setitem__(
+                "archive_source", "public/ok_archive/wrong.png"),
+            lambda x: x["detail"]["side_early_exit"].__setitem__(
+                "production_auto_allowed", True),
+            lambda x: x.__setitem__("production_review_required", False),
+        ):
+            with self.subTest(tamper=tamper):
+                altered = deepcopy(visual)
+                tamper(altered)
+                self.assertFalse(verified_side_memory_visual_review(altered))
+                self.assertIsNone(memory_first_side_decision(altered))
+                self.assertFalse(production_decision_policy(altered)["auto_allowed"])
+
+    def test_strong_human_ok_never_bypasses_xp_provenance_gate(self):
+        data = self._oct30_case()
         valid = self.decide(data, probe=good_probe(trim=True))
         self.assertIsNotNone(valid)
         for mutate in (
