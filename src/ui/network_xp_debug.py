@@ -298,6 +298,7 @@ def format_network_debug_report(record: dict | None) -> str:
         "-" * 72,
         f"Imagem recebida: {transport.get('image', '-')}",
         f"Frames estáveis exigidos: {transport.get('stable_required_frames', '-')}",
+        f"Sincronização SIDE pré-captura: {transport.get('side_preflight', '-')}",
         f"Gate aceitando imagens: {cycle.get('accepting_images', '-')}",
         f"Geração do gate: {cycle.get('generation', '-')}",
         f"Imagens ignoradas no gate: {cycle.get('ignored_images', '-')}",
