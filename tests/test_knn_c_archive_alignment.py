@@ -13,6 +13,8 @@ from src.core.archive_persistent_memory import (
 )
 from src.core.confirmed_visual_recall import ConfirmedVisualRecall
 from src.core.knn_c_archive_alignment import KNNArchiveAlignment
+from src.core.knn_c_live import install_live_knn_strategy_c
+from src.core.verified_memory_router import VerifiedKNNMemory
 from src.core.side_memory_first import build_side_memory_first, memory_first_side_decision
 from src.ui.production_confidence_gate import production_decision_policy
 from tests.test_side_memory_first import case, good_probe
@@ -99,6 +101,44 @@ class KNNArchiveAlignmentTests(unittest.TestCase):
         self.assertEqual(production_decision_policy(result)["proposed_decision"], "OK")
         # Continua honesto sobre A/B originais; não diz que foram 97%.
         self.assertLess(result["detail"]["side_memory_first"]["knn_a_similarity"], .90)
+
+
+    def test_live_knn_wrapper_reconciles_after_diagnosis(self):
+        persist(self.store, "OK", self.ref, self.tst)
+        human = self.human.lookup(
+            self.ref, self.tst, {"category": "FALTANDO", "lighting_mode": "SIDE"},
+        )
+        index = VerifiedKNNMemory(archive_store=self.store)
+
+        class Base:
+            def _get_verified_memory_index(self):
+                return index
+
+            def inspect(self, ref, test, raw, info, box, epicenters):
+                return {"verdict": "DEFEITO REAL", "is_defect": True,
+                        "detail": {"recognition_route": "NEW_CNN",
+                                   "confirmed_visual_recall": human}}
+
+        class Runtime(Base):
+            pass
+
+        class ReadyBank:
+            def diagnose(self, ref, test, light):
+                return {"schema": "visionx.knn_c_live_review_gated.v1",
+                        "status": "REVISAO", "bank_status": "READY",
+                        "diagnostic_only": True, "auto_decision_authorized": False}
+
+        install_live_knn_strategy_c(Runtime, strategy=ReadyBank())
+        result = Runtime().inspect(
+            self.ref, self.tst, [],
+            {"category": "FALTANDO", "lighting_mode": "SIDE"}, {}, [],
+        )
+        knn = result["detail"]["knn_c"]
+        self.assertEqual(knn["status"], "REVISAO")
+        self.assertEqual(knn["aligned_archive"]["status"], "RECONCILED_OK")
+        self.assertEqual(knn["aligned_archive"]["human_record_id"],
+                         human["best_ok_source"]["record_id"])
+        self.assertFalse(knn["aligned_archive"]["auto_decision_authorized"])
 
     def test_no_archive_cannot_approve_a_human_candidate(self):
         persist(self.store, "OK", self.ref, self.tst, archive=False)
