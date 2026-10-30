@@ -76,15 +76,17 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
     trace = detail.get("decision_trace", {})
     trace = trace if isinstance(trace, dict) else {}
     if detail.get("production_continuous_auto") is True:
+        # O painel não pode mostrar o julgamento provisório/REVIEW de
+        # um motor enquanto a Produção já decidiu 0 ou 1 pela política.
         from src.ui.production_confidence_gate import production_decision_policy
         continuous_policy = production_decision_policy(analysis)
-        if (
-            continuous_policy.get("auto_allowed") is True
-            and continuous_policy.get("proposed_decision") == "NG"
-            and continuous_policy.get("reason")
-            == "production_uncertain_auto_ng_quarantine_v1"
-        ):
-            return "NG PREVENTIVO", "ng"
+        if continuous_policy.get("operational_error") is True:
+            return "", ""
+        if continuous_policy.get("auto_allowed") is True:
+            if continuous_policy.get("proposed_decision") == "OK":
+                return "FALHA FALSA", "ok"
+            if continuous_policy.get("proposed_decision") == "NG":
+                return "DEFEITO REAL", "ng"
     review_required = bool(
         analysis.get("production_review_required", False)
         or trace.get("operator_review_required", False)

@@ -39,6 +39,7 @@ def uncertain_three_light():
         "detail": {
             "multilight_final": True,
             "production_continuous_auto": True,
+            "production_binary_auto": True,
             "recognition_light_routes": {
                 "SIDE": "NEW_EXPERTS", "TOP": "NEW_EXPERTS",
                 "MID": "NEW_EXPERTS",
@@ -57,14 +58,16 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         analysis = uncertain_three_light()
         policy = production_decision_policy(analysis)
         self.assertEqual(policy["proposed_decision"], "NG")
-        self.assertEqual(policy["verdict"], "NG PREVENTIVO")
+        self.assertEqual(policy["verdict"], "DEFEITO REAL")
         self.assertTrue(policy["auto_allowed"])
         self.assertFalse(policy["operator_review_required"])
         self.assertTrue(policy["unverified_physical_label"])
         self.assertEqual(
-            policy["reason"], "production_uncertain_auto_ng_quarantine_v1",
+            policy["reason"], "production_binary_unverified_ng_v1",
         )
-        self.assertEqual(verdict_feedback_state(analysis), ("NG PREVENTIVO", "ng"))
+        self.assertEqual(verdict_feedback_state(analysis), ("DEFEITO REAL", "ng"))
+        self.assertEqual(policy["source_verdict"], "REVISÃO OBRIGATÓRIA")
+        self.assertTrue(policy["unverified_physical_label"])
 
     def test_not_engaged_outside_production_controller(self):
         a = uncertain_three_light()
@@ -82,7 +85,7 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
             lambda a: a["detail"]["recognition_light_routes"].pop("TOP"),
             lambda a: a["detail"]["recognition_light_routes"].update(MID="UNKNOWN"),
             lambda a: a["detail"].update(capture_error=True),
-            lambda a: a["detail"].update(multilight_physical_disagreement=True),
+            lambda a: a["detail"].update(category_unknown=True),
         )
         for mutation in variants:
             with self.subTest(mutation=str(mutation)):
@@ -90,6 +93,63 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
                 mutation(a)
                 policy = production_decision_policy(a)
                 self.assertFalse(policy["auto_allowed"])
+                self.assertFalse(policy["operator_review_required"])
+                self.assertEqual(policy["proposed_decision"], "")
+                self.assertTrue(policy["operational_error"])
+
+    def test_complete_physical_disagreement_is_binary_ng_not_manual(self):
+        analysis = uncertain_three_light()
+        analysis["detail"]["multilight_physical_disagreement"] = True
+        policy = production_decision_policy(analysis)
+        self.assertTrue(policy["auto_allowed"])
+        self.assertFalse(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "NG")
+        self.assertEqual(policy["verdict"], "DEFEITO REAL")
+
+    def test_verdict_binary_for_complete_ng_or_ok_only(self):
+        analysis = uncertain_three_light()
+        for raw_verdict in ("REVISÃO OBRIGATÓRIA", "NG PREVENTIVO", "DEFEITO REAL"):
+            with self.subTest(raw_verdict=raw_verdict):
+                analysis["verdict"] = raw_verdict
+                policy = production_decision_policy(analysis)
+                self.assertEqual(
+                    (policy["proposed_decision"], policy["verdict"]),
+                    ("NG", "DEFEITO REAL"),
+                )
+        self.assertEqual(verdict_feedback_state(analysis), ("DEFEITO REAL", "ng"))
+
+    def test_operational_fault_stops_without_human_quality_review(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = uncertain_three_light()
+        analysis["detail"]["capture_error"] = True
+        panel.current_analysis = analysis
+        controller.pending_analysis = analysis
+        controller.generation += 1
+        controller._finish_presentation(controller.generation)
+        self.assertEqual(controller.state, "operational_fault")
+        self.assertFalse(panel.production_review_pending)
+        self.assertEqual(panel.saved, [])
+        self.assertEqual(verdict_feedback_state(analysis), ("", ""))
+
+    def test_textual_false_failure_without_capture_cannot_send_zero(self):
+        # O antigo fallback false_failure_auto_ok sozinho não prova que
+        # a tela do XP e a iluminação correspondem a uma peça completa.
+        analysis = {
+            "verdict": "FALHA FALSA",
+            "is_defect": False,
+            "detail": {
+                "production_continuous_auto": True,
+                "production_binary_auto": True,
+            },
+        }
+        policy = production_decision_policy(analysis)
+        self.assertFalse(policy["auto_allowed"])
+        self.assertFalse(policy["operator_review_required"])
+        self.assertTrue(policy["operational_error"])
+        self.assertEqual(policy["proposed_decision"], "")
+        self.assertEqual(verdict_feedback_state(analysis), ("", ""))
 
     def test_controller_send_ng_once_after_five_second_pause_window(self):
         panel = _Panel()
@@ -100,6 +160,7 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         panel.current_analysis = a
         self.assertTrue(controller.analysis_ready(a))
         self.assertTrue(a["detail"]["production_continuous_auto"])
+        self.assertTrue(a["detail"]["production_binary_auto"])
         controller._stage_timer.stop()
         controller.pending_analysis = a
         controller.generation += 1
