@@ -111,6 +111,70 @@ class HumanMultilightPriorityTests(unittest.TestCase):
         self.assertEqual(policy["proposed_decision"], "")
         self.assertNotEqual(policy["reason"], "production_uncertain_auto_ng_quarantine_v1")
 
+    def test_approximate_ng_png_never_overrides_confirmed_human_ok(self):
+        # Evento 10:07: NG da KNN C na SIDE era apenas vizinho
+        # visual (~81,88%); nao era par RGB exato nem fonte da
+        # memoria humana NG de 98,65% (registro JSON separado).
+        analyses, samples = event()
+        side_knn = analyses["SIDE"]["detail"]["knn_c"]
+        side_knn["neighbors_A"] = [{
+            "label": "NG",
+            "path": "public/ng_archive/2026-10-21_1442_FALTANDO.png",
+            "similarity": 0.81875214,
+            "source_pixel_sha256": "a" * 64,
+        }]
+        # No descritor B do log, o primeiro vizinho era OK.
+        side_knn["neighbors_B"] = [{
+            "label": "OK",
+            "path": "public/ok_archive/2026-10-21_1416_FALTANDO.png",
+            "similarity": 0.8293933,
+            "source_pixel_sha256": "b" * 64,
+        }]
+        fused = fuse_multilight(analyses, "FALTANDO")
+        final = build_human_multilight_priority(
+            fused, analyses, samples, "FALTANDO",
+            probe=lambda *_: good_probe(trim=True),
+        )
+        self.assertEqual(final["verdict"], "FALHA FALSA")
+        self.assertEqual(final["detail"]["fusion_rule"], RULE)
+        # Preservar provas conflitantes em vez de apagá-las para
+        # aumentar artificialmente a confianca do resultado.
+        diag = final["detail"]["knn_c_light_neighbor_evidence"]["SIDE"]
+        self.assertEqual(diag["neighbors_A"][0]["label"], "NG")
+        self.assertEqual(diag["neighbors_A"][0]["similarity"], 0.81875214)
+        self.assertEqual(
+            diag["neighbors_A"][0]["path"],
+            "public/ng_archive/2026-10-21_1442_FALTANDO.png",
+        )
+        human_side = final["detail"]["human_multilight_priority"][
+            "light_snapshots"]["SIDE"]["confirmed_visual_recall"]
+        self.assertEqual(human_side["status"], "AMBIGUOUS")
+        self.assertAlmostEqual(human_side["best_ng_similarity"], .98651746)
+        human_top = final["detail"]["human_multilight_priority"][
+            "light_snapshots"]["TOP"]["confirmed_visual_recall"]
+        self.assertEqual(human_top["status"], "HUMAN_OK_VISUAL_CANDIDATE")
+        self.assertAlmostEqual(human_top["best_ok_similarity"], .97741850)
+        final["detail"]["production_continuous_auto"] = True
+        self.assertEqual(production_decision_policy(final)["proposed_decision"], "OK")
+
+    def test_independent_ng_corroboration_blocks_human_ok_priority(self):
+        analyses, samples = event()
+        fused = fuse_multilight(analyses, "FALTANDO")
+        fused["detail"]["knn_visual_corroboration"] = {
+            "status": "NG_CORROBORATED",
+            "strong_ng_lights": ["SIDE", "MID"],
+        }
+        final = build_human_multilight_priority(
+            fused, analyses, samples, "FALTANDO",
+            probe=lambda *_: good_probe(trim=True),
+        )
+        # Evidencia NG corroborada e distinta de mero vizinho.
+        self.assertNotEqual(final["detail"].get("fusion_rule"), RULE)
+        self.assertEqual(
+            final["detail"]["knn_visual_corroboration"]["status"],
+            "NG_CORROBORATED",
+        )
+
     def test_clear_human_ng_in_other_light_blocks_priority(self):
         analyses, samples = event()
         analyses["SIDE"]["detail"]["confirmed_visual_recall"].update(

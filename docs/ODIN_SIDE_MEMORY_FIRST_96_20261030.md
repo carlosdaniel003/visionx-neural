@@ -212,3 +212,42 @@ adesivo. Antes de usar o comando real no XP, validar com XP isolado
 e com controles NG e OK difíceis, em especial pares conflitantes
 entre iluminações. Os testes usam fixtures de scores do log, não
 os PNGs originais da estação.
+
+
+## Contrato permanente — vizinho NG aproximado versus memória OK humana
+
+A regra de 30/10/2026 distingue **duas fontes que não são intercambiáveis**:
+
+1. Vizinho visual NG da `KNN C`: uma correspondência por semelhança
+   (por exemplo, na SIDE do evento `8dee2f1d331149eeb14718ff44386db3`,
+   `public/ng_archive/2026-10-21_1442_FALTANDO.png` com
+   similaridade visual A `0.81875214`); não é prova de par exato,
+   nem comprova que a peça atual contenha o mesmo defeito.
+2. Memória humana `OPERATOR_CONFIRMED`: evidência de decisão anterior
+   sobre outra observação, qualificada pelo score e margem na mesma luz,
+   com proveniência preservada. A TOP do evento teve OK `0.9774185`,
+   contra NG `0.93243586`. A SIDE registrou um NG humano
+   `0.98651746` com status `AMBIGUOUS`; **esse registro JSON não
+   foi identificado como o PNG NG de 21/10 às 14:42**.
+
+**Invariante de julgamento:** um PNG NG apenas semelhante não
+substitui, por si só, um OK humano historicamente confirmado e
+qualificado. O índice KNN pode continuar recuperando esse PNG para
+diagnóstico, mas não pode promovê-lo indevidamente a identidade exata,
+rótulo humano atual ou voto NG físico definitivo.
+
+**Invariante de segurança:** nenhuma evidência conflitante é apagada
+da auditoria. Um candidato humano NG inequívoco em outra luz, uma
+corroboração independente de NG, ausência física ou captura inválida
+continua sujeito aos bloqueios pertinentes. Uma memória humana OK
+aproximada não significa 97% de probabilidade de peça boa. Sem
+contraprova física válida, pode-se exibir o reconhecimento visual,
+mas não transmitir `0/OK` automático.
+
+`tests/test_human_multilight_priority.py` protege o contrato:
+(1) injetar o vizinho NG aproximado conhecido no diagnóstico KNN C
+não muda o julgamento OK humano qualificado; (2) o NG e os scores
+originais persistem no debug/registro; (3) corroboração NG independente
+bloqueia a prioridade; (4) os testes existentes mantêm a exigência
+de operador para NG humano inequívoco e para veto físico.
+A regra é genérica, não depende da data ou do nome do arquivo.
