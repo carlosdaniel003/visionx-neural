@@ -206,6 +206,149 @@ class SideMemoryPriorityTests(unittest.TestCase):
         )
         return data
 
+    def _oct30_1550_margin_case(self):
+        """Evento 19271566...: OK reconhecido apesar da CNN NG em SIDE."""
+        data = self._oct30_1402_case()
+        human = data["detail"]["confirmed_visual_recall"]
+        human.update(
+            status="AMBIGUOUS",
+            best_ok_similarity=.98691237,
+            best_ng_similarity=.94741273,
+            best_ok_source={
+                **_source("OK"),
+                "record_id": "7f2112f4d1823e5dbda90ec4332e9f18c6dc91511dfced3c753c92ff9a7267c4",
+            },
+        )
+        side_ok = "public/ok_archive/2026-10-21_1438_FALTANDO.png"
+        knn = data["detail"]["knn_c"]
+        knn.update(
+            status="REVISAO",
+            vote_A="OK", vote_B="OK",
+            aligned_archive={
+                "schema": "visionx.knn_c_archive_alignment.v1",
+                "status": "NO_MATCH",
+                "reason": "NO_CONFIRMED_HUMAN_CANDIDATE",
+            },
+            neighbors_A=[
+                _row("OK", .982817, side_ok),
+                _row("OK", .93209109),
+                _row("OK", .92470253),
+                _row("OK", .88438911),
+                _row("NG", .86051937),
+            ],
+            neighbors_B=[
+                _row("OK", .96793859, side_ok),
+                _row("OK", .88397427),
+                _row("OK", .86784496),
+                _row("OK", .84163921),
+                _row("NG", .83308218),
+            ],
+        )
+        data["confidence"] = .9943923354148865
+        return data
+
+    def test_oct30_1550_same_archive_ok_and_ng_separation_finishes_side(self):
+        original = self._oct30_1550_margin_case()
+        unchanged = deepcopy(original)
+        result = self.decide(original, probe=good_probe(trim=True))
+        self.assertEqual(original, unchanged)
+        self.assertIsNotNone(result, "nao pode cair na fusao NG preventiva")
+        self.assertEqual(result["verdict"], "FALHA FALSA")
+        self.assertIs(result["is_defect"], False)
+        self.assertEqual(result["detail"]["side_early_exit"]["skipped_lights"],
+                         ["TOP", "MID"])
+        marker = result["detail"]["side_memory_first"]
+        self.assertEqual(marker["knn_agreement_mode"],
+                         "KNN_AB_MARGIN_CORROBORATED_HUMAN_OK")
+        self.assertEqual(marker["archive_source"],
+                         "public/ok_archive/2026-10-21_1438_FALTANDO.png")
+        self.assertEqual(marker["min_knn_a_similarity"], .98)
+        self.assertEqual(marker["min_knn_b_similarity"], .965)
+        self.assertEqual(marker["min_ng_neighbor_gap"], .10)
+        self.assertEqual(marker["min_similarity"], .965)
+        self.assertEqual(memory_first_side_decision(result), "OK")
+        result["detail"]["production_continuous_auto"] = True
+        policy = production_decision_policy(result)
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertEqual(policy["proposed_decision"], "OK")
+        self.assertTrue(policy["auto_allowed"])
+
+    def test_oct30_1550_suspect_or_unavailable_probe_never_auto_releases(self):
+        for probe in (
+            {
+                **good_probe(trim=True),
+                "status": "SUSPECT_ABSENCE",
+                "scales": [
+                    {**good_probe()["scales"][0], "suspected_absence": True},
+                    good_probe()["scales"][1],
+                ],
+            },
+            {"status": "UNAVAILABLE", "reason": "MISSING_ROI",
+             "scales": [], "geometry": {}},
+        ):
+            with self.subTest(status=probe["status"]):
+                visual = self.decide(self._oct30_1550_margin_case(), probe=probe)
+                self.assertIsNotNone(visual)
+                self.assertEqual(visual["verdict"], "FALHA FALSA")
+                self.assertTrue(verified_side_memory_visual_review(visual))
+                self.assertIsNone(memory_first_side_decision(visual))
+                visual["detail"]["production_continuous_auto"] = True
+                policy = production_decision_policy(visual)
+                self.assertFalse(policy["auto_allowed"])
+                self.assertEqual(policy["proposed_decision"], "")
+                self.assertNotEqual(policy["reason"], "production_uncertain_auto_ng_quarantine_v1")
+
+    def test_oct30_1550_margin_route_rejects_conflicting_or_weak_evidence(self):
+        changes = {
+            "human_below_985": lambda d: d["detail"]["confirmed_visual_recall"].update(
+                best_ok_similarity=.9849),
+            "human_gap_below_35pp": lambda d: d["detail"]["confirmed_visual_recall"].update(
+                best_ng_similarity=.953),
+            "knn_a_below_98": lambda d: d["detail"]["knn_c"]["neighbors_A"][0].update(
+                similarity=.9799),
+            "knn_b_below_965": lambda d: d["detail"]["knn_c"]["neighbors_B"][0].update(
+                similarity=.9649),
+            "ng_too_close_a": lambda d: d["detail"]["knn_c"]["neighbors_A"][4].update(
+                similarity=.889),
+            "ng_too_close_b": lambda d: d["detail"]["knn_c"]["neighbors_B"][4].update(
+                similarity=.879),
+            "ng_over_90": lambda d: d["detail"]["knn_c"]["neighbors_A"][4].update(
+                similarity=.901),
+            "missing_negative_neighbor": lambda d: d["detail"]["knn_c"]["neighbors_B"][4].update(
+                label="OK"),
+            "different_png": lambda d: d["detail"]["knn_c"]["neighbors_B"][0].update(
+                path="public/ok_archive/another.png"),
+            "different_sha": lambda d: d["detail"]["knn_c"]["neighbors_B"][0].update(
+                source_pixel_sha256="f"*64),
+            "ng_vote": lambda d: d["detail"]["knn_c"].update(vote_B="NG"),
+            "not_human_confirmed": lambda d: d["detail"]["confirmed_visual_recall"][
+                "best_ok_source"].update(source="ARCHIVE_IMPORTED"),
+            "source_top": lambda d: d["detail"]["confirmed_visual_recall"][
+                "best_ok_source"].update(lighting_mode="TOP"),
+            "physical_missing": lambda d: d["detail"].update(hard_missing_evidence=True),
+            "not_ready": lambda d: d["detail"]["knn_c"].update(bank_status="LOADING"),
+        }
+        for name, change in changes.items():
+            with self.subTest(name=name):
+                data = self._oct30_1550_margin_case()
+                change(data)
+                self.assertIsNone(self.decide(data))
+
+    def test_oct30_1550_revalidated_marker_must_not_be_tampered(self):
+        data = self._oct30_1550_margin_case()
+        result = self.decide(data, probe=good_probe())
+        self.assertIsNotNone(result)
+        self.assertEqual(memory_first_side_decision(result), "OK")
+        for key, tampered_value in (
+            ("min_ng_neighbor_gap", .05),
+            ("min_knn_b_similarity", .94),
+            ("archive_pixel_sha256", "f" * 64),
+        ):
+            with self.subTest(key=key):
+                modified = deepcopy(result)
+                modified["detail"]["side_memory_first"][key] = tampered_value
+                self.assertIsNone(memory_first_side_decision(modified))
+
     def test_oct30_1402_high_corroboration_side_ok_auto_zero_when_physical_clear(self):
         original = self._oct30_1402_case()
         before = deepcopy(original)

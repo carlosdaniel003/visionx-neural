@@ -43,7 +43,16 @@ HIGH_OK_MIN_KNN_A = 0.985
 HIGH_OK_MIN_KNN_B = 0.97
 HIGH_OK_MIN_KNN_MARGIN = 0.08
 HIGH_OK_MODE = "KNN_AB_HIGH_CORROBORATED_HUMAN_OK"
-VISUAL_OK_MODES = frozenset({"KNN_AB_STRONG_HUMAN_OK", HIGH_OK_MODE})
+# Alternativa guiada por separacao OK x NG, nao por arredondamento
+# isolado de dois scores absolutos. Ambos os descritores devem apontar
+# para o mesmo PNG+SHA e superar todos os NG proximos com folga maior.
+MARGIN_OK_MIN_KNN_A = 0.98
+MARGIN_OK_MIN_KNN_B = 0.965
+MARGIN_OK_MIN_NG_GAP = 0.10
+MARGIN_OK_MODE = "KNN_AB_MARGIN_CORROBORATED_HUMAN_OK"
+VISUAL_OK_MODES = frozenset({
+    "KNN_AB_STRONG_HUMAN_OK", HIGH_OK_MODE, MARGIN_OK_MODE,
+})
 KNOWN_MEMORY_CATEGORIES = frozenset(
     canonical_memory_category(value) for value in CATEGORIES
 )
@@ -189,36 +198,59 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
         )
     )
 
-    # Alternativa para OK humano inequivocamente mais proximo:
-    # A/B usam scores diferentes e ambos apontam o MESMO PNG OK com SHA
-    # identico. Nenhum NG similar pode ser um rival forte em A ou B.
-    # A regra nao transforma similaridade em identidade RGB ou rotulo fisico.
+    # Qualificacao visual por A/B no MESMO PNG, com rótulo humano OK da
+    # SIDE e contraste contra os vizinhos NG de cada descritor. Não usa
+    # categoria/arquivo/evento como exceção nem trata semelhança como par RGB.
+    same_ok_png = bool(
+        potential_strong_ok
+        and label == "OK"
+        and human_source.get("lighting_mode") == "SIDE"
+        and a[0] == b[0] == "OK"
+        and a[2:] == b[2:]
+        and isinstance(a[2], str) and a[2].startswith(prefix)
+        and ".." not in PurePosixPath(a[2]).parts
+        and isinstance(a[3], str) and len(a[3]) == 64
+        and all(char in "0123456789abcdef" for char in a[3].lower())
+        and knn.get("vote_A") == knn.get("vote_B") == "OK"
+    )
+
+    def ng_neighbors_cleared(gap: float, *, require_both: bool = False) -> bool:
+        """Cada descritor precisa discriminar OK de seus concorrentes NG."""
+        for top_score, rows in (
+            (a[1], rows_by_method[0]), (b[1], rows_by_method[1])
+        ):
+            ng_neighbors = [row for row in rows[:5] if row["label"] == "NG"]
+            if require_both and not ng_neighbors:
+                # Sem adversario NG observado, a rota por margem nao
+                # possui evidencia de contraste para inferir OK.
+                return False
+            if any(
+                _number(row["similarity"]) >= STRONG_OK_MAX_OPPOSITE_KNN
+                or top_score - _number(row["similarity"]) < gap
+                for row in ng_neighbors
+            ):
+                return False
+        return True
+
     min_a = STRONG_OK_MIN_KNN_A if strong_human else HIGH_OK_MIN_KNN_A
     min_b = STRONG_OK_MIN_KNN_B if strong_human else HIGH_OK_MIN_KNN_B
     min_ng_margin = (
         STRONG_OK_MIN_KNN_MARGIN if strong_human else HIGH_OK_MIN_KNN_MARGIN
     )
     strong_ok_agrees = bool(
-        potential_strong_ok
-        and label == "OK"
-        and human_source.get("lighting_mode") == "SIDE"
-        and a[0] == b[0] == "OK"
-        and a[1] >= min_a
-        and b[1] >= min_b
-        and a[2:] == b[2:]
-        and isinstance(a[2], str) and a[2].startswith(prefix)
-        and ".." not in PurePosixPath(a[2]).parts
-        and isinstance(a[3], str) and len(a[3]) == 64
-        and all(c in "0123456789abcdef" for c in a[3].lower())
-        and knn.get("vote_A") == knn.get("vote_B") == "OK"
-        and all(
-            _number(row["similarity"]) < STRONG_OK_MAX_OPPOSITE_KNN
-            and top_score - _number(row["similarity"]) >= min_ng_margin
-            for top_score, rows in (
-                (a[1], rows_by_method[0]), (b[1], rows_by_method[1])
-            )
-            for row in rows[:5] if row["label"] == "NG"
-        )
+        same_ok_png
+        and a[1] >= min_a and b[1] >= min_b
+        and ng_neighbors_cleared(min_ng_margin)
+    )
+
+    # O caso em que A/B ficam poucos décimos abaixo dos pisos absolutos
+    # exige evidência MAIS FORTE de separação contra NG nos dois métodos.
+    # Não relaxa humano, identidade do PNG, proveniência nem veto físico.
+    margin_ok_agrees = bool(
+        not strong_ok_agrees and high_human and same_ok_png
+        and a[1] >= MARGIN_OK_MIN_KNN_A
+        and b[1] >= MARGIN_OK_MIN_KNN_B
+        and ng_neighbors_cleared(MARGIN_OK_MIN_NG_GAP, require_both=True)
     )
 
     # Uma SEGUNDA rota compara JSON humano e JSON archive na MESMA métrica:
@@ -228,7 +260,7 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
     aligned = knn.get("aligned_archive")
     source = aligned.get("archive_source") if isinstance(aligned, dict) else None
     aligned_ok = bool(
-        not original_agrees and not strong_ok_agrees
+        not original_agrees and not strong_ok_agrees and not margin_ok_agrees
         and isinstance(aligned, dict)
         and aligned.get("schema") == "visionx.knn_c_archive_alignment.v1"
         and aligned.get("source") == "VERIFIED_ARCHIVE_JSON"
@@ -258,19 +290,24 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
             if row["label"] == other
         )
     )
-    if not original_agrees and not aligned_ok and not strong_ok_agrees:
+    if not any((original_agrees, aligned_ok, strong_ok_agrees, margin_ok_agrees)):
         return None
 
     mode = (
         "KNN_AB_SAME_PNG" if original_agrees else
         "KNN_AB_STRONG_HUMAN_OK" if strong_ok_agrees and strong_human else
         HIGH_OK_MODE if strong_ok_agrees else
+        MARGIN_OK_MODE if margin_ok_agrees else
         "ALIGNED_HUMAN_ARCHIVE_JSON"
     )
-    minimum_knn = min_b if strong_ok_agrees else MIN_KNN
+    minimum_knn = (
+        MARGIN_OK_MIN_KNN_B if margin_ok_agrees else
+        min_b if strong_ok_agrees else MIN_KNN
+    )
     minimum_margin = (
         STRONG_OK_MIN_HUMAN_MARGIN if strong_ok_agrees and strong_human else
-        HIGH_OK_MIN_HUMAN_MARGIN if strong_ok_agrees else MIN_MARGIN
+        HIGH_OK_MIN_HUMAN_MARGIN if (strong_ok_agrees or margin_ok_agrees)
+        else MIN_MARGIN
     )
     evidence = {
         "schema": MEMORY_SCHEMA, "rule": RULE, "label": label,
@@ -280,16 +317,22 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
         "knn_a_similarity": a[1],
         "knn_b_similarity": b[1],
         "knn_agreement_mode": mode,
-        "archive_source": a[2] if (original_agrees or strong_ok_agrees) else source["path"],
-        "archive_pixel_sha256": a[3] if (original_agrees or strong_ok_agrees) else None,
-        "archive_file_sha256": None if (original_agrees or strong_ok_agrees) else source["source_sha256"],
+        "archive_source": a[2] if (original_agrees or strong_ok_agrees or margin_ok_agrees) else source["path"],
+        "archive_pixel_sha256": a[3] if (original_agrees or strong_ok_agrees or margin_ok_agrees) else None,
+        "archive_file_sha256": None if (original_agrees or strong_ok_agrees or margin_ok_agrees) else source["source_sha256"],
         "aligned_archive": deepcopy(aligned) if aligned_ok else None,
         "min_similarity": minimum_knn,
         "min_human_similarity": (
             STRONG_OK_MIN_HUMAN if strong_ok_agrees and strong_human else
-            HIGH_OK_MIN_HUMAN if strong_ok_agrees else MIN_HUMAN
+            HIGH_OK_MIN_HUMAN if (strong_ok_agrees or margin_ok_agrees)
+            else MIN_HUMAN
         ),
         "min_opposite_margin": minimum_margin,
+        **({
+            "min_knn_a_similarity": MARGIN_OK_MIN_KNN_A,
+            "min_knn_b_similarity": MARGIN_OK_MIN_KNN_B,
+            "min_ng_neighbor_gap": MARGIN_OK_MIN_NG_GAP,
+        } if margin_ok_agrees else {}),
         "approximate": True,
         "exact_pair_claimed": False,
     }
@@ -402,6 +445,9 @@ def build_side_memory_first(
         "OK humano >=98,5%, margem >=3,5pp, mesmo PNG em "
         "A>=98,5%/B>=97%, adversario NG distante >=8pp"
         if evidence["knn_agreement_mode"] == HIGH_OK_MODE else
+        "OK humano >=98,5%, margem >=3,5pp, mesmo PNG/SHA em "
+        "A>=98%/B>=96,5%; NG <90% e separacao >=10pp nos dois KNN"
+        if evidence["knn_agreement_mode"] == MARGIN_OK_MODE else
         "KNN A/B >=97% no mesmo PNG ou JSON archive alinhado "
         "a memoria humana, margem >=4pp"
     )
