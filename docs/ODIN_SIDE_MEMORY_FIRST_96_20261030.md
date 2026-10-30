@@ -50,11 +50,28 @@ visual de 96% NÃO é uma probabilidade industrial de 96% de correção.
 6. A seção **PROVENIÊNCIA** informa a fonte decisiva, SHA do PNG,
    ID do julgamento humano, semelhanças A/B e resultado físico.
 
-A rota é limitada à categoria de busca FALTANDO porque a contraprova
-física atual só verifica **ausência**. A categoria AOI não é considerada
-verdade sobre o tipo real do defeito. Para outras categorias, as
-regras existentes continuam em vigor. CONFLICT / NOT_READY / falha
-de consulta nunca são tratados como reconhecimento positivo.
+**Atualização de 30/10/2026 — extensão para todas as categorias oficiais:**
+a regra foi ampliada para `FALTANDO`, `DESLOCADO`, `INVERTIDO`,
+`EMBORCADO` e `MUITO ADESIVO` (canônica `MUITOADESIVO`).
+Aliases OCR normalizados usam o mesmo escopo de memória; categoria
+desconhecida/conflitante, memória ausente, KNN C LOADING e divergência
+OK/NG continuam em fallback, sem 0/OK automático.
+
+**Limite do veto físico:** `physical_absence_probe` continua sendo
+somente uma verificação independente de **ausência de estrutura esperada**
+em duas escalas. Ela pode barrar uma aprovação em qualquer categoria,
+mas **não verifica autonomamente inversão, tombstone, deslocamento,
+polaridade ou excesso de adesivo**. A correspondência humana + KNN A/B
+e margem de 4pp é a base da precedência visual nessas categorias,
+com risco residual de defeitos fisicamente semelhantes. A telemetria
+traz `physical_probe_scope=CROSS_CATEGORY_ABSENCE_VETO_ONLY`.
+O código não cria sonda física universal nem aumenta artificialmente
+a confiança. Necessário validar com NGs difíceis de cada categoria
+e saída XP isolada antes de liberar produção.
+
+A categoria AOI continua sendo apenas escopo de busca auditável,
+não verdade física do defeito. CONFLICT / NOT_READY / falha de consulta
+nunca viram reconhecimento positivo.
 
 ## Testes e limitações
 
