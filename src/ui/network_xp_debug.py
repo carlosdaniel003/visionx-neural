@@ -148,9 +148,17 @@ def format_memory_decision_provenance(
     route = str(detail.get("recognition_route", "") or "")
     reason = str(policy.get("reason", "") or "")
     lines = ["", "PROVENIÊNCIA: POR QUE O ODIN DECIDIU ASSIM?", "-" * 72]
-    from src.core.side_memory_first import memory_first_side_decision
+    from src.core.side_memory_first import (
+        memory_first_side_decision, verified_side_memory_visual_review,
+    )
     recalled_side = memory_first_side_decision(final)
-    if recalled_side in {"OK", "NG"}:
+    visual_only = bool(
+        recalled_side is None
+        and verified_side_memory_visual_review(final)
+    )
+    if recalled_side in {"OK", "NG"} or visual_only:
+        if visual_only:
+            recalled_side = "OK"
         recalled = detail["side_memory_first"]
         lines.extend([
             "ORIGEM DECISIVA: MEMÓRIA HUMANA PRIORITÁRIA APROXIMADA, "
@@ -166,9 +174,24 @@ def format_memory_decision_provenance(
             "KNN A: " + str(recalled["knn_a_similarity"])
             + " | KNN B: " + str(recalled["knn_b_similarity"]),
             "Sonda de ausência (NÃO verifica o defeito de todas as categorias): "
-            + str(recalled["physical_probe"]["status"]),
+            + str(recalled["physical_probe"].get("status", "-")),
+            "Motivo da sonda: "
+            + str(recalled["physical_probe"].get("reason", "-")),
+            "Escalas da sonda: "
+            + str(recalled["physical_probe"].get("scales", [])),
+            "Geometria da sonda: "
+            + str(recalled["physical_probe"].get("geometry", {})),
+            "Gate físico: "
+            + str(recalled.get("physical_gate", "-")),
             "Escopo da sonda física: "
             + str(recalled.get("physical_probe_scope", "-")),
+            (
+                "RESULTADO VISUAL: FALHA FALSA; XP 0 AUTOMÁTICO BLOQUEADO, "
+                "confirmação humana necessária."
+                if visual_only else
+                "Reconhecimento SIDE validado para decisão; "
+                "autorização XP ainda depende da política de produção."
+            ),
             "CNN não prevaleceu nesta captura SIDE; TOP/MID dispensadas.",
         ])
     elif route == "KNOWN_KNN" and detail.get("recognition_memory_verified") is True:

@@ -305,3 +305,46 @@ treinamento, nem a política de teclas XP foram modificados.
 A validação é baseada em fixtures dos scores do log, não é uma
 confirmação industrial independente. Validar com fotos de NG
 semelhantes e com liberação XP desabilitada antes da operação autônoma.
+
+
+## 30/10/2026 — SIDE visual OK com sonda física inconclusiva (13:06)
+
+Evento `6d57176272ce49bf8eb0302cfed8e6ea`, executado na estação
+com commit `ae5814ec22e735c0a4c93ec10cb995e5fe24f504`.
+A memória SIDE retornou **OK humano 0.99019399 / NG 0.95938641**,
+KNN C **A OK 0.98084619 / B OK 0.95345213**, ambos reconhecendo o
+mesmo PNG e SHA em `public/ok_archive/`. O operador confirmou a
+condição visual como falha falsa. O evento terminou, porém, com
+`side_early_exit={}` e TOP/MID processadas; a política de produção
+sugeriu NG preventivo. O código daquele commit retornava `None`
+silenciosamente de `build_side_memory_first()` quando a sonda física
+não satisfazia `_verified_probe()`; portanto, o resultado da sonda
+não permaneceu no debug. Não há PNG original da captura disponível
+neste repositório para determinar qual critério físico foi rejeitado.
+
+**Mudança na fronteira entre classificação visual e saída XP:**
+
+- O candidato fortemente qualificado `KNN_AB_STRONG_HUMAN_OK`
+  permanece `FALHA FALSA` com `analyzed_lights=["SIDE"]` e
+  `skipped_lights=["TOP","MID"]` **mesmo se a sonda retornar
+  `SUSPECT_ABSENCE`, `UNAVAILABLE` ou falhar**.
+- Se a sonda em duas escalas for válida, o contrato pré-existente
+  continua permitindo o 0/OK via gate de produção, com revalidação.
+- Se o veto físico for inconclusivo ou suspeito, o caso é
+  **FALHA FALSA visual, aguardando decisão humana**. O sistema não
+  autoriza 0/OK automático, não envia 1/NG preventivo e não cria
+  treinamento automático. A inspeção não avança para TOP/MID.
+- O debug inclui `side_memory_first.physical_probe` completo:
+  status, reason, escalas, métricas e geometria, além de
+  `physical_gate=OPERATOR_REQUIRED` ou `VERIFIED`.
+  O gate XP revalida separadamente os marcadores antes de qualquer
+  comando automático; alterar o texto do veredito não autoriza 0.
+- O reconhecimento visual não prova integridade física. Preserva-se
+  a proteção para um componente realmente ausente, especialmente
+  contra a regressão FALTANDO de 07/10. As rotas NG e a memória
+  comum com limiares menores não tiveram o veto alterado.
+
+Reproduzir a situação física com o XP em modo supervisionado
+e coletar o novo debug da sonda. As regressões com `SUSPECT_ABSENCE`,
+`UNAVAILABLE`, exceção, marcadores adulterados, pausa e saída 0/1
+estão em `tests/test_side_memory_first.py`.

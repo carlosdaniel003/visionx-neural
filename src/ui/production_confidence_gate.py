@@ -168,6 +168,22 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "unverified_physical_label": True,
         }
 
+    # Reconhecimento visual humano excepcionalmente forte permanece
+    # FALHA FALSA, mas a sonda física é veto absoluto de XP 0/OK.
+    # Não deixar o fallback de Produção transformá-lo em NG PREVENTIVO.
+    from src.core.side_memory_first import verified_side_memory_visual_review
+    if verified_side_memory_visual_review(analysis):
+        return {
+            "mode": "production", "confidence": confidence,
+            "threshold": 0.99, "verdict": "FALHA FALSA",
+            "auto_allowed": False,
+            "operator_review_required": True,
+            "proposed_decision": "",
+            "reason": "side_strong_human_ok_physical_probe_requires_operator",
+            "operator_shortcuts": {"0": "OK", "1": "NG"},
+            "unverified_physical_label": True,
+        }
+
     # Conhecimento visual SIDE aproximado pode economizar TOP/MID para a
     # conferência humana. Jamais equiparar isso a par exato nem a auto-OK.
     from src.core.side_recurrent_ok_review import side_recurrent_review_valid
@@ -671,7 +687,10 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     # Um OK visual humano com veto fisico ou contrato invalido nunca
     # pode ser transformado em NG PREVENTIVO no fallback continuo.
     from src.core.human_multilight_priority import RULE as HUMAN_MULTILIGHT_RULE
-    if detail.get("fusion_rule") == HUMAN_MULTILIGHT_RULE:
+    from src.core.side_memory_first import RULE as SIDE_MEMORY_RULE
+    if detail.get("fusion_rule") in {HUMAN_MULTILIGHT_RULE, SIDE_MEMORY_RULE}:
+        # Tanto o OK visual valido quanto a adulteracao/inconsistencia
+        # do marcador SIDE ficam fora da rejeicao preventiva automatica.
         return policy
     # Um marcador histórico de OK de 29/10 não é prova suficiente para
     # rejeição preventiva genérica: em conflito, adulteração de hash,
