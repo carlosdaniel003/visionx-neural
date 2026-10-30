@@ -148,7 +148,24 @@ def format_memory_decision_provenance(
     route = str(detail.get("recognition_route", "") or "")
     reason = str(policy.get("reason", "") or "")
     lines = ["", "PROVENIÊNCIA: POR QUE O ODIN DECIDIU ASSIM?", "-" * 72]
-    if route == "KNOWN_KNN" and detail.get("recognition_memory_verified") is True:
+    from src.core.side_memory_first import memory_first_side_decision
+    recalled_side = memory_first_side_decision(final)
+    if recalled_side in {"OK", "NG"}:
+        recalled = detail["side_memory_first"]
+        lines.extend([
+            "ORIGEM DECISIVA: MEMÓRIA HUMANA PRIORITÁRIA APROXIMADA, "
+            "SEM PAR RGB EXATO.",
+            "Rótulo do julgamento anteriormente confirmado: " + recalled_side,
+            "Arquivo OK/NG consultado: " + str(recalled["archive_source"]),
+            "SHA de pixels da fonte: " + str(recalled["archive_pixel_sha256"]),
+            "Registro humano JSON: " + str(recalled["human_source"]["record_id"]),
+            "Similaridade humana: " + str(recalled["human_similarity"]),
+            "KNN A: " + str(recalled["knn_a_similarity"])
+            + " | KNN B: " + str(recalled["knn_b_similarity"]),
+            "Sonda física: " + str(recalled["physical_probe"]["status"]),
+            "CNN não prevaleceu nesta captura SIDE; TOP/MID dispensadas.",
+        ])
+    elif route == "KNOWN_KNN" and detail.get("recognition_memory_verified") is True:
         lines.extend([
             "ORIGEM DECISIVA: PAR RGB EXATO verificado na memória.",
             "Rótulo recuperado: " + str(detail.get("recognition_known_label", "-")),
