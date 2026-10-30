@@ -606,6 +606,22 @@ class VerifiedKNNMemory:
         """Mesmo algoritmo de busca, com medições monotônicas passivas."""
         if not _image_ok(reference) or not _image_ok(test):
             return {"status": "UNAVAILABLE", "reason": "Par AOI inválido"}
+        # A correção humana CRONOLÓGICA do mesmo par RGB prevalece sobre
+        # registros antigos, inclusive NG de arquivo e legado. Não libera
+        # decisões por similaridade: exige categoria/luz e hashes dos dois
+        # recortes exatamente iguais. O histórico permanece auditável.
+        recent_lookup = getattr(
+            self.archive_store, "latest_confirmed_human_for_pair", None
+        )
+        if callable(recent_lookup):
+            recent = recent_lookup(reference, test, info)
+            if recent.get("status") == "KNOWN":
+                profile["latest_operator_override"] = True
+                profile["latest_operator_record_id"] = recent.get("record_id")
+                return recent
+            if recent.get("status") == "CONFLICT":
+                return recent
+
         # Consulta independente dos PNGs (o snapshot continua após exclusão).
         # Erro de integridade é elevado e bloqueia a aprovação por segurança.
         archive_started_at = time.perf_counter()
@@ -761,6 +777,7 @@ def _recognized_result(match: dict, mode: str) -> dict:
     score = 1.0 if ng else 0.0
     cross_light = match.get("cross_light_verified") is True
     source_light = str(match.get("source_lighting_mode", "") or "")
+    latest_operator = match.get("memory_source") == "LATEST_OPERATOR_EXACT_PAIR"
     trace = {
         "schema": RECOGNITION_SCHEMA,
         "dominant_engine": "knn_verified_exact",
@@ -771,6 +788,7 @@ def _recognized_result(match: dict, mode: str) -> dict:
         "operator_review_required": False,
         "weights": {"physical": 0.0, "knn": 1.0, "cnn": 0.0},
         "recognition_route": "KNOWN_KNN",
+        "latest_operator_override": latest_operator,
         "memory": {
             "has_memory": True, "best_similarity": 1.0,
             "best_match_label": label, "best_ok_similarity": 0.0 if ng else 1.0,
@@ -782,7 +800,10 @@ def _recognized_result(match: dict, mode: str) -> dict:
         "is_defect": ng, "confidence": .99,
         "verdict": "DEFEITO REAL" if ng else "FALHA FALSA",
         "reason": (
+            f"MEMÓRIA KNN: último julgamento humano {label} prevaleceu. "
+            if latest_operator else
             f"MEMÓRIA KNN: caso já analisado e confirmado como {label}. "
+        ) + (
             + (f"Gabarito/teste RGB e categoria idênticos; origem {source_light}, "
                f"evento {mode}. Luz do XP divergente, sem usar similaridade."
                if cross_light else
@@ -798,6 +819,11 @@ def _recognized_result(match: dict, mode: str) -> dict:
             "recognition_match": "EXACT_PAIR",
             "recognition_known_label": label,
             "recognition_memory_path": match["source_json"],
+            "recognition_latest_operator_override": latest_operator,
+            "recognition_latest_operator_record_id": match.get("record_id", ""),
+            "recognition_latest_operator_event_id": match.get("source_event_id", ""),
+            "recognition_latest_operator_confirmed_at_ns": match.get("confirmed_at_ns"),
+            "recognition_superseded_labels": match.get("superseded_labels", []),
             "recognition_memory_matches": match["matches"],
             "recognition_memory_verified": True,
             "recognition_memory_source": match.get("memory_source", "HUMAN_VERIFIED_PAIR"),
