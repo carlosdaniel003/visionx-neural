@@ -146,13 +146,14 @@ def build_human_multilight_priority(
     detail = fused.get("detail")
     if not isinstance(detail, dict) or fused.get("multilight_final") is not True:
         return fused
+    knn_visual = detail.get("knn_visual_corroboration")
     if (
         detail.get("multilight_physical_disagreement") is True
         or detail.get("capture_error") is True
-        or detail.get("knn_visual_corroboration", {}).get("status") == "NG_CORROBORATED"
-        if isinstance(detail.get("knn_visual_corroboration"), dict)
-        else detail.get("multilight_physical_disagreement") is True
-        or detail.get("capture_error") is True
+        or (
+            isinstance(knn_visual, dict)
+            and knn_visual.get("status") == "NG_CORROBORATED"
+        )
     ):
         return fused
     snapshots = {
