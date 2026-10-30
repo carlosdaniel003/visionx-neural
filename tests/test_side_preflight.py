@@ -109,6 +109,40 @@ class SidePreflightTests(unittest.TestCase):
         self.assertFalse(self.receiver.complete_side_preflight(first_token, True))
         self.assertTrue(self.receiver.is_side_preflight_pending(second_token))
 
+    def test_xp_top_before_first_capture_forces_fresh_side(self):
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=25.0):
+            self.receiver._side_preflight_ready(self.ip, received_at=25.0)
+            token = self.requests[-1][1]
+            self.assertTrue(self.receiver.complete_side_preflight(
+                token, True
+            ))
+        self.assertTrue(
+            self.receiver._side_preflight_ready(self.ip, received_at=25.5)
+        )
+        self.assertFalse(
+            self.receiver.invalidate_side_preflight_for_xp_light("SIDE")
+        )
+        self.assertTrue(
+            self.receiver.invalidate_side_preflight_for_xp_light("TOP")
+        )
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=26.0):
+            self.assertFalse(
+                self.receiver._side_preflight_ready(self.ip, received_at=26.0)
+            )
+        self.assertEqual(len(self.requests), 2)
+        self.assertNotEqual(token, self.requests[-1][1])
+
+    def test_top_during_auxiliary_cycle_does_not_rearm_main_gate(self):
+        self.receiver.lock_image_gate()
+        self.assertFalse(
+            self.receiver.invalidate_side_preflight_for_xp_light("TOP")
+        )
+        self.assertFalse(
+            self.receiver.invalidate_side_preflight_for_xp_light("MID")
+        )
+
     def test_gate_reset_invalidates_late_down_confirmation(self):
         with patch("src.services.network_receiver.time.perf_counter",
                    return_value=30.0):
