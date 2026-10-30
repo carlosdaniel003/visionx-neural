@@ -150,7 +150,9 @@ class ControlPanel(QWidget):
         # Comando inicial da inspeção: SIDE antes do primeiro frame AOI.
         # O primeiro payload continua sendo fallback caso o XP seja
         # identificado sem que o preflight possa ser transmitido.
-        prime = getattr(self.network_receiver, "prime_side_preflight", None)
+        prime = getattr(
+            getattr(self, "network_receiver", None), "prime_side_preflight", None
+        )
         if callable(prime):
             prime(new_ip)
         self._send_xp_shadow_control(
