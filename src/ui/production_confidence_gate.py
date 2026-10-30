@@ -881,13 +881,26 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
             policy = production_decision_policy(
                 getattr(self, "current_analysis", None)
             )
+            controller = getattr(self, "production_autonomy_controller", None)
+            side_supervised = (
+                policy.get("reason")
+                == "side_strong_human_ok_supervised_probe_override_auto_ok"
+            )
             if not (
                 policy["auto_allowed"]
                 and str(user_decision).strip().upper() == policy["proposed_decision"]
-                and not bool(getattr(
-                    getattr(self, "production_autonomy_controller", None),
-                    "paused", False,
-                ))
+                and not bool(getattr(controller, "paused", False))
+                and (
+                    not side_supervised
+                    or (
+                        controller is not None
+                        and controller.side_strong_ok_supervised_armed is True
+                        and isinstance(getattr(self, "current_analysis", None), dict)
+                        and self.current_analysis.get("detail", {}).get(
+                            "side_strong_ok_supervised_armed"
+                        ) is True
+                    )
+                )
             ):
                 enter_production_review(
                     self,
