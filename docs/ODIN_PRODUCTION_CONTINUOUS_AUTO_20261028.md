@@ -97,3 +97,43 @@ arquivos de dias anteriores. Se todas as análises antigas já tinham
 
 A mudança não altera evidências, julgamentos, memória IA, parâmetros
 KNN/CNN, comandos 0/1, pausa nem política de produção.
+
+
+## 30/10/2026 — Produção binária automática, sem terceira classe ou revisão de qualidade
+
+Contrato operacional atualizado a pedido do operador para o ambiente de
+simulação/supervisão:
+
+- **Inspeção concluída e elegível:** apenas dois comandos:
+  `0/OK = FALHA FALSA`, `1/NG = DEFEITO REAL`. O veredito visível
+  acompanha o comando definido pela política de Produção, sem
+  `NG PREVENTIVO` ou `REVISÃO OBRIGATÓRIA` como terceira classe.
+- Mantém a prioridade das rotas de OK/NG com provas revalidadas.
+  Para uma **trinca completa** sem autorização comprovada de OK,
+  seleciona `1/NG`, registra `production_binary_unverified_ng_v1`
+  e **preserva a classificação original** em `source_verdict` e
+  `source_reason`. Isso é uma decisão binária de rejeição, **não
+  confirmação física de um defeito**.
+- Um atalho SIDE validado com veto físico inconclusivo nunca recebe
+  `0/OK` por suposição; a política binária poderá rejeitar com 1 se
+  o contrato de conclusão estiver íntegro. Não se abre revisão de
+  qualidade por peça no controlador.
+- Captura incompleta/roteamento ausente, falha do agente XP ou comando
+  TCP não confirmado ficam como **erro operacional sem 0/1**. Não
+  converter uma falha técnica em falsa decisão de qualidade.
+  O controlador interrompe a sessão e fornece diagnóstico, sem criar
+  tela de revisão ou registrar julgamento inexistente.
+- A pausa por Espaço, espera de apresentação (5s quando exigida),
+  proteção de geração/evento e envio uma única vez continuam.
+- Decisões NG sem confirmação física não alimentam KNN/CNN:
+  evidência arquivada em `reports/production_auto_unverified/`.
+  Métricas só contabilizam transmissão 0/1 confirmada.
+- Teste e Sombra mantêm seu fluxo anterior. Não alterou o
+  `agente_industrial_xp.py`.
+
+**Atenção:** o comando 1 para uma captura inconclusiva continua podendo
+ser um falso NG, mesmo que o rótulo público seja binário. O comando 0
+permanece condicionado às contraprovas para não liberar NG como OK.
+Uma parada de software por falha operacional não é uma terceira classe
+de defeito. Validar isoladamente o protocolo 0/1, a interrupção de XP
+e as peças OK/NG adversárias antes de qualquer uso físico.
