@@ -22,6 +22,7 @@ from src.ui.production_autonomy_controller import (
     ProductionAutonomyController,
 )
 from src.ui.production_confidence_gate import production_decision_policy
+from src.ui.decision_verdict_feedback import verdict_feedback_state
 from tests.test_side_memory_first import SideMemoryPriorityTests
 from tests.test_production_autonomy_controller import _Panel
 
@@ -71,6 +72,7 @@ class SupervisedSideReleaseTests(unittest.TestCase):
         result = _captured_case()
         self.assertTrue(verified_side_supervised_probe_override(result))
         self.assertEqual(result["verdict"], "FALHA FALSA")
+        self.assertEqual(verdict_feedback_state(result), ("FALHA FALSA", "ok"))
         self.assertEqual(
             result["detail"]["side_early_exit"]["skipped_lights"],
             ["TOP", "MID"],
@@ -91,6 +93,7 @@ class SupervisedSideReleaseTests(unittest.TestCase):
         result["detail"]["side_strong_ok_supervised_armed"] = True
         policy = production_decision_policy(result)
         self.assertTrue(policy["auto_allowed"])
+        self.assertEqual(verdict_feedback_state(result), ("FALHA FALSA", "ok"))
         self.assertEqual(policy["verdict"], "FALHA FALSA")
         self.assertEqual(policy["proposed_decision"], "OK")
         self.assertFalse(policy["operator_review_required"])
