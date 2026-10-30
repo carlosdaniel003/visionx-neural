@@ -131,6 +131,123 @@ class SideMemoryPriorityTests(unittest.TestCase):
         self.assertTrue(policy["unverified_physical_label"])
         self.assertEqual(policy["reason"], "side_operator_memory_first_97pct_auto_ok")
 
+    def test_operator_confirmed_99pct_ok_wins_oct30_1239_on_same_png(self):
+        """Evento c0f029...: OK 99.02 x NG 95.94, PNG A/B OK comum."""
+        data = case()
+        human = data["detail"]["confirmed_visual_recall"]
+        human.update(
+            status="AMBIGUOUS",
+            best_ok_similarity=.99019399,
+            best_ng_similarity=.95938641,
+            best_ok_source={
+                **_source("OK"), "record_id":
+                "4d6a371a0922841deefd6d775adf2435303a552eb52bd8d686532be28a6a33b9",
+            },
+            best_ng_source={
+                **_source("NG"), "record_id":
+                "2735f22cef77b8538d2fa5a8168184916151c6860b5142b4377c124100d57900",
+            },
+        )
+        knn = data["detail"]["knn_c"]
+        image = "public/ok_archive/2026-10-21_1424_FALTANDO.png"
+        a = [
+            _row("OK", .98084619, image),
+            _row("NG", .89033113),
+            _row("NG", .86702473),
+            _row("OK", .85802850),
+            _row("NG", .85746296),
+        ]
+        b = [
+            _row("OK", .95345213, image),
+            _row("OK", .81405994),
+            _row("NG", .81259430),
+            _row("NG", .79549029),
+            _row("NG", .77911203),
+        ]
+        knn.update(neighbors_A=a, neighbors_B=b)
+        return data
+
+    def test_strong_human_ok_same_png_changes_ng_to_false_failure(self):
+        raw = self.test_operator_confirmed_99pct_ok_wins_oct30_1239_on_same_png()
+        original = deepcopy(raw)
+        final = self.decide(raw, probe=good_probe(trim=True))
+        self.assertEqual(raw, original)
+        self.assertIsNotNone(final)
+        self.assertEqual(final["verdict"], "FALHA FALSA")
+        self.assertIs(final["is_defect"], False)
+        self.assertEqual(
+            final["detail"]["side_memory_first"]["knn_agreement_mode"],
+            "KNN_AB_STRONG_HUMAN_OK",
+        )
+        self.assertEqual(
+            final["detail"]["side_memory_first"]["archive_source"],
+            "public/ok_archive/2026-10-21_1424_FALTANDO.png",
+        )
+        self.assertEqual(final["detail"]["side_early_exit"]["threshold"], .95)
+        self.assertEqual(final["detail"]["side_early_exit"]["skipped_lights"],
+                         ["TOP", "MID"])
+        self.assertEqual(memory_first_side_decision(final), "OK")
+        policy = production_decision_policy(final)
+        self.assertTrue(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "OK")
+
+    def test_strong_human_ok_needs_two_agreeing_pngs_and_clear_ng_margin(self):
+        cases = (
+            ("human_below_99", lambda r: r["detail"]["confirmed_visual_recall"].__setitem__(
+                "best_ok_similarity", .989)),
+            ("human_margin_below_3", lambda r: r["detail"]["confirmed_visual_recall"].__setitem__(
+                "best_ng_similarity", .961)),
+            ("weak_descriptor_a", lambda r: r["detail"]["knn_c"]["neighbors_A"][0].__setitem__(
+                "similarity", .979)),
+            ("weak_descriptor_b", lambda r: r["detail"]["knn_c"]["neighbors_B"][0].__setitem__(
+                "similarity", .949)),
+            ("different_archive_png", lambda r: r["detail"]["knn_c"]["neighbors_B"][0].__setitem__(
+                "path", "public/ok_archive/another.png")),
+            ("different_archive_digest", lambda r: r["detail"]["knn_c"]["neighbors_B"][0].__setitem__(
+                "source_pixel_sha256", "e"*64)),
+            ("strong_ng_neighbor_a", lambda r: r["detail"]["knn_c"]["neighbors_A"][1].__setitem__(
+                "similarity", .90)),
+            ("strong_ng_neighbor_b", lambda r: r["detail"]["knn_c"]["neighbors_B"][2].__setitem__(
+                "similarity", .90)),
+            ("other_light_human", lambda r: r["detail"]["confirmed_visual_recall"][
+                "best_ok_source"].__setitem__("lighting_mode", "TOP")),
+            ("wrong_source", lambda r: r["detail"]["confirmed_visual_recall"][
+                "best_ok_source"].__setitem__("source", "ARCHIVE_IMPORTED")),
+            ("knn_not_ready", lambda r: r["detail"]["knn_c"].__setitem__(
+                "bank_status", "LOADING")),
+            ("bad_vote", lambda r: r["detail"]["knn_c"].__setitem__(
+                "vote_B", "NG")),
+            ("not_ambiguous", lambda r: r["detail"]["confirmed_visual_recall"].__setitem__(
+                "status", "NO_MATCH")),
+        )
+        for name, change in cases:
+            with self.subTest(name=name):
+                raw = self.test_operator_confirmed_99pct_ok_wins_oct30_1239_on_same_png()
+                change(raw)
+                self.assertIsNone(self.decide(raw))
+
+    def test_strong_human_ok_never_bypasses_physical_suspect_or_xp_gate(self):
+        data = self.test_operator_confirmed_99pct_ok_wins_oct30_1239_on_same_png()
+        suspect = good_probe()
+        suspect["status"] = "SUSPECT_ABSENCE"
+        suspect["scales"][0]["suspected_absence"] = True
+        self.assertIsNone(self.decide(data, probe=suspect))
+        valid = self.decide(data, probe=good_probe(trim=True))
+        self.assertIsNotNone(valid)
+        for mutate in (
+            lambda r: r["detail"]["side_memory_first"].__setitem__(
+                "human_similarity", .999),
+            lambda r: r["detail"]["side_memory_first"].__setitem__(
+                "archive_source", "public/ok_archive/forged.png"),
+            lambda r: r["detail"]["side_memory_first"]["physical_probe"][
+                "scales"][0].__setitem__("suspected_absence", True),
+        ):
+            with self.subTest(mutate=mutate):
+                attempt = deepcopy(valid)
+                mutate(attempt)
+                self.assertIsNone(memory_first_side_decision(attempt))
+                self.assertFalse(production_decision_policy(attempt)["auto_allowed"])
+
     def test_memory_priority_covers_all_five_aoi_categories(self):
         categories = (
             "FALTANDO", "DESLOCADO", "INVERTIDO", "EMBORCADO", "MUITOADESIVO",
