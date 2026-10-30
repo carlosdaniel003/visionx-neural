@@ -78,6 +78,7 @@ class VerifiedKNNMemory:
         self._indexed_scopes: set[tuple] = set()
         self.error = ""
         self._warmup_status = {"state": "not_started", "duration_ms": None}
+        self._confirmed_visual_recall = None
 
     def invalidate(self, *, reason: str = "explicit_reload") -> None:
         with self._lock:
@@ -553,6 +554,21 @@ class VerifiedKNNMemory:
                 self._warmup_status = dict(timing)
         return dict(timing)
 
+    def recall_confirmed_visual(self, reference, test, info: dict) -> dict:
+        """Recupera hipótese visual dos julgamentos HUMANOS persistentes.
+
+        Não substitui a busca exata, não autoriza 0/OK nem aprende
+        rótulos automaticamente. O snapshot é reutilizado por geração.
+        """
+        from src.core.confirmed_visual_recall import ConfirmedVisualRecall
+        with self._lock:
+            if self._confirmed_visual_recall is None:
+                self._confirmed_visual_recall = ConfirmedVisualRecall(
+                    self.archive_store
+                )
+            recall = self._confirmed_visual_recall
+        return recall.lookup(reference, test, info)
+
     def lookup(
         self, knn, reference, test, info: dict,
         *, timing: dict | None = None,
@@ -911,6 +927,13 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
         if not isinstance(detail, dict):
             detail = {}
             result["detail"] = detail
+        if type(index) is VerifiedKNNMemory:
+            # Persistência humana e KNN C de PNGs são bancos distintos:
+            # recuperar agora também a experiência humana APROXIMADA,
+            # antes do gate SIDE, sem transformar similaridade em KNOWN_KNN.
+            detail["confirmed_visual_recall"] = index.recall_confirmed_visual(
+                full_gab, full_test, info,
+            )
         detail.update({
             "specialist_candidate": (
                 None
