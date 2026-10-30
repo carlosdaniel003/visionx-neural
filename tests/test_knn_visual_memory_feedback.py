@@ -82,6 +82,35 @@ class VisualMemoryMeaningTests(unittest.TestCase):
         self.assertEqual(case["detail"]["recognition_route"], "NEW_CNN")
         self.assertFalse(case["detail"]["knn_visual_corroboration"]["auto_decision_authorized"])
 
+    def test_json_human_ok_visual_recall_is_visible_but_not_exact(self):
+        case = reported_event()
+        case["detail"].pop("knn_visual_corroboration", None)
+        case["detail"]["confirmed_visual_recall"] = {
+            "schema": "visionx.human_visual_recall.v1",
+            "source": "PERSISTENT_HUMAN_LABELS",
+            "diagnostic_only": True,
+            "auto_ok_authorized": False,
+            "status": "HUMAN_OK_VISUAL_CANDIDATE",
+            "best_ok_similarity": .991,
+            "best_ng_similarity": .70,
+            "cross_light_candidate": True,
+        }
+        state = memory_seen_state(case)
+        self.assertEqual(state["status"], "VI_SEMELHANTE")
+        self.assertFalse(state["exact_pair_seen"])
+        self.assertTrue(state["human_visual_seen"])
+        self.assertEqual(state["human_visual_label"], "OK")
+        self.assertEqual(memory_feedback_state(case)[0], "VI SEMELHANTE")
+        title, body = memory_panel_text(case)
+        self.assertIn("JULGAMENTO HUMANO OK", title)
+        self.assertIn("99.10%", body)
+        self.assertIn("não autoriza 0/OK", body)
+        self.assertEqual(case["verdict"], "DEFEITO REAL")
+
+        # Metadado visual arbitrário não pode fingir memória humana.
+        case["detail"]["confirmed_visual_recall"]["source"] = "PUBLIC_ARCHIVE_PNG"
+        self.assertEqual(memory_seen_state(case)["status"], "NUNCA_VI")
+
     def test_exact_human_match_remains_higher_priority_than_approximate(self):
         case = reported_event()
         case["detail"]["recognition_route"] = "KNOWN_KNN"

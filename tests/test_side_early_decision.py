@@ -225,6 +225,36 @@ class SideEarlyDecisionTests(unittest.TestCase):
         other["detail"]["cnn_v2_aoi_category"] = "DESLOCADO"
         self.assertIsNotNone(build_side_early_decision(other, "DESLOCADO"))
 
+    def test_persistent_human_ok_prevents_premature_side_ng(self):
+        # Operador julgou A como OK no JSON; novo A muda um pixel/luz.
+        # Essa evidência impede o 1/NG SIDE antes de TOP/MID, nunca vira 0.
+        from copy import deepcopy
+        sample = self._trial_ng_side()
+        visual = {
+            "schema": "visionx.human_visual_recall.v1",
+            "status": "HUMAN_OK_VISUAL_CANDIDATE",
+            "source": "PERSISTENT_HUMAN_LABELS",
+            "diagnostic_only": True,
+            "auto_ok_authorized": False,
+        }
+        sample["detail"]["confirmed_visual_recall"] = visual
+        self.assertIsNone(build_side_early_decision(sample, "FALTANDO"))
+        self.assertEqual(sample["verdict"], "DEFEITO REAL")
+        for mutation in (
+            lambda x: x["detail"]["confirmed_visual_recall"].update(
+                status="AMBIGUOUS"),
+            lambda x: x.update(hard_missing_evidence=True),
+            lambda x: x["detail"].update(
+                physical_missing_veto={"status": "SUSPECT_ABSENCE"}),
+            lambda x: x["detail"]["confirmed_visual_recall"].update(
+                auto_ok_authorized=True),
+        ):
+            changed = deepcopy(sample)
+            mutation(changed)
+            self.assertIsNotNone(
+                build_side_early_decision(changed, "FALTANDO")
+            )
+
     def test_defer_on_two_weak_ok_votes_only_not_on_one_vote_or_missing_knn(self):
         from copy import deepcopy
         sample = self._trial_ng_side()

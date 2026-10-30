@@ -194,6 +194,21 @@ def memory_seen_state(analysis: dict | None) -> dict:
                 and _map(rows.get(light)).get("status") in {"NG_LEANING", "NG_SIMILAR"})
         )
     ]
+    human_visual = detail.get("confirmed_visual_recall")
+    human_visual = human_visual if isinstance(human_visual, dict) else {}
+    human_visual_status = str(human_visual.get("status", "") or "")
+    human_visual_valid = bool(
+        human_visual.get("schema") == "visionx.human_visual_recall.v1"
+        and human_visual.get("source") == "PERSISTENT_HUMAN_LABELS"
+        and human_visual.get("diagnostic_only") is True
+        and human_visual.get("auto_ok_authorized") is False
+    )
+    human_visual_label = (
+        "OK" if human_visual_valid
+        and human_visual_status == "HUMAN_OK_VISUAL_CANDIDATE" else
+        "NG" if human_visual_valid
+        and human_visual_status == "HUMAN_NG_VISUAL_CANDIDATE" else ""
+    )
     archive = detail.get("side_archive_visual_presence")
     archive = archive if isinstance(archive, dict) else {}
     archive_status = str(archive.get("status", "") or "")
@@ -239,20 +254,29 @@ def memory_seen_state(analysis: dict | None) -> dict:
         )
     status = (
         "JA_VI" if known else
-        "VI_SEMELHANTE" if similar_ng or archive_matched or historical_ok else
+        "VI_SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
         "CONSULTANDO_ACERVO" if archive_status == "PENDING" else
-        "ACERVO_AMBIGUO" if archive_status == "AMBIGUOUS" else
+        "ACERVO_AMBIGUO" if archive_status == "AMBIGUOUS"
+            or (human_visual_valid and human_visual_status == "AMBIGUOUS") else
         "NUNCA_VI" if queried else None
     )
     return {
         "status": status,
         "label": (
             "JÁ VI" if known else
-            "VI SEMELHANTE" if similar_ng or archive_matched or historical_ok else
+            "VI SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
             "CONSULTANDO ACERVO" if archive_status == "PENDING" else
-            "ACERVO AMBÍGUO" if archive_status == "AMBIGUOUS" else
+            "ACERVO AMBÍGUO" if archive_status == "AMBIGUOUS"
+                or (human_visual_valid and human_visual_status == "AMBIGUOUS") else
             "SEM PAR EXATO" if queried else ""
         ),
+        "human_visual_seen": bool(human_visual_label),
+        "human_visual_label": human_visual_label,
+        "human_visual_similarity": (
+            human_visual.get("best_ok_similarity") if human_visual_label == "OK"
+            else human_visual.get("best_ng_similarity")
+        ) if human_visual_label else None,
+        "human_visual_cross_light": human_visual.get("cross_light_candidate") is True,
         "archive_visual_seen": archive_matched or historical_ok,
         "archive_label": "OK" if historical_ok else archive_label if archive_matched else "",
         "archive_visual_lights": ["TOP", "MID"] if historical_ok else ["SIDE"] if archive_matched else [],
@@ -311,6 +335,20 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
             "recuperado e revalidado pelos descritores A/B de TOP/MID. "
             "Não houve igualdade pixel a pixel com o par atual."
             + suffix,
+        )
+    if result == "VI_SEMELHANTE" and memory["human_visual_seen"]:
+        label = memory["human_visual_label"]
+        score = memory["human_visual_similarity"]
+        score_text = (
+            f"{float(score) * 100:.2f}%" if isinstance(score, (int, float))
+            else "sem score"
+        )
+        return (
+            f"VI SEMELHANTE • JULGAMENTO HUMANO {label}",
+            f"A memória JSON recuperou uma assinatura de julgamento humano {label} "
+            f"({score_text}), sem par RGB exato. A semelhança é uma hipótese, "
+            "não autoriza 0/OK automático; verificação multilight e física "
+            "seguem necessárias.",
         )
     if result == "VI_SEMELHANTE" and memory["archive_visual_seen"]:
         label = memory["archive_label"]
