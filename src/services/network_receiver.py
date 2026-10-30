@@ -213,6 +213,15 @@ class NetworkReceiver(QThread):
         self._image_gate.release()
         self._last_ignored_log_at = 0.0
 
+    def _should_ignore_accepted_repeat(self, signature: np.ndarray) -> bool:
+        """Regra da thread XP: protege contra repetição salvo armamento manual."""
+        with self._state_lock:
+            return bool(
+                self._require_image_change
+                and not self._allow_same_frame_once
+                and self._same_signature(signature, self._last_accepted_signature)
+            )
+
     def arm_same_frame_reinspection_once(self) -> bool:
         """Permite uma única nova reserva do frame aceito, após descarte manual.
 
@@ -601,15 +610,7 @@ class NetworkReceiver(QThread):
                         continue
 
                     signature = self._frame_signature(img)
-                    with self._state_lock:
-                        rejected_same_frame = bool(
-                            self._require_image_change
-                            and not self._allow_same_frame_once
-                            and self._same_signature(
-                                signature, self._last_accepted_signature,
-                            )
-                        )
-                    if rejected_same_frame:
+                    if self._should_ignore_accepted_repeat(signature):
                         self._log_duplicate_frame()
                         continue
 
