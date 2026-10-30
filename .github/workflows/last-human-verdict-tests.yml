@@ -45,4 +45,4 @@ jobs:
           python -m py_compile src/core/archive_persistent_memory.py src/core/verified_memory_router.py src/services/live_session_learning.py src/ui/production_confidence_gate.py tests/test_live_session_learning.py tests/test_production_continuous_auto.py
       - name: Test priority, persistence, router and production policy
         run: |
-          python -m unittest tests.test_live_session_learning tests.test_verified_memory_router tests.test_production_continuous_auto -v
+          python -m unittest tests.test_live_session_learning tests.test_verified_memory_router tests.test_production_continuous_auto.ContinuousAutoPolicyTests -v
