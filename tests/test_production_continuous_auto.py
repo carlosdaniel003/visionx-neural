@@ -133,6 +133,24 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         self.assertEqual(panel.saved, [])
         self.assertEqual(verdict_feedback_state(analysis), ("", ""))
 
+    def test_textual_false_failure_without_capture_cannot_send_zero(self):
+        # O antigo fallback false_failure_auto_ok sozinho não prova que
+        # a tela do XP e a iluminação correspondem a uma peça completa.
+        analysis = {
+            "verdict": "FALHA FALSA",
+            "is_defect": False,
+            "detail": {
+                "production_continuous_auto": True,
+                "production_binary_auto": True,
+            },
+        }
+        policy = production_decision_policy(analysis)
+        self.assertFalse(policy["auto_allowed"])
+        self.assertFalse(policy["operator_review_required"])
+        self.assertTrue(policy["operational_error"])
+        self.assertEqual(policy["proposed_decision"], "")
+        self.assertEqual(verdict_feedback_state(analysis), ("", ""))
+
     def test_controller_send_ng_once_after_five_second_pause_window(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
@@ -142,6 +160,7 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         panel.current_analysis = a
         self.assertTrue(controller.analysis_ready(a))
         self.assertTrue(a["detail"]["production_continuous_auto"])
+        self.assertTrue(a["detail"]["production_binary_auto"])
         controller._stage_timer.stop()
         controller.pending_analysis = a
         controller.generation += 1
