@@ -684,12 +684,51 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     }
 
 
-def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
-    """Production: automatic qualified OK/NG; uncertain inspections reject.
+def _completed_continuous_inspection(analysis: dict, detail: dict) -> bool:
+    """Distingue julgamento completo de falha de aquisição/roteamento.
 
-    Fail-closed NEVER means auto-OK: when a *complete* three-light capture
-    cannot be trusted as OK, route NG and quarantine the unverified label.
-    Missing/incomplete capture or transport errors still halt without 0/1.
+    Uma falha operacional não é uma terceira classe da placa e não
+    justifica inventar uma tecla 0/1. SIDE antecipada só participa com
+    contrato visual revalidado; as três luzes exigem rotas conhecidas.
+    """
+    if (
+        detail.get("capture_error") is True
+        or detail.get("category_unknown") is True
+        or analysis.get("multilight_final") is not True
+        or detail.get("multilight_final") is not True
+    ):
+        return False
+    routes = detail.get("recognition_light_routes")
+    if (
+        isinstance(routes, dict)
+        and set(routes) == {"SIDE", "TOP", "MID"}
+        and all(routes[light] in {"NEW_CNN", "NEW_EXPERTS", "MEMORY_EXACT"}
+                for light in ("SIDE", "TOP", "MID"))
+    ):
+        return True
+
+    # Atalho de SIDE não é trinca incompleta: a análise tem seu próprio
+    # contrato de evidência. Veto físico do OK impede 0 mas não obriga
+    # escolher 0/1 manualmente no Modo Produção binário.
+    from src.core.side_memory_first import (
+        RULE as SIDE_MEMORY_RULE,
+        verified_side_memory_visual_review,
+    )
+    return bool(
+        detail.get("fusion_rule") == SIDE_MEMORY_RULE
+        and analysis.get("lighting_mode") == "SIDE"
+        and verified_side_memory_visual_review(analysis)
+    )
+
+
+def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
+    """Produção contínua: somente 0/OK ou 1/NG para inspeções completas.
+
+    Primeiro respeita uma decisão automática OK/NG já fundamentada e
+    revalidada. Na falta de prova suficiente para 0, a decisão binária
+    é 1/NG com proveniência de incerteza explícita. Isso não demonstra
+    defeito físico e jamais vira rótulo de treino. Falhas técnicas
+    param o ciclo, sem pedir julgamento de qualidade ao operador.
     """
     policy = _base_production_decision_policy(analysis)
     if not isinstance(analysis, dict):
@@ -697,57 +736,41 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     detail = analysis.get("detail")
     if not isinstance(detail, dict) or detail.get("production_continuous_auto") is not True:
         return policy
-    if policy.get("auto_allowed") is True:
-        return policy
-    # Um OK visual humano com veto fisico ou contrato invalido nunca
-    # pode ser transformado em NG PREVENTIVO no fallback continuo.
-    from src.core.human_multilight_priority import RULE as HUMAN_MULTILIGHT_RULE
-    from src.core.side_memory_first import RULE as SIDE_MEMORY_RULE
-    if detail.get("fusion_rule") in {HUMAN_MULTILIGHT_RULE, SIDE_MEMORY_RULE}:
-        # Tanto o OK visual valido quanto a adulteracao/inconsistencia
-        # do marcador SIDE ficam fora da rejeicao preventiva automatica.
-        return policy
-    # Um marcador histórico de OK de 29/10 não é prova suficiente para
-    # rejeição preventiva genérica: em conflito, adulteração de hash,
-    # captura incompleta ou falha de sonda, PARE SEM ENVIAR 0/1.
-    # O auto-OK válido já teria retornado acima do gate-base.
-    if detail.get("fusion_rule") == "operator_known_top_mid_ok_review_20261029_v1":
-        return policy
-    # Reconhecimento visual OK com geometria inconclusiva não deve
-    # virar nem 0 automático nem 1 preventivo. Preservar a revisão humana.
-    if (
-        detail.get("fusion_rule") == "operator_corrected_archive_ok_three_light_v1"
-        and policy.get("reason") == "operator_corrected_archive_ok_requires_operator"
-    ):
-        return policy
-    if (
-        analysis.get("multilight_final") is not True
-        or detail.get("multilight_final") is not True
-        or detail.get("multilight_physical_disagreement") is True
-    ):
-        return policy
-    route_info = detail.get("recognition_light_routes")
-    if not isinstance(route_info, dict) or set(route_info) != {"SIDE", "TOP", "MID"}:
-        return policy
-    if any(route_info[light] not in {"NEW_CNN", "NEW_EXPERTS", "MEMORY_EXACT"}
-           for light in ("SIDE", "TOP", "MID")):
-        return policy
-    if detail.get("category_unknown") is True or detail.get("capture_error") is True:
-        return policy
-    # No uncertain observation is promoted to OK. A conservative reject
-    # still needs a complete capture and validated routing from all lights.
+
+    if policy.get("auto_allowed") is True and policy.get("proposed_decision") in {"OK", "NG"}:
+        decision = policy["proposed_decision"]
+        return {
+            **policy,
+            "verdict": "FALHA FALSA" if decision == "OK" else "DEFEITO REAL",
+            "operator_review_required": False,
+        }
+
+    if not _completed_continuous_inspection(analysis, detail):
+        return {
+            **policy,
+            "verdict": "",
+            "auto_allowed": False,
+            "operator_review_required": False,
+            "proposed_decision": "",
+            "reason": "production_binary_operational_capture_fault_v1",
+            "operational_error": True,
+            "source_verdict": policy.get("verdict", ""),
+        }
+
+    # Inspeção completa, porém não existe autorização independente de
+    # OK. Escolha 1, sem terceiro veredito visual nem espera por 0/1
+    # humano. Guarde a classificação anterior para auditoria porque
+    # esta rejeição NÃO é prova de defeito físico.
     return {
         **policy,
-        "verdict": (
-            "DEFEITO REAL" if policy.get("verdict") == "DEFEITO REAL"
-            else "NG PREVENTIVO"
-        ),
+        "verdict": "DEFEITO REAL",
         "auto_allowed": True,
         "operator_review_required": False,
         "proposed_decision": "NG",
-        "reason": "production_uncertain_auto_ng_quarantine_v1",
+        "reason": "production_binary_unverified_ng_v1",
         "unverified_physical_label": True,
         "source_verdict": policy.get("verdict", ""),
+        "source_reason": policy.get("reason", ""),
     }
 
 
@@ -902,10 +925,20 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
                     )
                 )
             ):
-                enter_production_review(
-                    self,
-                    getattr(self, "current_analysis", None),
-                )
+                analysis = getattr(self, "current_analysis", None)
+                detail = analysis.get("detail", {}) if isinstance(analysis, dict) else {}
+                if isinstance(detail, dict) and detail.get("production_continuous_auto") is True:
+                    # Comando inválido ou ciclo inconsistente: erro
+                    # operacional, nunca solicitar 0/1 humano.
+                    notice = getattr(self, "update_brain_status", None)
+                    if callable(notice):
+                        notice(
+                            "Comando XP automático bloqueado: política ou "
+                            "captura inválida. Reinicie a inspeção.",
+                            True,
+                        )
+                    return False
+                enter_production_review(self, analysis)
                 return None
             _record_policy(self, policy, resolution="automatic")
 
