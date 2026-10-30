@@ -684,6 +684,67 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     }
 
 
+def _legacy_continuous_policy(analysis: dict, detail: dict, policy: dict) -> dict:
+    """Compatibilidade de contratos históricos de Produção pré-binária.
+
+    O controlador corrente arma production_binary_auto=True por peça;
+    esta função só é usada por clientes antigos que armam apenas
+    production_continuous_auto sem o novo contrato.
+    """
+    if policy.get("auto_allowed") is True:
+        return policy
+    # Um OK visual humano com veto fisico ou contrato invalido nunca
+    # pode ser transformado em NG PREVENTIVO no fallback continuo.
+    from src.core.human_multilight_priority import RULE as HUMAN_MULTILIGHT_RULE
+    from src.core.side_memory_first import RULE as SIDE_MEMORY_RULE
+    if detail.get("fusion_rule") in {HUMAN_MULTILIGHT_RULE, SIDE_MEMORY_RULE}:
+        # Tanto o OK visual valido quanto a adulteracao/inconsistencia
+        # do marcador SIDE ficam fora da rejeicao preventiva automatica.
+        return policy
+    # Um marcador histórico de OK de 29/10 não é prova suficiente para
+    # rejeição preventiva genérica: em conflito, adulteração de hash,
+    # captura incompleta ou falha de sonda, PARE SEM ENVIAR 0/1.
+    # O auto-OK válido já teria retornado acima do gate-base.
+    if detail.get("fusion_rule") == "operator_known_top_mid_ok_review_20261029_v1":
+        return policy
+    # Reconhecimento visual OK com geometria inconclusiva não deve
+    # virar nem 0 automático nem 1 preventivo. Preservar a revisão humana.
+    if (
+        detail.get("fusion_rule") == "operator_corrected_archive_ok_three_light_v1"
+        and policy.get("reason") == "operator_corrected_archive_ok_requires_operator"
+    ):
+        return policy
+    if (
+        analysis.get("multilight_final") is not True
+        or detail.get("multilight_final") is not True
+        or detail.get("multilight_physical_disagreement") is True
+    ):
+        return policy
+    route_info = detail.get("recognition_light_routes")
+    if not isinstance(route_info, dict) or set(route_info) != {"SIDE", "TOP", "MID"}:
+        return policy
+    if any(route_info[light] not in {"NEW_CNN", "NEW_EXPERTS", "MEMORY_EXACT"}
+           for light in ("SIDE", "TOP", "MID")):
+        return policy
+    if detail.get("category_unknown") is True or detail.get("capture_error") is True:
+        return policy
+    # No uncertain observation is promoted to OK. A conservative reject
+    # still needs a complete capture and validated routing from all lights.
+    return {
+        **policy,
+        "verdict": (
+            "DEFEITO REAL" if policy.get("verdict") == "DEFEITO REAL"
+            else "NG PREVENTIVO"
+        ),
+        "auto_allowed": True,
+        "operator_review_required": False,
+        "proposed_decision": "NG",
+        "reason": "production_uncertain_auto_ng_quarantine_v1",
+        "unverified_physical_label": True,
+        "source_verdict": policy.get("verdict", ""),
+    }
+
+
 def _completed_continuous_inspection(analysis: dict, detail: dict) -> bool:
     """Distingue julgamento completo de falha de aquisição/roteamento.
 
@@ -736,6 +797,8 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     detail = analysis.get("detail")
     if not isinstance(detail, dict) or detail.get("production_continuous_auto") is not True:
         return policy
+    if detail.get("production_binary_auto") is not True:
+        return _legacy_continuous_policy(analysis, detail, policy)
 
     if policy.get("auto_allowed") is True and policy.get("proposed_decision") in {"OK", "NG"}:
         decision = policy["proposed_decision"]
