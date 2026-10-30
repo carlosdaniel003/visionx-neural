@@ -131,7 +131,7 @@ class SideMemoryPriorityTests(unittest.TestCase):
         self.assertTrue(policy["unverified_physical_label"])
         self.assertEqual(policy["reason"], "side_operator_memory_first_97pct_auto_ok")
 
-    def test_operator_confirmed_99pct_ok_wins_oct30_1239_on_same_png(self):
+    def _oct30_case(self):
         """Evento c0f029...: OK 99.02 x NG 95.94, PNG A/B OK comum."""
         data = case()
         human = data["detail"]["confirmed_visual_recall"]
@@ -168,7 +168,7 @@ class SideMemoryPriorityTests(unittest.TestCase):
         return data
 
     def test_strong_human_ok_same_png_changes_ng_to_false_failure(self):
-        raw = self.test_operator_confirmed_99pct_ok_wins_oct30_1239_on_same_png()
+        raw = self._oct30_case()
         original = deepcopy(raw)
         final = self.decide(raw, probe=good_probe(trim=True))
         self.assertEqual(raw, original)
@@ -222,12 +222,12 @@ class SideMemoryPriorityTests(unittest.TestCase):
         )
         for name, change in cases:
             with self.subTest(name=name):
-                raw = self.test_operator_confirmed_99pct_ok_wins_oct30_1239_on_same_png()
+                raw = self._oct30_case()
                 change(raw)
                 self.assertIsNone(self.decide(raw))
 
     def test_strong_human_ok_never_bypasses_physical_suspect_or_xp_gate(self):
-        data = self.test_operator_confirmed_99pct_ok_wins_oct30_1239_on_same_png()
+        data = self._oct30_case()
         suspect = good_probe()
         suspect["status"] = "SUSPECT_ABSENCE"
         suspect["scales"][0]["suspected_absence"] = True
