@@ -106,6 +106,13 @@ class NetworkReceiver(QThread):
         self._side_preflight_retry_at = 0.0
         self._side_preflight_ip = ""
         self.last_side_preflight = {}
+        # Um comando antecipado (discovery/novo ciclo) NAO basta para
+        # rotular o primeiro frame como SIDE: ele pode vir de TOP antigo.
+        # A primeira imagem observada dispara novo DOWN sincronizado,
+        # e e descartada. A segunda etapa usa apenas imagens posteriores.
+        self._side_reassert_on_first_frame = False
+        self._side_first_frame_signature = None
+        self._side_first_frame_diff_reported = False
 
         # Frames auxiliares SIDE/TOP/MID da mesma peça podem atravessar a trava
         # principal somente durante uma sessão visual de adesivo.
@@ -218,6 +225,9 @@ class NetworkReceiver(QThread):
                 self._side_preflight_retry_at = 0.0
                 self._side_preflight_ip = ""
                 self.last_side_preflight = {}
+                self._side_reassert_on_first_frame = False
+                self._side_first_frame_signature = None
+                self._side_first_frame_diff_reported = False
             if self._reserved_signature is not None:
                 self._last_rejected_signature = self._reserved_signature.copy()
                 self._last_rejected_reason = (
@@ -248,6 +258,11 @@ class NetworkReceiver(QThread):
         target_ip = str(ip or "").strip()
         if not target_ip or not self._image_gate.is_open():
             return False
+        with self._state_lock:
+            # Marcar apenas se este prime iniciar o preflight; chamadas
+            # redundantes de descoberta nao devem forcar novas setas.
+            if self._side_preflight_phase == "PENDING":
+                self._side_reassert_on_first_frame = True
         self._side_preflight_ready(
             target_ip, received_at=time.perf_counter(),
         )
@@ -256,6 +271,55 @@ class NetworkReceiver(QThread):
                 self._side_preflight_ip == target_ip
                 and self._side_preflight_phase in {"WAITING", "SETTLING", "READY"}
             )
+
+    def accept_main_side_frame(
+        self, image: np.ndarray, ip: str, *, received_at: float,
+    ) -> bool:
+        """Barreira SIDE de duas fases antes de entregar o frame a IA.
+
+        Na primeira imagem do ciclo ja previamente preparado, descarta
+        o frame (que pode ainda ser TOP), aciona novo DOWN e aguarda o
+        proximo frame. Mantem token/retry/settle/stability existentes.
+        """
+        if not self._side_preflight_ready(ip, received_at=received_at):
+            return False
+
+        reassert = False
+        with self._state_lock:
+            if self._side_reassert_on_first_frame:
+                self._side_reassert_on_first_frame = False
+                self._side_first_frame_signature = self._frame_signature(image)
+                self._side_first_frame_diff_reported = False
+                self._side_preflight_serial += 1
+                self._side_preflight_phase = "PENDING"
+                self._side_preflight_not_before = 0.0
+                self._side_preflight_retry_at = 0.0
+                self._clear_candidate_locked()
+                reassert = True
+
+        if reassert:
+            self.log_updated.emit(
+                "SIDE: primeiro frame do novo evento descartado; "
+                "reafirmando DOWN antes da imagem de analise."
+            )
+            self._side_preflight_ready(
+                ip, received_at=received_at,
+            )
+            return False
+
+        with self._state_lock:
+            baseline = self._side_first_frame_signature
+            if baseline is not None and not self._side_first_frame_diff_reported:
+                current = self._frame_signature(image)
+                changed = not self._same_signature(current, baseline)
+                self._side_first_frame_diff_reported = True
+                if isinstance(self.last_side_preflight, dict):
+                    self.last_side_preflight["changed_after_down"] = changed
+                    self.last_side_preflight["first_frame_discarded"] = True
+                # Comparar as capturas diagnostica a transicao; igualdade
+                # tambem ocorre quando o primeiro frame JA estava em SIDE.
+                # O gate de autorizacao e o ACK do agente, nao esse score.
+        return True
 
     def _side_preflight_ready(self, ip: str, *, received_at: float) -> bool:
         """Exige DOWN ANTES da primeira imagem encaminhada ao painel.
@@ -329,6 +393,9 @@ class NetworkReceiver(QThread):
             self._side_preflight_retry_at = 0.0
             self._clear_candidate_locked()
             self.last_side_preflight = {}
+            self._side_reassert_on_first_frame = False
+            self._side_first_frame_signature = None
+            self._side_first_frame_diff_reported = False
         self.log_updated.emit(
             "XP notificou TOP/MID antes da captura SIDE; "
             "pre-captura SIDE precisa ser repetida."
@@ -374,6 +441,7 @@ class NetworkReceiver(QThread):
                 "request_id": request_id,
                 "command": "PRESS_DOWN",
                 "transport_sent": bool(sent),
+                "agent_keyup_ack": bool(sent),
                 "settle_ms": round(
                     self.SIDE_PREFLIGHT_SETTLE_SECONDS * 1000.0, 2
                 ),
@@ -785,8 +853,8 @@ class NetworkReceiver(QThread):
                         self.image_received.emit(img, ip_origem)
                         continue
 
-                    if not self._side_preflight_ready(
-                        ip_origem, received_at=payload_received_at,
+                    if not self.accept_main_side_frame(
+                        img, ip_origem, received_at=payload_received_at,
                     ):
                         continue
 
