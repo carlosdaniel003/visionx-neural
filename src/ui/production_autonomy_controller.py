@@ -598,6 +598,18 @@ class ProductionAutonomyController(QObject):
             lambda g=generation: self._finish_presentation(g),
         )
 
+    def _stop_for_operational_error(self, message: str) -> None:
+        """Falha de transporte/contrato: não inventar 0/1 nem pedir revisão."""
+        self._clear_stage()
+        self.state = "operational_fault"
+        self.panel.production_review_pending = False
+        notify = getattr(self.panel, "update_brain_status", None)
+        if callable(notify):
+            notify("Modo Produção interrompido: " + message, True)
+        network = getattr(self.panel, "update_network_status", None)
+        if callable(network):
+            network("Parada operacional: " + message)
+
     def _finish_presentation(self, generation: int) -> None:
         if not self._analysis_still_current(generation):
             return
@@ -629,9 +641,8 @@ class ProductionAutonomyController(QObject):
                 "side_operator_memory_first_97pct_auto_ng",
                 "operator_human_multilight_97pct_auto_ok",
             }
-            is_safe_rejection = (
-                policy.get("reason")
-                == "production_uncertain_auto_ng_quarantine_v1"
+            is_binary_unverified_ng = (
+                policy.get("reason") == "production_binary_unverified_ng_v1"
             )
             is_side_override = (
                 policy.get("reason")
@@ -641,8 +652,14 @@ class ProductionAutonomyController(QObject):
                 (is_knn_c and not self.knn_c_supervised_armed)
                 or (is_side_override and not self.side_strong_ok_supervised_armed)
             ):
-                self.state = "operator_review"
-                enter_production_review(self.panel, analysis)
+                if analysis.get("detail", {}).get("production_continuous_auto") is True:
+                    self._stop_for_operational_error(
+                        "autorização supervisionada expirada; "
+                        "reinicie a inspeção."
+                    )
+                else:
+                    self.state = "operator_review"
+                    enter_production_review(self.panel, analysis)
                 return
             self.state = "auto_decision_pending"
             try:
@@ -654,7 +671,7 @@ class ProductionAutonomyController(QObject):
                         else "SIDE OK humana supervisionada (5s; alerta fisico ativo)." if is_side_override
                         else "SIDE experimental validada (5s)." if is_trial_side
                         else "Memória recorrente supervisionada (5s)." if is_recurrent_ok
-                        else "Rejeição preventiva sem confirmação física (5s)." if is_safe_rejection
+                        else "Decisão binária NG sem confirmação física independente (5s)." if is_binary_unverified_ng
                         else ""
                     ),
                     True,
@@ -662,13 +679,19 @@ class ProductionAutonomyController(QObject):
             except Exception:
                 pass
             self._schedule_stage(
-                KNN_C_SUPERVISED_DELAY_MS if is_knn_c or is_recurrent_ok or is_safe_rejection or is_side_override
+                KNN_C_SUPERVISED_DELAY_MS if is_knn_c or is_recurrent_ok or is_binary_unverified_ng or is_side_override
                 else TRIAL_SIDE_AUTO_DELAY_MS if is_trial_side
                 else AUTO_DECISION_DELAY_MS,
                 lambda g=generation, d=decision: self._emit_auto_decision(g, d),
             )
             return
 
+        if analysis.get("detail", {}).get("production_continuous_auto") is True:
+            self._stop_for_operational_error(
+                "captura ou rota de julgamento incompleta. "
+                "Nenhuma tecla 0/1 foi enviada."
+            )
+            return
         self.state = "operator_review"
         enter_production_review(self.panel, analysis)
 
@@ -751,7 +774,7 @@ class ProductionAutonomyController(QObject):
             try:
                 self.panel.update_brain_status(
                     f"Falha ao enviar decisão automática: {exc}. "
-                    "Aguardando operador.", True,
+                    "Interrompendo ciclo por falha de comunicação.", True,
                 )
             except Exception:
                 pass
@@ -760,16 +783,25 @@ class ProductionAutonomyController(QObject):
             self.panel, "last_decision_command_success", None
         ) is True
         if outcome is False or not succeeded:
-            self.state = "operator_review"
-            enter_production_review(
-                self.panel, self.pending_analysis,
-                verdict_override="REVISÃO OBRIGATÓRIA",
-            )
-            show = getattr(
-                self.panel, "show_production_intervention_feedback", None
-            )
-            if callable(show):
-                show("REVISÃO OBRIGATÓRIA")
+            detail = self.pending_analysis.get("detail", {}) if isinstance(
+                self.pending_analysis, dict
+            ) else {}
+            if isinstance(detail, dict) and detail.get("production_continuous_auto") is True:
+                self._stop_for_operational_error(
+                    "envio XP 0/1 não confirmado; nenhuma decisão contabilizada. "
+                    "Verifique o agente antes de retomar."
+                )
+            else:
+                self.state = "operator_review"
+                enter_production_review(
+                    self.panel, self.pending_analysis,
+                    verdict_override="REVISÃO OBRIGATÓRIA",
+                )
+                show = getattr(
+                    self.panel, "show_production_intervention_feedback", None
+                )
+                if callable(show):
+                    show("REVISÃO OBRIGATÓRIA")
             return
 
         self._record_completed_judgment(
