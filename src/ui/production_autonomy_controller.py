@@ -333,6 +333,7 @@ class ProductionAutonomyController(QObject):
             # OK/NG decision. Uncertain results fail closed to NG without
             # creating a false training label; incomplete capture halts.
             detail["production_continuous_auto"] = True
+            detail["production_binary_auto"] = True
             # Re-render the final Production classification after the
             # decision policy is armed. Otherwise a transient REVIEW label
             # from the original CNN can remain visible during auto-NG.
@@ -652,7 +653,7 @@ class ProductionAutonomyController(QObject):
                 (is_knn_c and not self.knn_c_supervised_armed)
                 or (is_side_override and not self.side_strong_ok_supervised_armed)
             ):
-                if analysis.get("detail", {}).get("production_continuous_auto") is True:
+                if analysis.get("detail", {}).get("production_binary_auto") is True:
                     self._stop_for_operational_error(
                         "autorização supervisionada expirada; "
                         "reinicie a inspeção."
@@ -686,7 +687,7 @@ class ProductionAutonomyController(QObject):
             )
             return
 
-        if analysis.get("detail", {}).get("production_continuous_auto") is True:
+        if analysis.get("detail", {}).get("production_binary_auto") is True:
             self._stop_for_operational_error(
                 "captura ou rota de julgamento incompleta. "
                 "Nenhuma tecla 0/1 foi enviada."
@@ -786,7 +787,7 @@ class ProductionAutonomyController(QObject):
             detail = self.pending_analysis.get("detail", {}) if isinstance(
                 self.pending_analysis, dict
             ) else {}
-            if isinstance(detail, dict) and detail.get("production_continuous_auto") is True:
+            if isinstance(detail, dict) and detail.get("production_binary_auto") is True:
                 self._stop_for_operational_error(
                     "envio XP 0/1 não confirmado; nenhuma decisão contabilizada. "
                     "Verifique o agente antes de retomar."
