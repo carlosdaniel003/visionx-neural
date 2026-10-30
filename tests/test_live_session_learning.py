@@ -188,6 +188,53 @@ class LiveSessionLearningTests(unittest.TestCase):
             {row["label"] for row in self.store.records()}, {"NG", "OK"}
         )
 
+    def test_end_to_end_three_manual_ok_lights_production_prefers_latest(self):
+        from src.core.multilight_fusion import fuse_multilight
+        from src.core.verified_memory_router import _recognized_result
+        from src.ui.production_confidence_gate import production_decision_policy
+        from unittest.mock import patch
+
+        def event_task(label, event_id):
+            task = labeled_task(label)
+            task["event_id"] = event_id
+            task["multilight_samples"] = [
+                {
+                    "lighting_mode": light,
+                    "sample_image": task["sample_image"],
+                    "test_image": task["ng_image"],
+                }
+                for light in ("SIDE", "TOP", "MID")
+            ]
+            return task
+
+        with patch("src.services.live_session_learning.time.time_ns",
+                   side_effect=[101, 202]):
+            immediate_confirmed_memory(
+                event_task("NG", "older-ng"), store=self.store,
+            )
+            new = event_task("OK", "corrected-ok")
+            immediate_confirmed_memory(new, store=self.store)
+
+        router = VerifiedKNNMemory(archive_store=self.store)
+        analyses = {}
+        for light in ("SIDE", "TOP", "MID"):
+            info = {**new["aoi_info"], "lighting_mode": light}
+            match = router.lookup(
+                None, new["sample_image"], new["ng_image"], info,
+            )
+            self.assertEqual(match["label"], "OK")
+            self.assertEqual(match["source_event_id"], "corrected-ok")
+            analyses[light] = _recognized_result(match, light)
+
+        final = fuse_multilight(analyses, "FALTANDO")
+        self.assertEqual(final["verdict"], "FALHA FALSA")
+        final["detail"]["production_continuous_auto"] = True
+        final["detail"]["production_binary_auto"] = True
+        policy = production_decision_policy(final)
+        self.assertEqual(policy["proposed_decision"], "OK")
+        self.assertTrue(policy["auto_allowed"])
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+
     def test_opposite_operator_labels_without_timestamps_still_conflict(self):
         from src.core.archive_persistent_memory import make_operator_record
         from src.core.anomaly_signature import build_anomaly_signature
