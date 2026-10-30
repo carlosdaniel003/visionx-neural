@@ -1162,3 +1162,47 @@ O ODIN passa a solicitar o **mesmo intervalo rápido de 0,18 s** do agente XP no
 - Medir separadamente **tempo de aquisição**, **tempo de classificação** e **tempo até envio de 0/1**. Meta de 2–3 s permanece não comprovada na linha. Validar troca de iluminação e rótulos reais antes de uso autônomo.
 
 **Proteção de estabilidade (13/10/2026):** antes de enviar LEFT/RIGHT para TOP/MID, a automação arma o receptor para aquela iluminação. O receptor ignora frames que cheguem nos primeiros 0,35 s após a solicitação e entrega no máximo um frame após receber **duas imagens estáveis consecutivas** da luz solicitada. Repetição, aborto e encerramento reiniciam o estado. Trata-se de uma defesa temporal/visual, não uma confirmação elétrica da luz; a validação física continua obrigatória.
+
+
+## 30/10/2026 — Pré-captura SIDE por peça e notificações de setas
+
+**Fluxo de imagens XP nos três modos (Teste, Sombra, Produção):**
+
+1. Ao receber o primeiro payload de um novo ciclo de inspeção,
+   `NetworkReceiver` não o encaminha à CNN/KNN ou ao painel:
+   solicita ao `ControlPanel` um `PRESS_DOWN` pelo canal XP:5000.
+2. A solicitação usa token por ciclo; respostas Qt antigas são ignoradas.
+   Falha no envio mantém o gate de recepção bloqueado e programa retry;
+   nunca classifica aquele payload como SIDE.
+3. Quando o envio TCP retorna sucesso, espera **350 ms** de acomodação
+   e somente então aceita frames novos. Ainda exige os **2 frames
+   estáveis consecutivos** já obrigatórios para a imagem principal.
+   Não envia 0/1 nem transforma frames auxiliares TOP/MID em novas peças.
+4. Em cada novo ciclo liberado, o pré-comando SIDE é rearmado. Isso vale
+   inclusive após encerramento precoce apenas na SIDE, sem entrar na
+   automação TOP/MID. Os `PRESS_LEFT/PRESS_RIGHT/PRESS_DOWN` da
+   automação multilight original continuam existindo.
+5. O debug XP registra `transport.side_preflight` com request_id,
+   comando, resultado de transmissão e espera, separadamente dos
+   resultados de IA.
+6. O overlay de teclas exibe as setas automáticas LEFT/TOP, RIGHT/MID,
+   DOWN/SIDE e o DOWN de pré-captura, identificando a fonte
+   `AUTOMACAO ODIN`. Para setas não há supressão temporal de eventos
+   iguais. Notificações de teclas 0/1 recebidas do XP aparecem como
+   eventos de teclado mesmo quando o gate não as autoriza a julgar.
+
+**Limite técnico:** repetição da tecla DOWN é idempotente enquanto o
+software da AOI respeitar esse mapeamento, mas `sendall()` do Windows
+novo **não fornece confirmação de tecla executada ou indicação elétrica
+da iluminação física**. O pré-comando + estabilização melhora a
+sincronização, porém não estabelece certeza absoluta de que o hardware
+está em SIDE. Uma confirmação fechada exigiria ACK de execução no agente
+instalado no XP e, idealmente, leitura confiável do estado/saída da AOI.
+Essa alteração não modifica o agente XP; requer somente atualizar o
+ODIN no computador moderno. Validar com operador e XP isolado antes de
+qualquer retorno à liberação autônoma.
+
+Testes: `tests/test_side_preflight.py`,
+`tests/test_lighting_status_feedback.py`,
+`tests/test_decision_key_feedback.py` e workflow
+`XP SIDE Preflight and Key Feedback`.
