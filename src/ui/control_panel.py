@@ -174,7 +174,10 @@ class ControlPanel(QWidget):
             receiver.complete_side_preflight(request_id, False)
             return
         self.last_xp_ip = target_ip
-        sent = bool(self.send_command_to_xp("DOWN"))
+        # O pré-comando tem protocolo próprio com ACK de tecla executada.
+        # PRESS_DOWN legado confirma apenas envio e nao protege um TOP antigo.
+        sender = getattr(self, "send_side_preflight_to_xp", None)
+        sent = bool(sender()) if callable(sender) else False
         accepted = receiver.complete_side_preflight(request_id, sent)
         if accepted and sent:
             # Somente indicador e aviso: o comando ja foi enviado.
@@ -413,6 +416,40 @@ class ControlPanel(QWidget):
         elif comando_xp == "NG": self.save_label("NG", source="xp_keyboard")
         elif comando_xp in ["MID", "SIDE", "TOP"]:
             self.change_lighting(comando_xp, source="network")
+
+    def send_side_preflight_to_xp(self) -> bool:
+        """Comanda SIDE e exige ACK emitido pelo agente APOS a tecla.
+
+        O XP antigo sem PRESS_DOWN_SYNC e ACK nao libera uma imagem
+        como SIDE. A falha entra na retentativa do receptor existente.
+        """
+        ip = str(getattr(self, "last_xp_ip", "") or "").strip()
+        if not ip:
+            self.update_network_status(
+                "Falha na sincronização SIDE: XP ainda não identificado."
+            )
+            return False
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(5.0)
+                sock.connect((ip, 5000))
+                sock.sendall(b"PRESS_DOWN_SYNC")
+                ack = sock.recv(32).strip()
+            if ack != b"ACK_SIDE_KEYUP":
+                self.update_network_status(
+                    "Falha na sincronização SIDE: agente XP sem ACK da tecla "
+                    "(atualize o agente_industrial_xp.py no Windows XP)."
+                )
+                return False
+            self.update_network_status(
+                "SIDE sincronizada: DOWN executado e confirmado pelo agente XP."
+            )
+            return True
+        except (OSError, TimeoutError) as exc:
+            self.update_network_status(
+                "Falha ao sincronizar SIDE com o agente XP: {0}".format(exc)
+            )
+            return False
 
     def send_command_to_xp(self, tecla: str):
         normalized = str(tecla or "").strip().upper()

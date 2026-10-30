@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+
+import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -29,6 +31,120 @@ class SidePreflightTests(unittest.TestCase):
             lambda ip, token: self.requests.append((ip, token))
         )
         self.ip = "169.254.95.200"
+
+    def test_proactive_first_top_frame_is_dropped_and_down_reasserted(self):
+        top = np.full((96, 128, 3), 40, dtype=np.uint8)
+        side = np.full((96, 128, 3), 190, dtype=np.uint8)
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=10.0):
+            self.assertTrue(self.receiver.prime_side_preflight(self.ip))
+        self.assertEqual(len(self.requests), 1)
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=10.1):
+            self.assertTrue(self.receiver.complete_side_preflight(
+                self.requests[0][1], True
+            ))
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=10.5):
+            self.assertFalse(self.receiver.accept_main_side_frame(
+                top, self.ip, received_at=10.5,
+            ))
+        self.assertEqual(len(self.requests), 2)
+        self.assertNotEqual(self.requests[0][1], self.requests[1][1])
+        self.assertTrue(self.receiver.is_side_preflight_pending(
+            self.requests[1][1]
+        ))
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=10.6):
+            self.assertTrue(self.receiver.complete_side_preflight(
+                self.requests[1][1], True
+            ))
+        self.assertFalse(self.receiver.accept_main_side_frame(
+            top, self.ip, received_at=10.9,
+        ))
+        self.assertTrue(self.receiver.accept_main_side_frame(
+            side, self.ip, received_at=10.96,
+        ))
+        self.assertTrue(
+            self.receiver.last_side_preflight["changed_after_down"]
+        )
+        self.assertTrue(
+            self.receiver.last_side_preflight["first_frame_discarded"]
+        )
+        self.assertEqual(len(self.requests), 2)
+
+    def test_already_side_first_frame_still_accepts_after_confirmed_reassert(self):
+        side = np.full((96, 128, 3), 80, dtype=np.uint8)
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=20.0):
+            self.receiver.prime_side_preflight(self.ip)
+            self.receiver.complete_side_preflight(self.requests[-1][1], True)
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=21.0):
+            self.assertFalse(self.receiver.accept_main_side_frame(
+                side, self.ip, received_at=21.0,
+            ))
+            self.assertEqual(len(self.requests), 2)
+            self.receiver.complete_side_preflight(self.requests[-1][1], True)
+        self.assertTrue(self.receiver.accept_main_side_frame(
+            side, self.ip, received_at=21.36,
+        ))
+        self.assertFalse(
+            self.receiver.last_side_preflight["changed_after_down"]
+        )
+
+    def test_legacy_first_frame_without_prime_triggers_single_preflight(self):
+        frame = np.full((96, 128, 3), 90, dtype=np.uint8)
+        with patch("src.services.network_receiver.time.perf_counter",
+                   return_value=30.0):
+            self.assertFalse(self.receiver.accept_main_side_frame(
+                frame, self.ip, received_at=30.0,
+            ))
+            self.receiver.complete_side_preflight(self.requests[-1][1], True)
+        self.assertTrue(self.receiver.accept_main_side_frame(
+            frame, self.ip, received_at=30.4,
+        ))
+        self.assertEqual(len(self.requests), 1)
+
+    def test_preflight_sender_only_accepts_ack_after_keypress(self):
+        class Panel:
+            def __init__(self):
+                self.last_xp_ip = self.ip = "169.254.95.200"
+                self.messages = []
+
+            def update_network_status(self, message):
+                self.messages.append(message)
+
+        panel = Panel()
+        fake = MagicMock()
+        connection = fake.return_value.__enter__.return_value
+        connection.recv.return_value = b"ACK_SIDE_KEYUP"
+        with patch("src.ui.control_panel.socket.socket", fake):
+            self.assertTrue(
+                ControlPanel.send_side_preflight_to_xp(panel)
+            )
+        connection.sendall.assert_called_once_with(b"PRESS_DOWN_SYNC")
+        connection.recv.return_value = b""
+        with patch("src.ui.control_panel.socket.socket", fake):
+            self.assertFalse(
+                ControlPanel.send_side_preflight_to_xp(panel)
+            )
+        self.assertTrue(
+            any("sem ACK" in text for text in panel.messages)
+        )
+
+    def test_xp_agent_ack_contract_after_key_and_capture_lock(self):
+        from pathlib import Path
+        source = Path("agente_industrial_xp.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('elif comando == "PRESS_DOWN_SYNC":', source)
+        self.assertIn('conexao.sendall(SIDE_SYNC_ACK)', source)
+        self.assertIn('with _capture_command_lock:', source)
+        sync = source.index('elif comando == "PRESS_DOWN_SYNC":')
+        key = source.index('apertar_tecla_fisica("DOWN")', sync)
+        ack = source.index('conexao.sendall(SIDE_SYNC_ACK)', sync)
+        self.assertLess(key, ack)
 
     def test_preflight_requests_down_before_any_image_arrives(self):
         # O primeiro comando deve existir sem _side_preflight_ready nem PNG.
@@ -71,6 +187,9 @@ class SidePreflightTests(unittest.TestCase):
                 self.events.append("send_" + key)
                 return True
 
+            def send_side_preflight_to_xp(self):
+                return self.send_command_to_xp("DOWN")
+
             def change_lighting(self, lighting, source):
                 self.events.append("visual_" + lighting)
 
@@ -104,6 +223,9 @@ class SidePreflightTests(unittest.TestCase):
             def send_command_to_xp(self, key):
                 self.events.append("send_" + key)
                 return True
+
+            def send_side_preflight_to_xp(self):
+                return self.send_command_to_xp("DOWN")
 
             def change_lighting(self, lighting, source):
                 self.events.append("visual_" + lighting)
@@ -274,6 +396,9 @@ class SidePreflightTests(unittest.TestCase):
                 self.commands.append(value)
                 return self.sent
 
+            def send_side_preflight_to_xp(self):
+                return self.send_command_to_xp("DOWN")
+
             def change_lighting(self, light, source):
                 self.visual.append((light, source))
 
@@ -300,6 +425,9 @@ class SidePreflightTests(unittest.TestCase):
                 self.visual = []
 
             def send_command_to_xp(self, value):
+                return False
+
+            def send_side_preflight_to_xp(self):
                 return False
 
             def change_lighting(self, light, source):

@@ -50,6 +50,13 @@ SHADOW_LEASE_SECONDS = 25.0
 _shadow_capture_until = 0.0
 _shadow_capture_wakeup = threading.Event()
 
+# O comando SIDE sincronizado espera terminar qualquer captura XP em curso,
+# pressiona DOWN, libera a tecla e espera a interface atualizar antes do ACK.
+# Isso impede que o receptor confunda envio TCP com execucao da tecla.
+_capture_command_lock = threading.RLock()
+SIDE_PREVIEW_SETTLE_SECONDS = 0.35
+SIDE_SYNC_ACK = b"ACK_SIDE_KEYUP"
+
 def configurar_captura_sombra(habilitado):
     global _shadow_capture_until
     _shadow_capture_until = (
@@ -210,6 +217,13 @@ def servidor_de_comandos():
                 apertar_tecla_fisica("LEFT")
             elif comando == "PRESS_DOWN":
                 apertar_tecla_fisica("DOWN")
+            elif comando == "PRESS_DOWN_SYNC":
+                # Nao publicar ACK antes de concluir a captura antiga,
+                # injetar a seta e acomodar a interface AOI.
+                with _capture_command_lock:
+                    if apertar_tecla_fisica("DOWN"):
+                        time.sleep(SIDE_PREVIEW_SETTLE_SECONDS)
+                        conexao.sendall(SIDE_SYNC_ACK)
             elif comando == "PRESS_RIGHT":
                 apertar_tecla_fisica("RIGHT")
             else:
@@ -345,31 +359,34 @@ def iniciar_hook_teclado():
 def loop_vigia_tela():
     """Movemos o loop visual para uma Thread separada."""
     while True:
-        if check_trigger():
-            print("!!! GATILHO DETECTADO - ENVIANDO FOTO PARA IA !!!")
-            try:
-                servidor_ia = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                servidor_ia.settimeout(5.0)
-                servidor_ia.connect((IP_IA, PORTA_IA))
-
-                dados_zip = capturar_recorte()
-
-                servidor_ia.send(
-                    str(len(dados_zip)).ljust(16).encode('utf-8')
-                )
-                servidor_ia.sendall(dados_zip)
-                servidor_ia.close()
-
-                # Sem comando do ODIN, mantem a pausa original de 3 s.
-                # Sombra: captura mais frequente, SEM eliminar os dois
-                # frames estaveis exigidos no PC VisionX.
+        try:
+            # Uma captura iniciada antes de DOWN nao pode atravessar
+            # o ACK do PRESS_DOWN_SYNC e parecer uma captura SIDE nova.
+            with _capture_command_lock:
+                if check_trigger():
+                    print("!!! GATILHO DETECTADO - ENVIANDO FOTO PARA IA !!!")
+                    servidor_ia = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    try:
+                        servidor_ia.settimeout(5.0)
+                        servidor_ia.connect((IP_IA, PORTA_IA))
+                        dados_zip = capturar_recorte()
+                        servidor_ia.send(
+                            str(len(dados_zip)).ljust(16).encode('utf-8')
+                        )
+                        servidor_ia.sendall(dados_zip)
+                    finally:
+                        servidor_ia.close()
+                    captured = True
+                else:
+                    captured = False
+            # Nao segurar o lock durante a pausa de captura (0,18-3 s).
+            if captured:
                 aguardar_proximo_envio()
-
-            except Exception as e:
-                print(
-                    "-> Erro: PC moderno nao respondeu "
-                    "(Porta 5001). {0}".format(e)
-                )
+        except Exception as e:
+            print(
+                "-> Erro: PC moderno nao respondeu "
+                "(Porta 5001). {0}".format(e)
+            )
 
         time.sleep(0.1)
 
