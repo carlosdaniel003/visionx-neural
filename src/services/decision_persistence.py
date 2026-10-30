@@ -49,6 +49,7 @@ _UNVERIFIED_AUTOMATIC_REASONS = frozenset({
     "supervised_operator_corrected_archive_ok_auto_v1",
     "supervised_operator_known_top_mid_ok_20261029_auto_v1",
     "production_uncertain_auto_ng_quarantine_v1",
+    "side_strong_human_ok_supervised_probe_override_auto_ok",
 })
 
 
@@ -78,7 +79,24 @@ def _quarantine_unverified_automatic(task: dict) -> Path:
         detail.get("production_decision_policy"), dict,
     ) else {}
     files = []
-    for sample in _complete_multilight_samples(task):
+    samples = _complete_multilight_samples(task)
+    if (
+        policy.get("reason")
+        == "side_strong_human_ok_supervised_probe_override_auto_ok"
+        and not samples
+    ):
+        # Julgamento antecipado SIDE: arquivar somente a luz realmente
+        # capturada, sem criar TOP/MID inexistentes e sem treinar a IA.
+        partial = task.get("multilight_samples")
+        partial = partial if isinstance(partial, list) else task.get(
+            "shadow_partial_samples", []
+        )
+        samples = [
+            row for row in partial
+            if isinstance(row, dict)
+            and str(row.get("lighting_mode", "")).upper() == "SIDE"
+        ][:1]
+    for sample in samples:
         light = sample["lighting_mode"]
         for role, key in (("reference", "sample_image"), ("test", "test_image")):
             frame = sample.get(key)

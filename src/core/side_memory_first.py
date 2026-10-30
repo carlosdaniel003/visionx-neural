@@ -558,8 +558,57 @@ def verified_side_memory_visual_review(analysis: dict | None) -> bool:
     )
 
 
+def verified_side_supervised_probe_override(analysis: dict | None) -> bool:
+    """Elegibilidade estrita para experimento EXPLICITAMENTE armado pelo operador.
+
+    Não muda a classificação, a sonda física ou o contrato de memória.
+    A autorização de XP ainda exige armamento em tempo de execução,
+    verificado novamente imediatamente antes de transmitir 0.
+    """
+    if not verified_side_memory_visual_review(analysis):
+        return False
+    marker = analysis["detail"]["side_memory_first"]
+    physical = marker["physical_probe"]
+    geometry = physical.get("geometry")
+    scales = physical.get("scales")
+    if not (
+        physical.get("status") == "SUSPECT_ABSENCE"
+        and physical.get("reason") == "TWO_SCALE_ROI_CHECK"
+        and isinstance(geometry, dict)
+        and geometry.get("method") in {"exact", "center_trim_no_rescale"}
+        and isinstance(scales, list)
+        and len(scales) == 2
+        and all(
+            isinstance(row, dict)
+            and type(row.get("suspected_absence")) is bool
+            for row in scales
+        )
+        # A luz atual precisa conter uma contradição real (não erro
+        # da sonda); ausência em AMBAS escalas não recebe atalho.
+        and sum(row["suspected_absence"] for row in scales) == 1
+    ):
+        return False
+    if geometry.get("method") == "center_trim_no_rescale":
+        a, b = geometry.get("reference_hw"), geometry.get("test_hw")
+        if not (
+            geometry.get("requires_review") is True
+            and isinstance(a, list) and isinstance(b, list)
+            and len(a) == len(b) == 2
+            and all(type(v) is int and v >= 200 for v in a + b)
+            and all(
+                abs(x-y) <= 3 and abs(x-y)/min(x,y) <= 0.01
+                for x, y in zip(a, b)
+            )
+        ):
+            return False
+    elif geometry.get("requires_review") is not False:
+        return False
+    return True
+
+
 __all__ = [
     "RULE", "KNOWN_MEMORY_CATEGORIES", "PHYSICAL_PROBE_SCOPE",
     "build_side_memory_first", "memory_first_side_decision",
     "verified_side_memory_visual_review",
+    "verified_side_supervised_probe_override",
 ]

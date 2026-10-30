@@ -171,17 +171,32 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     # Reconhecimento visual humano excepcionalmente forte permanece
     # FALHA FALSA, mas a sonda física é veto absoluto de XP 0/OK.
     # Não deixar o fallback de Produção transformá-lo em NG PREVENTIVO.
-    from src.core.side_memory_first import verified_side_memory_visual_review
+    from src.core.side_memory_first import (
+        verified_side_memory_visual_review,
+        verified_side_supervised_probe_override,
+    )
     if verified_side_memory_visual_review(analysis):
+        # O opt-in e estabelecido pelo controlador somente ENTRE pecas.
+        # Sem ele, o alerta fisico continua obrigando tecla humana 0/1.
+        armed = bool(
+            detail.get("production_continuous_auto") is True
+            and detail.get("side_strong_ok_supervised_armed") is True
+            and verified_side_supervised_probe_override(analysis)
+        )
         return {
             "mode": "production", "confidence": confidence,
             "threshold": 0.99, "verdict": "FALHA FALSA",
-            "auto_allowed": False,
-            "operator_review_required": True,
-            "proposed_decision": "",
-            "reason": "side_strong_human_ok_physical_probe_requires_operator",
+            "auto_allowed": armed,
+            "operator_review_required": not armed,
+            "proposed_decision": "OK" if armed else "",
+            "reason": (
+                "side_strong_human_ok_supervised_probe_override_auto_ok"
+                if armed else
+                "side_strong_human_ok_physical_probe_requires_operator"
+            ),
             "operator_shortcuts": {"0": "OK", "1": "NG"},
             "unverified_physical_label": True,
+            "physical_veto_supervised_override": armed,
         }
 
     # Conhecimento visual SIDE aproximado pode economizar TOP/MID para a
@@ -866,13 +881,26 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
             policy = production_decision_policy(
                 getattr(self, "current_analysis", None)
             )
+            controller = getattr(self, "production_autonomy_controller", None)
+            side_supervised = (
+                policy.get("reason")
+                == "side_strong_human_ok_supervised_probe_override_auto_ok"
+            )
             if not (
                 policy["auto_allowed"]
                 and str(user_decision).strip().upper() == policy["proposed_decision"]
-                and not bool(getattr(
-                    getattr(self, "production_autonomy_controller", None),
-                    "paused", False,
-                ))
+                and not bool(getattr(controller, "paused", False))
+                and (
+                    not side_supervised
+                    or (
+                        controller is not None
+                        and controller.side_strong_ok_supervised_armed is True
+                        and isinstance(getattr(self, "current_analysis", None), dict)
+                        and self.current_analysis.get("detail", {}).get(
+                            "side_strong_ok_supervised_armed"
+                        ) is True
+                    )
+                )
             ):
                 enter_production_review(
                     self,

@@ -158,6 +158,23 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
         ):
             return "FALHA FALSA", "ok"
 
+    # A SIDe ja concluiu visualmente FALHA FALSA. Uma revisao fisica
+    # pendente NAO transforma a classificacao em REVISÃO OBRIGATÓRIA:
+    # o gate XP decide separadamente se pode enviar 0 ou aguardar operador.
+    if (
+        verdict == "FALHA FALSA"
+        and analysis.get("is_defect") is False
+        and detail.get("fusion_rule") == "side_operator_memory_first_97pct_v2"
+    ):
+        from src.core.side_memory_first import (
+            memory_first_side_decision, verified_side_memory_visual_review,
+        )
+        if (
+            memory_first_side_decision(analysis) == "OK"
+            or verified_side_memory_visual_review(analysis)
+        ):
+            return "FALHA FALSA", "ok"
+
     # Revisão sem reconhecimento verificado continua explícita.
     if review_required:
         return "REVISÃO OBRIGATÓRIA", "ng"

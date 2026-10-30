@@ -46,6 +46,8 @@ class ProductionAutonomyController(QObject):
         self._auto_dispatch_started_generation = None
         self.paused = False
         self.knn_c_supervised_armed = False
+        self.side_strong_ok_supervised_armed = False
+        self.side_supervision_shortcut = None
         self._in_production = False
         self._scroll_animation = None
         self.pause_shortcut = None
@@ -142,9 +144,9 @@ class ProductionAutonomyController(QObject):
         self._scroll_animation = None
 
     def _set_shortcut_enabled(self, enabled: bool) -> None:
-        shortcut = self.pause_shortcut
-        if shortcut is not None:
-            shortcut.setEnabled(bool(enabled))
+        for shortcut in (self.pause_shortcut, self.side_supervision_shortcut):
+            if shortcut is not None:
+                shortcut.setEnabled(bool(enabled))
 
     def _sync_pause_visuals(self) -> None:
         self.panel.production_autonomy_paused = bool(self.paused)
@@ -172,6 +174,7 @@ class ProductionAutonomyController(QObject):
             self._cancel_pending()
             self.paused = False
             self.knn_c_supervised_armed = False
+            self.side_strong_ok_supervised_armed = False
             self.panel.production_autonomy_paused = False
 
             restore_daily = getattr(
@@ -200,6 +203,7 @@ class ProductionAutonomyController(QObject):
             self._cancel_pending()
             self.paused = False
             self.knn_c_supervised_armed = False
+            self.side_strong_ok_supervised_armed = False
             self.panel.production_autonomy_paused = False
             self._in_production = False
 
@@ -321,6 +325,9 @@ class ProductionAutonomyController(QObject):
             # Armamento da sessão deve preceder a apresentação da peça.
             detail["knn_c_supervised_armed"] = bool(
                 self.knn_c_supervised_armed and not self.paused
+            )
+            detail["side_strong_ok_supervised_armed"] = bool(
+                self.side_strong_ok_supervised_armed and not self.paused
             )
             # All completed Production inspections receive an automatic
             # OK/NG decision. Uncertain results fail closed to NG without
@@ -626,7 +633,14 @@ class ProductionAutonomyController(QObject):
                 policy.get("reason")
                 == "production_uncertain_auto_ng_quarantine_v1"
             )
-            if is_knn_c and not self.knn_c_supervised_armed:
+            is_side_override = (
+                policy.get("reason")
+                == "side_strong_human_ok_supervised_probe_override_auto_ok"
+            )
+            if (
+                (is_knn_c and not self.knn_c_supervised_armed)
+                or (is_side_override and not self.side_strong_ok_supervised_armed)
+            ):
                 self.state = "operator_review"
                 enter_production_review(self.panel, analysis)
                 return
@@ -637,6 +651,7 @@ class ProductionAutonomyController(QObject):
                     f"Preparando {command} automático; espaço para pausar... "
                     + (
                         "KNN C supervisionada (5s)." if is_knn_c
+                        else "SIDE OK humana supervisionada (5s; alerta fisico ativo)." if is_side_override
                         else "SIDE experimental validada (5s)." if is_trial_side
                         else "Memória recorrente supervisionada (5s)." if is_recurrent_ok
                         else "Rejeição preventiva sem confirmação física (5s)." if is_safe_rejection
@@ -647,7 +662,7 @@ class ProductionAutonomyController(QObject):
             except Exception:
                 pass
             self._schedule_stage(
-                KNN_C_SUPERVISED_DELAY_MS if is_knn_c or is_recurrent_ok or is_safe_rejection
+                KNN_C_SUPERVISED_DELAY_MS if is_knn_c or is_recurrent_ok or is_safe_rejection or is_side_override
                 else TRIAL_SIDE_AUTO_DELAY_MS if is_trial_side
                 else AUTO_DECISION_DELAY_MS,
                 lambda g=generation, d=decision: self._emit_auto_decision(g, d),
@@ -696,8 +711,19 @@ class ProductionAutonomyController(QObject):
 
         policy = production_decision_policy(self.pending_analysis)
         if (
-            str(policy.get("reason", "")).startswith("knn_c_supervised_three_light_")
-            and not self.knn_c_supervised_armed
+            (
+                str(policy.get("reason", "")).startswith("knn_c_supervised_three_light_")
+                and not self.knn_c_supervised_armed
+            ) or (
+                policy.get("reason")
+                == "side_strong_human_ok_supervised_probe_override_auto_ok"
+                and (
+                    not self.side_strong_ok_supervised_armed
+                    or self.pending_analysis.get("detail", {}).get(
+                        "side_strong_ok_supervised_armed"
+                    ) is not True
+                )
+            )
         ):
             self._finish_presentation(generation)
             return
@@ -813,8 +839,34 @@ class ProductionAutonomyController(QObject):
             pass
         return self.knn_c_supervised_armed
 
+    def toggle_side_strong_ok_supervised(self) -> bool:
+        """Ctrl+Shift+O: arma liberação supervisionada somente entre peças."""
+        if not self.is_production():
+            return False
+        if self.pending_analysis is not None or self.paused:
+            try:
+                self.panel.update_brain_status(
+                    "SIDE OK supervisionado: arme somente entre pecas, "
+                    "com Produção em execução.", True,
+                )
+            except Exception:
+                pass
+            return self.side_strong_ok_supervised_armed
+        self.side_strong_ok_supervised_armed = not self.side_strong_ok_supervised_armed
+        try:
+            self.panel.update_brain_status(
+                "SIDE OK SUPERVISIONADO ARMADO • libera 0 apesar do "
+                "alerta fisico em uma escala • 5s de espera • Espaco DESARMA."
+                if self.side_strong_ok_supervised_armed else
+                "SIDE OK supervisionado DESARMADO • alerta físico exige operador.",
+                True,
+            )
+        except Exception:
+            pass
+        return self.side_strong_ok_supervised_armed
+
     def toggle_pause(self) -> bool:
-        """Espaço pausa/retoma; pausa SEMPRE desarma KNN C."""
+        """Espaço pausa/retoma; pausa SEMPRE desarma modos supervisionados."""
         if not self.is_production():
             return False
 
@@ -822,10 +874,12 @@ class ProductionAutonomyController(QObject):
 
         if self.paused:
             self.knn_c_supervised_armed = False
+            self.side_strong_ok_supervised_armed = False
             if isinstance(self.pending_analysis, dict):
                 detail = self.pending_analysis.get("detail")
                 if isinstance(detail, dict):
                     detail["knn_c_supervised_armed"] = False
+                    detail["side_strong_ok_supervised_armed"] = False
             self._stop_pending_stage()
             if self._scroll_animation is not None:
                 try:
@@ -835,7 +889,7 @@ class ProductionAutonomyController(QObject):
 
             try:
                 self.panel.update_brain_status(
-                    "MODO PRODUÇÃO PAUSADO • KNN C DESARMADA. "
+                    "MODO PRODUÇÃO PAUSADO • MODOS SUPERVISIONADOS DESARMADOS. "
                     "Pressione espaço para continuar.",
                     True,
                 )
@@ -923,6 +977,17 @@ def install_production_autonomy_controller(panel) -> None:
     knn_c_shortcut.activated.connect(controller.toggle_knn_c_supervised)
     panel.production_knn_c_supervised_shortcut = knn_c_shortcut
     panel.toggle_knn_c_supervised = controller.toggle_knn_c_supervised
+
+    side_supervision_shortcut = QShortcut(QKeySequence("Ctrl+Shift+O"), panel)
+    side_supervision_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+    side_supervision_shortcut.setAutoRepeat(False)
+    side_supervision_shortcut.activated.connect(
+        controller.toggle_side_strong_ok_supervised
+    )
+    side_supervision_shortcut.setEnabled(controller.is_production())
+    controller.side_supervision_shortcut = side_supervision_shortcut
+    panel.production_side_supervision_shortcut = side_supervision_shortcut
+    panel.toggle_side_strong_ok_supervised = controller.toggle_side_strong_ok_supervised
 
     shortcut = QShortcut(QKeySequence("Space"), panel)
     shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
