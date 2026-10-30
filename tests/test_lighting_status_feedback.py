@@ -194,6 +194,40 @@ class LightingStatusHookTests(unittest.TestCase):
         )
 
 
+    def test_automatic_top_mid_and_preflight_side_show_key_feedback(self):
+        class FakePanel:
+            def __init__(self):
+                self.events = []
+
+            def change_lighting(self, mode, source):
+                self.events.append(("change", mode, source))
+                return True
+
+            def update_lighting_status_feedback(self, mode):
+                self.events.append(("status", mode))
+                return True
+
+            def show_operational_key_feedback(self, key, source=""):
+                self.events.append(("key", key, source))
+                return True
+
+        install_lighting_status_feedback_hooks(FakePanel)
+        panel = FakePanel()
+        for light, source, key in (
+            ("TOP", "adhesive_automation", "LEFT"),
+            ("MID", "adhesive_automation", "RIGHT"),
+            ("SIDE", "adhesive_automation", "DOWN"),
+            ("SIDE", "side_preflight", "DOWN"),
+        ):
+            with self.subTest(light=light, source=source):
+                panel.events.clear()
+                self.assertTrue(panel.change_lighting(light, source))
+                self.assertEqual(panel.events, [
+                    ("change", light, source),
+                    ("status", light),
+                    ("key", key, "odin_automation"),
+                ])
+
     def test_xp_network_lighting_updates_status_and_shows_physical_key(self):
         class FakePanel:
             def __init__(self):
