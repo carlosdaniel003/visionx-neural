@@ -800,6 +800,24 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     if detail.get("production_binary_auto") is not True:
         return _legacy_continuous_policy(analysis, detail, policy)
 
+    # O OK genérico antigo (apenas veredito textual) NÃO é um contrato
+    # de captura. Todas as outras rotas auto já revalidam suas provas,
+    # enquanto esta também deve exigir uma inspeção completa.
+    if (
+        policy.get("reason") == "false_failure_auto_ok"
+        and not _completed_continuous_inspection(analysis, detail)
+    ):
+        return {
+            **policy,
+            "verdict": "",
+            "auto_allowed": False,
+            "operator_review_required": False,
+            "proposed_decision": "",
+            "reason": "production_binary_operational_capture_fault_v1",
+            "operational_error": True,
+            "source_verdict": policy.get("verdict", ""),
+        }
+
     if policy.get("auto_allowed") is True and policy.get("proposed_decision") in {"OK", "NG"}:
         decision = policy["proposed_decision"]
         return {
