@@ -22,6 +22,18 @@ def install_memory_status_ui(control_panel_cls) -> None:
 
         # Rota explicitada na própria linha existente e no tooltip.
         route = str(detail.get("recognition_route", "") or "")
+        human_recall = detail.get("confirmed_visual_recall")
+        human_recall = human_recall if isinstance(human_recall, dict) else {}
+        remembered_label = (
+            "OK" if human_recall.get("status") == "HUMAN_OK_VISUAL_CANDIDATE"
+            else "NG" if human_recall.get("status") == "HUMAN_NG_VISUAL_CANDIDATE"
+            else ""
+        ) if (
+            human_recall.get("schema") == "visionx.human_visual_recall.v1"
+            and human_recall.get("source") == "PERSISTENT_HUMAN_LABELS"
+            and human_recall.get("diagnostic_only") is True
+            and human_recall.get("auto_ok_authorized") is False
+        ) else ""
         routes = detail.get("recognition_light_routes", {})
         route_labels = {
             "KNOWN_KNN": "CASO CONHECIDO • MEMÓRIA KNN",
@@ -111,7 +123,18 @@ def install_memory_status_ui(control_panel_cls) -> None:
             # O label é visível sem passar o mouse; tooltip guarda os detalhes.
             if hasattr(self, "lbl_db_info"):
                 label = route_labels.get(route, route)
-                if route == "NEW_CNN":
+                if route in {"NEW_CNN", "NEW_EXPERTS"} and remembered_label:
+                    label = (
+                        "MEMÓRIA HUMANA VISUAL " + remembered_label
+                        + " • SEM PAR RGB EXATO"
+                    )
+                    tooltip += (
+                        "\nReferência de julgamento humano visualmente semelhante: "
+                        + remembered_label
+                        + ". Similaridade não comprova o mesmo defeito físico "
+                        "e NÃO autoriza 0/OK automático."
+                    )
+                elif route == "NEW_CNN":
                     label += " • KNN SEM MATCH EXATO"
                 self.lbl_db_info.setText(label)
                 self.lbl_db_info.setToolTip(tooltip)
