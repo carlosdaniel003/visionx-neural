@@ -527,6 +527,11 @@ def _transport_record(panel, image: Any, ip: str, event_id: str) -> dict:
             "stable_required_frames": int(
                 getattr(receiver, "STABLE_REQUIRED_FRAMES", 0) or 0
             ),
+            "side_preflight": dict(
+                getattr(receiver, "last_delivered_timing", {}).get(
+                    "side_preflight", {}
+                )
+            ),
         },
         "cycle": _gate_snapshot(panel),
         "validation_message": "Imagem recebida; aguardando extração da AOI.",

@@ -232,6 +232,28 @@ class DecisionKeyFeedbackOverlayTests(unittest.TestCase):
         self.assertEqual(overlay.decision_label.text(), "DIREITA")
         self.assertEqual(overlay.source_label.text(), "CONTROLE ODIN")
 
+    def test_automatic_lighting_commands_show_origin_and_repeated_keys(self):
+        panel = self._panel()
+        first = panel.show_operational_key_feedback(
+            "LEFT", source="odin_automation",
+        )
+        overlay = panel.decision_key_feedback
+        self.assertTrue(first)
+        self.assertEqual(overlay.digit_label.text(), "←")
+        self.assertEqual(overlay.header_label.text(),
+                         "TECLA ENVIADA AUTOMATICAMENTE")
+        self.assertEqual(overlay.source_label.text(), "AUTOMACAO ODIN")
+
+        # Cada PRESS_DOWN de pre-captura e uma nova acao. Nao pode ser
+        # suprimido pela janela de deduplicacao de notificacoes.
+        self.assertTrue(panel.show_operational_key_feedback(
+            "DOWN", source="odin_automation",
+        ))
+        self.assertTrue(panel.show_operational_key_feedback(
+            "DOWN", source="odin_automation",
+        ))
+        self.assertEqual(overlay.digit_label.text(), "↓")
+
     def test_key_feedback_prepares_and_starts_verdict_fade_in_same_exit_event(self):
         panel = QWidget()
         panel.resize(1000, 700)
@@ -315,7 +337,7 @@ class DecisionKeyFeedbackXPBridgeTests(unittest.TestCase):
             ],
         )
 
-    def test_xp_ok_ng_commands_show_feedback_only_with_active_capture(self):
+    def test_xp_ok_ng_commands_show_receipt_even_without_active_capture(self):
         class FakeControlPanel:
             def __init__(self):
                 self.current_ng = object()
@@ -342,7 +364,7 @@ class DecisionKeyFeedbackXPBridgeTests(unittest.TestCase):
 
         panel.feedback.clear()
         panel.handle_physical_keyboard("NG")
-        self.assertEqual(panel.feedback, [])
+        self.assertEqual(panel.feedback, [("NG", "xp_keyboard")])
 
     def test_non_decision_xp_command_never_shows_feedback(self):
         class FakeControlPanel:

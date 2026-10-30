@@ -29,6 +29,7 @@ class NetworkReceiver(QThread):
     log_updated = pyqtSignal(str)
     command_received = pyqtSignal(str)
     xp_peer_discovered = pyqtSignal(str)
+    side_preflight_requested = pyqtSignal(str, int)
 
     SIGNATURE_WIDTH = 128
     SIGNATURE_HEIGHT = 96
@@ -45,6 +46,9 @@ class NetworkReceiver(QThread):
     # Pequena janela de estabilizacao apos mudar a luz no XP. A recepcao
     # auxiliar exige duas imagens consecutivas estaveis antes da entrega.
     AUXILIARY_LIGHT_SETTLE_SECONDS = 0.35
+    SIDE_PREFLIGHT_SETTLE_SECONDS = 0.35
+    SIDE_PREFLIGHT_RETRY_SECONDS = 2.0
+    SIDE_PREFLIGHT_RESPONSE_TIMEOUT_SECONDS = 3.0
 
     def __init__(self, port=5001):
         super().__init__()
@@ -89,6 +93,18 @@ class NetworkReceiver(QThread):
         # entregue à UI terminou de chegar pela rede. O painel usa esse marco
         # como início do "Tempo de análise".
         self.last_delivered_image_received_at = 0.0
+
+        # Antes de CADA captura principal, solicitar PRESS_DOWN na AOI.
+        # A primeira imagem que disparou a sincronizacao e descartada:
+        # apenas frames novos, apos o intervalo de acomodacao, podem
+        # entrar na analise. Nao e usado para TOP/MID auxiliares.
+        self._side_preflight_phase = "PENDING"
+        self._side_preflight_serial = 0
+        self._side_preflight_requested_at = 0.0
+        self._side_preflight_not_before = 0.0
+        self._side_preflight_retry_at = 0.0
+        self._side_preflight_ip = ""
+        self.last_side_preflight = {}
 
         # Frames auxiliares SIDE/TOP/MID da mesma peça podem atravessar a trava
         # principal somente durante uma sessão visual de adesivo.
@@ -193,6 +209,14 @@ class NetworkReceiver(QThread):
         barras, recorte vazio e timeout do watchdog.
         """
         with self._state_lock:
+            if not self._image_gate.is_open():
+                self._side_preflight_serial += 1
+                self._side_preflight_phase = "PENDING"
+                self._side_preflight_requested_at = 0.0
+                self._side_preflight_not_before = 0.0
+                self._side_preflight_retry_at = 0.0
+                self._side_preflight_ip = ""
+                self.last_side_preflight = {}
             if self._reserved_signature is not None:
                 self._last_rejected_signature = self._reserved_signature.copy()
                 self._last_rejected_reason = (
@@ -212,6 +236,137 @@ class NetworkReceiver(QThread):
 
         self._image_gate.release()
         self._last_ignored_log_at = 0.0
+
+    def _side_preflight_ready(self, ip: str, *, received_at: float) -> bool:
+        """Exige DOWN ANTES da primeira imagem encaminhada ao painel.
+
+        Executado na thread de rede; o slot Qt do painel faz o envio
+        do comando fora desta thread e confirma o resultado pelo token.
+        A ausencia de resposta/falha mantem a recepcao bloqueada.
+        """
+        request = None
+        with self._state_lock:
+            now = time.perf_counter()
+            phase = self._side_preflight_phase
+            if phase in {"SETTLING", "READY"} and (
+                self._side_preflight_ip != str(ip)
+            ):
+                # Outro XP nao herda a sincronizacao feita para o primeiro.
+                self._side_preflight_phase = "PENDING"
+                self._side_preflight_retry_at = 0.0
+                self._clear_candidate_locked()
+                phase = "PENDING"
+            if phase == "READY":
+                return True
+            if phase == "SETTLING":
+                if received_at < self._side_preflight_not_before:
+                    return False
+                self._side_preflight_phase = "READY"
+                if isinstance(self.last_side_preflight, dict):
+                    self.last_side_preflight["status"] = "READY_FOR_STABLE_FRAMES"
+                self._clear_candidate_locked()
+                return True
+            if phase == "WAITING":
+                if now - self._side_preflight_requested_at < (
+                    self.SIDE_PREFLIGHT_RESPONSE_TIMEOUT_SECONDS
+                ):
+                    return False
+                # Slot perdido ou envio bloqueado: invalida resposta tardia.
+                self._side_preflight_phase = "PENDING"
+                self._side_preflight_retry_at = now + (
+                    self.SIDE_PREFLIGHT_RETRY_SECONDS
+                )
+                return False
+            if now < self._side_preflight_retry_at:
+                return False
+            self._side_preflight_serial += 1
+            self._side_preflight_phase = "WAITING"
+            self._side_preflight_requested_at = now
+            self._side_preflight_ip = str(ip)
+            self._clear_candidate_locked()
+            request = self._side_preflight_serial
+
+        self.log_updated.emit(
+            "Pre-captura SIDE: solicitando PRESS_DOWN antes de analisar."
+        )
+        self.side_preflight_requested.emit(str(ip), request)
+        return False
+
+    def invalidate_side_preflight_for_xp_light(self, mode: str) -> bool:
+        """Um CMD_TOP/MID no gate principal invalida a SIDE preparada.
+
+        Nao se aplica a imagens TOP/MID durante a inspeção multilight,
+        pois nesse momento o gate principal permanece fechado.
+        """
+        if str(mode or "").strip().upper() not in {"TOP", "MID"}:
+            return False
+        with self._state_lock:
+            if not self._image_gate.is_open():
+                return False
+            self._side_preflight_serial += 1
+            self._side_preflight_phase = "PENDING"
+            self._side_preflight_not_before = 0.0
+            self._side_preflight_retry_at = 0.0
+            self._clear_candidate_locked()
+            self.last_side_preflight = {}
+        self.log_updated.emit(
+            "XP notificou TOP/MID antes da captura SIDE; "
+            "pre-captura SIDE precisa ser repetida."
+        )
+        return True
+
+    def is_side_preflight_pending(self, request_id: int) -> bool:
+        """Evita enviar PRESS_DOWN de um request Qt antigo."""
+        with self._state_lock:
+            return bool(
+                self._side_preflight_phase == "WAITING"
+                and self._side_preflight_serial == request_id
+                and self._image_gate.is_open()
+            )
+
+    def complete_side_preflight(self, request_id: int, sent: bool) -> bool:
+        """Aceita somente a confirmacao do pedido do ciclo corrente.
+
+        TCP enviado nao equivale a confirmacao eletrica da AOI. O
+        contrato garante apenas a ordem DOWN -> acomodacao -> frame.
+        """
+        with self._state_lock:
+            if (
+                self._side_preflight_phase != "WAITING"
+                or self._side_preflight_serial != request_id
+                or not self._image_gate.is_open()
+            ):
+                return False
+            now = time.perf_counter()
+            self._clear_candidate_locked()
+            if sent:
+                self._side_preflight_phase = "SETTLING"
+                self._side_preflight_not_before = (
+                    now + self.SIDE_PREFLIGHT_SETTLE_SECONDS
+                )
+                self._side_preflight_retry_at = 0.0
+            else:
+                self._side_preflight_phase = "PENDING"
+                self._side_preflight_retry_at = (
+                    now + self.SIDE_PREFLIGHT_RETRY_SECONDS
+                )
+            self.last_side_preflight = {
+                "request_id": request_id,
+                "command": "PRESS_DOWN",
+                "transport_sent": bool(sent),
+                "settle_ms": round(
+                    self.SIDE_PREFLIGHT_SETTLE_SECONDS * 1000.0, 2
+                ),
+                "status": "SETTLING" if sent else "RETRY_PENDING",
+            }
+        self.log_updated.emit(
+            "Pre-captura SIDE: PRESS_DOWN transmitido; "
+            "aguardando frames novos e estaveis."
+            if sent else
+            "Pre-captura SIDE: falha ao enviar PRESS_DOWN; "
+            "captura bloqueada, proxima tentativa programada."
+        )
+        return True
 
     def _should_ignore_accepted_repeat(self, signature: np.ndarray) -> bool:
         """Regra da thread XP: protege contra repetição salvo armamento manual."""
@@ -516,6 +671,7 @@ class NetworkReceiver(QThread):
                     # Comandos nunca são bloqueados pela trava de imagens.
                     if cabecalho_str.startswith("CMD_"):
                         comando = cabecalho_str.split("_", 1)[1]
+                        self.invalidate_side_preflight_for_xp_light(comando)
                         self.log_updated.emit(
                             f"Comando físico detectado no XP: {comando}"
                         )
@@ -609,6 +765,11 @@ class NetworkReceiver(QThread):
                         self.image_received.emit(img, ip_origem)
                         continue
 
+                    if not self._side_preflight_ready(
+                        ip_origem, received_at=payload_received_at,
+                    ):
+                        continue
+
                     signature = self._frame_signature(img)
                     if self._should_ignore_accepted_repeat(signature):
                         self._log_duplicate_frame()
@@ -688,6 +849,7 @@ class NetworkReceiver(QThread):
                         "payload_to_dispatch_ms": round(max(
                             0.0, ready_at - candidate_received_at
                         ) * 1000.0, 2),
+                        "side_preflight": dict(self.last_side_preflight),
                     }
                     self.log_updated.emit(
                         "Frame estável encaminhado para validação do epicentro."

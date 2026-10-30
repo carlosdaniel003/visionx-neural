@@ -187,6 +187,8 @@ class DecisionKeyFeedbackOverlay(QFrame):
             return "TECLADO ODIN"
         if normalized == "odin_control":
             return "CONTROLE ODIN"
+        if normalized == "odin_automation":
+            return "AUTOMACAO ODIN"
         if normalized == "production_auto":
             return "ODIN • MODO PRODUÇÃO"
         return "AÇÃO MANUAL"
@@ -198,7 +200,7 @@ class DecisionKeyFeedbackOverlay(QFrame):
             return "TECLA ENVIADA"
         if normalized == "xp_keyboard":
             return "TECLA RECEBIDA"
-        if normalized == "production_auto":
+        if normalized in {"production_auto", "odin_automation"}:
             return "TECLA ENVIADA AUTOMATICAMENTE"
         return "TECLA PRESSIONADA"
 
@@ -260,7 +262,8 @@ class DecisionKeyFeedbackOverlay(QFrame):
     ) -> bool:
         now = time.monotonic()
         if (
-            signature == self._last_feedback
+            not signature.startswith("key:")
+            and signature == self._last_feedback
             and now - self._last_shown_at < DUPLICATE_SUPPRESSION_SECONDS
         ):
             return False
@@ -367,23 +370,9 @@ def install_decision_key_feedback_hooks(control_panel_cls) -> None:
     @wraps(original_handle_keyboard)
     def handle_physical_keyboard(self, comando_xp: str):
         normalized = str(comando_xp or "").strip().upper()
-        had_active_capture = bool(getattr(self, "current_ng", None) is not None)
-
-        mode = ""
-        try:
-            mode = str(self.combo_mode.currentText() or "").strip()
-        except Exception:
-            pass
-        production_accepts_operator = bool(
-            mode != "Modo Produção"
-            or getattr(self, "production_review_pending", False)
-        )
-
-        if (
-            normalized in {"OK", "NG"}
-            and had_active_capture
-            and production_accepts_operator
-        ):
+        # Aviso de tecla recebida independe da elegibilidade do julgamento.
+        # A politica XP continua decidindo separadamente se a tecla vale.
+        if normalized in {"OK", "NG"}:
             show_feedback = getattr(
                 self,
                 "show_decision_key_feedback",
