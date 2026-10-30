@@ -264,6 +264,8 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
         self.capture_cycle_local_transition = False
         self.capture_cycle_source = None
         self.capture_cycle_network_generation = 0
+        self._reinspect_requested = False
+        self._production_discard_authorized = False
 
     def wrapped_handle_network_image(self, img_bgr, ip: str):
         if (
@@ -391,6 +393,23 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
         return bool(launched)
 
     def wrapped_skip_image(self, *args, **kwargs):
+        mode = _mode(self)
+        source = getattr(self, "capture_cycle_source", None)
+        active = bool(getattr(self, "capture_cycle_active", False))
+        controller = getattr(self, "production_autonomy_controller", None)
+        # É possível cancelar a apresentação e o 1/NG AINDA NÃO enviado.
+        # Quando um envio já começou, descartar não pode desfazer a ordem XP.
+        if (mode == "Modo Produção" and active and source == "network"
+                and getattr(controller, "state", "") == "emitting_auto_decision"):
+            _show_locked_message(self, "Comando XP em envio; descarte não permitido.")
+            return False
+        if (mode == "Modo Produção" and active and source == "network"
+                and callable(getattr(self, "cancel_production_autonomy", None))):
+            self.cancel_production_autonomy()
+        is_reinspect = bool(getattr(self, "_reinspect_requested", False))
+        self._production_discard_authorized = bool(
+            mode == "Modo Produção" and active and source == "network"
+        )
         self.capture_cycle_discarding = True
         _lock_cycle(self)
         try:
@@ -400,16 +419,68 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
             result = None
         finally:
             self.capture_cycle_discarding = False
+            self._production_discard_authorized = False
+            self._reinspect_requested = False
 
         if not bool(getattr(self, "is_locked", False)):
             self.current_sample = None
             self.current_ng = None
             self.current_analysis = None
+            self.capture_cycle_network_generation = int(
+                getattr(self, "capture_cycle_network_generation", 0)
+            ) + 1
+            receiver = _receiver(self)
+            if (not is_reinspect and receiver is not None
+                    and callable(getattr(receiver, "cancel_same_frame_reinspection", None))):
+                receiver.cancel_same_frame_reinspection()
             _release_cycle(self)
         else:
+            receiver = _receiver(self)
+            if receiver is not None and hasattr(receiver, "cancel_same_frame_reinspection"):
+                receiver.cancel_same_frame_reinspection()
             _lock_cycle(self)
             _safe_sync(self)
         return result
+
+    def reinspect_current_network_image(self) -> bool:
+        """Descarta a análise ativa e aceita UMA nova transmissão XP igual.
+
+        Reprocessa o próximo payload com novo event_id e três luzes; não
+        reaproveita resultado CNN nem encaminha decisão anterior ao XP.
+        """
+        controller = getattr(self, "production_autonomy_controller", None)
+        receiver = _receiver(self)
+        if not (
+            _mode(self) == "Modo Produção"
+            and getattr(self, "capture_cycle_source", None) == "network"
+            and bool(getattr(self, "capture_cycle_active", False))
+            and _has_analysis(self)
+            and _has_captured_images(self)
+            and getattr(controller, "pending_analysis", None)
+            is getattr(self, "current_analysis", None)
+            and getattr(controller, "state", "") != "emitting_auto_decision"
+            and not bool(getattr(self, "capture_cycle_discarding", False))
+            and not bool(getattr(self, "capture_cycle_local_transition", False))
+            and callable(getattr(receiver, "arm_same_frame_reinspection_once", None))
+        ):
+            _show_locked_message(
+                self, "Reanálise disponível somente antes de enviar 0/1 ao XP."
+            )
+            return False
+        if not receiver.arm_same_frame_reinspection_once():
+            return False
+        self._reinspect_requested = True
+        self.skip_image()
+        succeeded = not bool(getattr(self, "capture_cycle_active", False))
+        if not succeeded:
+            receiver.cancel_same_frame_reinspection()
+            return False
+        self.update_brain_status(
+            "Reanálise armada: aguardando novo frame XP estável, "
+            "mesmo se visualmente idêntico. Apenas uma repetição permitida.",
+            True,
+        )
+        return True
 
     def wrapped_save_label(self, user_decision: str, source="button"):
         try:
@@ -506,6 +577,7 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
     control_panel_cls.handle_network_image = wrapped_handle_network_image
     control_panel_cls.start_monitoring = wrapped_start_monitoring
     control_panel_cls.skip_image = wrapped_skip_image
+    control_panel_cls.reinspect_current_network_image = reinspect_current_network_image
     control_panel_cls.save_label = wrapped_save_label
     presenter_cls.sync = wrapped_presenter_sync
     control_panel_cls._network_image_cycle_gate_installed = True
