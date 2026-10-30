@@ -331,12 +331,34 @@ def build_side_memory_first(
     checker = physical_absence_probe if probe is None else probe
     try:
         physical = checker(reference, test)
-    except Exception:
-        return None
-    if not _verified_probe(physical, evidence["label"]):
+    except Exception as exc:
+        physical = {
+            "status": "UNAVAILABLE",
+            "reason": type(exc).__name__,
+            "scales": [],
+            "geometry": {},
+        }
+    if not isinstance(physical, dict):
+        physical = {
+            "status": "UNAVAILABLE",
+            "reason": "INVALID_PROBE_RESULT",
+            "scales": [],
+            "geometry": {},
+        }
+    label = evidence["label"]
+    physical_verified = _verified_probe(physical, label)
+    # Um OK humano excepcionalmente forte permanece visualmente OK,
+    # mesmo quando a sonda de ausencia atual nao autoriza liberar a placa.
+    # Isso encerra a SIDE sem converter reconhecimento OK em NG preventivo.
+    # Nenhum 0/OK sai pelo XP se a contraprova fisica falhar.
+    visual_review = bool(
+        not physical_verified
+        and label == "OK"
+        and evidence["knn_agreement_mode"] == "KNN_AB_STRONG_HUMAN_OK"
+    )
+    if not physical_verified and not visual_review:
         return None
     final = deepcopy(analysis)
-    label = evidence["label"]
     final["verdict"] = "FALHA FALSA" if label == "OK" else "DEFEITO REAL"
     final["is_defect"] = label == "NG"
     final["confidence"] = min(
@@ -347,7 +369,7 @@ def build_side_memory_first(
     final["multilight_final"] = True
     final["multilight_category"] = canonical_memory_category(category)
     final["eligible_for_final_decision"] = True
-    final["production_review_required"] = False
+    final["production_review_required"] = visual_review
     description = (
         "OK humano >=99%, vantagem >=3pp e mesmo PNG OK nos descritores "
         "A>=98%/B>=95%, sem vizinho NG proximo"
@@ -357,9 +379,16 @@ def build_side_memory_first(
     )
     final["reason"] = (
         "SIDE • memória humana previamente julgada " + label
-        + "; " + description + "; sonda de ausência física aplicada como veto, "
-        "não como validação de toda categoria; TOP/MID dispensadas. "
-        "Similaridade não é probabilidade."
+        + "; " + description + "; TOP/MID dispensadas. "
+        + (
+            "Contraprova física NÃO AUTORIZOU XP 0: "
+            + str(physical.get("status", "UNAVAILABLE"))
+            + " / " + str(physical.get("reason", "SEM_MOTIVO"))
+            + "; confirmação humana obrigatória. "
+            if visual_review else
+            "Contraprova de ausência física em duas escalas validada. "
+        )
+        + "Similaridade não é probabilidade."
     )
     d = final["detail"]
     d["side_memory_first"] = {
@@ -368,6 +397,10 @@ def build_side_memory_first(
         "physical_probe_scope": PHYSICAL_PROBE_SCOPE,
         "original_verdict": analysis.get("verdict"),
         "original_is_defect": analysis.get("is_defect"),
+        "physical_gate": (
+            "OPERATOR_REQUIRED" if visual_review else "VERIFIED"
+        ),
+        "physical_verified": physical_verified,
     }
     d["side_early_exit"] = {
         "rule": RULE,
@@ -375,17 +408,17 @@ def build_side_memory_first(
         "verdict": final["verdict"],
         "analyzed_lights": ["SIDE"],
         "skipped_lights": ["TOP", "MID"],
-        "production_auto_allowed": True,
-        "operator_review_required": False,
+        "production_auto_allowed": not visual_review,
+        "operator_review_required": visual_review,
     }
     d["fusion_rule"] = RULE
     d["multilight_final"] = True
     d["multilight_category"] = final["multilight_category"]
     d["eligible_for_final_decision"] = True
-    d["operator_review_required"] = False
+    d["operator_review_required"] = visual_review
     trace = d.get("decision_trace")
     if isinstance(trace, dict):
-        trace["operator_review_required"] = False
+        trace["operator_review_required"] = visual_review
         trace["fusion_rule"] = RULE
     d["side_memory_first"]["geometry_small_trim_authorized"] = bool(
         physical.get("status") == "GEOMETRY_REVIEW"
@@ -420,6 +453,8 @@ def memory_first_side_decision(analysis: dict | None) -> str | None:
             marker.get("physical_probe", {}).get("status") == "GEOMETRY_REVIEW"
         )
         or marker.get("physical_probe_scope") != PHYSICAL_PROBE_SCOPE
+        or marker.get("physical_gate") != "VERIFIED"
+        or marker.get("physical_verified") is not True
         or not _verified_probe(marker.get("physical_probe"), label)
         or analysis.get("lighting_mode") != "SIDE"
         or analysis.get("multilight_final") is not True
@@ -452,7 +487,79 @@ def memory_first_side_decision(analysis: dict | None) -> str | None:
     return label
 
 
+
+def verified_side_memory_visual_review(analysis: dict | None) -> bool:
+    """Revalida FALHA FALSA reconhecida na SIDE com veto físico.
+
+    Nunca autoriza tecla 0/1; devolve apenas reconhecimento auditável
+    exigindo decisão humana. Os dados históricos são requalificados
+    antes de considerar válido o marcador de saída antecipada.
+    """
+    if not isinstance(analysis, dict):
+        return False
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict) or detail.get("fusion_rule") != RULE:
+        return False
+    marker = detail.get("side_memory_first")
+    early = detail.get("side_early_exit")
+    if not isinstance(marker, dict) or not isinstance(early, dict):
+        return False
+    scope = analysis.get("multilight_category")
+    original = {
+        **analysis,
+        "verdict": marker.get("original_verdict"),
+        "is_defect": marker.get("original_is_defect"),
+    }
+    expected = _candidate(original, scope)
+    probe = marker.get("physical_probe")
+    if not isinstance(probe, dict):
+        return False
+    if (
+        expected is None
+        or expected.get("label") != "OK"
+        or expected.get("knn_agreement_mode") != "KNN_AB_STRONG_HUMAN_OK"
+        or any(marker.get(key) != value for key, value in expected.items())
+        or marker.get("physical_probe_scope") != PHYSICAL_PROBE_SCOPE
+        or marker.get("physical_gate") != "OPERATOR_REQUIRED"
+        or marker.get("physical_verified") is not False
+        or _verified_probe(probe, "OK")
+        or marker.get("geometry_small_trim_authorized") is not (
+            probe.get("status") == "GEOMETRY_REVIEW"
+        )
+        or analysis.get("lighting_mode") != "SIDE"
+        or analysis.get("multilight_final") is not True
+        or analysis.get("eligible_for_final_decision") is not True
+        or analysis.get("production_review_required") is not True
+        or detail.get("multilight_final") is not True
+        or detail.get("eligible_for_final_decision") is not True
+        or detail.get("operator_review_required") is not True
+        or detail.get("multilight_category") != scope
+        or analysis.get("verdict") != "FALHA FALSA"
+        or analysis.get("is_defect") is not False
+        or detail.get("hard_missing_evidence") is True
+        or analysis.get("hard_missing_evidence") is True
+        or detail.get("memory_conflict") is True
+        or early != {
+            "rule": RULE,
+            "threshold": expected["min_similarity"],
+            "verdict": "FALHA FALSA",
+            "analyzed_lights": ["SIDE"],
+            "skipped_lights": ["TOP", "MID"],
+            "production_auto_allowed": False,
+            "operator_review_required": True,
+        }
+    ):
+        return False
+    trace = detail.get("decision_trace")
+    return bool(
+        isinstance(trace, dict)
+        and trace.get("fusion_rule") == RULE
+        and trace.get("operator_review_required") is True
+    )
+
+
 __all__ = [
     "RULE", "KNOWN_MEMORY_CATEGORIES", "PHYSICAL_PROBE_SCOPE",
     "build_side_memory_first", "memory_first_side_decision",
+    "verified_side_memory_visual_review",
 ]
