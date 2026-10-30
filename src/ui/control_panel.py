@@ -147,6 +147,12 @@ class ControlPanel(QWidget):
         if new_ip != str(getattr(self, "last_xp_ip", "") or ""):
             self._xp_shadow_last_attempt = None
         self.last_xp_ip = new_ip
+        # Comando inicial da inspeção: SIDE antes do primeiro frame AOI.
+        # O primeiro payload continua sendo fallback caso o XP seja
+        # identificado sem que o preflight possa ser transmitido.
+        prime = getattr(self.network_receiver, "prime_side_preflight", None)
+        if callable(prime):
+            prime(new_ip)
         self._send_xp_shadow_control(
             uses_fast_xp_capture(self.combo_mode.currentText())
         )
