@@ -37,6 +37,13 @@ STRONG_OK_MIN_KNN_A = 0.98
 STRONG_OK_MIN_KNN_B = 0.95
 STRONG_OK_MIN_KNN_MARGIN = 0.05
 STRONG_OK_MAX_OPPOSITE_KNN = 0.90
+HIGH_OK_MIN_HUMAN = 0.985
+HIGH_OK_MIN_HUMAN_MARGIN = 0.035
+HIGH_OK_MIN_KNN_A = 0.985
+HIGH_OK_MIN_KNN_B = 0.97
+HIGH_OK_MIN_KNN_MARGIN = 0.08
+HIGH_OK_MODE = "KNN_AB_HIGH_CORROBORATED_HUMAN_OK"
+VISUAL_OK_MODES = frozenset({"KNN_AB_STRONG_HUMAN_OK", HIGH_OK_MODE})
 KNOWN_MEMORY_CATEGORIES = frozenset(
     canonical_memory_category(value) for value in CATEGORIES
 )
@@ -102,14 +109,23 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
     # Uma evidencia OK excepcionalmente forte pode ser qualificada mais
     # adiante, somente com corroboracao do MESMO PNG nos dois descritores.
     status = human.get("status")
-    potential_strong_ok = bool(
-        status == "AMBIGUOUS"
-        and _number(human.get("best_ok_similarity")) is not None
-        and _number(human.get("best_ng_similarity")) is not None
-        and _number(human.get("best_ok_similarity")) >= STRONG_OK_MIN_HUMAN
-        and _number(human.get("best_ok_similarity"))
-            - _number(human.get("best_ng_similarity")) >= STRONG_OK_MIN_HUMAN_MARGIN
+    ok_score = _number(human.get("best_ok_similarity"))
+    ng_score = _number(human.get("best_ng_similarity"))
+    ok_margin = (
+        ok_score - ng_score
+        if ok_score is not None and ng_score is not None else None
     )
+    strong_human = bool(
+        status == "AMBIGUOUS" and ok_margin is not None
+        and ok_score >= STRONG_OK_MIN_HUMAN
+        and ok_margin >= STRONG_OK_MIN_HUMAN_MARGIN
+    )
+    high_human = bool(
+        status == "AMBIGUOUS" and ok_margin is not None
+        and ok_score >= HIGH_OK_MIN_HUMAN
+        and ok_margin >= HIGH_OK_MIN_HUMAN_MARGIN
+    )
+    potential_strong_ok = strong_human or high_human
     label = (
         "OK" if status == "HUMAN_OK_VISUAL_CANDIDATE" or potential_strong_ok
         else "NG" if status == "HUMAN_NG_VISUAL_CANDIDATE"
@@ -125,7 +141,8 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
         human_score is None or human_score < MIN_HUMAN
         or opposed is None
         or human_score - opposed < (
-            STRONG_OK_MIN_HUMAN_MARGIN if potential_strong_ok else MIN_MARGIN
+            STRONG_OK_MIN_HUMAN_MARGIN if strong_human else
+            HIGH_OK_MIN_HUMAN_MARGIN if high_human else MIN_MARGIN
         )
         or not isinstance(human_source, dict)
         or human_source.get("label") != label
@@ -157,7 +174,8 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
     prefix = "public/" + ("ok_archive" if label == "OK" else "ng_archive") + "/"
     a, b = witnesses
     original_agrees = bool(
-        a[0] == b[0] == label
+        not potential_strong_ok
+        and a[0] == b[0] == label
         and a[1] >= MIN_KNN and b[1] >= MIN_KNN
         and a[2:] == b[2:]
         and isinstance(a[2], str) and a[2].startswith(prefix)
@@ -175,13 +193,18 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
     # A/B usam scores diferentes e ambos apontam o MESMO PNG OK com SHA
     # identico. Nenhum NG similar pode ser um rival forte em A ou B.
     # A regra nao transforma similaridade em identidade RGB ou rotulo fisico.
+    min_a = STRONG_OK_MIN_KNN_A if strong_human else HIGH_OK_MIN_KNN_A
+    min_b = STRONG_OK_MIN_KNN_B if strong_human else HIGH_OK_MIN_KNN_B
+    min_ng_margin = (
+        STRONG_OK_MIN_KNN_MARGIN if strong_human else HIGH_OK_MIN_KNN_MARGIN
+    )
     strong_ok_agrees = bool(
         potential_strong_ok
         and label == "OK"
         and human_source.get("lighting_mode") == "SIDE"
         and a[0] == b[0] == "OK"
-        and a[1] >= STRONG_OK_MIN_KNN_A
-        and b[1] >= STRONG_OK_MIN_KNN_B
+        and a[1] >= min_a
+        and b[1] >= min_b
         and a[2:] == b[2:]
         and isinstance(a[2], str) and a[2].startswith(prefix)
         and ".." not in PurePosixPath(a[2]).parts
@@ -190,7 +213,7 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
         and knn.get("vote_A") == knn.get("vote_B") == "OK"
         and all(
             _number(row["similarity"]) < STRONG_OK_MAX_OPPOSITE_KNN
-            and top_score - _number(row["similarity"]) >= STRONG_OK_MIN_KNN_MARGIN
+            and top_score - _number(row["similarity"]) >= min_ng_margin
             for top_score, rows in (
                 (a[1], rows_by_method[0]), (b[1], rows_by_method[1])
             )
@@ -240,12 +263,14 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
 
     mode = (
         "KNN_AB_SAME_PNG" if original_agrees else
-        "KNN_AB_STRONG_HUMAN_OK" if strong_ok_agrees else
+        "KNN_AB_STRONG_HUMAN_OK" if strong_ok_agrees and strong_human else
+        HIGH_OK_MODE if strong_ok_agrees else
         "ALIGNED_HUMAN_ARCHIVE_JSON"
     )
-    minimum_knn = STRONG_OK_MIN_KNN_B if strong_ok_agrees else MIN_KNN
+    minimum_knn = min_b if strong_ok_agrees else MIN_KNN
     minimum_margin = (
-        STRONG_OK_MIN_HUMAN_MARGIN if strong_ok_agrees else MIN_MARGIN
+        STRONG_OK_MIN_HUMAN_MARGIN if strong_ok_agrees and strong_human else
+        HIGH_OK_MIN_HUMAN_MARGIN if strong_ok_agrees else MIN_MARGIN
     )
     evidence = {
         "schema": MEMORY_SCHEMA, "rule": RULE, "label": label,
@@ -261,7 +286,8 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
         "aligned_archive": deepcopy(aligned) if aligned_ok else None,
         "min_similarity": minimum_knn,
         "min_human_similarity": (
-            STRONG_OK_MIN_HUMAN if strong_ok_agrees else MIN_HUMAN
+            STRONG_OK_MIN_HUMAN if strong_ok_agrees and strong_human else
+            HIGH_OK_MIN_HUMAN if strong_ok_agrees else MIN_HUMAN
         ),
         "min_opposite_margin": minimum_margin,
         "approximate": True,
@@ -354,7 +380,7 @@ def build_side_memory_first(
     visual_review = bool(
         not physical_verified
         and label == "OK"
-        and evidence["knn_agreement_mode"] == "KNN_AB_STRONG_HUMAN_OK"
+        and evidence["knn_agreement_mode"] in VISUAL_OK_MODES
     )
     if not physical_verified and not visual_review:
         return None
@@ -371,9 +397,11 @@ def build_side_memory_first(
     final["eligible_for_final_decision"] = True
     final["production_review_required"] = visual_review
     description = (
-        "OK humano >=99%, vantagem >=3pp e mesmo PNG OK nos descritores "
-        "A>=98%/B>=95%, sem vizinho NG proximo"
+        "OK humano >=99%, margem >=3pp, mesmo PNG em A>=98%/B>=95%"
         if evidence["knn_agreement_mode"] == "KNN_AB_STRONG_HUMAN_OK" else
+        "OK humano >=98,5%, margem >=3,5pp, mesmo PNG em "
+        "A>=98,5%/B>=97%, adversario NG distante >=8pp"
+        if evidence["knn_agreement_mode"] == HIGH_OK_MODE else
         "KNN A/B >=97% no mesmo PNG ou JSON archive alinhado "
         "a memoria humana, margem >=4pp"
     )
@@ -517,7 +545,7 @@ def verified_side_memory_visual_review(analysis: dict | None) -> bool:
     if (
         expected is None
         or expected.get("label") != "OK"
-        or expected.get("knn_agreement_mode") != "KNN_AB_STRONG_HUMAN_OK"
+        or expected.get("knn_agreement_mode") not in VISUAL_OK_MODES
         or any(marker.get(key) != value for key, value in expected.items())
         or marker.get("physical_probe_scope") != PHYSICAL_PROBE_SCOPE
         or marker.get("physical_gate") != "OPERATOR_REQUIRED"
