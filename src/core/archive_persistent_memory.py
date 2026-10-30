@@ -346,6 +346,106 @@ class PersistentArchiveKNN:
                 ),
             }
 
+    def retire_deleted_ng_archive_source(
+        self, source_path: str, *, apply: bool = False,
+    ) -> dict:
+        """Retira proveniência NG errada APÓS exclusão explícita do PNG.
+
+        Operação de manutenção offline, nunca parte da varredura normal:
+        exclusão física de PNGs não apaga o histórico por acidente.
+        Preserva outras fontes de cada identidade e todos os registros
+        humanos OPERATOR_CONFIRMED; não reclassifica NG como OK.
+        """
+        from pathlib import PurePosixPath
+        if not isinstance(source_path, str) or "\\" in source_path:
+            raise ValueError("Informe caminho relativo POSIX do ng_archive")
+        relative = PurePosixPath(source_path)
+        if (
+            relative.is_absolute()
+            or len(relative.parts) < 3
+            or relative.parts[:2] != ("public", "ng_archive")
+            or any(part in {".", ".."} for part in source_path.split("/"))
+            or relative.suffix.lower() != ".png"
+        ):
+            raise ValueError("Somente PNG sob public/ng_archive/ pode ser retirado")
+
+        image = self.root.joinpath(*relative.parts)
+        # Sem esse teste a varredura poderia importar novamente o PNG NG.
+        if image.exists() or image.is_symlink():
+            raise ValueError("Exclua primeiro o PNG NG físico e feche o ODIN")
+
+        with self._lock, _writer_lock(self.path.with_suffix(".json.lock")):
+            original = self._read()
+            kept = []
+            affected_ids = []
+            removed_sources = 0
+            removed_records = 0
+            for record in original:
+                revised = deepcopy(record)
+                before = revised["sources"]
+                after = [
+                    source for source in before
+                    if not (
+                        record["label"] == "NG"
+                        and source.get("source_kind", "ARCHIVE_PNG") == "ARCHIVE_PNG"
+                        and source.get("source_path") == source_path
+                    )
+                ]
+                if len(after) != len(before):
+                    affected_ids.append(record["id"])
+                    removed_sources += len(before) - len(after)
+                if after:
+                    revised["sources"] = after
+                    _check_record(revised)
+                    kept.append(revised)
+                else:
+                    removed_records += 1
+            result = {
+                "source_path": source_path,
+                "dry_run": not apply,
+                "changed": bool(removed_sources) and bool(apply),
+                "archive_sources_retired": removed_sources,
+                "records_deleted_without_other_sources": removed_records,
+                "affected_record_ids": affected_ids,
+                "human_confirmations_preserved": True,
+                "remaining_records": len(kept),
+                "snapshot": str(self.path),
+            }
+            if not apply or not removed_sources:
+                return result
+
+            if not self.path.exists() or self.path.is_symlink():
+                raise ValueError("Snapshot local ausente ou symlink: manutenção bloqueada")
+            temp_name = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", newline="\n",
+                    dir=self.path.parent, prefix="._knn_retire_",
+                    suffix=".tmp", delete=False,
+                ) as handle:
+                    temp_name = handle.name
+                    handle.write(_canonical({
+                        "schema": SCHEMA,
+                        "checksum": _checksum(kept),
+                        "records": kept,
+                    }) + "\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                shutil.copy2(self.path, self.path.with_suffix(".json.bak"))
+                os.replace(temp_name, self.path)
+            finally:
+                if temp_name and os.path.exists(temp_name):
+                    os.unlink(temp_name)
+            self._cached = None
+            self._stat = None
+            if any(
+                source.get("source_path") == source_path
+                and source.get("source_kind", "ARCHIVE_PNG") == "ARCHIVE_PNG"
+                for record in self._read() for source in record["sources"]
+            ):
+                raise ValueError("Verificação da retirada falhou")
+            return result
+
     def lookup_identity(self, key: list[str]) -> dict:
         """Lookup exato em snapshot persistido, para teste após sincronização."""
         key = identity(*key)
