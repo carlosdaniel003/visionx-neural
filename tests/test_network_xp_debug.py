@@ -216,7 +216,7 @@ class ProductionMemoryProvenanceTests(unittest.TestCase):
             },
         ))
         self.assertIn("política de rejeição preventiva", output)
-        self.assertIn("não foi usada", output.lower().replace("foi usada como", "foi usada"))
+        self.assertIn("nenhuma foto ng abaixo foi usada", output.lower())
         self.assertIn("2026-10-27_1318_FALTANDO_MID.png", output)
         self.assertIn("older_ng.png", output)
         self.assertIn("confirmed-record", output)
