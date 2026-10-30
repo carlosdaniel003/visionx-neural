@@ -251,3 +251,57 @@ originais persistem no debug/registro; (3) corroboração NG independente
 bloqueia a prioridade; (4) os testes existentes mantêm a exigência
 de operador para NG humano inequívoco e para veto físico.
 A regra é genérica, não depende da data ou do nome do arquivo.
+
+
+## 30/10/2026 — OK humano muito forte e PNG corroborado (12:39)
+
+Evento de referência: `c0f029555d004dd4954867532edf1862`.
+O operador confirmou que a referência SIDE
+`public/ok_archive/2026-10-21_1424_FALTANDO.png` representa a
+mesma aparência de **falha falsa**. Essa confirmação orientou a regra;
+não converte a semelhança em identidade RGB comprovada.
+
+Evidências registradas pela captura:
+- `OPERATOR_CONFIRMED` SIDE: OK `0.99019399`, NG `0.95938641`;
+  vantagem de OK **3,080758 pontos percentuais**. A consulta humana
+  devolvia `AMBIGUOUS`, porque o limiar geral exige margem >=4pp.
+- KNN C A: OK `0.98084619`, melhor NG `0.89033113`.
+- KNN C B: OK `0.95345213`, melhor NG `0.81259430`.
+- O **mesmo PNG OK** foi vizinho principal em A e B, com mesmo SHA
+  de pixels. Nenhum par RGB exato foi encontrado pelo roteador.
+- CNN FALTANDO V2 em SIDE indicava NG `0.98113567`. A regra de
+  rejeição preventiva da Produção teria proposto `1/NG` após uma
+  fusão inconclusiva SIDE/TOP/MID. Naquele debug, envio XP
+  confirmado = `None`, não há comprovação de acionamento de tecla.
+
+Nova alternativa **genérica e estrita** dentro de
+`src/core/side_memory_first.py`, sem nomes/datas/arquivos fixos:
+
+1. A memória humana deve vir de `OPERATOR_CONFIRMED` válido,
+   com categoria canônica conhecida e **mesma luz SIDE**,
+   `status=AMBIGUOUS`, OK >=99% e vantagem >=3pp sobre NG.
+2. O banco KNN C deve estar READY, com A/B votando OK e os primeiros
+   vizinhos A/B apontando para o **mesmo arquivo OK e SHA**.
+   Exige similaridade A >=98% e B >=95%.
+3. Exige também que **todo vizinho NG** dos top-5 A/B tenha
+   similaridade <90% e fique pelo menos 5pp abaixo do melhor
+   vizinho OK do respectivo descritor.
+4. Antes de qualquer `0/OK`, exige o **veto físico atual**
+   de duas escalas sem suspeita de ausência, com geometria
+   admissível. Erros, ausência física, categoria inválida,
+   fonte não humana, banco incompleto ou contradição forte
+   fazem o caso cair no fluxo conservador; não aprovam peças.
+5. Quando as evidências se confirmam, a **SIDE encerra como
+   FALHA FALSA**, dispensa TOP/MID e registra
+   `knn_agreement_mode=KNN_AB_STRONG_HUMAN_OK`,
+   a referência PNG, SHA, scores e contraprova física.
+   O gate de Produção **revalida** os marcadores antes de propor
+   `0/OK`, preservando a pausa por espaço e a espera normal.
+   O score publicado é similaridade, não probabilidade real.
+
+A regra anterior para NG humano e a rota padrão de margem >=4pp
+permanecem inalteradas. Nem o checkpoint CNN, nem os dados de
+treinamento, nem a política de teclas XP foram modificados.
+A validação é baseada em fixtures dos scores do log, não é uma
+confirmação industrial independente. Validar com fotos de NG
+semelhantes e com liberação XP desabilitada antes da operação autônoma.

@@ -151,9 +151,14 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     from src.core.side_memory_first import memory_first_side_decision, MIN_KNN
     memory_decision = memory_first_side_decision(analysis)
     if memory_decision in {"OK", "NG"}:
+        side_evidence = detail.get("side_memory_first", {})
+        side_threshold = (
+            side_evidence.get("min_similarity", MIN_KNN)
+            if isinstance(side_evidence, dict) else MIN_KNN
+        )
         return {
             "mode": "production", "confidence": confidence,
-            "threshold": MIN_KNN,
+            "threshold": side_threshold,
             "verdict": "FALHA FALSA" if memory_decision == "OK" else "DEFEITO REAL",
             "auto_allowed": True,
             "operator_review_required": False,

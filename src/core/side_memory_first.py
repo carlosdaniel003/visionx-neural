@@ -1,8 +1,10 @@
 """Roteamento SIDE: memória humana qualificada precede a CNN por similaridade.
 
-95% isolados NÃO equivalem a uma identidade física: exige >=97% em A e B
-para o mesmo PNG, confirmação persistida >=97,5% com margem >=4pp e
-ausência de contraevidência NG significativa.
+95% isolados NÃO equivalem a uma identidade física. A regra padrão exige
+>=97% em A e B no mesmo PNG e memória >=97,5% com margem >=4pp.
+Uma alternativa estrita de OK humano >=99% exige duas correspondências
+independentes no mesmo PNG (A>=98%, B>=95%), margem humana >=3pp
+e nenhuma referência NG próxima. Nunca afirma par RGB exato.
 
 Aplica-se às cinco categorias reconhecidas pela AOI. A sonda independente
 é um VETO TRANSVERSAL DE AUSÊNCIA, não um classificador de inversão,
@@ -27,6 +29,14 @@ MEMORY_SCHEMA = "visionx.side_memory_first.v2"
 MIN_KNN = 0.97
 MIN_HUMAN = 0.975
 MIN_MARGIN = 0.04
+# Alternativa de OK fortemente reconhecido: limiares combinados, não
+# redução dos limiares gerais de memória ou do roteamento NG.
+STRONG_OK_MIN_HUMAN = 0.99
+STRONG_OK_MIN_HUMAN_MARGIN = 0.03
+STRONG_OK_MIN_KNN_A = 0.98
+STRONG_OK_MIN_KNN_B = 0.95
+STRONG_OK_MIN_KNN_MARGIN = 0.05
+STRONG_OK_MAX_OPPOSITE_KNN = 0.90
 KNOWN_MEMORY_CATEGORIES = frozenset(
     canonical_memory_category(value) for value in CATEGORIES
 )
@@ -88,9 +98,21 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
         and knn.get("uses_aoi_category") is False
     ):
         return None
+    # O índice humano marca AMBIGUOUS quando a vantagem e menor que 4pp.
+    # Uma evidencia OK excepcionalmente forte pode ser qualificada mais
+    # adiante, somente com corroboracao do MESMO PNG nos dois descritores.
+    status = human.get("status")
+    potential_strong_ok = bool(
+        status == "AMBIGUOUS"
+        and _number(human.get("best_ok_similarity")) is not None
+        and _number(human.get("best_ng_similarity")) is not None
+        and _number(human.get("best_ok_similarity")) >= STRONG_OK_MIN_HUMAN
+        and _number(human.get("best_ok_similarity"))
+            - _number(human.get("best_ng_similarity")) >= STRONG_OK_MIN_HUMAN_MARGIN
+    )
     label = (
-        "OK" if human.get("status") == "HUMAN_OK_VISUAL_CANDIDATE"
-        else "NG" if human.get("status") == "HUMAN_NG_VISUAL_CANDIDATE"
+        "OK" if status == "HUMAN_OK_VISUAL_CANDIDATE" or potential_strong_ok
+        else "NG" if status == "HUMAN_NG_VISUAL_CANDIDATE"
         else None
     )
     if label is None or canonical_memory_category(d.get("cnn_v2_aoi_category", scope)) != scope:
@@ -101,7 +123,10 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
     human_source = human.get("best_" + label.lower() + "_source")
     if (
         human_score is None or human_score < MIN_HUMAN
-        or opposed is None or human_score - opposed < MIN_MARGIN
+        or opposed is None
+        or human_score - opposed < (
+            STRONG_OK_MIN_HUMAN_MARGIN if potential_strong_ok else MIN_MARGIN
+        )
         or not isinstance(human_source, dict)
         or human_source.get("label") != label
         or human_source.get("source") != "OPERATOR_CONFIRMED"
@@ -146,6 +171,33 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
         )
     )
 
+    # Alternativa para OK humano inequivocamente mais proximo:
+    # A/B usam scores diferentes e ambos apontam o MESMO PNG OK com SHA
+    # identico. Nenhum NG similar pode ser um rival forte em A ou B.
+    # A regra nao transforma similaridade em identidade RGB ou rotulo fisico.
+    strong_ok_agrees = bool(
+        potential_strong_ok
+        and label == "OK"
+        and human_source.get("lighting_mode") == "SIDE"
+        and a[0] == b[0] == "OK"
+        and a[1] >= STRONG_OK_MIN_KNN_A
+        and b[1] >= STRONG_OK_MIN_KNN_B
+        and a[2:] == b[2:]
+        and isinstance(a[2], str) and a[2].startswith(prefix)
+        and ".." not in PurePosixPath(a[2]).parts
+        and isinstance(a[3], str) and len(a[3]) == 64
+        and all(c in "0123456789abcdef" for c in a[3].lower())
+        and knn.get("vote_A") == knn.get("vote_B") == "OK"
+        and all(
+            _number(row["similarity"]) < STRONG_OK_MAX_OPPOSITE_KNN
+            and top_score - _number(row["similarity"]) >= STRONG_OK_MIN_KNN_MARGIN
+            for top_score, rows in (
+                (a[1], rows_by_method[0]), (b[1], rows_by_method[1])
+            )
+            for row in rows[:5] if row["label"] == "NG"
+        )
+    )
+
     # Uma SEGUNDA rota compara JSON humano e JSON archive na MESMA métrica:
     # os scores brutos de foco/geometria A/B permanecem inalterados.
     # Esta rota só existe com fonte PNG original + fonte humana verificadas
@@ -153,7 +205,7 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
     aligned = knn.get("aligned_archive")
     source = aligned.get("archive_source") if isinstance(aligned, dict) else None
     aligned_ok = bool(
-        not original_agrees
+        not original_agrees and not strong_ok_agrees
         and isinstance(aligned, dict)
         and aligned.get("schema") == "visionx.knn_c_archive_alignment.v1"
         and aligned.get("source") == "VERIFIED_ARCHIVE_JSON"
@@ -183,10 +235,18 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
             if row["label"] == other
         )
     )
-    if not original_agrees and not aligned_ok:
+    if not original_agrees and not aligned_ok and not strong_ok_agrees:
         return None
 
-    mode = "KNN_AB_SAME_PNG" if original_agrees else "ALIGNED_HUMAN_ARCHIVE_JSON"
+    mode = (
+        "KNN_AB_SAME_PNG" if original_agrees else
+        "KNN_AB_STRONG_HUMAN_OK" if strong_ok_agrees else
+        "ALIGNED_HUMAN_ARCHIVE_JSON"
+    )
+    minimum_knn = STRONG_OK_MIN_KNN_B if strong_ok_agrees else MIN_KNN
+    minimum_margin = (
+        STRONG_OK_MIN_HUMAN_MARGIN if strong_ok_agrees else MIN_MARGIN
+    )
     evidence = {
         "schema": MEMORY_SCHEMA, "rule": RULE, "label": label,
         "human_source": deepcopy(human_source),
@@ -195,13 +255,15 @@ def _candidate(analysis: dict | None, category: str) -> dict | None:
         "knn_a_similarity": a[1],
         "knn_b_similarity": b[1],
         "knn_agreement_mode": mode,
-        "archive_source": a[2] if original_agrees else source["path"],
-        "archive_pixel_sha256": a[3] if original_agrees else None,
-        "archive_file_sha256": None if original_agrees else source["source_sha256"],
+        "archive_source": a[2] if (original_agrees or strong_ok_agrees) else source["path"],
+        "archive_pixel_sha256": a[3] if (original_agrees or strong_ok_agrees) else None,
+        "archive_file_sha256": None if (original_agrees or strong_ok_agrees) else source["source_sha256"],
         "aligned_archive": deepcopy(aligned) if aligned_ok else None,
-        "min_similarity": MIN_KNN,
-        "min_human_similarity": MIN_HUMAN,
-        "min_opposite_margin": MIN_MARGIN,
+        "min_similarity": minimum_knn,
+        "min_human_similarity": (
+            STRONG_OK_MIN_HUMAN if strong_ok_agrees else MIN_HUMAN
+        ),
+        "min_opposite_margin": minimum_margin,
         "approximate": True,
         "exact_pair_claimed": False,
     }
@@ -286,11 +348,16 @@ def build_side_memory_first(
     final["multilight_category"] = canonical_memory_category(category)
     final["eligible_for_final_decision"] = True
     final["production_review_required"] = False
+    description = (
+        "OK humano >=99%, vantagem >=3pp e mesmo PNG OK nos descritores "
+        "A>=98%/B>=95%, sem vizinho NG proximo"
+        if evidence["knn_agreement_mode"] == "KNN_AB_STRONG_HUMAN_OK" else
+        "KNN A/B >=97% no mesmo PNG ou JSON archive alinhado "
+        "a memoria humana, margem >=4pp"
+    )
     final["reason"] = (
         "SIDE • memória humana previamente julgada " + label
-        + "; KNN A/B concordam >=97% com a mesma fonte, "
-        "ou JSON de arquivo e julgamento humano na mesma métrica, "
-        "margem >4pp; sonda de ausência física aplicada como veto, "
+        + "; " + description + "; sonda de ausência física aplicada como veto, "
         "não como validação de toda categoria; TOP/MID dispensadas. "
         "Similaridade não é probabilidade."
     )
@@ -304,7 +371,7 @@ def build_side_memory_first(
     }
     d["side_early_exit"] = {
         "rule": RULE,
-        "threshold": MIN_KNN,
+        "threshold": evidence["min_similarity"],
         "verdict": final["verdict"],
         "analyzed_lights": ["SIDE"],
         "skipped_lights": ["TOP", "MID"],
@@ -370,7 +437,7 @@ def memory_first_side_decision(analysis: dict | None) -> str | None:
         or d.get("memory_conflict") is True
         or exit_data != {
             "rule": RULE,
-            "threshold": MIN_KNN,
+            "threshold": expected["min_similarity"],
             "verdict": analysis["verdict"],
             "analyzed_lights": ["SIDE"],
             "skipped_lights": ["TOP", "MID"],
