@@ -292,6 +292,29 @@ class NetworkReceiver(QThread):
         self.side_preflight_requested.emit(str(ip), request)
         return False
 
+    def invalidate_side_preflight_for_xp_light(self, mode: str) -> bool:
+        """Um CMD_TOP/MID no gate principal invalida a SIDE preparada.
+
+        Nao se aplica a imagens TOP/MID durante a inspeção multilight,
+        pois nesse momento o gate principal permanece fechado.
+        """
+        if str(mode or "").strip().upper() not in {"TOP", "MID"}:
+            return False
+        with self._state_lock:
+            if not self._image_gate.is_open():
+                return False
+            self._side_preflight_serial += 1
+            self._side_preflight_phase = "PENDING"
+            self._side_preflight_not_before = 0.0
+            self._side_preflight_retry_at = 0.0
+            self._clear_candidate_locked()
+            self.last_side_preflight = {}
+        self.log_updated.emit(
+            "XP notificou TOP/MID antes da captura SIDE; "
+            "pre-captura SIDE precisa ser repetida."
+        )
+        return True
+
     def is_side_preflight_pending(self, request_id: int) -> bool:
         """Evita enviar PRESS_DOWN de um request Qt antigo."""
         with self._state_lock:
@@ -648,6 +671,7 @@ class NetworkReceiver(QThread):
                     # Comandos nunca são bloqueados pela trava de imagens.
                     if cabecalho_str.startswith("CMD_"):
                         comando = cabecalho_str.split("_", 1)[1]
+                        self.invalidate_side_preflight_for_xp_light(comando)
                         self.log_updated.emit(
                             f"Comando físico detectado no XP: {comando}"
                         )
