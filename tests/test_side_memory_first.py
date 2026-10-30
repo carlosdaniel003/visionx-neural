@@ -37,7 +37,7 @@ def case(label="OK", category="FALTANDO"):
     a = [_row(label, .98236720, category=category), _row(other, .86601348, category=category),
          _row(label, .86592282, category=category), _row(label, .85552766, category=category),
          _row(label, .84238623, category=category)]
-    b = [_row(label, .96262484, category=category), _row(label, .84250628, category=category),
+    b = [_row(label, .97262484, category=category), _row(label, .84250628, category=category),
          _row(other, .82652949, category=category), _row(label, .81967648, category=category),
          _row(label, .8171847, category=category)]
     human = {
@@ -129,7 +129,7 @@ class SideMemoryPriorityTests(unittest.TestCase):
         self.assertEqual(policy["proposed_decision"], "OK")
         self.assertTrue(policy["auto_allowed"])
         self.assertTrue(policy["unverified_physical_label"])
-        self.assertEqual(policy["reason"], "side_operator_memory_first_96pct_auto_ok")
+        self.assertEqual(policy["reason"], "side_operator_memory_first_97pct_auto_ok")
 
     def test_memory_priority_covers_all_five_aoi_categories(self):
         categories = (
@@ -152,7 +152,7 @@ class SideMemoryPriorityTests(unittest.TestCase):
                     self.assertEqual(policy["proposed_decision"], label)
                     self.assertTrue(policy["auto_allowed"])
                     self.assertTrue(policy["unverified_physical_label"])
-                    self.assertIn("side_operator_memory_first_96pct_auto_", policy["reason"])
+                    self.assertIn("side_operator_memory_first_97pct_auto_", policy["reason"])
 
     def test_category_aliases_route_to_same_canonical_memory(self):
         for alias, canonical in (
@@ -230,9 +230,9 @@ class SideMemoryPriorityTests(unittest.TestCase):
             ("knn_not_ready", lambda x: x["detail"]["knn_c"].__setitem__(
                 "bank_status", "LOADING")),
             ("weak_a", lambda x: x["detail"]["knn_c"]["neighbors_A"][0].__setitem__(
-                "similarity", .9599)),
+                "similarity", .9699)),
             ("weak_b", lambda x: x["detail"]["knn_c"]["neighbors_B"][0].__setitem__(
-                "similarity", .9599)),
+                "similarity", .9699)),
             ("ng_too_close", lambda x: x["detail"]["knn_c"]["neighbors_A"][1].__setitem__(
                 "similarity", .955)),
             ("different_png", lambda x: x["detail"]["knn_c"]["neighbors_B"][0].__setitem__(
