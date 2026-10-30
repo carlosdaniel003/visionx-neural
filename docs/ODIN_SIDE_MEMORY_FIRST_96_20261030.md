@@ -453,3 +453,55 @@ anterior para OK humano >=99% e as rotas NG não são afrouxadas.
 Regressões: `tests/test_side_memory_first.py` cobre os scores reais,
 KNN C em REVISAO com votos OK, saída antecipada, veto físico, falsos
 positivos próximos, fonte humana inválida e proteção XP.
+
+
+## 30/10/2026 — Prioridade por separação OK/NG em SIDE (evento 15:50)
+
+**Evento real:** `1927156680314860bb697f38a993eec8`.
+O classificador CNN marcou SIDE/TOP/MID como NG (SIDE 99,439% de
+score NG não calibrado); a fusão caiu em `multilight_strong_single` e
+a Produção propôs `production_uncertain_auto_ng_quarantine_v1`.
+O debug registra `Envio XP confirmado: None`, portanto **não comprova
+transmissão efetiva do comando 1**.
+
+O sistema já possuía evidência visual robusta de OK na SIDE:
+- Memória humana `OPERATOR_CONFIRMED`: OK `0.98691237`,
+  NG `0.94741273`, diferença `0.03949964`; `status=AMBIGUOUS`
+  porque a margem geral de 4pp não foi atingida.
+- KNN A: primeiro OK `0.982817`, NG mais próximo `0.86051937`;
+  margem `0.12229763`.
+- KNN B: primeiro OK `0.96793859`, NG mais próximo `0.83308218`;
+  margem `0.13485641`.
+- Ambos os descritores votaram OK e apontaram ao **mesmo PNG e SHA**
+  `public/ok_archive/2026-10-21_1438_FALTANDO.png`.
+- A rota absoluta anterior exigia A>=0.985 e B>=0.970;
+  portanto falhou por `0.002183` e `0.00206141`.
+  Não houve `side_early_exit` nem medição da sonda independente.
+
+**Correção de raiz:** incluir
+`KNN_AB_MARGIN_CORROBORATED_HUMAN_OK`, uma alternativa
+**genérica baseada no contraste de cada descritor com seus NG**:
+fonte humana SIDE comprovada, OK>=0.985 e vantagem humana>=0.035;
+KNN A>=0.98 e B>=0.965, ambos OK com o mesmo arquivo/SHA;
+**exigir pelo menos um NG nos cinco vizinhos de cada descritor**;
+todos os NG dos dois top-5 com similaridade <0.90 e distância de
+**pelo menos 0.10** em relação ao respectivo melhor OK.
+Conflito de voto, fonte, categoria, integridade do acervo, ausência
+física forte ou falha dos requisitos bloqueiam a nova rota.
+As modalidades anteriores e seus limiares não são modificados.
+
+Quando válida, essa modalidade produz `FALHA FALSA` visual na
+SIDE, encerra o evento sem TOP/MID e expõe os critérios e a fonte
+no `side_memory_first`. **Não confundir classificação visual com
+autorização de liberar a peça:** `0/OK` exige a sonda física real
+da captura em duas escalas com geometria válida, seguida da
+revalidação no gate de Produção. Sonda inconclusiva/suspeita mantém
+`FALHA FALSA` para o operador, sem auto-OK e sem NG preventivo.
+O experimento supervisionado preexistente mantém suas próprias
+condições de armamento, sem alterações.
+
+Testes `tests/test_side_memory_first.py`: números do evento,
+julgamento/encerramento antecipado, veto físico, revalidação de
+marcadores e 15 cenários negativos de similaridade insuficiente,
+NG concorrente, fonte falsa e arquivos distintos. Não se trata de
+replay real de pixels nem validação independente em NG físicos.
