@@ -505,3 +505,56 @@ julgamento/encerramento antecipado, veto físico, revalidação de
 marcadores e 15 cenários negativos de similaridade insuficiente,
 NG concorrente, fonte falsa e arquivos distintos. Não se trata de
 replay real de pixels nem validação independente em NG físicos.
+
+
+## 30/10/2026 — Evento 16:10, retirada pontual de fonte NG rotulada incorretamente
+
+No evento `bb681adcb1774d9d898b7a6bfe354aaa`, o operador
+confirmou que a inspeção era FALHA FALSA. A consulta KNN C foi
+**diagnóstica**, não a origem direta do veredito da CNN; entretanto,
+A e B retornaram como primeiro vizinho NG:
+`public/ng_archive/2026-10-21_1443_FALTANDO.png`
+(A `0.9808656`; B `0.95966866`; pixel SHA
+`9069861c6785976b8e00a7163b0066682b8d1c53f6d3d4b6a43daf6dc9435033`).
+O operador identificou essa fonte NG como rótulo incorreto e
+informou que a removeria do archive local.
+
+Esse PNG **não é versionado no GitHub**. Além disso,
+`PersistentArchiveKNN` mantém um snapshot append-only:
+excluir o arquivo em disco não elimina a proveniência NG já
+importada em `data/knn_archive_memory/memory.json`.
+
+Foi adicionada uma rotina genérica de manutenção offline,
+**não uma exceção específica de categoria/data/imagem durante a
+classificação**. Com o ODIN fechado, após excluir o PNG local:
+
+```powershell
+python -m src.services.retire_archive_source_cli --source public/ng_archive/2026-10-21_1443_FALTANDO.png
+python -m src.services.retire_archive_source_cli --source public/ng_archive/2026-10-21_1443_FALTANDO.png --apply
+```
+
+Primeiro comando é dry-run. O segundo retira exclusivamente as
+`sources` do tipo `ARCHIVE_PNG` com esse caminho nos registros
+NG, sem alterar PNGs ou reclassificar entradas; registros sem
+outra fonte são eliminados. `memory.json.bak` guarda o snapshot
+anterior, checksum e IDs são revalidados, e o processo recusa a
+manutenção se o PNG ainda existir (evita reimportação).
+Reiniciar ODIN após concluir para recarregar os índices em RAM
+e o inventário KNN C. Nenhum comando XP é gerado pela CLI.
+
+**Separação de fontes:** a memória humana da mesma captura
+também encontrou um NG `OPERATOR_CONFIRMED` de similaridade
+`0.98789085`, ID
+`f5775c243bf818ff17c077e46ba377ae34fe9ed5980f26fd6786f8120d806611`.
+Não há evidência de que seja o mesmo PNG; por isso **não**
+remover nem reclassificar o julgamento humano automaticamente.
+A correção de um julgamento humano exige investigar seu
+`event_id`/proveniência e obter confirmação específica.
+
+Referências OK aproximadas na captura:
+`public/ok_archive/2026-10-02_1430_FALTANDO.png`
+(A `0.90177792` / B `0.85492754`) e
+`public/ok_archive/2026-10-21_1441_FALTANDO_SIDE.png`
+(A `0.89339169` / B `0.84526245`).
+São aproximações, **não prova de par RGB exato**, e seus
+PNG locais não puderam ser inspecionados pelo GitHub.
