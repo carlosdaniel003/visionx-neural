@@ -171,17 +171,32 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     # Reconhecimento visual humano excepcionalmente forte permanece
     # FALHA FALSA, mas a sonda física é veto absoluto de XP 0/OK.
     # Não deixar o fallback de Produção transformá-lo em NG PREVENTIVO.
-    from src.core.side_memory_first import verified_side_memory_visual_review
+    from src.core.side_memory_first import (
+        verified_side_memory_visual_review,
+        verified_side_supervised_probe_override,
+    )
     if verified_side_memory_visual_review(analysis):
+        # O opt-in e estabelecido pelo controlador somente ENTRE pecas.
+        # Sem ele, o alerta fisico continua obrigando tecla humana 0/1.
+        armed = bool(
+            detail.get("production_continuous_auto") is True
+            and detail.get("side_strong_ok_supervised_armed") is True
+            and verified_side_supervised_probe_override(analysis)
+        )
         return {
             "mode": "production", "confidence": confidence,
             "threshold": 0.99, "verdict": "FALHA FALSA",
-            "auto_allowed": False,
-            "operator_review_required": True,
-            "proposed_decision": "",
-            "reason": "side_strong_human_ok_physical_probe_requires_operator",
+            "auto_allowed": armed,
+            "operator_review_required": not armed,
+            "proposed_decision": "OK" if armed else "",
+            "reason": (
+                "side_strong_human_ok_supervised_probe_override_auto_ok"
+                if armed else
+                "side_strong_human_ok_physical_probe_requires_operator"
+            ),
             "operator_shortcuts": {"0": "OK", "1": "NG"},
             "unverified_physical_label": True,
+            "physical_veto_supervised_override": armed,
         }
 
     # Conhecimento visual SIDE aproximado pode economizar TOP/MID para a
