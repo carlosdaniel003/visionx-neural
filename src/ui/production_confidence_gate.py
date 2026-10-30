@@ -723,7 +723,7 @@ def _legacy_continuous_policy(analysis: dict, detail: dict, policy: dict) -> dic
     route_info = detail.get("recognition_light_routes")
     if not isinstance(route_info, dict) or set(route_info) != {"SIDE", "TOP", "MID"}:
         return policy
-    if any(route_info[light] not in {"NEW_CNN", "NEW_EXPERTS", "MEMORY_EXACT"}
+    if any(route_info[light] not in {"NEW_CNN", "NEW_EXPERTS", "MEMORY_EXACT", "KNOWN_KNN"}
            for light in ("SIDE", "TOP", "MID")):
         return policy
     if detail.get("category_unknown") is True or detail.get("capture_error") is True:
@@ -763,9 +763,23 @@ def _completed_continuous_inspection(analysis: dict, detail: dict) -> bool:
     if (
         isinstance(routes, dict)
         and set(routes) == {"SIDE", "TOP", "MID"}
-        and all(routes[light] in {"NEW_CNN", "NEW_EXPERTS", "MEMORY_EXACT"}
+        and all(routes[light] in {"NEW_CNN", "NEW_EXPERTS", "MEMORY_EXACT", "KNOWN_KNN"}
                 for light in ("SIDE", "TOP", "MID"))
     ):
+        # KNOWN_KNN é o nome real emitido pelo roteador de par RGB.
+        # Cada luz reconhecida deve preservar a prova de rótulo no
+        # diagnóstico; um marcador isolado não concede autorização.
+        diagnostics = detail.get("cnn_v2_light_diagnostics")
+        if any(value == "KNOWN_KNN" for value in routes.values()):
+            if not isinstance(diagnostics, dict):
+                return False
+            for light, route in routes.items():
+                if route == "KNOWN_KNN" and (
+                    not isinstance(diagnostics.get(light), dict)
+                    or diagnostics[light].get("route") != "KNOWN_KNN"
+                    or diagnostics[light].get("human_memory_label") not in {"OK", "NG"}
+                ):
+                    return False
         return True
 
     # Atalho de SIDE não é trinca incompleta: a análise tem seu próprio
