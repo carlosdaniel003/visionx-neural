@@ -133,6 +133,37 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         self.assertEqual(panel.saved, [])
         self.assertEqual(verdict_feedback_state(analysis), ("", ""))
 
+    def test_latest_human_exact_known_knn_all_three_lights_allows_binary_ok(self):
+        analysis = uncertain_three_light()
+        analysis.update(
+            verdict="FALHA FALSA", is_defect=False,
+            production_review_required=False,
+        )
+        analysis["detail"]["decision_trace"] = {
+            "operator_review_required": False,
+        }
+        analysis["detail"]["operator_review_required"] = False
+        analysis["detail"]["recognition_light_routes"] = {
+            "SIDE": "KNOWN_KNN", "TOP": "KNOWN_KNN",
+            "MID": "KNOWN_KNN",
+        }
+        analysis["detail"]["cnn_v2_light_diagnostics"] = {
+            light: {"route": "KNOWN_KNN", "human_memory_label": "OK"}
+            for light in ("SIDE", "TOP", "MID")
+        }
+        policy = production_decision_policy(analysis)
+        self.assertTrue(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "OK")
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+
+    def test_known_knn_route_without_human_proof_stops_as_operational_fault(self):
+        analysis = uncertain_three_light()
+        analysis["detail"]["recognition_light_routes"]["SIDE"] = "KNOWN_KNN"
+        policy = production_decision_policy(analysis)
+        self.assertTrue(policy["operational_error"])
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "")
+
     def test_textual_false_failure_without_capture_cannot_send_zero(self):
         # O antigo fallback false_failure_auto_ok sozinho não prova que
         # a tela do XP e a iluminação correspondem a uma peça completa.
