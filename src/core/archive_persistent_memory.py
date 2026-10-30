@@ -130,6 +130,13 @@ def _check_record(item: dict):
             raise ValueError("Proveniência da memória inválida")
         kind = source.get("source_kind", "ARCHIVE_PNG")
         if kind == "OPERATOR_CONFIRMED":
+            confirmed_at = source.get("confirmed_at_ns")
+            if confirmed_at is not None and (
+                type(confirmed_at) is not int
+                or confirmed_at <= 0
+                or confirmed_at > (2 ** 63 - 1)
+            ):
+                raise ValueError("Data de confirmação humana inválida")
             # A confirmação humana usa o par AOI capturado na própria
             # inspeção e não depende do arquivo visual de arquivo opcional.
             if (source.get("source_path", "").startswith("operator_confirmed/")
@@ -446,6 +453,66 @@ class PersistentArchiveKNN:
                 raise ValueError("Verificação da retirada falhou")
             return result
 
+    def latest_confirmed_human_for_pair(
+        self, reference, test, info: dict,
+    ) -> dict:
+        """Prioriza a última correção humana para o MESMO par RGB.
+
+        Não usa event_id da AOI (que muda em novas ocorrências), nomes
+        de arquivos, categorias sugeridas como verdade nem vizinhos KNN.
+        O histórico append-only é preservado. Confirmações antigas sem
+        timestamp seguem o comportamento histórico de conflito.
+        """
+        if (reference is None or test is None
+                or getattr(reference, "size", 0) == 0
+                or getattr(test, "size", 0) == 0):
+            return {"status": "NEW", "reason": "Par RGB indisponível"}
+        try:
+            target = identity(
+                info.get("category"), info.get("lighting_mode"),
+                image_fingerprint(reference), image_fingerprint(test),
+            )
+        except (ValueError, TypeError, AttributeError):
+            return {"status": "NEW", "reason": "Identidade visual inválida"}
+
+        matches = [
+            record for record in self.records()
+            if record["identity"] == target
+        ]
+        confirmed = [
+            (source["confirmed_at_ns"], record, source)
+            for record in matches
+            for source in record["sources"]
+            if source.get("source_kind") == "OPERATOR_CONFIRMED"
+            and source.get("source_label") == record["label"]
+            and type(source.get("confirmed_at_ns")) is int
+        ]
+        if not confirmed:
+            return {"status": "NEW", "reason": "Sem confirmação humana cronológica"}
+        latest_ns = max(row[0] for row in confirmed)
+        winners = [row for row in confirmed if row[0] == latest_ns]
+        if len({row[1]["label"] for row in winners}) != 1:
+            return {
+                "status": "CONFLICT",
+                "reason": "Confirmações opostas no mesmo instante",
+            }
+        winner = winners[-1]
+        label = winner[1]["label"]
+        old_labels = sorted({
+            row["label"] for row in matches if row["label"] != label
+        })
+        return {
+            "status": "KNOWN", "label": label,
+            "matches": len(matches),
+            "source_json": str(self.path),
+            "memory_source": "LATEST_OPERATOR_EXACT_PAIR",
+            "record_id": winner[1]["id"],
+            "confirmed_at_ns": latest_ns,
+            "source_event_id": winner[2].get("event_id", ""),
+            "superseded_labels": old_labels,
+            "reason": "Último julgamento humano para mesmo par RGB/categoria/luz",
+        }
+
     def lookup_identity(self, key: list[str]) -> dict:
         """Lookup exato em snapshot persistido, para teste após sincronização."""
         key = identity(*key)
@@ -566,13 +633,20 @@ def make_record(*, label: str, source_path: str, source_sha256: str,
 def make_operator_record(*, label: str, source: str,
                          event_id: str, category: str, lighting: str,
                          reference, test, anomaly_signature: dict,
-                         aoi_info: dict | None = None) -> dict:
+                         aoi_info: dict | None = None,
+                         confirmed_at_ns: int | None = None) -> dict:
     """Registra um julgamento humano real SEM fabricar caminho PNG.
 
     O caso pode ser reapresentado no mesmo segundo, mesmo quando o
     arquivamento visual estiver desativado ou atrasado.
     """
     normalized = str(source or "").strip().lower()
+    if confirmed_at_ns is not None and (
+        type(confirmed_at_ns) is not int
+        or confirmed_at_ns <= 0
+        or confirmed_at_ns > (2 ** 63 - 1)
+    ):
+        raise ValueError("Instante humano de confirmação inválido")
     if normalized not in {
         "button", "xp_keyboard", "keyboard", "manual", "operator",
         "physical_keyboard", "human",
@@ -604,6 +678,8 @@ def make_operator_record(*, label: str, source: str,
             "event_id": str(event_id or ""),
         }],
     }
+    if confirmed_at_ns is not None:
+        entry["sources"][0]["confirmed_at_ns"] = confirmed_at_ns
     _check_record(entry)
     return entry
 
