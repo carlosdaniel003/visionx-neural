@@ -538,6 +538,22 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
             category,
         )
 
+    if not side_only:
+        # O último julgamento humano pode reconhecer as MESMAS telas
+        # SIDE/TOP/MID, mesmo que o recorte AOI extraído varie. O veto
+        # físico roda sobre as três capturas reais antes de corrigir NG.
+        from src.core.operator_exact_frame_recall import (
+            build_latest_operator_exact_frame,
+        )
+        try:
+            fused = build_latest_operator_exact_frame(
+                fused,
+                getattr(panel, "adhesive_multilight_learning_samples", None),
+                category,
+            )
+        except (ValueError, OSError) as exc:
+            print(f"Memória de frame exato não aplicada: {exc}")
+
     if side_only:
         # A consulta ao acervo é visual e assíncrona: o veredito não espera.
         from src.ui.archive_visual_presence_feedback import (
