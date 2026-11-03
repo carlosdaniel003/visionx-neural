@@ -1265,8 +1265,10 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 "capture_debug_last_image",
                 None,
             )
-        if _valid_image(side_source):
-            side_copy = side_source.copy()
+        # Não atribuir à inspeção atual o frame de debug de um ciclo
+        # anterior. A memória de imagem exata exige o event_id validado.
+        if _valid_image(side_original_for_view):
+            side_copy = side_original_for_view.copy()
             self.adhesive_multilight_source_frames["SIDE"] = side_copy
             self.adhesive_multilight_last_source_frames["SIDE"] = (
                 side_copy.copy()
@@ -1299,7 +1301,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             sample_crop,
             ng_crop,
             getattr(self, "current_analysis", None),
-            source_frame=side_source,
+            source_frame=side_original_for_view,
         )
 
         analysis_view = getattr(
