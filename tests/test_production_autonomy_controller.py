@@ -7,18 +7,30 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication, QComboBox, QScrollArea, QWidget
 
 from src.ui.production_autonomy_controller import (
-    AUTO_DECISION_DELAY_MS,
     HORIZONTAL_SCROLL_DURATION_MS,
-    POST_SCROLL_PAUSE_MS,
     RENDER_SETTLE_MS,
     SCROLL_DURATION_MS,
     TOP_HOLD_MS,
-    TRIAL_SIDE_AUTO_DELAY_MS,
     ProductionAutonomyController,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _complete_binary_ng():
+    return {
+        "verdict": "DEFEITO REAL",
+        "is_defect": True,
+        "multilight_final": True,
+        "production_review_required": False,
+        "detail": {
+            "multilight_final": True,
+            "recognition_light_routes": {
+                light: "NEW_CNN" for light in ("SIDE", "TOP", "MID")
+            },
+        },
+    }
 
 
 class _Panel(QWidget):
@@ -387,7 +399,7 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
                 controller._emit_auto_decision(generation, decision)
                 self.assertEqual(panel.saved, [(decision, "production_auto")])
 
-    def test_trial_side_ok_and_ng_await_delay_and_send_only_once(self):
+    def test_trial_side_ok_and_ng_dispatch_next_qt_cycle_only_once(self):
         from src.core.side_early_decision import build_side_early_decision
         from tests.test_side_early_decision import SideEarlyDecisionTests
 
@@ -409,8 +421,7 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
 
                 controller._finish_presentation(generation)
                 self.assertEqual(controller.state, "auto_decision_pending")
-                self.assertEqual(controller._stage_remaining_ms, TRIAL_SIDE_AUTO_DELAY_MS)
-                self.assertEqual(TRIAL_SIDE_AUTO_DELAY_MS, 5_000)
+                self.assertEqual(controller._stage_remaining_ms, 1)
                 self.assertEqual(panel.saved, [])
                 controller._stage_timer.stop()
 
@@ -543,13 +554,65 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         self.assertFalse(panel.session_visible)
         self.assertGreaterEqual(panel.intervention_clears, 1)
 
+    def test_scroll_to_bottom_dispatches_next_qt_cycle_without_wait(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = _complete_binary_ng()
+        panel.current_analysis = analysis
+        self.assertTrue(controller.analysis_ready(analysis))
+        controller._stage_timer.stop()
+        generation = controller.generation
+
+        controller._scroll_finished(generation)
+        self.assertEqual(controller.state, "presentation_complete")
+        self.assertEqual(controller._stage_remaining_ms, 1)
+        self.assertEqual(panel.saved, [])
+
+        controller._stage_timer.stop()
+        controller._run_stage_callback()
+        self.assertEqual(controller.state, "auto_decision_pending")
+        self.assertEqual(controller._stage_remaining_ms, 1)
+        self.assertEqual(panel.saved, [])
+
+        controller._stage_timer.stop()
+        controller._run_stage_callback()
+        self.assertEqual(panel.saved, [("NG", "production_auto")])
+        self.assertEqual(panel.auto_records, ["NG"])
+        controller._emit_auto_decision(generation, "NG")
+        self.assertEqual(len(panel.saved), 1)
+        panel.close()
+
+    def test_pause_at_scroll_bottom_blocks_decision_until_resume(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = _complete_binary_ng()
+        panel.current_analysis = analysis
+        self.assertTrue(controller.analysis_ready(analysis))
+        controller._stage_timer.stop()
+        generation = controller.generation
+
+        self.assertTrue(controller.toggle_pause())
+        controller._scroll_finished(generation)
+        self.assertEqual(controller._stage_remaining_ms, 1)
+        self.assertFalse(controller._stage_timer.isActive())
+        self.assertEqual(panel.saved, [])
+
+        self.assertFalse(controller.toggle_pause())
+        controller._stage_timer.stop()
+        controller._run_stage_callback()
+        controller._stage_timer.stop()
+        controller._run_stage_callback()
+        self.assertEqual(panel.saved, [("NG", "production_auto")])
+        panel.close()
+
     def test_presentation_is_intentionally_visible_and_non_instant(self):
         self.assertGreaterEqual(RENDER_SETTLE_MS, 300)
         self.assertGreaterEqual(TOP_HOLD_MS, 300)
         self.assertGreaterEqual(SCROLL_DURATION_MS, 6000)
         self.assertGreaterEqual(HORIZONTAL_SCROLL_DURATION_MS, 2000)
-        self.assertGreaterEqual(POST_SCROLL_PAUSE_MS, 500)
-        self.assertGreaterEqual(AUTO_DECISION_DELAY_MS, 200)
+        # A apresentação permanece longa, mas sem espera após a rolagem.
 
 
 class ProductionAutonomySourceContractTests(unittest.TestCase):

@@ -15,7 +15,7 @@ from src.core.multilight_fusion import fuse_multilight
 from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.core.neural.faltando_multilight_consensus import summarize_cnn_multilight
 from src.ui.production_confidence_gate import production_decision_policy
-from src.ui.production_autonomy_controller import ProductionAutonomyController, AUTO_DECISION_DELAY_MS
+from src.ui.production_autonomy_controller import ProductionAutonomyController
 from tests.test_production_autonomy_controller import _Panel
 
 LIGHTS = ("SIDE", "TOP", "MID")
@@ -238,8 +238,13 @@ class SupervisedAutonomyTests(unittest.TestCase):
         self.assertEqual(panel.auto_records, [])
         self.assertTrue(panel.production_review_pending)
 
-    def test_operator_grace_period_is_two_seconds(self):
-        self.assertGreaterEqual(AUTO_DECISION_DELAY_MS, 2000)
+    def test_no_grace_period_after_presentation(self):
+        panel, controller = self.setup_cycle("NG")
+        controller._finish_presentation(controller.generation)
+        self.assertEqual(controller.state, "auto_decision_pending")
+        self.assertEqual(controller._stage_remaining_ms, 1)
+        self.assertEqual(panel.saved, [])
+        panel.close()
 
 
 if __name__ == "__main__":

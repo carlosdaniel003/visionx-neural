@@ -203,3 +203,26 @@ Capturas não idênticas, conflito de humanos, falha de sonda, ausência
 física ou captura incompleta continuam sem autorização de 0/OK por
 essa exceção. O atalho de SIDE não modifica as regras visuais genéricas
 de semelhança (KNN A/B) nem confunde 98% com igualdade exata.
+
+## 03/11/2026 — Julgar imediatamente após a rolagem em Produção
+
+Solicitação do operador: retirar a espera de 5 segundos **após** a rolagem
+até a parte inferior da interface. A partir desta alteração, a conclusão da
+rolagem agenda a política binária 0/OK ou 1/NG nos próximos ciclos do Qt,
+sem pausa visual adicional de 900 ms e sem os antigos atrasos de 2/5 s.
+Os atrasos históricos mencionados acima estão substituídos por esta regra.
+
+- Mantêm-se a apresentação e as velocidades da rolagem vertical/horizontal,
+  a espera de renderização e o posicionamento inicial no topo.
+- A barra de espaço continua pausando a apresentação e bloqueando comandos
+  ainda não enviados. Como **não existe mais janela extra após a rolagem**,
+  correções Space+0/1 devem acontecer durante a apresentação antes do envio.
+- A política, os vetos físicos, a geração/evento, o estado de pausa,
+  o envio único e a confirmação XP são revalidados antes de qualquer 0/1.
+  Sem captura válida ou transporte confirmado, permanece erro operacional,
+  não julgamento fictício.
+- Se não houver área rolável, mantém-se a apresentação mínima existente.
+  Modo Teste/Sombra, CNN/KNN, memória, pesos e agente XP não mudam.
+
+Validar primeiro com XP isolado, especialmente interrupção via Space durante
+a rolagem, captura trocada, OK/NG difíceis e comando enviado uma única vez.

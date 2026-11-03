@@ -1,3 +1,14 @@
+## 03/11/2026 — Produção: decisão 0/1 sem espera após rolagem
+
+Depois de a interface percorrer a tela até o final (inclusive especialistas),
+a decisão binária validada é encaminhada no próximo ciclo Qt: não há mais pausa
+visual final nem a antiga janela adicional de 2/5 segundos. A rolagem, a
+revalidação da política e a pausa por Space **durante a apresentação** continuam
+ativas. Space não desfaz um comando 0/1 já transmitido. Testar com XP isolado
+antes de usar a saída física. Contrato: `docs/ODIN_PRODUCTION_CONTINUOUS_AUTO_20261028.md`.
+
+---
+
 ## 23/10/2026 — Recuperação supervisionada dos falsos NG CNN FALTANDO V2 (sem promoção)
 
 O pré-carregamento KNN C está funcional na estação: `READY`, **1042/1042** PNGs, **276 OK / 766 NG**, **0 descartados**, cache 1042/1042, **18.484 segundos** no segundo preparo (7.044 ms inventário, 11.441 ms assinaturas). Isso corrige indisponibilidade, mas **não ajusta pesos CNN**.

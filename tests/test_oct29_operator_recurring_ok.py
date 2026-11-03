@@ -489,7 +489,7 @@ class Oct29RecurringOkTests(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PyQt6.QtWidgets import QApplication
         from src.ui.production_autonomy_controller import (
-            KNN_C_SUPERVISED_DELAY_MS, ProductionAutonomyController,
+            ProductionAutonomyController,
         )
         from tests.test_production_autonomy_controller import _Panel
         app = QApplication.instance() or QApplication([])
@@ -506,7 +506,7 @@ class Oct29RecurringOkTests(unittest.TestCase):
         generation = controller.generation
         controller._finish_presentation(generation)
         self.assertEqual(controller.state, "auto_decision_pending")
-        self.assertEqual(controller._stage_remaining_ms, KNN_C_SUPERVISED_DELAY_MS)
+        self.assertEqual(controller._stage_remaining_ms, 1)
         self.assertEqual(panel.saved, [])
         controller._emit_auto_decision(generation, "OK")
         self.assertEqual(panel.saved, [("OK", "production_auto")])

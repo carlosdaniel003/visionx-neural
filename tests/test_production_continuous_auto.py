@@ -24,7 +24,6 @@ from src.services.decision_persistence import (
 from src.ui.decision_verdict_feedback import verdict_feedback_state
 from src.ui.production_confidence_gate import production_decision_policy
 from src.ui.production_autonomy_controller import (
-    KNN_C_SUPERVISED_DELAY_MS,
     ProductionAutonomyController,
 )
 from tests.test_production_autonomy_controller import _Panel
@@ -182,7 +181,7 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         self.assertEqual(policy["proposed_decision"], "")
         self.assertEqual(verdict_feedback_state(analysis), ("", ""))
 
-    def test_controller_send_ng_once_after_five_second_pause_window(self):
+    def test_controller_send_ng_once_after_presentation(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
@@ -197,7 +196,7 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         controller.generation += 1
         controller._finish_presentation(controller.generation)
         self.assertEqual(controller.state, "auto_decision_pending")
-        self.assertEqual(controller._stage_remaining_ms, KNN_C_SUPERVISED_DELAY_MS)
+        self.assertEqual(controller._stage_remaining_ms, 1)
         self.assertEqual(panel.saved, [])
         controller._stage_timer.stop()
         controller._emit_auto_decision(controller.generation, "NG")
@@ -206,7 +205,7 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         controller._emit_auto_decision(controller.generation, "NG")
         self.assertEqual(panel.saved, [("NG", "production_auto")])
 
-    def test_verified_oct29_recurring_ok_sends_zero_once_after_pause_window(self):
+    def test_verified_oct29_recurring_ok_sends_zero_after_presentation(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
@@ -219,7 +218,7 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         controller.pending_analysis = analysis
         controller._finish_presentation(controller.generation)
         self.assertEqual(controller.state, "auto_decision_pending")
-        self.assertEqual(controller._stage_remaining_ms, KNN_C_SUPERVISED_DELAY_MS)
+        self.assertEqual(controller._stage_remaining_ms, 1)
         self.assertEqual(panel.saved, [])
         controller._stage_timer.stop()
         controller._emit_auto_decision(controller.generation, "OK")
