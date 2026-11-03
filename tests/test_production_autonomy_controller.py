@@ -152,6 +152,42 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         self.assertTrue(controller.cycle_started())
         self.assertTrue(panel.session_visible)
 
+    def test_binary_gate_is_armed_before_first_production_render(self):
+        from src.ui.decision_verdict_feedback import verdict_feedback_state
+
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        analysis = {
+            "verdict": "REVISÃO OBRIGATÓRIA",
+            "is_defect": False,
+            "multilight_final": True,
+            "production_review_required": True,
+            "detail": {
+                "multilight_final": True,
+                "recognition_light_routes": {
+                    light: "NEW_CNN" for light in ("SIDE", "TOP", "MID")
+                },
+                "decision_trace": {"operator_review_required": True},
+            },
+        }
+
+        # Teste/Sombra não ativam este gate.
+        self.assertFalse(controller.prepare_binary_presentation(analysis))
+        self.assertNotIn("production_binary_auto", analysis["detail"])
+        panel.combo_mode.setCurrentText("Modo Produção")
+        self.assertTrue(controller.prepare_binary_presentation(analysis))
+        self.assertEqual(
+            verdict_feedback_state(analysis), ("DEFEITO REAL", "ng")
+        )
+        self.assertTrue(analysis["production_review_required"])
+        self.assertEqual(analysis["verdict"], "REVISÃO OBRIGATÓRIA")
+        # O veredito de origem fica preservado para auditoria; a tela
+        # apresenta apenas o 0/1 decidido pela política binária.
+        panel.current_analysis = analysis
+        self.assertTrue(controller.analysis_ready(analysis))
+        self.assertIs(controller.pending_analysis, analysis)
+        panel.close()
+
     def test_analysis_ready_records_pre_scroll_analysis_time_once(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)

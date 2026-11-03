@@ -66,3 +66,20 @@ regras de memória exata, automação geral de três luzes,
 outros tipos de defeito ou protocolo XP.
 Testar com saída do XP isolada e conferir os logs da SIDE antes
 de qualquer uso em produção real.
+
+## Atualização de 03/11/2026 — Rota antecipada desativada em Produção
+
+A antiga finalização manual-only pela SIDE foi incompatível com o
+Modo Produção binário, que não pode enviar 0/1 sem inspeção concluída.
+O evento `76df84c3eaaa4cb4a0a1cf14d16a285c` comprovou que
+`side_verified_archive_visual_review_v1` terminava com
+`eligible_for_final_decision=False` sem TOP/MID e fazia o controlador
+parar em `production_binary_operational_capture_fault_v1`.
+
+**Regra vigente:** esta hipótese histórica continua disponível somente
+para diagnóstico/testes; não participa mais do roteamento de encerramento
+antecipado do Modo Produção. Se nenhuma rota independente da SIDE
+estiver autorizada, coletar TOP e MID antes de tentar o julgamento
+binário. A confirmação humana exata e os vetos físicos continuam com
+seus contratos específicos. Não se atribui 0/OK automaticamente a uma
+imagem apenas semelhante à referência 14:16.

@@ -308,6 +308,27 @@ class ProductionAutonomyController(QObject):
             if callable(old):
                 old(decision)
 
+    def prepare_binary_presentation(self, analysis: dict | None) -> bool:
+        """Arma a política binária antes da primeira pintura em Produção.
+
+        Apenas prepara o mesmo gate usado após a notificação de resultado.
+        Não transmite XP, não altera rótulo humano nem inicia apresentação.
+        """
+        if not self.is_production() or not isinstance(analysis, dict):
+            return False
+        detail = analysis.get("detail")
+        if not isinstance(detail, dict):
+            return False
+        detail["knn_c_supervised_armed"] = bool(
+            self.knn_c_supervised_armed and not self.paused
+        )
+        detail["side_strong_ok_supervised_armed"] = bool(
+            self.side_strong_ok_supervised_armed and not self.paused
+        )
+        detail["production_continuous_auto"] = True
+        detail["production_binary_auto"] = True
+        return True
+
     def analysis_ready(self, analysis: dict | None) -> bool:
         """Agenda a apresentação após o resultado final já estar renderizado."""
         if not self.is_production() or not isinstance(analysis, dict):
@@ -317,23 +338,9 @@ class ProductionAutonomyController(QObject):
             return False
 
         self.cycle_started()
-        detail = analysis.get("detail")
-        if isinstance(detail, dict):
-            # Armamento da sessão deve preceder a apresentação da peça.
-            detail["knn_c_supervised_armed"] = bool(
-                self.knn_c_supervised_armed and not self.paused
-            )
-            detail["side_strong_ok_supervised_armed"] = bool(
-                self.side_strong_ok_supervised_armed and not self.paused
-            )
-            # All completed Production inspections receive an automatic
-            # OK/NG decision. Uncertain results fail closed to NG without
-            # creating a false training label; incomplete capture halts.
-            detail["production_continuous_auto"] = True
-            detail["production_binary_auto"] = True
-            # Re-render the final Production classification after the
-            # decision policy is armed. Otherwise a transient REVIEW label
-            # from the original CNN can remain visible during auto-NG.
+        if self.prepare_binary_presentation(analysis):
+            # O resultado é novamente pintado após o gate ter sido armado;
+            # na fusão multilight o mesmo gate já foi armado antes da pintura.
             refresh_verdict = getattr(self.panel, "_update_confidence_panel", None)
             if callable(refresh_verdict):
                 refresh_verdict(analysis)
