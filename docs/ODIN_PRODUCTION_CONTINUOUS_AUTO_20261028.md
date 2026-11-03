@@ -262,3 +262,31 @@ com validação específica) não mudam. Modo Teste/Sombra, checkpoints,
 acervos, thresholds KNN/CNN e agente XP não mudam. Validar com o XP
 fisicamente isolado, incluindo pausa durante rolagem e repetição de
 0/1 manual, antes da liberação real.
+
+## 03/11/2026 — MUITO ADESIVO: proveniência multilight e gate XP
+
+Incidente real `4bd0f318cccc4915b3156a741429c5b9`:
+a entrada `valid_epicenter` e SIDE/TOP/MID estavam completas,
+`fusion_rule=adhesive_multilight_strong_auxiliary`, `DEFEITO REAL`,
+TOP/MID com evidência física forte. Porém a fusão especializada
+`fuse_multilight` retornava sem registrar
+`detail.recognition_light_routes`, que
+`_completed_continuous_inspection` exige para distinguir conclusão
+de captura inválida. Resultado incorreto: `CAPTURA INVÁLIDA`,
+`production_binary_operational_capture_fault_v1`, sem 1/NG ao XP.
+
+A fusão especializada agora usa o **mesmo coletor de proveniência**
+por luz da fusão genérica. Registra apenas as rotas reais de
+SIDE/TOP/MID, o agregado (`NEW_EXPERTS`, `MULTILIGHT_MIXED` ou
+vazio), diagnósticos e rótulo humano autenticável de `KNOWN_KNN`,
+no detalhe e na trilha de decisão; não copia a rota TOP para todas.
+A confirmação da fusão de adesivo e os limiares físicos não mudam.
+
+Uma trinca íntegra e conhecida passa à política binária de Produção.
+O resultado NG confirmado pelos especialistas pode finalmente propor
+`1/NG` após a rolagem, ainda sujeito a pausa, revalidação e ACK XP.
+OK só segue sua política usual, sem converter semelhança KNN em
+memória exata nem em rótulo de treinamento. Ausência de luz,
+rota vazia/desconhecida, `KNOWN_KNN` sem prova humana ou
+`capture_error` continuam bloqueando comandos por falha operacional.
+Modo Teste/Sombra não passam a emitir teclas 0/1.

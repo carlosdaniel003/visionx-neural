@@ -366,6 +366,65 @@ def _summary(evidence: dict[str, dict]) -> str:
     return " | ".join(chunks)
 
 
+def _light_recognition_provenance(source: dict[str, dict]) -> tuple[dict, str, dict]:
+    """Propaga somente rotas observadas nas 3 análises da peça.
+
+    Compartilhado pela fusão genérica e pela especializada de adesivo.
+    Rota vazia/desconhecida continua vazia/desconhecida, permitindo ao
+    gate de Produção identificar uma captura realmente inconsistente.
+    """
+    routes = {
+        light: str(_detail(source[light]).get("recognition_route", "") or "")
+        for light in LIGHTING_ORDER
+    }
+    known_routes = {value for value in routes.values() if value}
+    if len(known_routes) == 1 and all(routes.values()):
+        recognition_route = next(iter(known_routes))
+    elif known_routes:
+        recognition_route = "MULTILIGHT_MIXED"
+    else:
+        recognition_route = ""
+
+    diagnostics = {}
+    for light in LIGHTING_ORDER:
+        frame = source[light]
+        local = _detail(frame)
+        active = bool(
+            local.get("cnn_v2_active")
+            or "faltando_cnn_v2.py" in (frame.get("active_engines") or [])
+        )
+        diagnostics[light] = {
+            "route": routes[light],
+            "engine": (
+                "faltando_cnn_v2" if active
+                else str(local.get("dominant_engine", "") or "")
+            ),
+            "cnn_active": active,
+            "cnn_status": str(local.get("cnn_v2_status", "") or ""),
+            "checkpoint_verified": (
+                local.get("cnn_v2_checkpoint_verified") is True
+                if active else None
+            ),
+            "checkpoint_sha256": (
+                str(local.get("cnn_v2_checkpoint_sha256", "") or "")
+                if active else ""
+            ),
+            "ng_score_uncalibrated": (
+                float(local["cnn_v2_ng_score_uncalibrated"])
+                if active and isinstance(
+                    local.get("cnn_v2_ng_score_uncalibrated"), (float, int)
+                )
+                else None
+            ),
+            "verdict": str(frame.get("verdict", "") or ""),
+            "category": str(local.get("cnn_v2_aoi_category", "") or ""),
+            "human_memory_label": str(
+                local.get("recognition_known_label", "") or ""
+            ),
+        }
+    return routes, recognition_route, diagnostics
+
+
 def _augment_adhesive_aliases(fused: dict, category: str) -> dict:
     """Expõe chaves genéricas sem remover telemetria específica de adesivo."""
     detail = fused.setdefault("detail", {})
@@ -407,9 +466,24 @@ def fuse_multilight(
         fused = fuse_adhesive_multilight(source)
         if not isinstance(fused, dict):
             return None
-        return gate_knn_c_multilight(
-            _augment_adhesive_aliases(fused, canonical_category), source
+        fused = _augment_adhesive_aliases(fused, canonical_category)
+        detail = fused["detail"]
+        routes, recognition_route, light_diagnostics = (
+            _light_recognition_provenance(source)
         )
+        detail["recognition_light_routes"] = routes
+        detail["recognition_route"] = recognition_route
+        detail["cnn_v2_light_diagnostics"] = light_diagnostics
+        # O trace e o detalhe têm a MESMA proveniência original, sem
+        # inferir a rota da peça inteira apenas pela luz dominante.
+        trace = detail.get("decision_trace")
+        if not isinstance(trace, dict):
+            trace = {}
+            detail["decision_trace"] = trace
+        trace["recognition_light_routes"] = deepcopy(routes)
+        trace["recognition_route"] = recognition_route
+        trace["cnn_v2_light_diagnostics"] = deepcopy(light_diagnostics)
+        return gate_knn_c_multilight(fused, source)
 
     evidence = {
         mode: _lighting_evidence(mode, source[mode])
@@ -551,48 +625,11 @@ def fuse_multilight(
         }
     )
 
-    # Cada luz pode ser um caso conhecido KNN ou imagem nova da CNN.
-    # Não identificar o evento inteiro pela rota de uma única luz.
-    light_routes = {
-        mode: str(_detail(source[mode]).get("recognition_route", "") or "")
-        for mode in LIGHTING_ORDER
-    }
-    distinct_routes = {value for value in light_routes.values() if value}
-    if len(distinct_routes) == 1 and len(light_routes) == len([
-        value for value in light_routes.values() if value
-    ]):
-        recognition_route = next(iter(distinct_routes))
-    elif distinct_routes:
-        recognition_route = "MULTILIGHT_MIXED"
-    else:
-        recognition_route = ""
-
-    # Telemetria de cada luz: mantém scores ORIGINAIS, inclusive quando
-    # nenhuma luz participou do consenso. Não calcula scores artificiais.
-    cnn_light_diagnostics = {}
-    for light in LIGHTING_ORDER:
-        frame = source.get(light, {})
-        local = _detail(frame)
-        active = bool(
-            local.get("cnn_v2_active")
-            or "faltando_cnn_v2.py" in (frame.get("active_engines") or [])
-        )
-        cnn_light_diagnostics[light] = {
-            "route": str(local.get("recognition_route", "") or ""),
-            "engine": "faltando_cnn_v2" if active else str(local.get("dominant_engine", "") or ""),
-            "cnn_active": active,
-            "cnn_status": str(local.get("cnn_v2_status", "") or ""),
-            "checkpoint_verified": local.get("cnn_v2_checkpoint_verified") is True if active else None,
-            "checkpoint_sha256": str(local.get("cnn_v2_checkpoint_sha256", "") or "") if active else "",
-            "ng_score_uncalibrated": (
-                float(local["cnn_v2_ng_score_uncalibrated"])
-                if active and isinstance(local.get("cnn_v2_ng_score_uncalibrated"), (float, int))
-                else None
-            ),
-            "verdict": str(frame.get("verdict", "") or ""),
-            "category": str(local.get("cnn_v2_aoi_category", "") or ""),
-            "human_memory_label": str(local.get("recognition_known_label", "") or ""),
-        }
+    # O mesmo contrato de proveniência vale para todas as categorias,
+    # inclusive MUITO ADESIVO (sem confundir TOP com a peça inteira).
+    light_routes, recognition_route, cnn_light_diagnostics = (
+        _light_recognition_provenance(source)
+    )
     detail["cnn_v2_light_diagnostics"] = cnn_light_diagnostics
 
     # Preservar votos de diagnóstico da KNN C de CADA iluminação. Até aqui
