@@ -815,24 +815,38 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         return _legacy_continuous_policy(analysis, detail, policy)
 
     from src.core.operator_exact_frame_recall import (
-        RULE as EXACT_FRAME_RULE, verified_latest_operator_exact_frame,
+        RULE as EXACT_FRAME_RULE,
+        SIDE_RULE as EXACT_SIDE_RULE,
+        verified_latest_operator_exact_frame,
     )
-    if detail.get("fusion_rule") == EXACT_FRAME_RULE:
+    if detail.get("fusion_rule") in {EXACT_FRAME_RULE, EXACT_SIDE_RULE}:
         # Revalidar a origem humana e o veto físico no snapshot KNN
         # ANTES de autorizar o XP. Marcador inválido vira parada de
         # operação, não OK por confiança nem NG fabricado.
         confirmed = verified_latest_operator_exact_frame(analysis)
-        if confirmed in {"OK", "NG"} and _completed_continuous_inspection(
-            analysis, detail,
-        ):
+        completed = (
+            _completed_continuous_inspection(analysis, detail)
+            if detail.get("fusion_rule") == EXACT_FRAME_RULE else
+            (
+                analysis.get("lighting_mode") == "SIDE"
+                and analysis.get("multilight_final") is True
+                and detail.get("multilight_final") is True
+                and detail.get("eligible_for_final_decision") is True
+                and analysis.get("eligible_for_final_decision") is True
+            )
+        )
+        if confirmed in {"OK", "NG"} and completed:
             return {
                 **policy,
                 "verdict": "FALHA FALSA" if confirmed == "OK" else "DEFEITO REAL",
                 "auto_allowed": True,
                 "operator_review_required": False,
                 "proposed_decision": confirmed,
-                "reason": "operator_latest_exact_frame_3light_auto_"
-                          + confirmed.lower(),
+                "reason": (
+                    "operator_latest_exact_frame_side_auto_"
+                    if detail.get("fusion_rule") == EXACT_SIDE_RULE else
+                    "operator_latest_exact_frame_3light_auto_"
+                ) + confirmed.lower(),
                 "unverified_physical_label": False,
             }
         return {
