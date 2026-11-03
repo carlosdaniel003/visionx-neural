@@ -814,6 +814,34 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     if detail.get("production_binary_auto") is not True:
         return _legacy_continuous_policy(analysis, detail, policy)
 
+    from src.core.operator_exact_frame_recall import (
+        RULE as EXACT_FRAME_RULE, verified_latest_operator_exact_frame,
+    )
+    if detail.get("fusion_rule") == EXACT_FRAME_RULE:
+        # Revalidar a origem humana e o veto físico no snapshot KNN
+        # ANTES de autorizar o XP. Marcador inválido vira parada de
+        # operação, não OK por confiança nem NG fabricado.
+        confirmed = verified_latest_operator_exact_frame(analysis)
+        if confirmed in {"OK", "NG"} and _completed_continuous_inspection(
+            analysis, detail,
+        ):
+            return {
+                **policy,
+                "verdict": "FALHA FALSA" if confirmed == "OK" else "DEFEITO REAL",
+                "auto_allowed": True,
+                "operator_review_required": False,
+                "proposed_decision": confirmed,
+                "reason": "operator_latest_exact_frame_3light_auto_"
+                          + confirmed.lower(),
+                "unverified_physical_label": False,
+            }
+        return {
+            **policy, "verdict": "",
+            "auto_allowed": False, "operator_review_required": False,
+            "proposed_decision": "", "operational_error": True,
+            "reason": "operator_latest_exact_frame_contract_invalid",
+        }
+
     # O OK genérico antigo (apenas veredito textual) NÃO é um contrato
     # de captura. Todas as outras rotas auto já revalidam suas provas,
     # enquanto esta também deve exigir uma inspeção completa.
