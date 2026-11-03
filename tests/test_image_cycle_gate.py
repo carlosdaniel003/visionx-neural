@@ -244,7 +244,89 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         self.assertFalse(panel.capture_cycle_active)
         self.assertEqual(panel.network_receiver.release_count, 1)
         self.assertIsNone(panel.current_analysis)
-        self.assertFalse(panel.network_receiver.armed)
+        self.assertTrue(panel.network_receiver.armed)
+        self.assertEqual(controller.state, "idle")
+
+    def test_discard_after_analysis_rearms_identical_xp_frame_in_test_and_production(self):
+        for mode in ("Modo Teste", "Modo Produção"):
+            with self.subTest(mode=mode):
+                panel = FakePanel()
+                panel.combo_mode = type("Combo", (), {
+                    "currentText": lambda self, name=mode: name,
+                })()
+                receiver = NetworkReceiver(port=0)
+                panel.network_receiver = receiver
+                image = np.full((240, 320, 3), 64, dtype=np.uint8)
+                sig = receiver._frame_signature(image)
+
+                # A tela foi aceita pela validação AOI e analisada.
+                self.assertTrue(receiver._image_gate.try_reserve())
+                receiver._reserved_signature = sig.copy()
+                self.assertTrue(receiver.confirm_reserved_image())
+                panel.handle_network_image(image, "192.168.0.10")
+                panel.current_analysis = {"verdict": "DEFEITO REAL"}
+                panel.current_sample, panel.current_ng = object(), object()
+                panel.skip_image()
+
+                self.assertFalse(panel.capture_cycle_active)
+                self.assertTrue(receiver.is_image_gate_open())
+                self.assertFalse(receiver._should_ignore_accepted_repeat(sig))
+                self.assertTrue(any(
+                    "mesma anomalia" in status
+                    for status in panel.status_messages
+                ))
+
+                # A exceção pertence à PRIMEIRA reserva e exige os
+                # dois quadros estáveis; não libera repetição infinita.
+                self.assertEqual(
+                    receiver._stage_latest_candidate(image, sig, "192.168.0.10"),
+                    1,
+                )
+                self.assertEqual(
+                    receiver._stage_latest_candidate(image.copy(), sig.copy(),
+                                                     "192.168.0.10"),
+                    2,
+                )
+                self.assertTrue(receiver._image_gate.try_reserve())
+                receiver._reserve_candidate(sig)
+                self.assertTrue(receiver._should_ignore_accepted_repeat(sig))
+                self.assertTrue(receiver.confirm_reserved_image())
+
+                # Se descartada novamente, a MESMA anomalia pode
+                # ser analisada outra vez, sem obrigação de mudança.
+                panel.handle_network_image(image, "192.168.0.10")
+                panel.current_analysis = {"verdict": "DEFEITO REAL"}
+                panel.current_sample, panel.current_ng = object(), object()
+                panel.skip_image()
+                self.assertFalse(receiver._should_ignore_accepted_repeat(sig))
+
+                # Um julgamento 0/1 na tentativa seguinte NÃO rearma.
+                self.assertTrue(receiver._image_gate.try_reserve())
+                receiver._reserve_candidate(sig)
+                self.assertTrue(receiver.confirm_reserved_image())
+                panel.handle_network_image(image, "192.168.0.10")
+                panel.current_analysis = {"verdict": "DEFEITO REAL"}
+                panel.current_sample, panel.current_ng = object(), object()
+                panel.save_label("NG", source="button")
+                self.assertTrue(receiver._should_ignore_accepted_repeat(sig))
+
+    def test_discard_in_shadow_or_before_analysis_does_not_rearm(self):
+        for mode, analyzed in (
+            ("Modo Sombra", True),
+            ("Modo Teste", False),
+            ("Modo Produção", False),
+        ):
+            with self.subTest(mode=mode, analyzed=analyzed):
+                panel = FakePanel()
+                panel.combo_mode = type("Combo", (), {
+                    "currentText": lambda self, name=mode: name,
+                })()
+                panel.handle_network_image(object(), "192.168.0.10")
+                if analyzed:
+                    panel.current_analysis = {"verdict": "DEFEITO REAL"}
+                    panel.current_sample, panel.current_ng = object(), object()
+                panel.skip_image()
+                self.assertFalse(getattr(panel.network_receiver, "armed", False))
 
     def test_reinspect_consumes_one_operator_request_no_xp_command(self):
         panel = FakePanel()
