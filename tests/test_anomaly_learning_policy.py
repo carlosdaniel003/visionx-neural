@@ -58,28 +58,31 @@ class AnomalyLearningPolicyTests(unittest.TestCase):
         self.panel_class = Panel
         install_anomaly_learning(self.panel_class)
 
-    def test_human_agreement_saves_json_without_images(self):
+    def test_human_agreement_submits_confirmed_memory_and_audit_task(self):
         panel = self.panel_class(ai_defect=True)
-        with patch(
-            "src.services.anomaly_learning.DatasetManager.save_sample",
-            return_value="memory.json",
-        ) as save:
-            panel.save_label("NG", source="button")
+        saved = []
+        confirmed = []
+        panel._live_memory_writer = lambda task: (
+            confirmed.append(task) or {"committed": True}
+        )
+        panel._anomaly_persistence_submitter = saved.append
+        panel.save_label("NG", source="button")
+        self.assertEqual(len(confirmed), 1)
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0]["label"], "NG")
+        self.assertEqual(saved[0]["source"], "button")
+        self.assertEqual(saved[0]["ai_decision"], "NG")
+        self.assertEqual(panel.original_calls, 0)
 
-        self.assertFalse(save.call_args.kwargs["save_images"])
-        self.assertEqual(save.call_args.kwargs["ai_decision"], "NG")
-        self.assertEqual(panel.orchestrator.reloads, 1)
-
-    def test_human_disagreement_adds_audit_images(self):
+    def test_human_disagreement_submits_difficult_case_with_images(self):
         panel = self.panel_class(ai_defect=False)
-        with patch(
-            "src.services.anomaly_learning.DatasetManager.save_sample",
-            return_value="memory.json",
-        ) as save:
-            panel.save_label("NG", source="button")
-
-        self.assertTrue(save.call_args.kwargs["save_images"])
-        self.assertEqual(save.call_args.kwargs["ai_decision"], "OK")
+        saved = []
+        panel._live_memory_writer = lambda task: {"committed": True}
+        panel._anomaly_persistence_submitter = saved.append
+        panel.save_label("NG", source="button")
+        self.assertEqual(len(saved), 1)
+        self.assertTrue(saved[0]["save_images"])
+        self.assertEqual(saved[0]["ai_decision"], "OK")
 
     def test_failed_production_manual_command_must_not_learn_or_advance(self):
         from types import SimpleNamespace
@@ -101,28 +104,21 @@ class AnomalyLearningPolicyTests(unittest.TestCase):
 
     def test_automatic_decision_does_not_self_train(self):
         panel = self.panel_class(ai_defect=True)
-        with patch(
-            "src.services.anomaly_learning.DatasetManager.save_sample"
-        ) as save:
-            result = panel.save_label("NG", source="auto")
-
-        save.assert_not_called()
-        self.assertEqual(result, "original")
+        saved = []
+        panel._anomaly_persistence_submitter = saved.append
+        self.assertEqual(panel.save_label("NG", source="auto"), "original")
         self.assertEqual(panel.original_calls, 1)
+        self.assertEqual(saved, [])
 
     def test_production_auto_ok_does_not_self_train(self):
         panel = self.panel_class(ai_defect=False)
-        with patch(
-            "src.services.anomaly_learning.DatasetManager.save_sample"
-        ) as save:
-            result = panel.save_label(
-                "OK",
-                source="production_auto",
-            )
-
-        save.assert_not_called()
-        self.assertEqual(result, "original")
+        saved = []
+        panel._anomaly_persistence_submitter = saved.append
+        self.assertEqual(
+            panel.save_label("OK", source="production_auto"), "original"
+        )
         self.assertEqual(panel.original_calls, 1)
+        self.assertEqual(saved, [])
 
 
 if __name__ == "__main__":
