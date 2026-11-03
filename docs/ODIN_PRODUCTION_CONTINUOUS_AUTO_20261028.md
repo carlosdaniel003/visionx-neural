@@ -186,3 +186,20 @@ nem retreina a CNN nem considera 98% de similaridade como identidade.
 Frames antigos importados do `ok_archive`, sem confirmação humana
 do frame completo no novo formato, fornecem apenas diagnóstico exato
 visual, não autorização automática.
+
+
+### Exceção confirmada apenas na SIDE
+
+Se o ODIN encerrou a inspeção antecipadamente na SIDE e o operador
+corrigiu 1/NG para 0/OK durante a pausa, o julgamento humano pode ser
+recuperado na **próxima ocorrência da mesma tela SIDE pixel-idêntica**.
+A rota `operator_latest_exact_frame_side_v1` exige a mesma categoria,
+iluminação e hash RGB integral, fonte `OPERATOR_CONFIRMED` cronológica,
+captura SIDE final íntegra, sem hard missing, e sonda independente de
+ausência física `NO_STRONG_EVIDENCE`. O gate revalida a identidade
+humana antes do XP, sem aguardar TOP/MID nem depender do ID de evento.
+
+Capturas não idênticas, conflito de humanos, falha de sonda, ausência
+física ou captura incompleta continuam sem autorização de 0/OK por
+essa exceção. O atalho de SIDE não modifica as regras visuais genéricas
+de semelhança (KNN A/B) nem confunde 98% com igualdade exata.
