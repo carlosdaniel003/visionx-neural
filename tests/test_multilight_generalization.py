@@ -471,6 +471,169 @@ class GeneralMultiLightFusionTests(unittest.TestCase):
         )
 
 
+class AdhesiveProductionProvenanceTests(unittest.TestCase):
+    """Reproduz o evento XP 4bd0f318: trinca válida bloqueada por metadado ausente."""
+
+    @staticmethod
+    def _source(*, ng=True):
+        scores = {
+            "SIDE": (0.9759, 1.0),
+            "TOP": (0.9850, 0.9850),
+            "MID": (0.8350, 0.8500),
+        } if ng else {
+            "SIDE": (0.02, 0.10),
+            "TOP": (0.03, 0.10),
+            "MID": (0.01, 0.08),
+        }
+        return {
+            light: {
+                "lighting_mode": light,
+                "verdict": "DEFEITO REAL" if ng else "FALHA FALSA",
+                "is_defect": ng,
+                "confidence": 0.99,
+                "active_engines": ["shift_expert.py", "ssim_expert.py"],
+                "detail": {
+                    "recognition_route": "NEW_EXPERTS",
+                    "adhesive_score": score,
+                    "adhesive_is_defect": ng,
+                    "adhesive_tolerance": 0.32,
+                    "physical_score": physical,
+                    "dominant_engine": "adhesive",
+                    "operator_review_required": False,
+                    "decision_trace": {"operator_review_required": False},
+                },
+            }
+            for light, (score, physical) in scores.items()
+        }
+
+    @staticmethod
+    def _production_policy(fused):
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        fused["detail"]["production_continuous_auto"] = True
+        fused["detail"]["production_binary_auto"] = True
+        return production_decision_policy(fused)
+
+    def test_complete_real_muito_adesivo_ng_can_send_1(self):
+        source = self._source()
+        fused = fuse_multilight(source, "MUITO ADESIVO")
+        self.assertEqual(fused["detail"]["fusion_rule"],
+                         "adhesive_multilight_strong_auxiliary")
+        self.assertEqual(fused["verdict"], "DEFEITO REAL")
+        self.assertTrue(fused["multilight_final"])
+        expected = {light: "NEW_EXPERTS" for light in ("SIDE", "TOP", "MID")}
+        self.assertEqual(fused["detail"]["recognition_light_routes"], expected)
+        self.assertEqual(fused["detail"]["decision_trace"]["recognition_light_routes"], expected)
+        self.assertEqual(fused["detail"]["recognition_route"], "NEW_EXPERTS")
+        for light in expected:
+            self.assertEqual(
+                fused["detail"]["cnn_v2_light_diagnostics"][light]["route"],
+                "NEW_EXPERTS",
+            )
+        policy = self._production_policy(fused)
+        self.assertTrue(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "NG")
+        self.assertEqual(policy["verdict"], "DEFEITO REAL")
+        self.assertNotIn("operational_error", policy)
+        self.assertEqual(policy["reason"], "production_binary_unverified_ng_v1")
+        # O rótulo físico forte segue no resultado, o envio automático
+        # não equivale a uma confirmação humana para treino.
+        self.assertTrue(policy["unverified_physical_label"])
+        self.assertEqual(set(source), {"SIDE", "TOP", "MID"})
+
+    def test_complete_muito_adesivo_ok_can_send_0(self):
+        fused = fuse_multilight(self._source(ng=False), "MUITO ADESIVO")
+        self.assertEqual(fused["verdict"], "FALHA FALSA")
+        policy = self._production_policy(fused)
+        self.assertTrue(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "OK")
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertNotIn("operational_error", policy)
+
+    def test_missing_light_or_unqualified_route_never_sends_to_xp(self):
+        for mode in ("SIDE", "TOP", "MID"):
+            with self.subTest(missing_light=mode):
+                source = self._source()
+                del source[mode]
+                self.assertIsNone(fuse_multilight(source, "MUITO ADESIVO"))
+            with self.subTest(missing_route=mode):
+                source = self._source()
+                del source[mode]["detail"]["recognition_route"]
+                fused = fuse_multilight(source, "MUITO ADESIVO")
+                self.assertEqual(fused["detail"]["recognition_light_routes"][mode], "")
+                policy = self._production_policy(fused)
+                self.assertTrue(policy["operational_error"])
+                self.assertFalse(policy["auto_allowed"])
+                self.assertEqual(policy["proposed_decision"], "")
+            with self.subTest(unknown_route=mode):
+                source = self._source()
+                source[mode]["detail"]["recognition_route"] = "UNKNOWN"
+                fused = fuse_multilight(source, "MUITO ADESIVO")
+                policy = self._production_policy(fused)
+                self.assertTrue(policy["operational_error"])
+                self.assertFalse(policy["auto_allowed"])
+                self.assertEqual(policy["proposed_decision"], "")
+
+    def test_known_knn_requires_real_human_evidence_per_light(self):
+        source = self._source(ng=False)
+        source["TOP"]["detail"]["recognition_route"] = "KNOWN_KNN"
+        fused = fuse_multilight(source, "MUITO ADESIVO")
+        self.assertEqual(fused["detail"]["recognition_route"], "MULTILIGHT_MIXED")
+        policy = self._production_policy(fused)
+        self.assertTrue(policy["operational_error"])
+        self.assertFalse(policy["auto_allowed"])
+        # A evidência vem da própria TOP; não é herdada da dominante.
+        source["TOP"]["detail"]["recognition_known_label"] = "OK"
+        source["TOP"]["detail"]["recognition_memory_verified"] = True
+        source["TOP"]["detail"]["recognition_match"] = "EXACT_PAIR"
+        fused = fuse_multilight(source, "MUITO ADESIVO")
+        policy = self._production_policy(fused)
+        self.assertFalse(policy.get("operational_error", False))
+        self.assertEqual(policy["proposed_decision"], "OK")
+
+    def test_known_human_ng_light_without_adhesive_scores_never_auto_ok(self):
+        # O roteador KNOWN_KNN pula os especialistas físicos.
+        # Sem esta trava, a fusão veria três scores baixos e enviaria 0.
+        source = self._source(ng=False)
+        top = source["TOP"]["detail"]
+        top["recognition_route"] = "KNOWN_KNN"
+        top["recognition_known_label"] = "NG"
+        top["recognition_memory_verified"] = True
+        top["recognition_match"] = "EXACT_PAIR"
+        top["recognition_specialists_skipped"] = True
+        for key in ("adhesive_score", "adhesive_is_defect",
+                    "physical_score"):
+            top.pop(key, None)
+        fused = fuse_multilight(source, "MUITO ADESIVO")
+        self.assertEqual(fused["verdict"], "FALHA FALSA")
+        policy = self._production_policy(fused)
+        self.assertTrue(policy["operational_error"])
+        self.assertEqual(policy["reason"], "production_adhesive_known_ng_conflict_v1")
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "")
+
+    def test_known_knn_label_without_verified_pair_fails_closed(self):
+        source = self._source(ng=False)
+        detail = source["TOP"]["detail"]
+        detail["recognition_route"] = "KNOWN_KNN"
+        detail["recognition_known_label"] = "OK"
+        detail["recognition_memory_verified"] = False
+        detail["recognition_match"] = "EXACT_PAIR"
+        fused = fuse_multilight(source, "MUITO ADESIVO")
+        policy = self._production_policy(fused)
+        self.assertTrue(policy["operational_error"])
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "")
+
+    def test_capture_error_remains_operational_fault(self):
+        fused = fuse_multilight(self._source(), "MUITO ADESIVO")
+        fused["detail"]["capture_error"] = True
+        policy = self._production_policy(fused)
+        self.assertTrue(policy["operational_error"])
+        self.assertEqual(policy["proposed_decision"], "")
+
+
+
 class GeneralMultiLightArchiveTests(unittest.TestCase):
     class Panel:
         pass

@@ -780,6 +780,17 @@ def _completed_continuous_inspection(analysis: dict, detail: dict) -> bool:
                     or diagnostics[light].get("human_memory_label") not in {"OK", "NG"}
                 ):
                     return False
+                if (
+                    route == "KNOWN_KNN"
+                    and detail.get("multilight_category") == "MUITO ADESIVO"
+                    and (
+                        diagnostics[light].get("memory_verified") is not True
+                        or diagnostics[light].get("memory_match") != "EXACT_PAIR"
+                    )
+                ):
+                    # No adesivo uma luz KNOWN pode saltar os especialistas.
+                    # Prova textual sem par confirmado não valida a trinca.
+                    return False
         return True
 
     # Atalho de SIDE não é trinca incompleta: a análise tem seu próprio
@@ -854,6 +865,33 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "auto_allowed": False, "operator_review_required": False,
             "proposed_decision": "", "operational_error": True,
             "reason": "operator_latest_exact_frame_contract_invalid",
+        }
+
+    # A memória exata KNOWN_KNN pode omitir os scores físicos de adesivo.
+    # Não tratar "não executou especialista" como testemunho físico OK:
+    # uma luz NG humana é contraprova absoluta contra liberação 0/OK.
+    # O conflito interrompe o XP para diagnóstico; não inventa NG físico.
+    light_diagnostics = detail.get("cnn_v2_light_diagnostics", {})
+    if (
+        detail.get("multilight_category") == "MUITO ADESIVO"
+        and (
+            analysis.get("is_defect") is False
+            or policy.get("proposed_decision") == "OK"
+        )
+        and isinstance(light_diagnostics, dict)
+        and any(
+            isinstance(item, dict)
+            and item.get("route") == "KNOWN_KNN"
+            and item.get("human_memory_label") == "NG"
+            for item in light_diagnostics.values()
+        )
+    ):
+        return {
+            **policy, "verdict": "",
+            "auto_allowed": False, "operator_review_required": False,
+            "proposed_decision": "", "operational_error": True,
+            "reason": "production_adhesive_known_ng_conflict_v1",
+            "source_verdict": policy.get("verdict", ""),
         }
 
     # O OK genérico antigo (apenas veredito textual) NÃO é um contrato

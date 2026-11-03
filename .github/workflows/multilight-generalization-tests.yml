@@ -43,6 +43,10 @@ on:
     branches:
       - central
     paths:
+      - "src/core/multilight_fusion.py"
+      - "src/core/adhesive_multilight_fusion.py"
+      - "tests/test_multilight_generalization.py"
+      - "tests/test_adhesive_multilight_fusion.py"
       - "src/core/side_early_decision.py"
       - "src/ui/adhesive_multilight_inspection.py"
       - "tests/test_side_early_decision.py"
