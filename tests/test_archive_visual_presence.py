@@ -186,6 +186,46 @@ class ArchivePresenceFeedbackTests(unittest.TestCase):
         self.assertEqual(a["verdict"], "DEFEITO REAL")
         self.assertTrue(a["is_defect"])
 
+    def test_exact_full_screen_shows_seen_without_forging_exact_aoi_pair(self):
+        a = analysis()
+        a["detail"]["side_archive_visual_presence"] = {
+            "schema": "visionx.side_archive_visual_presence.v1",
+            "status": "EXACT_FRAME", "label": "OK",
+            "source": "PUBLIC_ARCHIVE_PNG",
+            "diagnostic_only": True, "decision_authorized": False,
+            "exact_frame_sha256": "a" * 64,
+            "exact_frame_labels": ["OK"],
+        }
+        memory = memory_seen_state(a)
+        self.assertEqual(memory["status"], "JA_VI")
+        self.assertTrue(memory["archive_exact_frame_seen"])
+        self.assertFalse(memory["exact_pair_seen"])
+        self.assertIn("FRAME EXATO", memory_panel_text(a)[0])
+        self.assertEqual(a["verdict"], "DEFEITO REAL")
+        self.assertEqual(memory_feedback_state(a)[0], "JÁ VI")
+
+    def test_exact_frame_in_top_only_is_seen_and_conflict_is_ambiguous(self):
+        a = analysis()
+        a["detail"]["side_archive_visual_presence"] = {
+            "status": "NO_SIMILAR",
+            "by_light": {
+                "TOP": {
+                    "schema": "visionx.side_archive_visual_presence.v1",
+                    "status": "EXACT_FRAME", "label": "OK",
+                    "source": "PUBLIC_ARCHIVE_PNG",
+                    "diagnostic_only": True, "decision_authorized": False,
+                    "exact_frame_sha256": "a" * 64,
+                    "exact_frame_labels": ["OK"],
+                },
+                "SIDE": {"status": "NO_SIMILAR"},
+            },
+        }
+        self.assertEqual(memory_seen_state(a)["status"], "JA_VI")
+        a["detail"]["side_archive_visual_presence"]["by_light"]["SIDE"] = {
+            "status": "EXACT_FRAME_CONFLICT",
+        }
+        self.assertEqual(memory_seen_state(a)["status"], "ACERVO_AMBIGUO")
+
     def test_no_match_is_sem_par_exato_and_ambiguous_is_neutral(self):
         a = analysis()
         a["detail"]["side_archive_visual_presence"] = {
