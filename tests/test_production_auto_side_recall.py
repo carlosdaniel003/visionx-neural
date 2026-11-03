@@ -346,5 +346,42 @@ class AutomaticCommandCommitTests(unittest.TestCase):
                 submit.assert_not_called()
 
 
+class NoAutomaticTrainingArchiveTests(unittest.TestCase):
+    def test_production_auto_bypasses_legacy_dataset_even_when_cnn_disagrees(self):
+        from src.ui.control_panel import ControlPanel
+        from src.services.dataset_manager import DatasetManager
+
+        class Panel:
+            def __init__(self):
+                self.current_ng = np.full((32, 32, 3), 70, dtype=np.uint8)
+                self.current_analysis = {"is_defect": False}
+                self.capture_cycle_source = "network"
+                self.is_locked = True
+                self.commands = []
+                self.history = []
+
+            def send_command_to_xp(self, command):
+                self.commands.append(command)
+                return True
+
+            def prepare_for_next_network_image(self):
+                self.current_ng = None
+                self.current_analysis = None
+
+            def update_history_status(self, label, source):
+                self.history.append((label, source))
+
+        panel = Panel()
+        with patch.object(DatasetManager, "save_sample") as dataset:
+            self.assertIsNone(ControlPanel.save_label(
+                panel, "NG", source="production_auto",
+            ))
+        dataset.assert_not_called()
+        self.assertEqual(panel.commands, ["1"])
+        self.assertEqual(panel.history, [("NG", "production_auto")])
+        self.assertFalse(panel.is_locked)
+        self.assertIsNone(panel.current_ng)
+
+
 if __name__ == "__main__":
     unittest.main()

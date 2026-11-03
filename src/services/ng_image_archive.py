@@ -194,17 +194,12 @@ def install_ng_image_archive(control_panel_cls) -> None:
 
     def wrapped_save_label(self, user_decision: str, source="button"):
         normalized = str(user_decision or "").strip().upper()
-        unverified_auto = False
-        if str(source or "").strip().lower() == "production_auto":
-            from src.services.decision_persistence import _UNVERIFIED_AUTOMATIC_REASONS
-            analysis = getattr(self, "current_analysis", None)
-            detail = analysis.get("detail") if isinstance(analysis, dict) else {}
-            policy = detail.get("production_decision_policy") if isinstance(detail, dict) else {}
-            unverified_auto = bool(
-                isinstance(policy, dict)
-                and policy.get("reason") in _UNVERIFIED_AUTOMATIC_REASONS
-                and policy.get("resolution") == "automatic"
-            )
+        # Nenhum NG apenas automático entra no acervo rotulado NG,
+        # independentemente da regra que enviou 1 ao XP. Sua identidade
+        # fica na memória AUTO operacional, não na KNN de verdade humana.
+        unverified_auto = (
+            str(source or "").strip().lower() == "production_auto"
+        )
 
         current_cycle_source = str(
             getattr(self, "capture_cycle_source", "") or ""

@@ -153,6 +153,16 @@ class NGArchiveDecisionTests(unittest.TestCase):
         self.assertEqual(len(panel.archived), 1)
 
 
+    def test_production_auto_ng_is_never_archived_as_confirmed_defect(self):
+        panel = FakePanel()
+        panel.set_ng_archive_enabled(True)
+
+        panel.save_label("NG", source="production_auto")
+
+        self.assertEqual(panel.saved, [("NG", "production_auto")])
+        self.assertEqual(panel.archived, [])
+        self.assertEqual(panel._ng_archive_last_event_id, "")
+
     def test_same_xp_event_is_archived_only_once(self):
         panel = FakePanel()
         panel.set_ng_archive_enabled(True)

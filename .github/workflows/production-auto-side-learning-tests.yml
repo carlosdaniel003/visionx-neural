@@ -9,6 +9,9 @@ on:
       - "src/services/decision_persistence.py"
       - "src/ui/adhesive_multilight_inspection.py"
       - "src/ui/production_confidence_gate.py"
+      - "src/ui/control_panel.py"
+      - "src/services/ng_image_archive.py"
+      - "tests/test_ng_image_archive.py"
       - "tests/test_production_auto_side_recall.py"
       - ".github/workflows/production-auto-side-learning-tests.yml"
   push:
@@ -54,4 +57,5 @@ jobs:
           python -m unittest \
             tests.test_production_auto_side_recall \
             tests.test_anomaly_learning_policy \
+            tests.test_ng_image_archive \
             tests.test_production_continuous_auto.ContinuousAutoPolicyTests -v
