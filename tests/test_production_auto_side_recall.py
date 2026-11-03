@@ -300,6 +300,7 @@ class AutomaticCommandCommitTests(unittest.TestCase):
                     },
                 }
                 self.network_intake_last_image_event_id = "actual-01"
+                self.adhesive_multilight_primary_event_id = "actual-01"
                 self.capture_cycle_source = "network"
                 self.last_decision_command_success = None
 
@@ -330,6 +331,38 @@ class AutomaticCommandCommitTests(unittest.TestCase):
                 self.assertEqual(store.find(identity)["label"], "NG")
                 submit.assert_called_once()  # quarentena, não treino
                 human.assert_not_called()
+
+    def test_single_side_replay_quarantine_preserves_both_images(self):
+        from src.services.decision_persistence import (
+            _quarantine_unverified_automatic,
+        )
+        import json
+
+        case = ProductionAutoSideRecallTests()
+        with tempfile.TemporaryDirectory() as folder, patch(
+            "src.services.decision_persistence.Path.cwd",
+            return_value=Path(folder),
+        ):
+            case.setUp()
+            task = case._task(
+                "NG", include_three=False,
+                source_reason="production_auto_side_recall_ng_v1",
+            )
+            path = _quarantine_unverified_automatic(task)
+            audit = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(audit["decision_sent_for_xp"], "NG")
+            self.assertFalse(audit["used_for_knn_training"])
+            self.assertFalse(audit["used_for_cnn_training"])
+            self.assertEqual(len(audit["files"]), 2)
+            self.assertEqual(
+                {item["role"] for item in audit["files"]},
+                {"reference", "test"},
+            )
+            self.assertTrue(all(
+                (path.parent / item["file"]).is_file()
+                for item in audit["files"]
+            ))
+            case.tmp.cleanup()
 
     def test_failed_xp_never_writes_auto_memory(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -100,6 +100,21 @@ def _quarantine_unverified_automatic(task: dict) -> Path:
             if isinstance(row, dict)
             and str(row.get("lighting_mode", "")).upper() == "SIDE"
         ][:1]
+    if (
+        not samples
+        and policy.get("reason") in {
+            "production_auto_side_recall_ok_v1",
+            "production_auto_side_recall_ng_v1",
+        }
+    ):
+        # A reinspeção por memória encerra apenas na SIDE. O snapshot
+        # comum ainda contém os pares da captura SIDE atual, mesmo sem
+        # uma trinca em multilight_samples. Não inventar TOP/MID.
+        samples = [{
+            "lighting_mode": "SIDE",
+            "sample_image": task.get("sample_image"),
+            "test_image": task.get("ng_image"),
+        }]
     for sample in samples:
         light = sample["lighting_mode"]
         for role, key in (("reference", "sample_image"), ("test", "test_image")):
