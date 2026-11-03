@@ -226,3 +226,39 @@ Os atrasos históricos mencionados acima estão substituídos por esta regra.
 
 Validar primeiro com XP isolado, especialmente interrupção via Space durante
 a rolagem, captura trocada, OK/NG difíceis e comando enviado uma única vez.
+
+## 03/11/2026 — Corrigir deadlock SIDE de revisão sem TOP/MID
+
+Evidência de estação: `event_id=76df84c3eaaa4cb4a0a1cf14d16a285c`,
+categoria FALTANDO, CNN SIDE `FALHA FALSA`, score NG bruto
+`0.030528292059898376` e KNN C com A/B apenas aproximados.
+O atalho `side_verified_archive_visual_review_v1` dispensava TOP/MID
+**apenas para solicitar revisão**, marcava
+`eligible_for_final_decision=False` e passava a análise para o gate
+binário. A política rejeitou corretamente a captura incompleta com
+`production_binary_operational_capture_fault_v1`; o controlador entrou
+em `operational_fault` e Space+0/1 ficou bloqueado. Ocorreu impasse
+entre dois contratos, sem comando de qualidade ao XP.
+
+**Novo contrato:** em Modo Produção, a memória visual aproximada da
+referência 14:16 não encerra a SIDE para revisão. Quando nenhuma rota
+SIDE autônoma revalidada estiver disponível, o ODIN continua a aquisição
+TOP/MID da **mesma inspeção** e só publica o julgamento após a fusão
+completa. Uma trinca válida permite OK quando comprovado pela política
+ou NG binário de rejeição com motivo preservado; se for inconclusiva,
+o NG não vira verdade humana para treinamento. Space+0/1 pode corrigir
+uma inspeção concluída ainda não transmitida, nunca uma captura
+incompleta ou um evento antigo.
+
+A política binária é armada antes da primeira renderização da fusão
+final, eliminando o flash de `REVISÃO OBRIGATÓRIA` da CNN como
+terceiro resultado produtivo. O estado interno de revisão é mantido no
+debug/auditoria. Falha de captura, evento errado, erro XP e captura
+incompleta permanecem falhas **operacionais sem comando inventado**;
+não são automaticamente convertidas em OK nem NG.
+
+As rotas SIDE legitimamente habilitadas (CNN/última memória humana exata
+com validação específica) não mudam. Modo Teste/Sombra, checkpoints,
+acervos, thresholds KNN/CNN e agente XP não mudam. Validar com o XP
+fisicamente isolado, incluindo pausa durante rolagem e repetição de
+0/1 manual, antes da liberação real.

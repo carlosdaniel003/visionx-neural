@@ -422,36 +422,31 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                     else:
                         panel.notify_production_analysis_ready.assert_not_called()
 
-    def test_verified_1416_side_early_skips_top_mid_but_never_sends_xp(self):
-        from tests.test_side_recurrent_ok_review import side, audit
-        from src.ui.production_confidence_gate import production_decision_policy
+    def test_verified_1416_side_review_must_collect_top_mid_in_production(self):
+        # Reproduz a falha real: CNN SIDE OK com 96,9%, referência OK
+        # 14:16 aproximada, mas sem evidência exata ou autorização XP.
+        # Sem TOP/MID, o controlador binário antes caía em operational_fault.
+        from tests.test_side_recurrent_ok_review import side
+        source = side()
+        source["confidence"] = .9694717079401016
+        source["detail"]["cnn_v2_ng_score_uncalibrated"] = .030528292059898376
+        source["detail"]["knn_c"]["neighbors_A"][0]["similarity"] = .87096112
+        source["detail"]["knn_c"]["neighbors_B"][0]["similarity"] = .83161003
+        panel = self._run_capture(
+            confidence=.9694717079401016, verdict="FALHA FALSA",
+            mode="Modo Produção", side_analysis=source,
+        )
 
-        with (
-            patch(
-                "src.core.side_recurrent_ok_review.verified_canonical_ok_source",
-                return_value=True,
-            ),
-            patch(
-                "src.core.side_recurrent_ok_review.physical_absence_probe",
-                return_value=audit(),
-            ),
-        ):
-            panel = self._run_capture(
-                confidence=.96563242748, verdict="FALHA FALSA",
-                mode="Modo Produção", side_analysis=side(),
-            )
-            policy = production_decision_policy(panel.current_analysis)
-
-        self.assertFalse(panel.adhesive_multilight_active)
+        self.assertTrue(panel.adhesive_multilight_active)
+        self.assertIsNone(panel.adhesive_multilight_final_analysis)
         self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
-        self.assertEqual(panel.current_analysis["verdict"], "FALHA FALSA")
-        self.assertEqual(panel.current_analysis["detail"]["side_early_exit"][
-            "skipped_lights"], ["TOP", "MID"])
-        self.assertFalse(policy["auto_allowed"])
-        self.assertEqual(policy["proposed_decision"], "")
+        panel.adhesive_multilight_automation.start.assert_called_once()
+        panel.notify_production_analysis_ready.assert_not_called()
         panel.send_command_to_xp.assert_not_called()
-        panel.adhesive_multilight_automation.start.assert_not_called()
-        panel.notify_production_analysis_ready.assert_called_once()
+        panel.btn_save_ok.setEnabled.assert_called_with(False)
+        panel.btn_save_ng.setEnabled.assert_called_with(False)
+        self.assertNotIn("side_early_exit", panel.current_analysis["detail"])
+        self.assertIn("AGUARDANDO TOP/MID", panel.lbl_verdict.setText.call_args.args[0])
 
     def test_trial_ng_ends_after_side_in_all_modes_without_sending_xp(self):
         from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256

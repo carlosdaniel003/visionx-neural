@@ -465,22 +465,6 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
                 )
         if fused is None:
             fused = build_side_early_decision(analyses.get("SIDE"), category)
-        if fused is None and (
-            getattr(getattr(panel, "combo_mode", None), "currentText",
-                    lambda: "")() == "Modo Produção"
-        ):
-            from src.core.side_recurrent_ok_review import (
-                build_side_recurrent_ok_review,
-            )
-            sample = getattr(
-                panel, "adhesive_multilight_learning_samples", {}
-            )
-            side = sample.get("SIDE") if isinstance(sample, dict) else None
-            if isinstance(side, dict):
-                fused = build_side_recurrent_ok_review(
-                    analyses.get("SIDE"), category,
-                    side.get("sample_image"), side.get("test_image"),
-                )
     else:
         fused = fuse_multilight(analyses, category)
     if not isinstance(fused, dict):
@@ -603,6 +587,18 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
                 + explanation + "; sem aprovação automática."
             )
 
+    # A decisão binária precisa estar armada ANTES da primeira pintura
+    # do resultado final. Evita mostrar REVIEW da CNN por um instante
+    # até a notificação assíncrona do controlador de Produção.
+    if (
+        getattr(getattr(panel, "combo_mode", None), "currentText",
+                lambda: "")() == "Modo Produção"
+    ):
+        controller = getattr(panel, "production_autonomy_controller", None)
+        prepare = getattr(controller, "prepare_binary_presentation", None)
+        if callable(prepare):
+            prepare(fused)
+
     panel.current_analysis = fused
     panel.adhesive_multilight_final_analysis = fused
     panel.adhesive_multilight_last_final_analysis = fused
@@ -681,29 +677,21 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
 
     try:
         if mode == "Modo Produção":
-            if side_only:
-                from src.ui.production_confidence_gate import production_decision_policy
-                policy = production_decision_policy(fused)
+            # Não confundir REVIEW interno da CNN com terceira decisão
+            # produtiva. A apresentação segue a política binária armada.
+            from src.ui.production_confidence_gate import production_decision_policy
+            policy = production_decision_policy(fused)
+            if policy.get("auto_allowed") and policy.get("proposed_decision") in {"OK", "NG"}:
+                label = policy["proposed_decision"]
                 panel.update_brain_status(
-                    "SIDE antecipada: decisão automática "
-                    + str(policy.get("proposed_decision", ""))
-                    + " • apresentação e intervalo de pausa pendentes."
-                    if policy.get("auto_allowed", False) else
-                    "SIDE antecipada • confirmação humana necessária.",
+                    f"Análise concluída • {label} automático após apresentação.",
                     True,
                 )
-            elif fused.get("production_review_required", False):
-                from src.core.corroborated_ng_verdict import corroborated_ng_verdict
-                status = (
-                    "NG • DEFEITO REAL • aguardando confirmação humana."
-                    if corroborated_ng_verdict(fused)
-                    else "REVISÃO OBRIGATÓRIA • fusão multilight concluída."
-                )
-                panel.update_brain_status(status, True)
             else:
                 panel.update_brain_status(
-                    "Análise multilight concluída • emissão autônoma.",
-                    False,
+                    "Inspeção sem autorização XP • conferir captura/rota; "
+                    "nenhuma tecla 0/1 enviada.",
+                    True,
                 )
         elif mode == "Modo Sombra":
             panel.update_brain_status(
@@ -1353,16 +1341,10 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 )
         if side_early is None:
             side_early = build_side_early_decision(side_analysis, category)
-        if side_early is None and mode == "Modo Produção":
-            from src.core.side_recurrent_ok_review import (
-                build_side_recurrent_ok_review,
-            )
-            side_sample = self.adhesive_multilight_learning_samples.get("SIDE")
-            if isinstance(side_sample, dict):
-                side_early = build_side_recurrent_ok_review(
-                    side_analysis, category,
-                    side_sample.get("sample_image"), side_sample.get("test_image"),
-                )
+        # Em Produção, a hipótese SIDE só para revisão humana não pode
+        # encerrar a aquisição: a política binária exige TOP/MID ou uma
+        # rota SIDE independente com autorização XP validada.
+        # Sem atalho conclusivo, continuar a automação multilight.
         if isinstance(test_knn_trigger, dict) and side_early is not None:
             side_analysis.setdefault("detail", {})[
                 "test_mode_side_knn_disagreement"
