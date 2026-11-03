@@ -31,3 +31,27 @@ O cartão unificado mostra **DEFEITO REAL** e o subtítulo azul **VI SEMELHANTE*
 ## Validação
 
 Os testes unitários usam os **números do log real**, com casos negativos (sem assinatura visual suficiente, status indevido, KNN exata prioritária) e exercitam renderização real do cartão Qt e do painel KNN. Além disso, reexecutar na estação este NG e um OK conhecido após integrar o PR. Comparar o tempo ao baseline 5,086 s. Testes sintéticos não demonstram novos pesos treinados nem maior acurácia; mostram que a interface respeita a memória já recuperada.
+
+
+## 03/11/2026 — Identidade exata da captura completa no arquivo
+
+O `ok_archive/ng_archive` guarda a **tela completa** copiada do XP.
+O roteador `KNOWN_KNN/EXACT_PAIR`, entretanto, exige igualdade
+dos **dois recortes** AOI gabarito/teste. Repetir o mesmo PNG pode
+produzir outros recortes por diferenças de OCR/geometria, mostrando
+KNN A/B com 98% e ausência de `EXACT_PAIR`.
+
+A sondagem assíncrona de arquivo agora compara o **SHA-256 dos pixels
+BGR de toda a tela**, por categoria e iluminação, nas três luzes,
+antes dos descritores aproximados. Quando os pixels são idênticos
+e o PNG ainda existe no disco, o cartão pode mostrar
+`JÁ VI • FRAME EXATO NO ACERVO OK/NG`. Esse sinal **não** é
+`PAR AOI EXATO`; `exact_pair_seen` continua falso se os recortes
+diferem. Em conflito de dois arquivos OK/NG com o mesmo frame exato,
+a UI mostra ambiguidade e não escolhe um rótulo.
+
+A consulta é diagnóstica, não muda o veredito CNN, treinamento,
+limiar KNN, ou autorização XP. Uma validação humana nova e comprovada
+do frame completo pode, separadamente, participar do reconhecimento
+`operator_latest_exact_frame_triplet_v1` com vetos físicos e
+revalidação na Produção.
