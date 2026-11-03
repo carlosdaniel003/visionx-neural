@@ -55,3 +55,32 @@ limiar KNN, ou autorização XP. Uma validação humana nova e comprovada
 do frame completo pode, separadamente, participar do reconhecimento
 `operator_latest_exact_frame_triplet_v1` com vetos físicos e
 revalidação na Produção.
+
+
+## 03/11/2026 — Indicador da memória operacional AUTO da SIDE
+
+A recuperação automática de Produção usa o índice persistente
+`data/production_auto_side/decisions.sqlite3`, diferente da memória
+humana `OPERATOR_CONFIRMED`. O indicador anteriormente podia mostrar
+`VI SEMELHANTE` mesmo após um atalho exato da memória automática,
+porque `memory_seen_state()` só reconhecia KNN humana, frames
+do acervo e similaridade visual.
+
+Agora, quando o resultado final usa a rota
+`production_auto_side_exact_recall_v1` e contém prova local íntegra,
+o painel informa `JÁ VI • DECISÃO AUTOMÁTICA OK/NG • SIDE`.
+O aviso flutuante identifica `JÁ VI • DECISÃO AUTOMÁTICA OK/NG`.
+A explicação informa que foi o **par de recortes AOI da SIDE**
+pixel-idêntico e exibe as iluminações originalmente analisadas.
+`exact_pair_seen` permanece reservado à KNN exata humana;
+`auto_side_exact_seen` é um marcador diagnóstico separado.
+Memória humana exata e conflito de frames do arquivo continuam
+prioritários, e apenas similaridade mantém `VI SEMELHANTE`.
+
+A validação para apresentar a mensagem é **local, sem I/O** e
+verifica rota, integridade da prova, identidade, categoria, veredito
+e vetos de captura. A política `production_decision_policy()`
+continua sendo a única autorização para o XP e relê o registro
+SQLite por `verify_auto_side_recall()` antes de 0/1. O aviso na
+tela não executa retreinamento, nem transforma memória automática
+em rótulo humano, nem remove os vetos físicos/correções humanas.

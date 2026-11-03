@@ -26,6 +26,7 @@ def _render_panel(panel, analysis: dict | None) -> None:
     detail = (analysis or {}).get("detail", {})
     detail = detail if isinstance(detail, dict) else {}
     memory_title, memory_description = memory_panel_text(analysis)
+    memory_state = memory_seen_state(analysis)
     # O painel KNN é independente da presença de decision_trace.engines.
     # Mesmo uma CNN única ou multilight deve mostrar o estado da pesquisa.
     panel.lbl_memory_role.setText(memory_title)
@@ -92,7 +93,11 @@ def _render_panel(panel, analysis: dict | None) -> None:
         primary += f" • melhor vizinho de anomalia {best_label}"
     # Não recolocar aqui o texto legado (p.ex. "Dataset sem memória").
     # A descrição de rota acima permanece visível em todos os motores.
-    if not neural["memory_route"] and not neural["cnn_active"]:
+    if (
+        not neural["memory_route"]
+        and not neural["cnn_active"]
+        and not memory_state["auto_side_exact_seen"]
+    ):
         panel.lbl_db_info.setText(primary)
         panel.lbl_memory_role.setText(role)
 
@@ -116,7 +121,7 @@ def _render_panel(panel, analysis: dict | None) -> None:
     )
 
     rule = str(trace.get("fusion_rule", "physical_only"))
-    seen_status = memory_seen_state(analysis)["status"]
+    seen_status = memory_state["status"]
     role_color = (
         "#4ade80" if seen_status == "JA_VI"
         else "#58a6ff" if seen_status == "VI_SEMELHANTE"

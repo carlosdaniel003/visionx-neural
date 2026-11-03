@@ -259,6 +259,23 @@ def memory_seen_state(analysis: dict | None) -> dict:
         and set(exact_human["matches"]) in (set(LIGHTS), {"SIDE"})
     )
 
+    # A memória AUTO é distinta da KNN humana. A prova da rota SIDE
+    # já selecionada é checada localmente; não há I/O durante a pintura
+    # nem qualquer mudança na autorização de comandos XP.
+    auto_side = None
+    if detail.get("fusion_rule") == "production_auto_side_exact_recall_v1":
+        from src.core.production_auto_side_recall import (
+            auto_side_display_provenance,
+        )
+        auto_side = auto_side_display_provenance(analysis)
+    auto_exact_seen = bool(
+        auto_side
+        and not known
+        and not archive_exact_seen
+        and not exact_human_seen
+        and not exact_conflict
+    )
+
     similar_ng = bool(
         not known and (
             (status_visual == "NG_CORROBORATED" and len(approximate_lights) >= 2)
@@ -295,6 +312,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
     status = (
         "JA_VI" if known or archive_exact_seen or exact_human_seen else
         "ACERVO_AMBIGUO" if exact_conflict else
+        "JA_VI" if auto_exact_seen else
         "VI_SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
         "CONSULTANDO_ACERVO" if archive_status == "PENDING" else
         "ACERVO_AMBIGUO" if archive_status == "AMBIGUOUS"
@@ -304,8 +322,9 @@ def memory_seen_state(analysis: dict | None) -> dict:
     return {
         "status": status,
         "label": (
-            "JÁ VI" if known or archive_exact_seen else
+            "JÁ VI" if known or archive_exact_seen or exact_human_seen else
             "ACERVO AMBÍGUO" if exact_conflict else
+            "JÁ VI" if auto_exact_seen else
             "VI SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
             "CONSULTANDO ACERVO" if archive_status == "PENDING" else
             "ACERVO AMBÍGUO" if archive_status == "AMBIGUOUS"
@@ -329,6 +348,11 @@ def memory_seen_state(analysis: dict | None) -> dict:
         "approximate_ng_lights": approximate_lights if similar_ng else [],
         "visual_rows": rows if similar_ng else {},
         "exact_pair_seen": known,
+        "auto_side_exact_seen": auto_exact_seen,
+        "auto_side_label": auto_side["label"] if auto_exact_seen else "",
+        "auto_side_analyzed_lights": (
+            auto_side["analyzed_lights"] if auto_exact_seen else ""
+        ),
         "exact_human_frame_seen": exact_human_seen,
         "exact_human_frame_label": exact_human.get("label", "") if exact_human_seen else "",
         "archive_exact_frame_seen": archive_exact_seen,
@@ -371,6 +395,21 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
                 f"em {lights}. Isso NÃO prova que os dois recortes AOI "
                 "tenham hashes iguais e não autoriza um comando 0/1. "
                 "A memória humana exata é uma consulta separada.",
+            )
+        if memory["auto_side_exact_seen"]:
+            label = memory["auto_side_label"]
+            lights_before = memory["auto_side_analyzed_lights"]
+            source = (
+                f" A ocorrência anterior passou por {lights_before.replace(',', ', ')}."
+                if lights_before else ""
+            )
+            return (
+                f"JÁ VI • DECISÃO AUTOMÁTICA {label} • SIDE",
+                f"Mesmo par AOI da SIDE, pixel-idêntico, recuperado da "
+                f"memória operacional automática como {label}.{source} "
+                "TOP/MID dispensadas nesta inspeção. Não é confirmação "
+                "humana nem treinamento CNN/KNN; o envio XP permanece "
+                "dependente da revalidação da política de Produção.",
             )
         if memory["has_multilight"]:
             number = len(lights)
