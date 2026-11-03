@@ -14,6 +14,7 @@ import numpy as np
 from src.config.settings import settings
 from src.services.image_archive_dedup import (
     ArchiveVisualIndex, archive_visual_descriptor,
+    archive_category_from_filename, archive_visual_scope, image_fingerprint,
 )
 
 SCHEMA = "visionx.side_archive_visual_presence.v1"
@@ -29,6 +30,7 @@ class ArchiveVisualPresenceIndex:
             "NG": Path(ng_dir if ng_dir is not None else settings.NG_ARCHIVE_DIR),
         }
         self._indices = {label: ArchiveVisualIndex() for label in LABELS}
+        self._exact = {label: {} for label in LABELS}
         self._seen_paths = {label: set() for label in LABELS}
         self._valid_counts = {label: 0 for label in LABELS}
 
@@ -47,6 +49,12 @@ class ArchiveVisualPresenceIndex:
                     if archive_visual_descriptor(image) is None:
                         continue
                     self._indices[label].register_existing(image, path)
+                    scope = archive_category_from_filename(path)
+                    fingerprint = image_fingerprint(image)
+                    if scope and fingerprint:
+                        self._exact[label].setdefault(scope, {}).setdefault(
+                            fingerprint, set(),
+                        ).add(path)
                     self._seen_paths[label].add(key)
                     self._valid_counts[label] += 1
                 available = available or folder.is_dir()
@@ -72,6 +80,24 @@ class ArchiveVisualPresenceIndex:
         if not self._refresh():
             return result
         query = f"{category}_{result['lighting']}"
+        scope = archive_visual_scope(query)
+        fingerprint = image_fingerprint(frame)
+        # A prova exata usa os pixels RGB (OpenCV BGR) da TELA
+        # INTEIRA, não o descritor A/B de similaridade nem os recortes.
+        exact = []
+        exact_paths = {}
+        for label in LABELS:
+            paths = self._exact[label].get(scope, {}).get(fingerprint, set())
+            verified_paths = []
+            for path in paths:
+                # Um PNG removido/alterado não continua sendo 'exato'
+                # somente porque havia sido indexado no início da sessão.
+                image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+                if image_fingerprint(image) == fingerprint:
+                    verified_paths.append(path)
+            if verified_paths:
+                exact.append(label)
+                exact_paths[label] = sorted(str(p) for p in verified_paths)
         matching = [
             label for label in LABELS
             if self._indices[label].contains_similar(frame, query)
@@ -79,7 +105,15 @@ class ArchiveVisualPresenceIndex:
         result["indexed_ok"] = self._valid_counts["OK"]
         result["indexed_ng"] = self._valid_counts["NG"]
         result["matched_labels"] = matching
-        if len(matching) == 2:
+        result["exact_frame_labels"] = exact
+        result["exact_frame_sha256"] = fingerprint if exact else ""
+        result["exact_frame_paths"] = exact_paths
+        if len(exact) == 2:
+            result["status"] = "EXACT_FRAME_CONFLICT"
+        elif len(exact) == 1:
+            result["status"] = "EXACT_FRAME"
+            result["label"] = exact[0]
+        elif len(matching) == 2:
             result["status"] = "AMBIGUOUS"
         elif len(matching) == 1:
             result["status"] = "SIMILAR"
