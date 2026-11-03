@@ -58,6 +58,20 @@ class XPDecisionShortcutTests(unittest.TestCase):
         self.assertEqual(panel.ok_count, 0)
         self.assertEqual(panel.feedback, [])
 
+    def test_paused_production_uses_supervised_controller_when_buttons_hidden(self):
+        from types import SimpleNamespace
+        panel = self._panel()
+        panel.btn_save_ok.setEnabled(False)
+        received = []
+        panel.production_autonomy_controller = SimpleNamespace(
+            paused_manual_decision=lambda decision, *, source: (
+                received.append((decision, source)) or True
+            )
+        )
+        self.assertTrue(_activate_decision(panel, "OK"))
+        self.assertEqual(received, [("OK", "button")])
+        self.assertEqual(panel.ok_count, 0)  # Nenhum botão oculto foi clicado
+
     def test_window_shortcuts_include_main_and_numeric_keypad(self):
         panel = self._panel()
         install_xp_decision_shortcuts(panel)
