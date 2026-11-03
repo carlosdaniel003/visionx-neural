@@ -73,6 +73,55 @@ class ArchivePresenceBackendTests(unittest.TestCase):
         self.assertTrue(result["diagnostic_only"])
         self.assertFalse(result["decision_authorized"])
 
+    def test_same_archived_png_is_exact_frame_not_98pct_similarity(self):
+        image = screen(17)
+        save(self.ok, "2026-10-21_1441_FALTANDO_SIDE.png", image)
+        index = self.index()
+        exact = index.inspect(image.copy(), "FALTANDO", "SIDE")
+        self.assertEqual(exact["status"], "EXACT_FRAME")
+        self.assertEqual(exact["label"], "OK")
+        self.assertEqual(exact["exact_frame_labels"], ["OK"])
+        self.assertEqual(len(exact["exact_frame_sha256"]), 64)
+        self.assertFalse(exact["decision_authorized"])
+        # Uma diferença real de pixels continua apenas semelhante.
+        changed = image.copy()
+        changed[400, 700, 1] ^= 1
+        self.assertNotEqual(
+            index.inspect(changed, "FALTANDO", "SIDE")["status"],
+            "EXACT_FRAME",
+        )
+
+    def test_full_frame_exact_conflict_is_neutral_and_deletion_is_checked(self):
+        image = screen(18)
+        save(self.ok, "2026-10-21_1441_FALTANDO_SIDE.png", image)
+        save(self.ng, "2026-10-21_1443_FALTANDO_SIDE.png", image)
+        index = self.index()
+        self.assertEqual(
+            index.inspect(image, "FALTANDO", "SIDE")["status"],
+            "EXACT_FRAME_CONFLICT",
+        )
+        (self.ng / "2026-10-21_1443_FALTANDO_SIDE.png").unlink()
+        result = index.inspect(image, "FALTANDO", "SIDE")
+        self.assertEqual(result["status"], "EXACT_FRAME")
+        self.assertEqual(result["label"], "OK")
+
+    def test_exact_frame_scope_rejects_other_category_and_light(self):
+        image = screen(19)
+        save(self.ok, "2026-10-21_1441_FALTANDO_TOP.png", image)
+        index = self.index()
+        self.assertNotEqual(
+            index.inspect(image, "FALTANDO", "SIDE")["status"],
+            "EXACT_FRAME",
+        )
+        self.assertNotEqual(
+            index.inspect(image, "INVERTIDO", "TOP")["status"],
+            "EXACT_FRAME",
+        )
+        self.assertEqual(
+            index.inspect(image, "FALTANDO", "TOP")["status"],
+            "EXACT_FRAME",
+        )
+
     def test_ok_and_ng_similar_is_ambiguous_not_a_voted_ng(self):
         image = screen(1)
         save(self.ng, "2026-10-21_1559_FALTANDO.png", image)
