@@ -117,7 +117,23 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
         getattr(getattr(panel, "combo_mode", None), "currentText", lambda: "")()
         == "Modo Sombra"
     )
+    # A tela completa pode ser idêntica ao PNG do archive mesmo quando
+    # um OCR ou recorte da AOI variar na nova execução.
+    from src.services.capture_evidence import (
+        current_copy_image_event_id, current_copy_image_snapshot,
+    )
+    active_id = str(
+        getattr(panel, "network_intake_last_image_event_id", "")
+        or getattr(panel, "local_capture_debug_event_id", "")
+        or ""
+    )
+    evidence_id = str(current_copy_image_event_id(panel) or "")
+    source_frame = (
+        _image_snapshot(current_copy_image_snapshot(panel))
+        if active_id and evidence_id == active_id else None
+    )
     return {
+        "source_frame": source_frame,
         "ng_image": _image_snapshot(getattr(panel, "current_ng", None)),
         "label": normalized,
         "sample_image": _image_snapshot(getattr(panel, "current_sample", None)),
