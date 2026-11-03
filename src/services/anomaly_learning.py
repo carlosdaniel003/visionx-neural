@@ -139,8 +139,12 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
         _image_snapshot(current_copy_image_snapshot(panel))
         if active_id and evidence_id == active_id else None
     )
-    if not event_id and source_frame is not None:
-        event_id = evidence_id  # Modo Teste local sem ciclo XP multilight
+    if cycle_source == "local":
+        # Um estado multilight XP anterior não pode prevalecer sobre o
+        # evento MSS atual ao registrar a confirmação humana.
+        event_id = evidence_id if source_frame is not None else ""
+    elif not event_id and source_frame is not None:
+        event_id = evidence_id
     return {
         "source_frame": source_frame,
         "ng_image": _image_snapshot(getattr(panel, "current_ng", None)),
