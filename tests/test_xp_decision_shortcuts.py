@@ -98,7 +98,8 @@ class XPCommandBridgeSourceTests(unittest.TestCase):
 
     def test_command_sender_uses_xp_port_and_reports_failures(self):
         source = open("src/ui/control_panel.py", encoding="utf-8").read()
-        self.assertIn('command = f"PRESS_{str(tecla).strip().upper()}"', source)
+        self.assertIn('normalized = str(tecla or "").strip().upper()', source)
+        self.assertIn('command = f"PRESS_{normalized}"', source)
         self.assertIn("s.connect((self.last_xp_ip, 5000))", source)
         self.assertIn('s.sendall(command.encode("utf-8"))', source)
         self.assertIn("Falha ao enviar {command}", source)
