@@ -17,7 +17,7 @@ def _activate_decision(panel, decision: str) -> bool:
     attribute = "btn_save_ok" if normalized == "OK" else "btn_save_ng"
     button = getattr(panel, attribute, None)
 
-    if button is None or not button.isEnabled():
+    if button is None or not button.isEnabled() or button.isHidden():
         # O Modo Produção oculta os botões até a revisão. Durante a
         # pausa, 0/1 é uma confirmação humana explícita da captura atual,
         # não um desbloqueio dos botões durante operação automática.
