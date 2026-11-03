@@ -1717,3 +1717,17 @@ A regressão histórica passa, porém casos inéditos não foram
 testados. No Modo Produção, AUTO-OK por CNN experimental
 permanece bloqueado e requer operador. Nenhum comportamento
 de replay isolado foi alterado.
+
+
+## Atualização 03/11/2026 — Memória AUTO operacional não é aprendizagem humana
+
+O contrato de 13/10 que proíbe converter saídas AUTO em
+`OPERATOR_CONFIRMED` ou treino CNN supervisionado continua válido.
+Há agora um **índice operacional paralelo** de pares SIDE pixel-idênticos
+para poupar TOP/MID em recorrências admitidas por gate próprio de
+Produção. Sua origem é `production_auto` e a imagem
+original pode vir de uma trinca analisada, mas a memória não é fonte
+de verdade física nem modifica pesos. O atalho só é habilitado após
+rechecagem da classificação SIDE atual para OK, sonda física,
+proveniência humana e política XP. A documentação operacional está
+em `docs/ODIN_PRODUCTION_CONTINUOUS_AUTO_20261028.md`.

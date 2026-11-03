@@ -306,3 +306,56 @@ luz KNOWN registrar rótulo NG, há **parada operacional com motivo
 físico é inventado. Resultado físico NG completo sem contradição
 segue a política normal. A correção de memorizações humanas mais
 recentes por frame exato continua sujeita ao contrato independente.
+
+
+## 03/11/2026 — Memória operacional das decisões AUTO com prioridade SIDE
+
+A confirmação do comando XP 0/OK ou 1/NG em Produção agora cria também
+um **registro operacional durável**, com categoria AOI, hashes de pixels
+dos recortes gabarito/teste **da SIDE**, event_id, razão da política,
+veredito e quantidade de iluminações originalmente coletadas.
+Banco SQLite independente: `data/production_auto_side/decisions.sqlite3`.
+O commit acontece **após** a confirmação de transmissão ao XP.
+Falha, descarte sem 0/1 ou comando pendente não geram registro.
+Cada evento é salvo uma vez. Uma decisão baseada na própria memória
+AUTO não é novamente aprendida (impede reforço circular).
+
+Em nova ocorrência, o ODIN consulta a memória **após** a memória humana
+exata/qualificada e **antes** de pedir TOP/MID. A consulta exige mesma
+categoria e **os dois recortes AOI pixel-idênticos** (SHA-256 exato),
+não aceita similaridade 97/98% nem nomes/IDs de evento como identidade.
+Se houver registro coerente, encerra pela SIDE e utiliza a rolagem
+normal; o gate de Produção relê SQLite, reconfere consistência, veto
+físico e correções humanas antes do envio:
+- 1/NG pode ser reexecutado como rejeição operacional, **mesmo quando
+  a origem era NG preventivo/inconclusivo**: nunca declarar que isso
+  confirmou um defeito físico.
+- 0/OK só pode ser reutilizado quando a SIDE **atual também julga OK**,
+  a SIDE de origem não era NG e a sonda física atual retorna
+  `NO_STRONG_EVIDENCE`. Se a SIDE indica NG, geometria inconclusiva,
+  indisponibilidade da sonda ou evidência física de ausência: TOP/MID
+  continuam necessários e não se infere OK com base no histórico.
+- Qualquer correção humana para o mesmo par ou frame exato prevalece.
+  Registro físico NG contraditório bloqueia auto-OK. Julgamentos
+  AUTO opostos para o mesmo par deixam a memória AUTO em conflito
+  até revisão humana. Não há atalho se a fonte SQLite estiver
+  indisponível/adulterada; uma falha durante a revalidação interrompe
+  o XP sem inventar decisão.
+
+**Proveniência:** `PRODUCTION_AUTO` não é
+`OPERATOR_CONFIRMED`. Essa memória fornece o mesmo
+benefício imediato de relembrar um caso **idêntico**, mas **não**
+transforma automaticamente uma previsão em rótulo humano, treino
+supervisionado KNN/CNN nem retreinamento de pesos. O log não verificado
+e a quarentena `reports/production_auto_unverified/`
+permanecem; as novas rotas `production_auto_side_recall_ok_v1`
+e `production_auto_side_recall_ng_v1` entram nessa quarentena.
+Modo Teste/Sombra, julgamentos humanos, pausa por Space, decisão única
+e ACK XP continuam iguais. A performance depende de repetição **exata**
+do par; se houve mudança de pixels, a aquisição normal segue.
+
+**Validação física obrigatória:** antes de habilitar em linha, XP
+isolado, replay OK e NG não vistos, NG visualmente semelhante a OK,
+erros de comunicação, novo julgamento humano corretivo, alteração de
+um pixel e falha da sonda física. Não presumir que um teste in-sample
+comprove segurança operacional.

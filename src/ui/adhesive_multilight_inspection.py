@@ -463,6 +463,13 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
                     analyses.get("SIDE"), category,
                     side.get("sample_image"), side.get("test_image"),
                 )
+            if isinstance(side, dict) and fused is None:
+                from src.core.production_auto_side_recall import (
+                    build_auto_side_recall,
+                )
+                fused = build_auto_side_recall(
+                    analyses.get("SIDE"), side, category,
+                )
         if fused is None:
             fused = build_side_early_decision(analyses.get("SIDE"), category)
     else:
@@ -1338,6 +1345,13 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     side_analysis, category,
                     side_sample.get("sample_image"),
                     side_sample.get("test_image"),
+                )
+            if isinstance(side_sample, dict) and side_early is None:
+                from src.core.production_auto_side_recall import (
+                    build_auto_side_recall,
+                )
+                side_early = build_auto_side_recall(
+                    side_analysis, side_sample, category,
                 )
         if side_early is None:
             side_early = build_side_early_decision(side_analysis, category)

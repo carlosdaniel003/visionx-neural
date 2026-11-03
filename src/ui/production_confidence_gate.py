@@ -867,6 +867,32 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "reason": "operator_latest_exact_frame_contract_invalid",
         }
 
+    from src.core.production_auto_side_recall import (
+        RULE as AUTO_SIDE_RULE,
+        verify_auto_side_recall,
+    )
+    if detail.get("fusion_rule") == AUTO_SIDE_RULE:
+        # A fonte AUTO é sempre operacional, nunca OPERATOR_CONFIRMED.
+        # Não liberar por flag de UI: ler o registro SQLite, o veto
+        # físico e eventuais correções humanas novamente antes do XP.
+        recalled = verify_auto_side_recall(analysis)
+        if recalled in {"OK", "NG"}:
+            return {
+                **policy,
+                "verdict": "FALHA FALSA" if recalled == "OK" else "DEFEITO REAL",
+                "auto_allowed": True,
+                "operator_review_required": False,
+                "proposed_decision": recalled,
+                "reason": "production_auto_side_recall_" + recalled.lower() + "_v1",
+                "unverified_physical_label": True,
+            }
+        return {
+            **policy, "verdict": "", "auto_allowed": False,
+            "operator_review_required": False, "proposed_decision": "",
+            "operational_error": True,
+            "reason": "production_auto_side_recall_integrity_fault_v1",
+        }
+
     # A memória exata KNOWN_KNN pode omitir os scores físicos de adesivo.
     # Não tratar "não executou especialista" como testemunho físico OK:
     # uma luz NG humana é contraprova absoluta contra liberação 0/OK.
