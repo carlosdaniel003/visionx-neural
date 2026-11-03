@@ -248,12 +248,15 @@ def memory_seen_state(analysis: dict | None) -> dict:
     exact_human = detail.get("operator_latest_exact_frame")
     exact_human = exact_human if isinstance(exact_human, dict) else {}
     exact_human_seen = bool(
-        detail.get("fusion_rule") == "operator_latest_exact_frame_triplet_v1"
+        detail.get("fusion_rule") in {
+            "operator_latest_exact_frame_triplet_v1",
+            "operator_latest_exact_frame_side_v1",
+        }
         and exact_human.get("schema") == "visionx.operator_latest_exact_frame.v1"
         and exact_human.get("label") in {"OK", "NG"}
         and exact_human.get("integrity")
         and isinstance(exact_human.get("matches"), dict)
-        and set(exact_human["matches"]) == set(LIGHTS)
+        and set(exact_human["matches"]) in (set(LIGHTS), {"SIDE"})
     )
 
     similar_ng = bool(
@@ -353,10 +356,11 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
     if result == "JA_VI":
         if memory["exact_human_frame_seen"] and not memory["exact_pair_seen"]:
             return (
-                "JÁ VI • 3 FRAMES EXATOS • HUMANO",
+                "JÁ VI • FRAME(S) EXATO(S) • HUMANO",
                 f"Última confirmação humana: {memory['exact_human_frame_label']}. "
-                "As três telas XP são pixel-idênticas às de uma correção "
-                "anterior. O par AOI recortado é uma identidade separada.",
+                "A(s) tela(s) XP consultada(s) são pixel-idênticas "
+                "às de uma correção anterior. O par AOI recortado "
+                "é uma identidade separada.",
             )
         if memory["archive_exact_frame_seen"] and not memory["exact_pair_seen"]:
             lights = ", ".join(memory["archive_exact_frame_lights"])
