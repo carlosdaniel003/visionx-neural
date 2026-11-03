@@ -1,3 +1,19 @@
+## 03/11/2026 — Memória automática em Produção e atalho pela SIDE
+
+Uma decisão automática com comando 0/1 confirmado pelo XP passa a
+registrar, em SQLite separado, a identidade visual **exata** do par AOI
+da SIDE, mesmo se a análise original precisou de TOP/MID. Na recorrência
+pixel-idêntica, o ODIN pode dispensar TOP/MID e aplicar uma decisão
+binária após revalidação da política, da origem humana e da evidência
+física. Uma SIDE atual NG jamais é convertida em OK por uma memória
+AUTO. Contrato: `docs/ODIN_PRODUCTION_CONTINUOUS_AUTO_20261028.md`.
+
+**Atenção:** histórico AUTO não equivale a confirmação humana, nem
+retreina a CNN por conta própria. Testar com XP fisicamente isolado
+antes de colocar o atalho em operação.
+
+---
+
 ## 03/11/2026 — Produção: decisão 0/1 sem espera após rolagem
 
 Depois de a interface percorrer a tela até o final (inclusive especialistas),

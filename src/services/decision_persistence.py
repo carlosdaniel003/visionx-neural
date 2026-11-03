@@ -51,6 +51,9 @@ _UNVERIFIED_AUTOMATIC_REASONS = frozenset({
     "production_uncertain_auto_ng_quarantine_v1",
     "production_binary_unverified_ng_v1",
     "side_strong_human_ok_supervised_probe_override_auto_ok",
+    # Reuso de decisão AUTO: é lembrança operacional, não prova humana.
+    "production_auto_side_recall_ok_v1",
+    "production_auto_side_recall_ng_v1",
 })
 
 

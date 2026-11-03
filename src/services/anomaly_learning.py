@@ -220,30 +220,54 @@ def install_anomaly_learning(control_panel_cls) -> None:
         if normalized not in {"OK", "NG"} or self.current_ng is None:
             return None
 
-        # Decisões de produção nova (OK aproximado / NG preventivo)
-        # são ações XP, NÃO verdades humanas para KNN/CNN. O evento
-        # é copiado ANTES de liberar o gate e enfileirado em quarentena
-        # somente após confirmação de transmissão ao XP.
+        # A saída automática só é gravada como memória OPERACIONAL após
+        # confirmação real do envio ao XP. Ela nunca recebe o selo de
+        # confirmação humana nem entra no treinamento CNN supervisionado.
         normalized_source = str(source or "").strip().lower()
-        if normalized_source in {"auto", "production_auto"}:
-            if normalized_source == "production_auto":
-                from src.services.decision_persistence import (
-                    _UNVERIFIED_AUTOMATIC_REASONS,
-                )
-                analysis = getattr(self, "current_analysis", None)
-                detail = analysis.get("detail") if isinstance(analysis, dict) else {}
-                policy = detail.get("production_decision_policy") if isinstance(detail, dict) else {}
-                if (isinstance(policy, dict)
-                        and policy.get("reason") in _UNVERIFIED_AUTOMATIC_REASONS
-                        and policy.get("resolution") == "automatic"):
-                    task = _decision_task(
-                        self, normalized=normalized, source=source,
-                        ai_decision="NG" if analysis.get("is_defect") else "OK",
+        if normalized_source == "production_auto":
+            from src.services.decision_persistence import (
+                _UNVERIFIED_AUTOMATIC_REASONS,
+            )
+            analysis = getattr(self, "current_analysis", None)
+            detail = analysis.get("detail") if isinstance(analysis, dict) else {}
+            policy = detail.get("production_decision_policy") if isinstance(
+                detail, dict,
+            ) else {}
+            quarantine = bool(
+                isinstance(policy, dict)
+                and policy.get("reason") in _UNVERIFIED_AUTOMATIC_REASONS
+                and policy.get("resolution") == "automatic"
+            )
+            # As imagens atuais desaparecem ao concluir o 0/1:
+            # copiar cada captura antes de chamar a cadeia original.
+            task = _decision_task(
+                self, normalized=normalized, source=source,
+                ai_decision="NG" if isinstance(analysis, dict)
+                and analysis.get("is_defect") else "OK",
+            )
+            outcome = original_save_label(self, normalized, source=source)
+            if (
+                outcome is not False
+                and getattr(self, "last_decision_command_success", None) is True
+            ):
+                if quarantine:
+                    _submit_decision_persistence(self, task)
+                try:
+                    from src.core.production_auto_side_recall import (
+                        ProductionAutoSideMemory,
                     )
-                    result = original_save_label(self, normalized, source=source)
-                    if getattr(self, "last_decision_command_success", None) is True:
-                        _submit_decision_persistence(self, task)
-                    return result
+                    saved = ProductionAutoSideMemory().record(task)
+                    if not saved:
+                        print(
+                            "Memória AUTO SIDE: evento sem prova completa "
+                            "ou repetição já indexada; sem autoaprendizado."
+                        )
+                except Exception as exc:
+                    # Persistência falha não pode inverter a ordem XP já
+                    # transmitida. O incidente permanece auditável no log.
+                    print("Memória AUTO SIDE indisponível: " + str(exc))
+            return outcome
+        if normalized_source == "auto":
             return original_save_label(self, normalized, source=source)
 
         if source == "button":
