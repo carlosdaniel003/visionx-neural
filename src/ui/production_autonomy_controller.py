@@ -45,6 +45,7 @@ class ProductionAutonomyController(QObject):
         self.state = "idle"
         self._auto_dispatch_started_generation = None
         self.paused = False
+        self._paused_manual_in_progress = False
         self.knn_c_supervised_armed = False
         self.side_strong_ok_supervised_armed = False
         self.side_supervision_shortcut = None
@@ -846,6 +847,42 @@ class ProductionAutonomyController(QObject):
         )
         if callable(hide_session):
             hide_session()
+
+    def paused_manual_decision(self, decision: str, *, source: str = "button") -> bool:
+        """Space + 0/1: corrigir a peça atual sem retomar o envio automático.
+
+        O clique é permitido apenas para uma inspeção já concluída e
+        ainda não transmitida. Nunca usa a última imagem de outra peça.
+        """
+        label = str(decision or "").strip().upper()
+        if (label not in {"OK", "NG"}
+                or source not in {"button", "xp_keyboard"}
+                or not self.is_production()
+                or not self.paused
+                or self._paused_manual_in_progress
+                or self.state in {"idle", "operational_fault", "emitting_auto_decision"}
+                or self._auto_dispatch_started_generation == self.generation
+                or not self._analysis_still_current(self.generation)):
+            return False
+
+        policy = production_decision_policy(self.pending_analysis)
+        if (policy.get("operational_error")
+                or policy.get("proposed_decision") not in {"OK", "NG"}
+                or not policy.get("auto_allowed")):
+            return False
+
+        self._paused_manual_in_progress = True
+        self._clear_stage()
+        self.state = "operator_review"
+        try:
+            if not bool(getattr(self.panel, "production_review_pending", False)):
+                enter_production_review(self.panel, self.pending_analysis)
+            outcome = self.panel.save_label(label, source=source)
+            # A transmissão XP local precisa ter êxito antes de ensinar.
+            # O hook da AOI (xp_keyboard) já corresponde a uma tecla física.
+            return outcome is not False
+        finally:
+            self._paused_manual_in_progress = False
 
     def toggle_knn_c_supervised(self) -> bool:
         """Ctrl+Shift+C arma/desarma C somente ENTRE peças em Produção."""
