@@ -219,6 +219,33 @@ def memory_seen_state(analysis: dict | None) -> dict:
         and archive.get("diagnostic_only") is True
         and archive.get("decision_authorized") is False
     )
+    # O arquivo PNG guarda a tela inteira, enquanto KNOWN_KNN
+    # compara os recortes gabarito/teste. Identidade do frame é uma
+    # prova de conteúdo distinta, nunca equivale a par AOI exato.
+    by_light = archive.get("by_light")
+    if not isinstance(by_light, dict):
+        by_light = {"SIDE": archive} if archive else {}
+    exact_frames = {
+        light: row for light, row in by_light.items()
+        if light in LIGHTS
+        and isinstance(row, dict)
+        and row.get("schema") == "visionx.side_archive_visual_presence.v1"
+        and row.get("source") == "PUBLIC_ARCHIVE_PNG"
+        and row.get("status") == "EXACT_FRAME"
+        and row.get("label") in {"OK", "NG"}
+        and row.get("diagnostic_only") is True
+        and row.get("decision_authorized") is False
+        and isinstance(row.get("exact_frame_sha256"), str)
+        and len(row["exact_frame_sha256"]) == 64
+        and row.get("exact_frame_labels") == [row["label"]]
+    }
+    exact_conflict = bool(
+        any(row.get("status") == "EXACT_FRAME_CONFLICT"
+            for row in by_light.values() if isinstance(row, dict))
+        or len({row["label"] for row in exact_frames.values()}) > 1
+    )
+    archive_exact_seen = bool(exact_frames) and not exact_conflict
+
     similar_ng = bool(
         not known and (
             (status_visual == "NG_CORROBORATED" and len(approximate_lights) >= 2)
@@ -253,7 +280,8 @@ def memory_seen_state(analysis: dict | None) -> dict:
             )
         )
     status = (
-        "JA_VI" if known else
+        "JA_VI" if known or archive_exact_seen else
+        "ACERVO_AMBIGUO" if exact_conflict else
         "VI_SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
         "CONSULTANDO_ACERVO" if archive_status == "PENDING" else
         "ACERVO_AMBIGUO" if archive_status == "AMBIGUOUS"
@@ -263,7 +291,8 @@ def memory_seen_state(analysis: dict | None) -> dict:
     return {
         "status": status,
         "label": (
-            "JÁ VI" if known else
+            "JÁ VI" if known or archive_exact_seen else
+            "ACERVO AMBÍGUO" if exact_conflict else
             "VI SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
             "CONSULTANDO ACERVO" if archive_status == "PENDING" else
             "ACERVO AMBÍGUO" if archive_status == "AMBIGUOUS"
@@ -287,6 +316,12 @@ def memory_seen_state(analysis: dict | None) -> dict:
         "approximate_ng_lights": approximate_lights if similar_ng else [],
         "visual_rows": rows if similar_ng else {},
         "exact_pair_seen": known,
+        "archive_exact_frame_seen": archive_exact_seen,
+        "archive_exact_frame_lights": sorted(exact_frames),
+        "archive_exact_frame_label": (
+            next(iter({row["label"] for row in exact_frames.values()}))
+            if archive_exact_seen else ""
+        ),
         "recognized_lights": recognized,
         "new_lights": unrecognized,
         "unreported_lights": unreported if any(light_routes.values()) else [],
@@ -304,6 +339,16 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
     lights = memory["recognized_lights"]
     new = memory["new_lights"]
     if result == "JA_VI":
+        if memory["archive_exact_frame_seen"] and not memory["exact_pair_seen"]:
+            lights = ", ".join(memory["archive_exact_frame_lights"])
+            label = memory["archive_exact_frame_label"]
+            return (
+                f"JÁ VI • FRAME EXATO NO ACERVO {label}",
+                f"Tela XP pixel-idêntica encontrada no arquivo {label} "
+                f"em {lights}. Isso NÃO prova que os dois recortes AOI "
+                "tenham hashes iguais e não autoriza um comando 0/1. "
+                "A memória humana exata é uma consulta separada.",
+            )
         if memory["has_multilight"]:
             number = len(lights)
             seen = ", ".join(lights)
