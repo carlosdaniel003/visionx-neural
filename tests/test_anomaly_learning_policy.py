@@ -81,6 +81,24 @@ class AnomalyLearningPolicyTests(unittest.TestCase):
         self.assertTrue(save.call_args.kwargs["save_images"])
         self.assertEqual(save.call_args.kwargs["ai_decision"], "OK")
 
+    def test_failed_production_manual_command_must_not_learn_or_advance(self):
+        from types import SimpleNamespace
+        panel = self.panel_class(ai_defect=True)
+        panel.combo_mode = SimpleNamespace(
+            currentText=lambda: "Modo Produção",
+        )
+        panel.send_command_to_xp = lambda _command: False
+        with patch(
+            "src.services.anomaly_learning.immediate_confirmed_memory"
+        ) as persist, patch(
+            "src.services.anomaly_learning._submit_decision_persistence"
+        ) as async_submit:
+            self.assertIs(panel.save_label("OK", source="button"), False)
+        persist.assert_not_called()
+        async_submit.assert_not_called()
+        self.assertTrue(panel.is_locked)
+        self.assertEqual(panel.original_calls, 0)
+
     def test_automatic_decision_does_not_self_train(self):
         panel = self.panel_class(ai_defect=True)
         with patch(
