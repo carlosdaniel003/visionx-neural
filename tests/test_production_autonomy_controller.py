@@ -18,6 +18,21 @@ from src.ui.production_autonomy_controller import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _complete_binary_ng():
+    return {
+        "verdict": "DEFEITO REAL",
+        "is_defect": True,
+        "multilight_final": True,
+        "production_review_required": False,
+        "detail": {
+            "multilight_final": True,
+            "recognition_light_routes": {
+                light: "NEW_CNN" for light in ("SIDE", "TOP", "MID")
+            },
+        },
+    }
+
+
 class _Panel(QWidget):
     def __init__(self):
         super().__init__()
@@ -543,7 +558,7 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
-        analysis = {"verdict": "FALHA FALSA", "is_defect": False}
+        analysis = _complete_binary_ng()
         panel.current_analysis = analysis
         self.assertTrue(controller.analysis_ready(analysis))
         controller._stage_timer.stop()
@@ -562,9 +577,9 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
 
         controller._stage_timer.stop()
         controller._run_stage_callback()
-        self.assertEqual(panel.saved, [("OK", "production_auto")])
-        self.assertEqual(panel.auto_records, ["OK"])
-        controller._emit_auto_decision(generation, "OK")
+        self.assertEqual(panel.saved, [("NG", "production_auto")])
+        self.assertEqual(panel.auto_records, ["NG"])
+        controller._emit_auto_decision(generation, "NG")
         self.assertEqual(len(panel.saved), 1)
         panel.close()
 
@@ -572,7 +587,7 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
-        analysis = {"verdict": "FALHA FALSA", "is_defect": False}
+        analysis = _complete_binary_ng()
         panel.current_analysis = analysis
         self.assertTrue(controller.analysis_ready(analysis))
         controller._stage_timer.stop()
@@ -589,7 +604,7 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         controller._run_stage_callback()
         controller._stage_timer.stop()
         controller._run_stage_callback()
-        self.assertEqual(panel.saved, [("OK", "production_auto")])
+        self.assertEqual(panel.saved, [("NG", "production_auto")])
         panel.close()
 
     def test_presentation_is_intentionally_visible_and_non_instant(self):
