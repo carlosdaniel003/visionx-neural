@@ -102,6 +102,26 @@ class AnomalyLearningPolicyTests(unittest.TestCase):
         self.assertTrue(panel.is_locked)
         self.assertEqual(panel.original_calls, 0)
 
+    def test_local_test_correction_uses_current_mss_frame_not_old_xp_id(self):
+        from src.services.anomaly_learning import _decision_task
+        panel = self.panel_class(ai_defect=True)
+        panel.capture_cycle_source = "local"
+        panel.network_intake_last_image_event_id = "old-network-event"
+        panel.capture_debug_last_record = {
+            "event_id": "local-event-02", "source": "local_mss",
+        }
+        panel.capture_debug_last_image_event_id = "local-event-02"
+        panel.capture_debug_last_image = np.ones(
+            (20, 30, 3), dtype=np.uint8,
+        )
+        result = _decision_task(
+            panel, normalized="OK", source="button", ai_decision="NG",
+        )
+        self.assertEqual(result["event_id"], "local-event-02")
+        self.assertTrue(np.array_equal(
+            result["source_frame"], panel.capture_debug_last_image,
+        ))
+
     def test_automatic_decision_does_not_self_train(self):
         panel = self.panel_class(ai_defect=True)
         saved = []
