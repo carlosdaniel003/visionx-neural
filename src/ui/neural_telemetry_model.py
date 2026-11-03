@@ -245,6 +245,16 @@ def memory_seen_state(analysis: dict | None) -> dict:
         or len({row["label"] for row in exact_frames.values()}) > 1
     )
     archive_exact_seen = bool(exact_frames) and not exact_conflict
+    exact_human = detail.get("operator_latest_exact_frame")
+    exact_human = exact_human if isinstance(exact_human, dict) else {}
+    exact_human_seen = bool(
+        detail.get("fusion_rule") == "operator_latest_exact_frame_triplet_v1"
+        and exact_human.get("schema") == "visionx.operator_latest_exact_frame.v1"
+        and exact_human.get("label") in {"OK", "NG"}
+        and exact_human.get("integrity")
+        and isinstance(exact_human.get("matches"), dict)
+        and set(exact_human["matches"]) == set(LIGHTS)
+    )
 
     similar_ng = bool(
         not known and (
@@ -280,7 +290,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
             )
         )
     status = (
-        "JA_VI" if known or archive_exact_seen else
+        "JA_VI" if known or archive_exact_seen or exact_human_seen else
         "ACERVO_AMBIGUO" if exact_conflict else
         "VI_SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
         "CONSULTANDO_ACERVO" if archive_status == "PENDING" else
@@ -316,6 +326,8 @@ def memory_seen_state(analysis: dict | None) -> dict:
         "approximate_ng_lights": approximate_lights if similar_ng else [],
         "visual_rows": rows if similar_ng else {},
         "exact_pair_seen": known,
+        "exact_human_frame_seen": exact_human_seen,
+        "exact_human_frame_label": exact_human.get("label", "") if exact_human_seen else "",
         "archive_exact_frame_seen": archive_exact_seen,
         "archive_exact_frame_lights": sorted(exact_frames),
         "archive_exact_frame_label": (
@@ -339,6 +351,13 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
     lights = memory["recognized_lights"]
     new = memory["new_lights"]
     if result == "JA_VI":
+        if memory["exact_human_frame_seen"] and not memory["exact_pair_seen"]:
+            return (
+                "JÁ VI • 3 FRAMES EXATOS • HUMANO",
+                f"Última confirmação humana: {memory['exact_human_frame_label']}. "
+                "As três telas XP são pixel-idênticas às de uma correção "
+                "anterior. O par AOI recortado é uma identidade separada.",
+            )
         if memory["archive_exact_frame_seen"] and not memory["exact_pair_seen"]:
             lights = ", ".join(memory["archive_exact_frame_lights"])
             label = memory["archive_exact_frame_label"]
