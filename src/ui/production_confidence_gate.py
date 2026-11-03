@@ -780,9 +780,13 @@ def _completed_continuous_inspection(analysis: dict, detail: dict) -> bool:
                     or diagnostics[light].get("human_memory_label") not in {"OK", "NG"}
                 ):
                     return False
-                if detail.get("multilight_category") == "MUITO ADESIVO" and (
-                    diagnostics[light].get("memory_verified") is not True
-                    or diagnostics[light].get("memory_match") != "EXACT_PAIR"
+                if (
+                    route == "KNOWN_KNN"
+                    and detail.get("multilight_category") == "MUITO ADESIVO"
+                    and (
+                        diagnostics[light].get("memory_verified") is not True
+                        or diagnostics[light].get("memory_match") != "EXACT_PAIR"
+                    )
                 ):
                     # No adesivo uma luz KNOWN pode saltar os especialistas.
                     # Prova textual sem par confirmado não valida a trinca.
