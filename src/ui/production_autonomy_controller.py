@@ -28,10 +28,6 @@ TOP_HOLD_MS = 450
 SCROLL_DURATION_MS = 6_300
 HORIZONTAL_SCROLL_DURATION_MS = 2_800
 NO_SCROLL_REVIEW_MS = 1_200
-POST_SCROLL_PAUSE_MS = 900
-AUTO_DECISION_DELAY_MS = 2_000
-KNN_C_SUPERVISED_DELAY_MS = 5_000
-TRIAL_SIDE_AUTO_DELAY_MS = 5_000
 
 
 class ProductionAutonomyController(QObject):
@@ -594,9 +590,11 @@ class ProductionAutonomyController(QObject):
         if not self._analysis_still_current(generation):
             return
         self._scroll_animation = None
-        self.state = "presentation_pause"
+        self.state = "presentation_complete"
+        # Um ciclo Qt para finalizar a animação; nenhuma espera pós-rolagem.
+        # O timer respeita Space e a identidade da inspeção atual.
         self._schedule_stage(
-            POST_SCROLL_PAUSE_MS,
+            0,
             lambda g=generation: self._finish_presentation(g),
         )
 
@@ -630,22 +628,6 @@ class ProductionAutonomyController(QObject):
             is_knn_c = str(policy.get("reason", "")).startswith(
                 "knn_c_supervised_three_light_"
             )
-            is_trial_side = str(policy.get("reason", "")).startswith(
-                "side_trial_verified_auto_"
-            )
-            is_recurrent_ok = policy.get("reason") in {
-                "supervised_recurrent_ok_top_mid_auto_v1",
-                "supervised_mixed_light_ok_auto_v1",
-                "supervised_operator_corrected_archive_ok_auto_v1",
-                "supervised_operator_known_top_mid_ok_20261029_auto_v1",
-                "supervised_operator_known_top_mid_ok_mid_probe_disagreement_auto_v1",
-                "side_operator_memory_first_97pct_auto_ok",
-                "side_operator_memory_first_97pct_auto_ng",
-                "operator_human_multilight_97pct_auto_ok",
-            }
-            is_binary_unverified_ng = (
-                policy.get("reason") == "production_binary_unverified_ng_v1"
-            )
             is_side_override = (
                 policy.get("reason")
                 == "side_strong_human_ok_supervised_probe_override_auto_ok"
@@ -666,24 +648,16 @@ class ProductionAutonomyController(QObject):
             self.state = "auto_decision_pending"
             try:
                 self.panel.update_brain_status(
-                    f"Modo Produção: decisão automática {decision}. "
-                    f"Preparando {command} automático; espaço para pausar... "
-                    + (
-                        "KNN C supervisionada (5s)." if is_knn_c
-                        else "SIDE OK humana supervisionada (5s; alerta fisico ativo)." if is_side_override
-                        else "SIDE experimental validada (5s)." if is_trial_side
-                        else "Memória recorrente supervisionada (5s)." if is_recurrent_ok
-                        else "Decisão binária NG sem confirmação física independente (5s)." if is_binary_unverified_ng
-                        else ""
-                    ),
+                    f"Modo Produção: rolagem concluída; decisão automática {decision}. "
+                    f"Enviando {command} após revalidação.",
                     True,
                 )
             except Exception:
                 pass
+            # Próximo ciclo de eventos: permite a UI concluir a rolagem,
+            # mas não acrescenta os antigos 900 ms + 2/5 s de espera.
             self._schedule_stage(
-                KNN_C_SUPERVISED_DELAY_MS if is_knn_c or is_recurrent_ok or is_binary_unverified_ng or is_side_override
-                else TRIAL_SIDE_AUTO_DELAY_MS if is_trial_side
-                else AUTO_DECISION_DELAY_MS,
+                0,
                 lambda g=generation, d=decision: self._emit_auto_decision(g, d),
             )
             return
@@ -900,7 +874,7 @@ class ProductionAutonomyController(QObject):
         try:
             self.panel.update_brain_status(
                 "KNN C SUPERVISIONADA ARMADA • somente 3 luzes concordantes "
-                "• XP 0/1 após 5s • espaço desarma e pausa."
+                "• XP 0/1 após rolagem • espaço desarma e pausa."
                 if self.knn_c_supervised_armed
                 else "KNN C desarmada: sugestões continuam manuais.",
                 True,
@@ -926,7 +900,7 @@ class ProductionAutonomyController(QObject):
         try:
             self.panel.update_brain_status(
                 "SIDE OK SUPERVISIONADO ARMADO • libera 0 apesar do "
-                "alerta fisico em uma escala • 5s de espera • Espaco DESARMA."
+                "alerta fisico em uma escala • decisão após rolagem • Espaco DESARMA."
                 if self.side_strong_ok_supervised_armed else
                 "SIDE OK supervisionado DESARMADO • alerta físico exige operador.",
                 True,

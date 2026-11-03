@@ -18,7 +18,6 @@ from src.core.side_memory_first import (
 )
 from src.services.decision_persistence import _is_unverified_automatic
 from src.ui.production_autonomy_controller import (
-    KNN_C_SUPERVISED_DELAY_MS,
     ProductionAutonomyController,
 )
 from src.ui.production_confidence_gate import production_decision_policy
@@ -138,7 +137,7 @@ class SupervisedSideReleaseTests(unittest.TestCase):
                     production_decision_policy(result)["auto_allowed"]
                 )
 
-    def test_controller_arms_only_between_pieces_and_sends_after_five_seconds(self):
+    def test_controller_arms_only_between_pieces_and_sends_after_presentation(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
@@ -153,7 +152,7 @@ class SupervisedSideReleaseTests(unittest.TestCase):
         controller._finish_presentation(controller.generation)
         self.assertEqual(controller.state, "auto_decision_pending")
         self.assertEqual(
-            controller._stage_remaining_ms, KNN_C_SUPERVISED_DELAY_MS,
+            controller._stage_remaining_ms, 1,
         )
         self.assertEqual(panel.saved, [])
         controller._stage_timer.stop()
