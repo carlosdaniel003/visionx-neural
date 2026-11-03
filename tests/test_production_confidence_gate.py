@@ -155,8 +155,8 @@ class ProductionGateIntegrationContractTests(unittest.TestCase):
         self.assertIn("panel.production_review_pending = True", source)
         self.assertIn('"0 - Aprovar como OK"', source)
         self.assertIn('"1 - Confirmar defeito NG"', source)
-        self.assertIn('command in {"0", "OK"}', source)
-        self.assertIn('command in {"1", "NG"}', source)
+        self.assertIn('command in {"0", "OK", "1", "NG"}', source)
+        self.assertIn('chosen = "OK" if command in {"0", "OK"} else "NG"', source)
         self.assertIn('"INTERVENÇÃO NECESSÁRIA"', source)
 
     def test_production_hides_decision_buttons_until_intervention(self):

@@ -58,6 +58,20 @@ class XPDecisionShortcutTests(unittest.TestCase):
         self.assertEqual(panel.ok_count, 0)
         self.assertEqual(panel.feedback, [])
 
+    def test_paused_production_uses_supervised_controller_when_buttons_hidden(self):
+        from types import SimpleNamespace
+        panel = self._panel()
+        panel.btn_save_ok.setEnabled(False)
+        received = []
+        panel.production_autonomy_controller = SimpleNamespace(
+            paused_manual_decision=lambda decision, *, source: (
+                received.append((decision, source)) or True
+            )
+        )
+        self.assertTrue(_activate_decision(panel, "OK"))
+        self.assertEqual(received, [("OK", "button")])
+        self.assertEqual(panel.ok_count, 0)  # Nenhum botão oculto foi clicado
+
     def test_window_shortcuts_include_main_and_numeric_keypad(self):
         panel = self._panel()
         install_xp_decision_shortcuts(panel)
@@ -84,7 +98,8 @@ class XPCommandBridgeSourceTests(unittest.TestCase):
 
     def test_command_sender_uses_xp_port_and_reports_failures(self):
         source = open("src/ui/control_panel.py", encoding="utf-8").read()
-        self.assertIn('command = f"PRESS_{str(tecla).strip().upper()}"', source)
+        self.assertIn('normalized = str(tecla or "").strip().upper()', source)
+        self.assertIn('command = f"PRESS_{normalized}"', source)
         self.assertIn("s.connect((self.last_xp_ip, 5000))", source)
         self.assertIn('s.sendall(command.encode("utf-8"))', source)
         self.assertIn("Falha ao enviar {command}", source)

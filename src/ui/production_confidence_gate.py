@@ -814,6 +814,48 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     if detail.get("production_binary_auto") is not True:
         return _legacy_continuous_policy(analysis, detail, policy)
 
+    from src.core.operator_exact_frame_recall import (
+        RULE as EXACT_FRAME_RULE,
+        SIDE_RULE as EXACT_SIDE_RULE,
+        verified_latest_operator_exact_frame,
+    )
+    if detail.get("fusion_rule") in {EXACT_FRAME_RULE, EXACT_SIDE_RULE}:
+        # Revalidar a origem humana e o veto físico no snapshot KNN
+        # ANTES de autorizar o XP. Marcador inválido vira parada de
+        # operação, não OK por confiança nem NG fabricado.
+        confirmed = verified_latest_operator_exact_frame(analysis)
+        completed = (
+            _completed_continuous_inspection(analysis, detail)
+            if detail.get("fusion_rule") == EXACT_FRAME_RULE else
+            (
+                analysis.get("lighting_mode") == "SIDE"
+                and analysis.get("multilight_final") is True
+                and detail.get("multilight_final") is True
+                and detail.get("eligible_for_final_decision") is True
+                and analysis.get("eligible_for_final_decision") is True
+            )
+        )
+        if confirmed in {"OK", "NG"} and completed:
+            return {
+                **policy,
+                "verdict": "FALHA FALSA" if confirmed == "OK" else "DEFEITO REAL",
+                "auto_allowed": True,
+                "operator_review_required": False,
+                "proposed_decision": confirmed,
+                "reason": (
+                    "operator_latest_exact_frame_side_auto_"
+                    if detail.get("fusion_rule") == EXACT_SIDE_RULE else
+                    "operator_latest_exact_frame_3light_auto_"
+                ) + confirmed.lower(),
+                "unverified_physical_label": False,
+            }
+        return {
+            **policy, "verdict": "",
+            "auto_allowed": False, "operator_review_required": False,
+            "proposed_decision": "", "operational_error": True,
+            "reason": "operator_latest_exact_frame_contract_invalid",
+        }
+
     # O OK genérico antigo (apenas veredito textual) NÃO é um contrato
     # de captura. Todas as outras rotas auto já revalidam suas provas,
     # enquanto esta também deve exigir uma inspeção completa.
@@ -1048,8 +1090,26 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
             )
             _record_policy(self, policy, resolution=resolution)
 
-        _clear_pending(self)
+        if is_production and not had_pending and normalized_source not in {
+            "auto", "production_auto",
+        }:
+            # Não permitir decisão humana de peça já liberada, não pausada
+            # ou sem captura atual congelada por revisão do controlador.
+            return False
+
+        if not (is_production and had_pending):
+            _clear_pending(self)
         result = original_save_label(self, user_decision, source=source)
+
+        if is_production and had_pending:
+            if result is False:
+                # XP indisponível: mantém a captura e o 0/1 para repetição;
+                # não chama métricas nem confirma memória humana inexistente.
+                self.production_review_pending = True
+                _record_policy(self, policy, resolution="pending")
+                _show_pending_message(self)
+                return False
+            _clear_pending(self)
 
         if (
             is_production
@@ -1072,14 +1132,20 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
         is_production = str(mode).strip() == "Modo Produção"
         pending = bool(getattr(self, "production_review_pending", False))
 
-        if command in {"0", "OK"}:
+        if command in {"0", "OK", "1", "NG"}:
+            chosen = "OK" if command in {"0", "OK"} else "NG"
             if is_production and not pending:
-                return None
-            return self.save_label("OK", source="xp_keyboard")
-        if command in {"1", "NG"}:
-            if is_production and not pending:
-                return None
-            return self.save_label("NG", source="xp_keyboard")
+                # Tecla física foi executada no XP. Somente uma captura
+                # atual pausada pode transformá-la em correção humana.
+                controller = getattr(
+                    self, "production_autonomy_controller", None
+                )
+                correction = getattr(
+                    controller, "paused_manual_decision", None
+                )
+                return (correction(chosen, source="xp_keyboard")
+                        if callable(correction) else None)
+            return self.save_label(chosen, source="xp_keyboard")
         if pending:
             _show_pending_message(self)
             return None

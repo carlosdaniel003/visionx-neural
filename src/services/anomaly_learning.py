@@ -117,7 +117,36 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
         getattr(getattr(panel, "combo_mode", None), "currentText", lambda: "")()
         == "Modo Sombra"
     )
+    # A tela completa pode ser idêntica ao PNG do archive mesmo quando
+    # um OCR ou recorte da AOI variar na nova execução.
+    from src.services.capture_evidence import (
+        capture_debug_event_id, current_copy_image_event_id,
+        current_copy_image_snapshot,
+    )
+    cycle_source = str(getattr(panel, "capture_cycle_source", "") or "").lower()
+    if cycle_source == "local":
+        # Captura MSS não pode ser vinculada à última imagem de rede
+        # (possivelmente de um ciclo anterior).
+        active_id = str(capture_debug_event_id(panel) or "")
+    else:
+        active_id = str(
+            getattr(panel, "adhesive_multilight_primary_event_id", "")
+            or getattr(panel, "network_intake_last_image_event_id", "")
+            or ""
+        )
+    evidence_id = str(current_copy_image_event_id(panel) or "")
+    source_frame = (
+        _image_snapshot(current_copy_image_snapshot(panel))
+        if active_id and evidence_id == active_id else None
+    )
+    if cycle_source == "local":
+        # Um estado multilight XP anterior não pode prevalecer sobre o
+        # evento MSS atual ao registrar a confirmação humana.
+        event_id = evidence_id if source_frame is not None else ""
+    elif not event_id and source_frame is not None:
+        event_id = evidence_id
     return {
+        "source_frame": source_frame,
         "ng_image": _image_snapshot(getattr(panel, "current_ng", None)),
         "label": normalized,
         "sample_image": _image_snapshot(getattr(panel, "current_sample", None)),
@@ -218,7 +247,22 @@ def install_anomaly_learning(control_panel_cls) -> None:
             return original_save_label(self, normalized, source=source)
 
         if source == "button":
-            self.send_command_to_xp("0" if normalized == "OK" else "1")
+            sent = self.send_command_to_xp("0" if normalized == "OK" else "1")
+            # O Modo Teste mantém sua semântica existente. Em Produção,
+            # não gravar 'verdade humana' se o comando XP local falhou.
+            combo = getattr(self, "combo_mode", None)
+            mode = combo.currentText() if combo is not None else ""
+            if mode == "Modo Produção" and not sent:
+                self.last_decision_command_success = False
+                notice = getattr(self, "update_brain_status", None)
+                if callable(notice):
+                    notice(
+                        "Correção manual não confirmada pelo XP; "
+                        "captura preservada para nova tentativa.", True,
+                    )
+                return False
+            if mode == "Modo Produção":
+                self.last_decision_command_success = True
 
         ai_decision = (
             "NG"

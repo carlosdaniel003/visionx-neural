@@ -73,6 +73,26 @@ class NGArchiveDecisionTests(unittest.TestCase):
         self.assertEqual(panel.saved, [("NG", "button")])
         self.assertEqual(len(panel.archived), 1)
 
+    def test_failed_manual_xp_command_does_not_archive_or_reserve_event(self):
+        class FailedPanel:
+            def __init__(self):
+                self.capture_cycle_source = "network"
+                self.current_ng = np.ones((12, 16, 3), dtype=np.uint8)
+                self.current_analysis = {"is_defect": True}
+                self.current_aoi_info = {"category": "FALTANDO"}
+                self.network_intake_last_image_event_id = "evt-fail"
+                self.network_intake_last_image = np.ones((20, 30, 3), dtype=np.uint8)
+                self.network_intake_last_validation = {"event_id": "evt-fail"}
+                self.archived = []
+                self._ng_archive_submitter = lambda im, cat: self.archived.append((im, cat))
+            def save_label(self, decision, source="button"):
+                return False
+        install_ng_image_archive(FailedPanel)
+        failed = FailedPanel()
+        self.assertIs(failed.save_label("NG", source="button"), False)
+        self.assertEqual(failed.archived, [])
+        self.assertEqual(failed._ng_archive_last_event_id, "")
+
     def test_operator_can_disable_archive_for_current_session(self):
         panel = FakePanel()
         panel.set_ng_archive_enabled(False)

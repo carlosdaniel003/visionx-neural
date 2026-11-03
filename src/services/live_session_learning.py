@@ -41,6 +41,7 @@ def immediate_confirmed_memory(task: dict, *, store=None) -> dict:
                    "lighting_mode": info.get("lighting_mode", "SIDE"),
                    "sample_image": task.get("sample_image"),
                    "test_image": task.get("ng_image"),
+                   "source_frame": task.get("source_frame"),
                }])
     if not isinstance(samples, list) or not samples:
         return {"committed": False, "reason": "EMPTY_SAMPLES", "new": 0}
@@ -66,6 +67,7 @@ def immediate_confirmed_memory(task: dict, *, store=None) -> dict:
             reference=reference, test=test,
             anomaly_signature=signature, aoi_info=observed_info,
             confirmed_at_ns=confirmed_at_ns,
+            source_frame=sample.get("source_frame"),
         ))
     memory = store if store is not None else PersistentArchiveKNN()
     outcome = memory.add(proposed)

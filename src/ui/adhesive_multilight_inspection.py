@@ -449,9 +449,16 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
         if getattr(getattr(panel, "combo_mode", None), "currentText",
                    lambda: "")() == "Modo Produção":
             from src.core.side_memory_first import build_side_memory_first
+            from src.core.operator_exact_frame_recall import (
+                build_latest_operator_exact_side,
+            )
             sample = getattr(panel, "adhesive_multilight_learning_samples", {})
             side = sample.get("SIDE") if isinstance(sample, dict) else None
             if isinstance(side, dict):
+                fused = build_latest_operator_exact_side(
+                    analyses.get("SIDE"), side, category,
+                )
+            if isinstance(side, dict) and fused is None:
                 fused = build_side_memory_first(
                     analyses.get("SIDE"), category,
                     side.get("sample_image"), side.get("test_image"),
@@ -538,12 +545,37 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
             category,
         )
 
+    if not side_only:
+        # O último julgamento humano pode reconhecer as MESMAS telas
+        # SIDE/TOP/MID, mesmo que o recorte AOI extraído varie. O veto
+        # físico roda sobre as três capturas reais antes de corrigir NG.
+        from src.core.operator_exact_frame_recall import (
+            build_latest_operator_exact_frame,
+        )
+        try:
+            fused = build_latest_operator_exact_frame(
+                fused,
+                getattr(panel, "adhesive_multilight_learning_samples", None),
+                category,
+            )
+        except (ValueError, OSError) as exc:
+            print(f"Memória de frame exato não aplicada: {exc}")
+
     if side_only:
         # A consulta ao acervo é visual e assíncrona: o veredito não espera.
         from src.ui.archive_visual_presence_feedback import (
             submit_side_archive_presence,
         )
         submit_side_archive_presence(panel, fused, category)
+    else:
+        # A tela completa arquivada também deve ser reconhecida após as
+        # três luzes, mesmo se o OCR extrair recortes ligeiramente distintos.
+        from src.ui.archive_visual_presence_feedback import (
+            submit_side_archive_presence,
+        )
+        submit_side_archive_presence(
+            panel, fused, category, all_lights=True,
+        )
 
     # O modo Teste pode ter solicitado TOP/MID para esclarecer votos OK
     # das KNNs A/B contra o NG da CNN. Transportar a hipótese para o
@@ -1233,8 +1265,10 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 "capture_debug_last_image",
                 None,
             )
-        if _valid_image(side_source):
-            side_copy = side_source.copy()
+        # Não atribuir à inspeção atual o frame de debug de um ciclo
+        # anterior. A memória de imagem exata exige o event_id validado.
+        if _valid_image(side_original_for_view):
+            side_copy = side_original_for_view.copy()
             self.adhesive_multilight_source_frames["SIDE"] = side_copy
             self.adhesive_multilight_last_source_frames["SIDE"] = (
                 side_copy.copy()
@@ -1267,7 +1301,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
             sample_crop,
             ng_crop,
             getattr(self, "current_analysis", None),
-            source_frame=side_source,
+            source_frame=side_original_for_view,
         )
 
         analysis_view = getattr(
@@ -1303,8 +1337,15 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         side_early = None
         if mode == "Modo Produção":
             from src.core.side_memory_first import build_side_memory_first
+            from src.core.operator_exact_frame_recall import (
+                build_latest_operator_exact_side,
+            )
             side_sample = self.adhesive_multilight_learning_samples.get("SIDE")
             if isinstance(side_sample, dict):
+                side_early = build_latest_operator_exact_side(
+                    side_analysis, side_sample, category,
+                )
+            if isinstance(side_sample, dict) and side_early is None:
                 side_early = build_side_memory_first(
                     side_analysis, category,
                     side_sample.get("sample_image"),

@@ -137,3 +137,69 @@ permanece condicionado às contraprovas para não liberar NG como OK.
 Uma parada de software por falha operacional não é uma terceira classe
 de defeito. Validar isoladamente o protocolo 0/1, a interrupção de XP
 e as peças OK/NG adversárias antes de qualquer uso físico.
+
+
+## 03/11/2026 — Correção humana durante a pausa do Modo Produção
+
+Fluxo: ODIN apresenta um NG e está aguardando a emissão automática;
+o operador aperta **Space** e, enquanto a peça ainda é a captura atual,
+aperta **0/OK**. O atalho da janela agora abre o mesmo gate de revisão
+humana que existia nos modos anteriores, salva o novo rótulo na memória
+KNN durável e cancela qualquer callback 1/NG pendente.
+
+- O botão pode permanecer oculto: o atalho chama o controlador de
+  Produção somente quando há **inspeção concluída, mesma geração,
+  tela atual, modo Produção e pausa ativa**, antes de qualquer
+  transmissão automática. Teclas físicas XP recebidas no modo pausado
+  seguem o mesmo gate, mas não retransmitem ao XP.
+- Se a tecla for pressionada no próprio ODIN, **PRESS_0** ou
+  **PRESS_1** deve ser transmitido com sucesso antes da persistência
+  humana. Falha na conexão mantém a peça na revisão, sem atualização
+  de memória, sem contador manual e sem avanço fictício.
+- A atualização usa o mesmo `OPERATOR_CONFIRMED` e
+  `confirmed_at_ns` da correção feita em Modo Teste. Uma decisão
+  `production_auto` nunca equivale a julgamento humano.
+- O contador de Produção registra uma única decisão **MANUAL**
+  concluída por evento. Depois do 0/1 manual, o sistema permanece
+  pausado até novo Space do operador.
+- O agente XP não precisa ser alterado: só a aplicação moderna foi
+  modificada. Testar com a saída física isolada antes da operação real.
+
+### Reutilização da mesma tela RGB após nova correção
+
+Além do reconhecimento anterior por **ambos os recortes** gabarito/
+teste, um julgamento humano novo salva também o hash exato da
+**tela completa da AOI**, por luz. Uma repetição pode passar por
+`operator_latest_exact_frame_triplet_v1` mesmo que OCR e recortes
+variem, somente se as três telas SIDE/TOP/MID forem pixel-idênticas
+às do **mesmo evento humano** mais recente, na mesma categoria e
+iluminação.
+
+A autorização de 0/OK ainda exige três pares disponíveis, sondas
+independentes de ausência física **NO_STRONG_EVIDENCE** por luz,
+ausência de hard missing/erro de captura, confirmação humana cronológica
+persistente íntegra e nova validação no gate antes da tecla XP.
+Marcações adulteradas e memória divergente bloqueiam o comando,
+sem reaproveitar simplesmente um score da CNN. Isso não modifica
+nem retreina a CNN nem considera 98% de similaridade como identidade.
+
+Frames antigos importados do `ok_archive`, sem confirmação humana
+do frame completo no novo formato, fornecem apenas diagnóstico exato
+visual, não autorização automática.
+
+
+### Exceção confirmada apenas na SIDE
+
+Se o ODIN encerrou a inspeção antecipadamente na SIDE e o operador
+corrigiu 1/NG para 0/OK durante a pausa, o julgamento humano pode ser
+recuperado na **próxima ocorrência da mesma tela SIDE pixel-idêntica**.
+A rota `operator_latest_exact_frame_side_v1` exige a mesma categoria,
+iluminação e hash RGB integral, fonte `OPERATOR_CONFIRMED` cronológica,
+captura SIDE final íntegra, sem hard missing, e sonda independente de
+ausência física `NO_STRONG_EVIDENCE`. O gate revalida a identidade
+humana antes do XP, sem aguardar TOP/MID nem depender do ID de evento.
+
+Capturas não idênticas, conflito de humanos, falha de sonda, ausência
+física ou captura incompleta continuam sem autorização de 0/OK por
+essa exceção. O atalho de SIDE não modifica as regras visuais genéricas
+de semelhança (KNN A/B) nem confunde 98% com igualdade exata.
