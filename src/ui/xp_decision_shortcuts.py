@@ -18,6 +18,13 @@ def _activate_decision(panel, decision: str) -> bool:
     button = getattr(panel, attribute, None)
 
     if button is None or not button.isEnabled():
+        # O Modo Produção oculta os botões até a revisão. Durante a
+        # pausa, 0/1 é uma confirmação humana explícita da captura atual,
+        # não um desbloqueio dos botões durante operação automática.
+        controller = getattr(panel, "production_autonomy_controller", None)
+        correction = getattr(controller, "paused_manual_decision", None)
+        if callable(correction):
+            return bool(correction(normalized, source="button"))
         return False
 
     show_feedback = getattr(panel, "show_decision_key_feedback", None)
