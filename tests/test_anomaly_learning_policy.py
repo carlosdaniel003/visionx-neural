@@ -106,6 +106,7 @@ class AnomalyLearningPolicyTests(unittest.TestCase):
         from src.services.anomaly_learning import _decision_task
         panel = self.panel_class(ai_defect=True)
         panel.capture_cycle_source = "local"
+        panel.adhesive_multilight_primary_event_id = "old-multilight-event"
         panel.network_intake_last_image_event_id = "old-network-event"
         panel.capture_debug_last_record = {
             "event_id": "local-event-02", "source": "local_mss",
