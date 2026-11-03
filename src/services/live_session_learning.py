@@ -41,6 +41,7 @@ def immediate_confirmed_memory(task: dict, *, store=None) -> dict:
                    "lighting_mode": info.get("lighting_mode", "SIDE"),
                    "sample_image": task.get("sample_image"),
                    "test_image": task.get("ng_image"),
+                   "source_frame": task.get("source_frame"),
                }])
     if not isinstance(samples, list) or not samples:
         return {"committed": False, "reason": "EMPTY_SAMPLES", "new": 0}
