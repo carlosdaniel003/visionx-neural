@@ -234,6 +234,58 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         self.assertTrue(controller._stage_timer.isActive())
         self.assertFalse(panel.production_autonomy_paused)
 
+    def test_paused_manual_zero_cancels_pending_auto_ng_without_advancing_twice(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = {
+            "verdict": "DEFEITO REAL", "is_defect": True,
+            "multilight_final": True, "production_review_required": False,
+            "detail": {
+                "multilight_final": True,
+                "recognition_light_routes": {
+                    light: "NEW_CNN" for light in ("SIDE", "TOP", "MID")
+                },
+            },
+        }
+        panel.current_analysis = analysis
+        panel.last_analysis_time_seconds = 2.5
+        self.assertTrue(controller.analysis_ready(analysis))
+        generation = controller.generation
+        self.assertFalse(controller.paused_manual_decision("OK"))
+        self.assertTrue(controller.toggle_pause())
+        self.assertTrue(controller.paused_manual_decision("OK"))
+        self.assertEqual(panel.saved, [("OK", "button")])
+        self.assertTrue(panel.production_review_pending)
+        self.assertEqual(controller.state, "operator_review")
+        self.assertFalse(controller._stage_timer.isActive())
+        controller._emit_auto_decision(generation, "NG")
+        self.assertEqual(panel.saved, [("OK", "button")])
+        self.assertFalse(controller.paused_manual_decision("OK"))
+        controller.operator_decision_completed("OK", source="button")
+        self.assertEqual(panel.judgments, [("OK", "manual", 2.5)])
+        self.assertTrue(controller.paused)  # Retoma somente com Space
+        self.assertIsNone(controller.pending_analysis)
+        self.assertFalse(controller.paused_manual_decision("OK"))
+
+    def test_manual_correction_rejects_incomplete_or_stale_capture(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = {
+            "verdict": "DEFEITO REAL", "is_defect": True,
+            "multilight_final": False,
+            "detail": {"multilight_final": False},
+        }
+        panel.current_analysis = analysis
+        controller.analysis_ready(analysis)
+        controller.toggle_pause()
+        self.assertFalse(controller.paused_manual_decision("OK"))
+        self.assertEqual(panel.saved, [])
+        panel.current_analysis = {"verdict": "DEFEITO REAL"}
+        self.assertFalse(controller.paused_manual_decision("NG"))
+        self.assertEqual(panel.saved, [])
+
     def test_pause_before_analysis_keeps_result_waiting_until_resume(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
