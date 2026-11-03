@@ -218,7 +218,22 @@ def install_anomaly_learning(control_panel_cls) -> None:
             return original_save_label(self, normalized, source=source)
 
         if source == "button":
-            self.send_command_to_xp("0" if normalized == "OK" else "1")
+            sent = self.send_command_to_xp("0" if normalized == "OK" else "1")
+            # O Modo Teste mantém sua semântica existente. Em Produção,
+            # não gravar 'verdade humana' se o comando XP local falhou.
+            combo = getattr(self, "combo_mode", None)
+            mode = combo.currentText() if combo is not None else ""
+            if mode == "Modo Produção" and not sent:
+                self.last_decision_command_success = False
+                notice = getattr(self, "update_brain_status", None)
+                if callable(notice):
+                    notice(
+                        "Correção manual não confirmada pelo XP; "
+                        "captura preservada para nova tentativa.", True,
+                    )
+                return False
+            if mode == "Modo Produção":
+                self.last_decision_command_success = True
 
         ai_decision = (
             "NG"
