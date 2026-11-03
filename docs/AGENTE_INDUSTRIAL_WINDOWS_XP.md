@@ -1274,3 +1274,32 @@ gate de recepcao ficara bloqueado propositalmente.
 acionamento da tecla, mas nao certifica eletricamente que o hardware
 da AOI mudou para SIDE. Validar com fotos reais TOP/SIDE e XP isolado,
 inclusive quando o programa da AOI muda a luz depois do comando.
+
+
+## 03/11/2026 — Reanálise da mesma anomalia após Descartar captura sem 0/1
+
+**Modo Teste e Modo Produção:** quando uma captura de rede XP já
+foi analisada, mas o operador ainda não julgou a peça com 0/OK ou
+1/NG, o botão comum **Descartar captura** limpa o resultado atual,
+cancela qualquer apresentação automática pendente e **arma
+automaticamente uma nova oportunidade de analisar a mesma anomalia
+visual**, ainda que o XP mantenha a tela praticamente idêntica.
+
+- A exceção é consumida na **primeira reserva** do receptor, não por
+  uma janela de tempo; continua a exigir captura SIDE correta,
+  estabilidade de **dois frames**, validação AOI/epicentro e
+  processamento completo da mesma peça em novo ciclo/event_id.
+- Se o operador descartar a segunda análise sem 0/1, pode reanalisar
+  novamente pelo mesmo procedimento. Cada descarte autoriza apenas
+  uma nova reserva, sem desativar globalmente a deduplicação.
+- **Julgamento efetivado 0/1** encerra o ciclo e não arma repetição
+  da mesma imagem. Descarte durante envio XP em curso continua
+  bloqueado; botão de reinspeção explícita de Produção permanece
+  compatível.
+- Captura ainda não analisada, modo Sombra, dados locais MSS e tela
+  rejeitada como inválida não recebem a exceção. O descarte não gera
+  0/1, memória supervisionada, registro de decisão ou treinamento.
+- Não mudar modelo CNN/KNN, políticas de veredito nem agente XP.
+  O pré-disparo existente de DOWN continua sendo utilizado ao
+  liberar o ciclo. Verificar no XP isolado para confirmar que um
+  frame idêntico reaparece como nova análise, sem avançar a peça.

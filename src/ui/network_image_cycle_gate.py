@@ -129,6 +129,35 @@ def _has_captured_images(panel) -> bool:
     return sample is not None and test is not None
 
 
+def _arm_unjudged_network_reanalysis(panel) -> bool:
+    """Libera uma nova recepção do MESMO frame, apenas ao descartar sem 0/1.
+
+    O receptor consome a exceção na primeira reserva e mantém estáveis
+    as duas capturas obrigatórias. Nunca se aplica a uma peça julgada,
+    à captura local ou a Sombra. Cada novo descarte pode armar de novo.
+    """
+    if (
+        _mode(panel) not in {"Modo Teste", "Modo Produção"}
+        or getattr(panel, "capture_cycle_source", None) != "network"
+        or not bool(getattr(panel, "capture_cycle_active", False))
+        or not _has_analysis(panel)
+        or not _has_captured_images(panel)
+        or bool(getattr(panel, "capture_cycle_discarding", False))
+        or bool(getattr(panel, "capture_cycle_local_transition", False))
+    ):
+        return False
+
+    receiver = _receiver(panel)
+    arm = getattr(receiver, "arm_same_frame_reinspection_once", None)
+    if not callable(arm):
+        return False
+    try:
+        return bool(arm())
+    except Exception as exc:
+        print(f"Não foi possível armar a reanálise após descarte: {exc}")
+        return False
+
+
 def _schedule(panel, delay_ms: int, callback) -> None:
     scheduler = getattr(panel, "_network_cycle_scheduler", None)
     if callable(scheduler):
@@ -414,7 +443,13 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
         if (mode == "Modo Produção" and active and source == "network"
                 and callable(getattr(self, "cancel_production_autonomy", None))):
             self.cancel_production_autonomy()
+        # A ação comum "Descartar captura" também permite a próxima
+        # transmissão da mesma anomalia visual se não houve julgamento 0/1.
+        # A reinspeção explícita de Produção já terá armado a exceção.
         is_reinspect = bool(getattr(self, "_reinspect_requested", False))
+        reanalysis_armed = (
+            is_reinspect or _arm_unjudged_network_reanalysis(self)
+        )
         self._production_discard_authorized = bool(
             mode == "Modo Produção" and active and source == "network"
         )
@@ -438,10 +473,17 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
                 getattr(self, "capture_cycle_network_generation", 0)
             ) + 1
             receiver = _receiver(self)
-            if (not is_reinspect and receiver is not None
+            if (not reanalysis_armed and receiver is not None
                     and callable(getattr(receiver, "cancel_same_frame_reinspection", None))):
                 receiver.cancel_same_frame_reinspection()
             _release_cycle(self)
+            if reanalysis_armed:
+                _safe_call(
+                    self, "update_brain_status",
+                    "Captura descartada sem julgamento: mesma anomalia "
+                    "liberada para nova análise após estabilidade XP.",
+                    True,
+                )
         else:
             receiver = _receiver(self)
             if receiver is not None and hasattr(receiver, "cancel_same_frame_reinspection"):
