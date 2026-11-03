@@ -284,6 +284,13 @@ def install_ng_image_archive(control_panel_cls) -> None:
             source=source,
         )
 
+        if result is False:
+            # Retentar a decisão sem contaminar o archive com um NG
+            # cuja transmissão ao XP não se concluiu.
+            if archive_images and getattr(self, "_ng_archive_last_event_id", "") == current_event_id:
+                self._ng_archive_last_event_id = ""
+            return False
+
         if archive_images:
             submitter = getattr(self, "_ng_archive_submitter", None)
             if callable(submitter):
