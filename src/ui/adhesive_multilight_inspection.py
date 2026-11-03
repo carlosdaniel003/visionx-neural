@@ -449,9 +449,16 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
         if getattr(getattr(panel, "combo_mode", None), "currentText",
                    lambda: "")() == "Modo Produção":
             from src.core.side_memory_first import build_side_memory_first
+            from src.core.operator_exact_frame_recall import (
+                build_latest_operator_exact_side,
+            )
             sample = getattr(panel, "adhesive_multilight_learning_samples", {})
             side = sample.get("SIDE") if isinstance(sample, dict) else None
             if isinstance(side, dict):
+                fused = build_latest_operator_exact_side(
+                    analyses.get("SIDE"), side, category,
+                )
+            if isinstance(side, dict) and fused is None:
                 fused = build_side_memory_first(
                     analyses.get("SIDE"), category,
                     side.get("sample_image"), side.get("test_image"),
@@ -1328,8 +1335,15 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         side_early = None
         if mode == "Modo Produção":
             from src.core.side_memory_first import build_side_memory_first
+            from src.core.operator_exact_frame_recall import (
+                build_latest_operator_exact_side,
+            )
             side_sample = self.adhesive_multilight_learning_samples.get("SIDE")
             if isinstance(side_sample, dict):
+                side_early = build_latest_operator_exact_side(
+                    side_analysis, side_sample, category,
+                )
+            if isinstance(side_sample, dict) and side_early is None:
                 side_early = build_side_memory_first(
                     side_analysis, category,
                     side_sample.get("sample_image"),
