@@ -130,6 +130,9 @@ def _check_record(item: dict):
             raise ValueError("Proveniência da memória inválida")
         kind = source.get("source_kind", "ARCHIVE_PNG")
         if kind == "OPERATOR_CONFIRMED":
+            frame_sha = source.get("source_frame_sha256")
+            if frame_sha is not None and not _is_hex_hash(frame_sha):
+                raise ValueError("Hash RGB do frame humano inválido")
             confirmed_at = source.get("confirmed_at_ns")
             if confirmed_at is not None and (
                 type(confirmed_at) is not int
@@ -513,6 +516,48 @@ class PersistentArchiveKNN:
             "reason": "Último julgamento humano para mesmo par RGB/categoria/luz",
         }
 
+    def latest_confirmed_human_for_frame(
+        self, frame, category: str, lighting: str,
+    ) -> dict:
+        """Mesma tela RGB completa, categoria e luz, não KNN aproximada.
+
+        Só julgamentos humanos com timestamp e SHA exato do frame
+        participam. É independente da geometria variável dos recortes.
+        """
+        digest = image_fingerprint(frame)
+        if not digest:
+            return {"status": "NEW", "reason": "FRAME_INVALID"}
+        try:
+            cat = identity(category, lighting, "0" * 64, "0" * 64)
+        except ValueError:
+            return {"status": "NEW", "reason": "SCOPE_INVALID"}
+        found = [
+            (source["confirmed_at_ns"], record, source)
+            for record in self.records()
+            if record["identity"][:2] == cat[:2]
+            for source in record["sources"]
+            if source.get("source_kind") == "OPERATOR_CONFIRMED"
+            and source.get("source_label") == record["label"]
+            and source.get("source_frame_sha256") == digest
+            and type(source.get("confirmed_at_ns")) is int
+        ]
+        if not found:
+            return {"status": "NEW", "reason": "FRAME_NOT_CONFIRMED"}
+        latest = max(row[0] for row in found)
+        newest = [row for row in found if row[0] == latest]
+        if len({row[1]["label"] for row in newest}) != 1:
+            return {"status": "CONFLICT", "reason": "TIED_HUMAN_FRAME_LABELS"}
+        record, source = newest[-1][1:]
+        return {
+            "status": "KNOWN", "label": record["label"],
+            "frame_sha256": digest,
+            "record_id": record["id"],
+            "confirmed_at_ns": latest,
+            "source_event_id": source.get("event_id", ""),
+            "memory_source": "LATEST_OPERATOR_EXACT_FRAME",
+            "reason": "Mesma tela RGB completa e confirmação humana recente",
+        }
+
     def lookup_identity(self, key: list[str]) -> dict:
         """Lookup exato em snapshot persistido, para teste após sincronização."""
         key = identity(*key)
@@ -665,7 +710,8 @@ def make_operator_record(*, label: str, source: str,
                          event_id: str, category: str, lighting: str,
                          reference, test, anomaly_signature: dict,
                          aoi_info: dict | None = None,
-                         confirmed_at_ns: int | None = None) -> dict:
+                         confirmed_at_ns: int | None = None,
+                         source_frame=None) -> dict:
     """Registra um julgamento humano real SEM fabricar caminho PNG.
 
     O caso pode ser reapresentado no mesmo segundo, mesmo quando o
@@ -711,6 +757,10 @@ def make_operator_record(*, label: str, source: str,
     }
     if confirmed_at_ns is not None:
         entry["sources"][0]["confirmed_at_ns"] = confirmed_at_ns
+    if source_frame is not None:
+        frame_sha = image_fingerprint(source_frame)
+        if frame_sha:
+            entry["sources"][0]["source_frame_sha256"] = frame_sha
     _check_record(entry)
     return entry
 
