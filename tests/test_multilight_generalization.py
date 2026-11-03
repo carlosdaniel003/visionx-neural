@@ -584,10 +584,46 @@ class AdhesiveProductionProvenanceTests(unittest.TestCase):
         self.assertFalse(policy["auto_allowed"])
         # A evidência vem da própria TOP; não é herdada da dominante.
         source["TOP"]["detail"]["recognition_known_label"] = "OK"
+        source["TOP"]["detail"]["recognition_memory_verified"] = True
+        source["TOP"]["detail"]["recognition_match"] = "EXACT_PAIR"
         fused = fuse_multilight(source, "MUITO ADESIVO")
         policy = self._production_policy(fused)
         self.assertFalse(policy.get("operational_error", False))
         self.assertEqual(policy["proposed_decision"], "OK")
+
+    def test_known_human_ng_light_without_adhesive_scores_never_auto_ok(self):
+        # O roteador KNOWN_KNN pula os especialistas físicos.
+        # Sem esta trava, a fusão veria três scores baixos e enviaria 0.
+        source = self._source(ng=False)
+        top = source["TOP"]["detail"]
+        top["recognition_route"] = "KNOWN_KNN"
+        top["recognition_known_label"] = "NG"
+        top["recognition_memory_verified"] = True
+        top["recognition_match"] = "EXACT_PAIR"
+        top["recognition_specialists_skipped"] = True
+        for key in ("adhesive_score", "adhesive_is_defect",
+                    "physical_score"):
+            top.pop(key, None)
+        fused = fuse_multilight(source, "MUITO ADESIVO")
+        self.assertEqual(fused["verdict"], "FALHA FALSA")
+        policy = self._production_policy(fused)
+        self.assertTrue(policy["operational_error"])
+        self.assertEqual(policy["reason"], "production_adhesive_known_ng_conflict_v1")
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "")
+
+    def test_known_knn_label_without_verified_pair_fails_closed(self):
+        source = self._source(ng=False)
+        detail = source["TOP"]["detail"]
+        detail["recognition_route"] = "KNOWN_KNN"
+        detail["recognition_known_label"] = "OK"
+        detail["recognition_memory_verified"] = False
+        detail["recognition_match"] = "EXACT_PAIR"
+        fused = fuse_multilight(source, "MUITO ADESIVO")
+        policy = self._production_policy(fused)
+        self.assertTrue(policy["operational_error"])
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "")
 
     def test_capture_error_remains_operational_fault(self):
         fused = fuse_multilight(self._source(), "MUITO ADESIVO")

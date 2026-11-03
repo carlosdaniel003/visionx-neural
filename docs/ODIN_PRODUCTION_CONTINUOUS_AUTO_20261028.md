@@ -290,3 +290,19 @@ memória exata nem em rótulo de treinamento. Ausência de luz,
 rota vazia/desconhecida, `KNOWN_KNN` sem prova humana ou
 `capture_error` continuam bloqueando comandos por falha operacional.
 Modo Teste/Sombra não passam a emitir teclas 0/1.
+
+### Contraprova NG humana exata em iluminação sem especialista de adesivo
+
+O roteador `KNOWN_KNN` pode reconhecer um par RGB com julgamento
+humano NG sem executar o especialista físico de adesivo. Isso gera
+scores físicos zerados; não significa que a luz esteja OK. A fusão
+poderia inferir OK com base nesses zeros e liberar indevidamente 0.
+
+A autorização binária de adesivo agora exige para cada luz KNOWN
+`recognition_memory_verified=True` e `recognition_match=EXACT_PAIR`,
+além do rótulo humano e da rota. Se a fusão concluir OK, porém qualquer
+luz KNOWN registrar rótulo NG, há **parada operacional com motivo
+`production_adhesive_known_ng_conflict_v1`**; nenhum 0/OK ou NG
+físico é inventado. Resultado físico NG completo sem contradição
+segue a política normal. A correção de memorizações humanas mais
+recentes por frame exato continua sujeita ao contrato independente.

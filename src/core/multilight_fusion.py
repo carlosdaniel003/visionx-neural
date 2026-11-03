@@ -421,6 +421,10 @@ def _light_recognition_provenance(source: dict[str, dict]) -> tuple[dict, str, d
             "human_memory_label": str(
                 local.get("recognition_known_label", "") or ""
             ),
+            # Somente o roteador de par RGB exato revalidado fornece
+            # essas provas: texto de rótulo sem origem não basta.
+            "memory_verified": local.get("recognition_memory_verified") is True,
+            "memory_match": str(local.get("recognition_match", "") or ""),
         }
     return routes, recognition_route, diagnostics
 
