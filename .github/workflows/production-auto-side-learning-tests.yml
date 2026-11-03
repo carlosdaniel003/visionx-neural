@@ -13,6 +13,10 @@ on:
       - "src/services/ng_image_archive.py"
       - "tests/test_ng_image_archive.py"
       - "tests/test_production_auto_side_recall.py"
+      - "tests/test_memory_visual_feedback_v2.py"
+      - "src/ui/neural_telemetry_model.py"
+      - "src/ui/inspection_memory_feedback.py"
+      - "src/ui/decision_panel.py"
       - ".github/workflows/production-auto-side-learning-tests.yml"
   push:
     branches: [central]
@@ -23,6 +27,10 @@ on:
       - "src/ui/adhesive_multilight_inspection.py"
       - "src/ui/production_confidence_gate.py"
       - "tests/test_production_auto_side_recall.py"
+      - "tests/test_memory_visual_feedback_v2.py"
+      - "src/ui/neural_telemetry_model.py"
+      - "src/ui/inspection_memory_feedback.py"
+      - "src/ui/decision_panel.py"
       - ".github/workflows/production-auto-side-learning-tests.yml"
   workflow_dispatch:
 
@@ -51,11 +59,16 @@ jobs:
             src/services/decision_persistence.py \
             src/ui/production_confidence_gate.py \
             src/ui/adhesive_multilight_inspection.py \
-            tests/test_production_auto_side_recall.py
+            tests/test_production_auto_side_recall.py \
+            src/ui/neural_telemetry_model.py \
+            src/ui/inspection_memory_feedback.py \
+            src/ui/decision_panel.py \
+            tests/test_memory_visual_feedback_v2.py
       - name: Auto-side, human safety and production policy regressions
         run: |
           python -m unittest \
             tests.test_production_auto_side_recall \
+            tests.test_memory_visual_feedback_v2 \
             tests.test_anomaly_learning_policy \
             tests.test_ng_image_archive \
             tests.test_production_continuous_auto.ContinuousAutoPolicyTests -v

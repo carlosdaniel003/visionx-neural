@@ -26,6 +26,41 @@ def case(route, *, label="", detail=None):
     return {"verdict": "FALHA FALSA", "is_defect": False, "detail": d}
 
 
+def auto_side_case(label="NG"):
+    """Prova de telemetria da rota exata, sem consultar banco SQLite."""
+    from src.core.production_auto_side_recall import SCHEMA, RULE, _proof_digest
+
+    analysis = case("NEW_CNN")
+    analysis["is_defect"] = label == "NG"
+    analysis["verdict"] = "DEFEITO REAL" if label == "NG" else "FALHA FALSA"
+    analysis["lighting_mode"] = "SIDE"
+    analysis["multilight_final"] = True
+    analysis["eligible_for_final_decision"] = True
+    d = analysis["detail"]
+    d.update({
+        "fusion_rule": RULE, "multilight_final": True,
+        "eligible_for_final_decision": True,
+        "multilight_category": "FALTANDO",
+    })
+    proof = {
+        "schema": SCHEMA, "record_id": 12,
+        "event_id": "auto-event-01", "recorded_at_ns": 1,
+        "category": "FALTANDO",
+        "reference_sha256": "a" * 64,
+        "test_sha256": "b" * 64,
+        "source_frame_sha256": "c" * 64,
+        "label": label, "source_reason": "production_binary_unverified_ng_v1",
+        "analyzed_lights": "SIDE,TOP,MID",
+        "original_side_defect": int(label == "NG"),
+        "physical_probe": (
+            "REJECTION_ONLY" if label == "NG" else "NO_STRONG_EVIDENCE"
+        ),
+    }
+    proof["integrity"] = _proof_digest(proof)
+    d["production_auto_side_recall"] = proof
+    return analysis
+
+
 def cnn_case():
     return case("NEW_CNN",detail={
         "cnn_v2_active": True, "cnn_v2_ng_score_uncalibrated": .00025,
@@ -67,6 +102,52 @@ class MemoryFeedbackTests(unittest.TestCase):
         self.assertIn("SIDE",message)
         self.assertIn("TOP",message)
         self.assertEqual(tone,"known")
+
+    def test_automatic_exact_side_is_distinct_from_human_knn(self):
+        from src.ui.neural_telemetry_model import memory_seen_state
+        for label in ("OK", "NG"):
+            with self.subTest(label=label):
+                a = auto_side_case(label)
+                state = memory_seen_state(a)
+                self.assertTrue(state["auto_side_exact_seen"])
+                self.assertEqual(state["status"], "JA_VI")
+                self.assertFalse(state["exact_pair_seen"])
+                title, description, tone = memory_feedback_state(a)
+                self.assertEqual(title, "JÁ VI • DECISÃO AUTOMÁTICA " + label)
+                self.assertIn("memória operacional automática", description)
+                self.assertIn("TOP/MID dispensadas", description)
+                self.assertEqual(tone, "known")
+
+    def test_no_false_seen_for_invalid_or_unselected_auto_proof(self):
+        from src.ui.neural_telemetry_model import memory_seen_state
+        from copy import deepcopy
+        original = auto_side_case("NG")
+        changes = (
+            lambda a: a["detail"].update(fusion_rule="other"),
+            lambda a: a["detail"]["production_auto_side_recall"].update(label="OK"),
+            lambda a: a["detail"]["production_auto_side_recall"].update(integrity="broken"),
+            lambda a: a["detail"].update(multilight_final=False),
+            lambda a: a.update(is_defect=False),
+            lambda a: a["detail"].update(capture_error=True),
+            lambda a: a["detail"].update(multilight_category="DESLOCADO"),
+        )
+        for change in changes:
+            with self.subTest(change=str(change)):
+                a = deepcopy(original)
+                change(a)
+                self.assertFalse(memory_seen_state(a)["auto_side_exact_seen"])
+                self.assertNotIn("DECISÃO AUTOMÁTICA", memory_panel_text(a)[0])
+
+    def test_operator_known_pair_keeps_precedence_over_auto_marker(self):
+        from src.ui.neural_telemetry_model import memory_seen_state
+        a = auto_side_case("NG")
+        a["detail"]["recognition_route"] = "KNOWN_KNN"
+        a["detail"]["recognition_known_label"] = "NG"
+        state = memory_seen_state(a)
+        self.assertTrue(state["exact_pair_seen"])
+        self.assertFalse(state["auto_side_exact_seen"])
+        self.assertEqual(memory_feedback_state(a)[0], "JÁ VI")
+        self.assertIn("KNN EXATO", memory_panel_text(a)[0])
 
     def test_conflicting_memory_requires_review(self):
         title,message,tone=memory_feedback_state(case("MEMORY_CONFLICT"))
@@ -111,6 +192,25 @@ class MemoryPanelRenderingTests(unittest.TestCase):
         self.assertIn("KNN EXATO",panel.lbl_memory_role.text())
         self.assertIn("NG",panel.lbl_db_info.text())
         self.assertNotIn("Dataset sem memória",panel.lbl_db_info.text())
+
+    def test_auto_side_memory_in_real_overlay_and_bottom_panel(self):
+        panel = self.make_panel()
+        self.addCleanup(panel.frame_knn.deleteLater)
+        self.addCleanup(panel.frame_decision_influence.deleteLater)
+        a = auto_side_case("NG")
+        _render_panel(panel, a)
+        self.assertIn("DECISÃO AUTOMÁTICA NG", panel.lbl_memory_role.text())
+        self.assertIn("memória operacional automática", panel.lbl_db_info.text())
+
+        widget_parent = QWidget()
+        self.addCleanup(widget_parent.deleteLater)
+        widget_parent.resize(1100, 720)
+        overlay = InspectionMemoryFeedbackOverlay(widget_parent)
+        self.assertTrue(overlay.show_analysis(a))
+        self.assertEqual(
+            overlay.title_label.text(), "JÁ VI • DECISÃO AUTOMÁTICA NG",
+        )
+        self.assertIn("TOP/MID dispensadas", overlay.description_label.text())
 
     def test_actual_gui_overlay_remains_until_decision_fade(self):
         panel=QWidget()

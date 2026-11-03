@@ -354,6 +354,81 @@ def build_auto_side_recall(
     return result
 
 
+def auto_side_display_provenance(analysis: dict | None) -> dict | None:
+    """Confere prova local da rota AUTO para a UI, sem I/O ou autorização XP.
+
+    verify_auto_side_recall() permanece o único gate que relê SQLite,
+    memória humana e vetos físicos imediatamente antes do comando.
+    """
+    if not isinstance(analysis, dict):
+        return None
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict) or detail.get("fusion_rule") != RULE:
+        return None
+    proof = detail.get("production_auto_side_recall")
+    if not isinstance(proof, dict):
+        return None
+    try:
+        label = proof.get("label")
+        if (
+            proof.get("schema") != SCHEMA
+            or label not in {"OK", "NG"}
+            or not isinstance(proof.get("integrity"), str)
+            or proof["integrity"] != _proof_digest(proof)
+            or type(proof.get("record_id")) is not int
+            or proof["record_id"] <= 0
+            or type(proof.get("recorded_at_ns")) is not int
+            or proof["recorded_at_ns"] <= 0
+            or not isinstance(proof.get("event_id"), str)
+            or not proof["event_id"]
+            or any(
+                not isinstance(proof.get(field), str)
+                or len(proof[field]) != 64
+                or any(char not in "0123456789abcdef" for char in proof[field])
+                for field in ("reference_sha256", "test_sha256")
+            )
+            or _canonical_category(proof.get("category")) != proof.get("category")
+            or _canonical_category(detail.get("multilight_category")) != proof["category"]
+            or analysis.get("lighting_mode") != "SIDE"
+            or analysis.get("multilight_final") is not True
+            or detail.get("multilight_final") is not True
+            or analysis.get("eligible_for_final_decision") is not True
+            or detail.get("eligible_for_final_decision") is not True
+            or analysis.get("is_defect") is not (label == "NG")
+            or analysis.get("verdict") != (
+                "DEFEITO REAL" if label == "NG" else "FALHA FALSA"
+            )
+            or analysis.get("production_review_required") is True
+            or detail.get("capture_error") is True
+            or detail.get("category_unknown") is True
+            or detail.get("missing_hard_absence") is True
+        ):
+            return None
+        if label == "OK" and (
+            proof.get("physical_probe") != "NO_STRONG_EVIDENCE"
+            or proof.get("original_side_defect") != 0
+        ):
+            return None
+        trace = detail.get("decision_trace")
+        trace = trace if isinstance(trace, dict) else {}
+        veto = detail.get("physical_missing_veto")
+        veto = veto if isinstance(veto, dict) else {}
+        if (
+            trace.get("hard_missing_evidence") is True
+            or veto.get("status") in {
+                "SUSPECT_ABSENCE", "UNAVAILABLE", "GEOMETRY_REVIEW",
+            }
+        ):
+            return None
+        return {
+            "label": label, "lighting": "SIDE",
+            "analyzed_lights": str(proof.get("analyzed_lights") or ""),
+            "source": "PRODUCTION_AUTO",
+        }
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return None
+
+
 def verify_auto_side_recall(
     analysis: dict | None, *,
     store: ProductionAutoSideMemory | None = None, human_store=None,
@@ -424,4 +499,5 @@ def verify_auto_side_recall(
 __all__ = [
     "RULE", "SCHEMA", "ProductionAutoSideMemory",
     "build_auto_side_recall", "verify_auto_side_recall",
+    "auto_side_display_provenance",
 ]
