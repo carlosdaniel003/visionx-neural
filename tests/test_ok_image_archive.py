@@ -83,12 +83,7 @@ class OKArchiveDecisionTests(unittest.TestCase):
         self.assertEqual(len(panel.archived), 1)
 
     def test_failed_manual_xp_command_does_not_archive_or_reserve_event(self):
-        panel = FakeOKPanel()
-        previous = panel.save_label
-        # Em um caso real a camada interna retorna False se o XP falhou.
-        def failed_inner(_label, source="button"):
-            return False
-        # Em vez de substituir o wrapper, instalar uma classe isolada.
+        # Uma classe isolada simula a falha da camada de transmissão XP.
         class FailedPanel:
             def __init__(self):
                 self.capture_cycle_source = "network"
