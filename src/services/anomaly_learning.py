@@ -120,18 +120,27 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
     # A tela completa pode ser idêntica ao PNG do archive mesmo quando
     # um OCR ou recorte da AOI variar na nova execução.
     from src.services.capture_evidence import (
-        current_copy_image_event_id, current_copy_image_snapshot,
+        capture_debug_event_id, current_copy_image_event_id,
+        current_copy_image_snapshot,
     )
-    active_id = str(
-        getattr(panel, "network_intake_last_image_event_id", "")
-        or getattr(panel, "local_capture_debug_event_id", "")
-        or ""
-    )
+    cycle_source = str(getattr(panel, "capture_cycle_source", "") or "").lower()
+    if cycle_source == "local":
+        # Captura MSS não pode ser vinculada à última imagem de rede
+        # (possivelmente de um ciclo anterior).
+        active_id = str(capture_debug_event_id(panel) or "")
+    else:
+        active_id = str(
+            getattr(panel, "adhesive_multilight_primary_event_id", "")
+            or getattr(panel, "network_intake_last_image_event_id", "")
+            or ""
+        )
     evidence_id = str(current_copy_image_event_id(panel) or "")
     source_frame = (
         _image_snapshot(current_copy_image_snapshot(panel))
         if active_id and evidence_id == active_id else None
     )
+    if not event_id and source_frame is not None:
+        event_id = evidence_id  # Modo Teste local sem ciclo XP multilight
     return {
         "source_frame": source_frame,
         "ng_image": _image_snapshot(getattr(panel, "current_ng", None)),
