@@ -28,7 +28,7 @@ class SideArchivePresenceFeedback(QObject):
         )
         self._thread.start()
 
-    def inspect(self, analysis: dict, image, category: str, event_id: str) -> bool:
+    def inspect(self, analysis: dict, image, category: str, event_id: str, *, frames=None) -> bool:
         if (not isinstance(analysis, dict)
                 or not isinstance(image, np.ndarray) or image.size == 0
                 or not str(event_id or "").strip()):
@@ -42,8 +42,14 @@ class SideArchivePresenceFeedback(QObject):
             "schema": SCHEMA, "status": "PENDING",
             "diagnostic_only": True, "decision_authorized": False,
         }
-        task = (analysis, image.copy(), str(category or ""),
-                str(event_id))
+        images = {"SIDE": image.copy()}
+        if isinstance(frames, dict):
+            for light in ("SIDE", "TOP", "MID"):
+                frame = frames.get(light)
+                if not isinstance(frame, np.ndarray) or frame.size == 0:
+                    return False
+                images[light] = frame.copy()
+        task = (analysis, images, str(category or ""), str(event_id))
         try:
             self._requests.put_nowait(task)
         except Full:
@@ -66,9 +72,18 @@ class SideArchivePresenceFeedback(QObject):
         except (ImportError, AttributeError):
             pass
         while True:
-            analysis, frame, category, event_id = self._requests.get()
+            analysis, frames, category, event_id = self._requests.get()
             try:
-                result = self._index.inspect(frame, category, "SIDE")
+                by_light = {
+                    light: self._index.inspect(frame, category, light)
+                    for light, frame in frames.items()
+                }
+                result = dict(by_light["SIDE"])
+                result["by_light"] = by_light
+                result["exact_frame_lights"] = [
+                    light for light, entry in by_light.items()
+                    if entry.get("status") == "EXACT_FRAME"
+                ]
             except Exception as exc:
                 result = {
                     "schema": SCHEMA, "status": "UNAVAILABLE", "label": "",
@@ -106,8 +121,10 @@ class SideArchivePresenceFeedback(QObject):
                 print(f"Falha não fatal ao exibir memória visual SIDE: {exc}")
 
 
-def submit_side_archive_presence(panel, analysis: dict, category: str) -> bool:
-    """Dispara apenas para SIDE final; o frame deve ser da própria peça."""
+def submit_side_archive_presence(
+    panel, analysis: dict, category: str, *, all_lights: bool = False,
+) -> bool:
+    """Consulta a tela original da peça, em SIDE ou na trinca completa."""
     event_id = str(getattr(panel, "adhesive_multilight_primary_event_id", "") or "")
     source_event_id = str(getattr(panel, "adhesive_multilight_last_event_id", "") or "")
     frames = getattr(panel, "adhesive_multilight_last_source_frames", None)
@@ -121,7 +138,10 @@ def submit_side_archive_presence(panel, analysis: dict, category: str) -> bool:
     if controller is None:
         controller = SideArchivePresenceFeedback(panel)
         panel._side_archive_presence_feedback = controller
-    return controller.inspect(analysis, image, category, event_id)
+    return controller.inspect(
+        analysis, image, category, event_id,
+        frames=frames if all_lights else None,
+    )
 
 
 __all__ = ["SideArchivePresenceFeedback", "submit_side_archive_presence"]
