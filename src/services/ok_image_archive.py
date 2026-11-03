@@ -280,6 +280,13 @@ def install_ok_image_archive(control_panel_cls) -> None:
             source=source,
         )
 
+        if result is False:
+            # O comando XP falhou. Não reservar evento nem arquivar
+            # a aprovação humana que não foi concluída; permitir retry.
+            if archive_images and getattr(self, "_ok_archive_last_event_id", "") == current_event_id:
+                self._ok_archive_last_event_id = ""
+            return False
+
         if archive_images:
             submitter = getattr(self, "_ok_archive_submitter", None)
             if callable(submitter):
