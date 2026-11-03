@@ -1048,8 +1048,26 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
             )
             _record_policy(self, policy, resolution=resolution)
 
-        _clear_pending(self)
+        if is_production and not had_pending and normalized_source not in {
+            "auto", "production_auto",
+        }:
+            # Não permitir decisão humana de peça já liberada, não pausada
+            # ou sem captura atual congelada por revisão do controlador.
+            return False
+
+        if not (is_production and had_pending):
+            _clear_pending(self)
         result = original_save_label(self, user_decision, source=source)
+
+        if is_production and had_pending:
+            if result is False:
+                # XP indisponível: mantém a captura e o 0/1 para repetição;
+                # não chama métricas nem confirma memória humana inexistente.
+                self.production_review_pending = True
+                _record_policy(self, policy, resolution="pending")
+                _show_pending_message(self)
+                return False
+            _clear_pending(self)
 
         if (
             is_production
@@ -1072,14 +1090,20 @@ def install_production_confidence_gate(control_panel_cls, presenter_cls) -> None
         is_production = str(mode).strip() == "Modo Produção"
         pending = bool(getattr(self, "production_review_pending", False))
 
-        if command in {"0", "OK"}:
+        if command in {"0", "OK", "1", "NG"}:
+            chosen = "OK" if command in {"0", "OK"} else "NG"
             if is_production and not pending:
-                return None
-            return self.save_label("OK", source="xp_keyboard")
-        if command in {"1", "NG"}:
-            if is_production and not pending:
-                return None
-            return self.save_label("NG", source="xp_keyboard")
+                # Tecla física foi executada no XP. Somente uma captura
+                # atual pausada pode transformá-la em correção humana.
+                controller = getattr(
+                    self, "production_autonomy_controller", None
+                )
+                correction = getattr(
+                    controller, "paused_manual_decision", None
+                )
+                return (correction(chosen, source="xp_keyboard")
+                        if callable(correction) else None)
+            return self.save_label(chosen, source="xp_keyboard")
         if pending:
             _show_pending_message(self)
             return None
