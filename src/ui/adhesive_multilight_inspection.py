@@ -544,6 +544,15 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
             submit_side_archive_presence,
         )
         submit_side_archive_presence(panel, fused, category)
+    else:
+        # A tela completa arquivada também deve ser reconhecida após as
+        # três luzes, mesmo se o OCR extrair recortes ligeiramente distintos.
+        from src.ui.archive_visual_presence_feedback import (
+            submit_side_archive_presence,
+        )
+        submit_side_archive_presence(
+            panel, fused, category, all_lights=True,
+        )
 
     # O modo Teste pode ter solicitado TOP/MID para esclarecer votos OK
     # das KNNs A/B contra o NG da CNN. Transportar a hipótese para o
