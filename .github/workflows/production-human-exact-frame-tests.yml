@@ -1,0 +1,68 @@
+name: Production Human Correction and Exact Frame
+
+on:
+  pull_request:
+    branches: [central]
+    paths:
+      - "src/core/archive_persistent_memory.py"
+      - "src/core/operator_exact_frame_recall.py"
+      - "src/services/anomaly_learning.py"
+      - "src/services/live_session_learning.py"
+      - "src/services/archive_visual_presence.py"
+      - "src/ui/production_autonomy_controller.py"
+      - "src/ui/production_confidence_gate.py"
+      - "src/ui/xp_decision_shortcuts.py"
+      - "src/ui/adhesive_multilight_inspection.py"
+      - "src/ui/archive_visual_presence_feedback.py"
+      - "src/ui/neural_telemetry_model.py"
+      - "tests/test_latest_operator_frame_recall.py"
+      - "tests/test_archive_visual_presence.py"
+      - "tests/test_xp_decision_shortcuts.py"
+      - "tests/test_production_autonomy_controller.py"
+      - "tests/test_anomaly_learning_policy.py"
+      - ".github/workflows/production-human-exact-frame-tests.yml"
+  push:
+    branches: [central]
+    paths:
+      - "src/core/archive_persistent_memory.py"
+      - "src/core/operator_exact_frame_recall.py"
+      - "src/services/anomaly_learning.py"
+      - "src/services/live_session_learning.py"
+      - "src/services/archive_visual_presence.py"
+      - "src/ui/production_autonomy_controller.py"
+      - "src/ui/production_confidence_gate.py"
+      - "src/ui/xp_decision_shortcuts.py"
+      - "src/ui/adhesive_multilight_inspection.py"
+      - "src/ui/archive_visual_presence_feedback.py"
+      - "src/ui/neural_telemetry_model.py"
+      - "tests/test_latest_operator_frame_recall.py"
+      - "tests/test_archive_visual_presence.py"
+      - "tests/test_xp_decision_shortcuts.py"
+      - "tests/test_production_autonomy_controller.py"
+      - "tests/test_anomaly_learning_policy.py"
+      - ".github/workflows/production-human-exact-frame-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  correction:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: "offscreen"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Qt libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1 libopengl0 libxcb-cursor0 libxkbcommon-x11-0
+      - name: Install Python dependencies
+        run: python -m pip install numpy opencv-python-headless scipy scikit-image PyQt6
+      - name: Check syntax
+        run: |
+          python -m py_compile src/core/operator_exact_frame_recall.py src/core/archive_persistent_memory.py src/services/live_session_learning.py src/services/anomaly_learning.py src/services/archive_visual_presence.py src/ui/production_autonomy_controller.py src/ui/production_confidence_gate.py src/ui/xp_decision_shortcuts.py src/ui/adhesive_multilight_inspection.py src/ui/archive_visual_presence_feedback.py src/ui/neural_telemetry_model.py tests/test_latest_operator_frame_recall.py tests/test_archive_visual_presence.py tests/test_production_autonomy_controller.py tests/test_xp_decision_shortcuts.py tests/test_anomaly_learning_policy.py
+      - name: Test correction, archive, XP shortcuts and autonomous controller
+        run: |
+          python -m unittest tests.test_latest_operator_frame_recall tests.test_archive_visual_presence tests.test_live_session_learning tests.test_xp_decision_shortcuts tests.test_production_autonomy_controller tests.test_anomaly_learning_policy tests.test_production_continuous_auto.ContinuousAutoPolicyTests -v
