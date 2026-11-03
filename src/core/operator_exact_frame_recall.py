@@ -17,6 +17,7 @@ from src.core.strict_category_memory import canonical_memory_category
 from src.services.image_archive_dedup import image_fingerprint
 
 RULE = "operator_latest_exact_frame_triplet_v1"
+SIDE_RULE = "operator_latest_exact_frame_side_v1"
 SCHEMA = "visionx.operator_latest_exact_frame.v1"
 LIGHTS = ("SIDE", "TOP", "MID")
 
@@ -25,7 +26,7 @@ def _proof_digest(proof: dict) -> str:
     parts = {
         key: proof[key] for key in (
             "schema", "category", "label", "source_event_id",
-            "confirmed_at_ns", "matches", "physical_probes",
+            "confirmed_at_ns", "lights", "matches", "physical_probes",
         )
     }
     return sha256(json.dumps(
@@ -36,22 +37,25 @@ def _proof_digest(proof: dict) -> str:
 
 def build_latest_operator_exact_frame(
     fused: dict, samples: dict | None, category: str, *, store=None,
+    lights: tuple[str, ...] = LIGHTS,
 ) -> dict:
     """Aplica o último 0/1 humano somente à mesma trinca RGB completa.
 
     Não modifica resultado se falta luz, se há erro físico, se a fonte
     humana difere entre luzes ou se qualquer frame mudou um pixel.
     """
+    if lights not in (LIGHTS, ("SIDE",)):
+        return fused
     if not isinstance(fused, dict) or not isinstance(samples, dict):
         return fused
-    if not all(isinstance(samples.get(light), dict) for light in LIGHTS):
+    if not all(isinstance(samples.get(light), dict) for light in lights):
         return fused
     cat = canonical_memory_category(category)
     if cat in {"", "UNKNOWN", "UNKNOW", "DESCONHECIDO"}:
         return fused
     memory = store if store is not None else PersistentArchiveKNN()
     matches = {}
-    for light in LIGHTS:
+    for light in lights:
         sample = samples[light]
         frame = sample.get("source_frame")
         if not isinstance(frame, np.ndarray) or frame.size == 0:
@@ -92,7 +96,7 @@ def build_latest_operator_exact_frame(
 
     probes = {}
     if label == "OK":
-        for light in LIGHTS:
+        for light in lights:
             sample = samples[light]
             ref, test = sample.get("sample_image"), sample.get("test_image")
             probe = physical_absence_probe(ref, test)
@@ -107,6 +111,7 @@ def build_latest_operator_exact_frame(
         "label": label,
         "source_event_id": next(iter(events)),
         "confirmed_at_ns": next(iter(moments)),
+        "lights": list(lights),
         "matches": matches,
         "physical_probes": probes,
     }
@@ -116,22 +121,44 @@ def build_latest_operator_exact_frame(
     d = result["detail"]
     d["operator_latest_exact_frame"] = proof
     d["verdict_before_latest_exact_frame"] = result.get("verdict", "")
-    d["fusion_rule"] = RULE
+    rule = SIDE_RULE if lights == ("SIDE",) else RULE
+    d["fusion_rule"] = rule
     d["operator_review_required"] = False
+    if lights == ("SIDE",):
+        result["lighting_mode"] = "SIDE"
+        result["multilight_final"] = True
+        result["eligible_for_final_decision"] = True
+        result["multilight_category"] = cat
+        d["multilight_final"] = True
+        d["eligible_for_final_decision"] = True
+        d["multilight_category"] = cat
     result["is_defect"] = label == "NG"
     result["verdict"] = "FALHA FALSA" if label == "OK" else "DEFEITO REAL"
     result["production_review_required"] = False
     result["reason"] = (
-        f"Última confirmação humana {label} prevaleceu: três telas "
-        "XP pixel-idênticas, categoria/iluminação e prova física válidas. "
+        f"Última confirmação humana {label} prevaleceu: "
+        f"{len(lights)} tela(s) XP pixel-idênticas, "
+        "categoria/iluminação e prova física válidas. "
         "Scores antigos da CNN preservados no diagnóstico."
     )
     old_trace = d.get("decision_trace")
     if isinstance(old_trace, dict):
         old_trace["operator_review_required"] = False
-        old_trace["fusion_rule"] = RULE
+        old_trace["fusion_rule"] = rule
         old_trace["operator_latest_exact_frame_integrity"] = proof["integrity"]
     return result
+
+
+def build_latest_operator_exact_side(
+    side: dict | None, sample: dict | None, category: str, *, store=None,
+) -> dict | None:
+    """Atalho SIDE com o mesmo frame e última confirmação humana real."""
+    if not isinstance(side, dict) or not isinstance(sample, dict):
+        return None
+    result = build_latest_operator_exact_frame(
+        side, {"SIDE": sample}, category, store=store, lights=("SIDE",),
+    )
+    return result if result is not side else None
 
 
 def verified_latest_operator_exact_frame(
@@ -141,7 +168,10 @@ def verified_latest_operator_exact_frame(
     if not isinstance(analysis, dict):
         return None
     d = analysis.get("detail")
-    if not isinstance(d, dict) or d.get("fusion_rule") != RULE:
+    if not isinstance(d, dict) or d.get("fusion_rule") not in {RULE, SIDE_RULE}:
+        return None
+    lights = ("SIDE",) if d.get("fusion_rule") == SIDE_RULE else LIGHTS
+    if lights == ("SIDE",) and analysis.get("lighting_mode") != "SIDE":
         return None
     proof = d.get("operator_latest_exact_frame")
     if not isinstance(proof, dict):
@@ -154,7 +184,8 @@ def verified_latest_operator_exact_frame(
                 or not isinstance(proof.get("confirmed_at_ns"), int)
                 or proof["confirmed_at_ns"] <= 0
                 or not isinstance(proof.get("matches"), dict)
-                or set(proof["matches"]) != set(LIGHTS)
+                or set(proof["matches"]) != set(lights)
+                or proof.get("lights") != list(lights)
                 or proof.get("integrity") != _proof_digest(proof)
                 or canonical_memory_category(d.get("multilight_category"))
                 != proof.get("category")
@@ -176,10 +207,10 @@ def verified_latest_operator_exact_frame(
         }:
             return None
         if proof["label"] == "OK" and proof.get("physical_probes") != {
-            light: "NO_STRONG_EVIDENCE" for light in LIGHTS
+            light: "NO_STRONG_EVIDENCE" for light in lights
         }:
             return None
-        for light in LIGHTS:
+        for light in lights:
             row = proof["matches"][light]
             if (row.get("label") != proof["label"]
                     or row.get("source_event_id") != proof["source_event_id"]
@@ -190,7 +221,7 @@ def verified_latest_operator_exact_frame(
         memory = store if store is not None else PersistentArchiveKNN()
         # Um único snapshot válido, não confiar em flags da interface.
         records = memory.records()
-        for light in LIGHTS:
+        for light in lights:
             expected = proof["matches"][light]
             candidates = [
                 (source["confirmed_at_ns"], item, source)
@@ -221,6 +252,6 @@ def verified_latest_operator_exact_frame(
 
 
 __all__ = [
-    "build_latest_operator_exact_frame",
-    "verified_latest_operator_exact_frame", "RULE", "SCHEMA",
+    "build_latest_operator_exact_frame", "build_latest_operator_exact_side",
+    "verified_latest_operator_exact_frame", "RULE", "SIDE_RULE", "SCHEMA",
 ]
