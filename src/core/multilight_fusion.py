@@ -487,7 +487,12 @@ def fuse_multilight(
         trace["recognition_light_routes"] = deepcopy(routes)
         trace["recognition_route"] = recognition_route
         trace["cnn_v2_light_diagnostics"] = deepcopy(light_diagnostics)
-        return gate_knn_c_multilight(fused, source)
+        from src.core.neural.aoi_quality_cnn_v3_trial_consensus import (
+        attach_v3_multilight_evidence,
+    )
+    return attach_v3_multilight_evidence(
+        gate_knn_c_multilight(fused, source), source,
+    )
 
     evidence = {
         mode: _lighting_evidence(mode, source[mode])
@@ -736,7 +741,12 @@ def fuse_multilight(
             "weights": {"physical": 0.0, "knn": 0.0},
         }
     )
-    return gate_knn_c_multilight(dominant_analysis, source)
+    from src.core.neural.aoi_quality_cnn_v3_trial_consensus import (
+        attach_v3_multilight_evidence,
+    )
+    return attach_v3_multilight_evidence(
+        gate_knn_c_multilight(dominant_analysis, source), source,
+    )
 
 
 __all__ = [
