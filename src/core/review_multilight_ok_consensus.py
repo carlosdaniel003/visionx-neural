@@ -63,7 +63,8 @@ def _ok_archive_pair_for_light(
 ) -> dict | None:
     """Dois descritores retornam o mesmo PNG OK, com NG distante."""
     if not (
-        vote.get("status") == "REVISAO"
+        isinstance(vote, dict)
+        and vote.get("status") == "REVISAO"
         and vote.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
         and vote.get("suggestion_A") == "REVISAO"
         and vote.get("suggestion_B") == "REVISAO"
@@ -136,7 +137,8 @@ def _ok_archive_pair_for_light(
 def _weak_side_c_disagreement(vote: dict, sets: dict) -> dict | None:
     """NG fraco em A não elimina B OK dominante, sem tornar C conclusiva."""
     if not (
-        vote.get("status") == "REVISAO"
+        isinstance(vote, dict)
+        and vote.get("status") == "REVISAO"
         and vote.get("reason") == "DISCORDANCIA_KNN_A_B"
         and vote.get("suggestion_A") == "REVISAO"
         and vote.get("suggestion_B") == "REVISAO"
