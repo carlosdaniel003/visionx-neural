@@ -20,6 +20,7 @@ from typing import Any
 from src.core.adhesive_multilight_fusion import fuse_adhesive_multilight
 from src.core.knn_c_multilight_gate import gate_knn_c_multilight
 from src.core.neural.faltando_multilight_consensus import summarize_cnn_multilight
+from src.core.neural.aoi_quality_cnn_v3_trial_consensus import attach_v3_multilight_evidence
 from src.utils.text_normalizer import normalize_aoi_text
 
 
@@ -487,12 +488,9 @@ def fuse_multilight(
         trace["recognition_light_routes"] = deepcopy(routes)
         trace["recognition_route"] = recognition_route
         trace["cnn_v2_light_diagnostics"] = deepcopy(light_diagnostics)
-        from src.core.neural.aoi_quality_cnn_v3_trial_consensus import (
-        attach_v3_multilight_evidence,
-    )
-    return attach_v3_multilight_evidence(
-        gate_knn_c_multilight(fused, source), source,
-    )
+        return attach_v3_multilight_evidence(
+            gate_knn_c_multilight(fused, source), source,
+        )
 
     evidence = {
         mode: _lighting_evidence(mode, source[mode])
@@ -740,9 +738,6 @@ def fuse_multilight(
             # decisao multilight. Evidencias locais continuam no trace.
             "weights": {"physical": 0.0, "knn": 0.0},
         }
-    )
-    from src.core.neural.aoi_quality_cnn_v3_trial_consensus import (
-        attach_v3_multilight_evidence,
     )
     return attach_v3_multilight_evidence(
         gate_knn_c_multilight(dominant_analysis, source), source,
