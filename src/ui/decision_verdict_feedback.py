@@ -186,6 +186,11 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
         )
         if verified_operator_visual_memory_ok(analysis):
             return "FALHA FALSA", "ok"
+        from src.core.review_multilight_ok_consensus import (
+            verified_review_multilight_ok,
+        )
+        if verified_review_multilight_ok(analysis):
+            return "FALHA FALSA", "ok"
 
     # Revisão sem reconhecimento verificado continua explícita.
     if review_required:
