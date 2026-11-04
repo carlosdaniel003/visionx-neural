@@ -132,6 +132,62 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         self.assertEqual(panel.saved, [])
         self.assertEqual(verdict_feedback_state(analysis), ("", ""))
 
+    def test_1030_visual_false_alarm_uses_manual_override_not_capture_fault(self):
+        from src.core.review_multilight_ok_consensus import (
+            apply_review_multilight_ok_consensus,
+        )
+        from tests.test_review_multilight_ok_consensus import (
+            real_event_inputs, fuse_real_event,
+        )
+        analyses, report = real_event_inputs()
+        analysis = apply_review_multilight_ok_consensus(
+            fuse_real_event(analyses, report), analyses,
+        )
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        self.assertTrue(controller.prepare_binary_presentation(analysis))
+        panel.current_analysis = analysis
+        controller.pending_analysis = analysis
+        controller.generation += 1
+        controller._finish_presentation(controller.generation)
+        self.assertEqual(controller.state, "operator_review")
+        self.assertTrue(panel.production_review_pending)
+        self.assertEqual(panel.interventions[-1], "FALHA FALSA")
+        self.assertEqual(panel.saved, [])
+        self.assertEqual(panel.auto_records, [])
+        self.assertEqual(
+            panel.production_review_policy["reason"],
+            "cnn_review_multilight_ok_requires_confirmation_v1",
+        )
+
+    def test_1030_forged_proof_fails_binary_without_xp_or_manual_false_ok(self):
+        from src.core.review_multilight_ok_consensus import (
+            apply_review_multilight_ok_consensus,
+        )
+        from tests.test_review_multilight_ok_consensus import (
+            real_event_inputs, fuse_real_event,
+        )
+        analyses, report = real_event_inputs()
+        analysis = apply_review_multilight_ok_consensus(
+            fuse_real_event(analyses, report), analyses,
+        )
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        self.assertTrue(controller.prepare_binary_presentation(analysis))
+        analysis["detail"]["review_multilight_ok_proof"][
+            "automatic_xp_authorized"
+        ] = True
+        panel.current_analysis = analysis
+        controller.pending_analysis = analysis
+        controller.generation += 1
+        controller._finish_presentation(controller.generation)
+        self.assertEqual(controller.state, "operational_fault")
+        self.assertFalse(panel.production_review_pending)
+        self.assertEqual(panel.saved, [])
+        self.assertEqual(panel.auto_records, [])
+
     def test_latest_human_exact_known_knn_all_three_lights_allows_binary_ok(self):
         analysis = uncertain_three_light()
         analysis.update(
