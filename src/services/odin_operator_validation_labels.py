@@ -18,8 +18,19 @@ EVIDENCE = Path("docs/odin_operator_validation_review_20261026.json")
 SHA_RE = re.compile(r"^[a-f0-9]{64}$")
 
 
-def verified_validation_labels(store) -> dict[str, dict]:
-    """Validate all nine operator-verdict paths against local manifest/pair bytes."""
+def verified_validation_labels(
+    store, *, allow_refreshed_manifest: bool = False,
+) -> dict[str, dict]:
+    """Valida nove decisões humanas em pares físicos idênticos por SHA-256.
+
+    O contrato histórico exige o hash do manifesto COMPLETO. Somente
+    candidatos offline podem habilitar reutilização em manifesto renovado:
+    nesse caso a identidade individual da fonte, gabarito E teste precisa
+    coincidir com o julgamento humano original. O procedimento nunca
+    reescreve o documento auditado nem altera o checkpoint produtivo.
+    """
+    if type(allow_refreshed_manifest) is not bool:
+        raise ValueError("Política de manifesto renovado inválida")
     root = store.root.resolve()
     file = root / EVIDENCE
     if file.is_symlink() or not file.is_file():
@@ -30,8 +41,11 @@ def verified_validation_labels(store) -> dict[str, dict]:
             or doc.get("approved_for_production") is not False
             or doc.get("physical_event_groups_verified") is not False
             or not SHA_RE.fullmatch(str(doc.get("source_checkpoint_sha256")))
-            or doc.get("source_manifest_sha256") !=
-                sha256(store.manifest_path.read_bytes()).hexdigest()):
+            or not SHA_RE.fullmatch(str(doc.get("source_manifest_sha256")))):
+        raise ValueError("Proveniência da revisão humana de validação inválida")
+    current_manifest_sha = sha256(store.manifest_path.read_bytes()).hexdigest()
+    if (doc["source_manifest_sha256"] != current_manifest_sha
+            and not allow_refreshed_manifest):
         raise ValueError("Revisão humana não corresponde ao manifesto original")
     entries = doc.get("labels")
     if not isinstance(entries, list) or len(entries) != 9:
