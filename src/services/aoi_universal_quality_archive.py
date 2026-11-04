@@ -232,8 +232,11 @@ def universal_archive_events(
             duplicates += 1
             continue
         seen[signature] = label
-        physical = (operator.get("physical_type") if operator
-                    else review["visual_category"] if review else None)
+        physical = (
+            v3_review["physical_observation"] if v3_review
+            else operator.get("physical_type") if operator
+            else review["visual_category"] if review else None
+        )
         provenance_label = (
             "HUMAN_V3_IMAGE_SHA256" if v3_review
             else "HUMAN_CONFIRMED_SHA256" if operator
@@ -273,6 +276,13 @@ def universal_archive_events(
         "v3_operator_image_quality_verified": v3_operator_quality,
         "v3_operator_image_quality_excluded": v3_ignored,
         "v3_aoi_category_used_as_quality_label": False,
+        "v3_operator_source_candidate_sha256": (
+            json.loads(
+                (store.root/"docs/aoi_v3_operator_image_quality_20261104.json")
+                .read_text(encoding="utf-8")
+            )["source_training_report_candidate_sha256"]
+            if use_v3_image_quality_reviews else None
+        ),
         "human_reviewed_general_ng": sum(
             x["label_provenance"] in (
                 "HUMAN_CONTACT_SHEET_NG", "HUMAN_CONFIRMED_SHA256",
