@@ -1,0 +1,116 @@
+"""Proveniência consolidada dos votos V3 ao final das três luzes.
+
+O voto V3 não aprova 0/OK. Um NG presente somente em SIDE, TOP
+ou MID pode bloquear uma autorização OK que venha do motor legado.
+"""
+from __future__ import annotations
+
+import math
+from src.core.neural.aoi_quality_cnn_v3_production_trial import (
+    LIGHTS, POINTER_SCHEMA, SNAPSHOT_SHA256,
+)
+
+
+def _valid_vote(vote: dict, light: str) -> bool:
+    if not isinstance(vote, dict):
+        return False
+    score = vote.get("ng_score_uncalibrated")
+    return (
+        vote.get("schema") == POINTER_SCHEMA
+        and vote.get("status") == "READY"
+        and vote.get("epoch") == 3
+        and vote.get("light") == light
+        and vote.get("checkpoint_sha256") == SNAPSHOT_SHA256
+        and vote.get("automatic_ok_from_v3_authorized") is False
+        and isinstance(score, (int, float)) and not isinstance(score, bool)
+        and math.isfinite(score) and 0. <= score <= 1.
+        and vote.get("predicted") == ("NG" if score >= .5 else "OK")
+        and vote.get("ng_veto") is (score >= .5)
+    )
+
+
+def attach_v3_multilight_evidence(fused: dict, source: dict) -> dict:
+    if not isinstance(fused, dict):
+        return fused
+    votes = {}
+    for light in LIGHTS:
+        item = source.get(light, {})
+        detail = item.get("detail", {}) if isinstance(item, dict) else {}
+        value = detail.get("aoi_v3_trial") if isinstance(detail, dict) else None
+        if value is not None:
+            votes[light] = value
+    if not votes:
+        return fused
+    detail = fused.setdefault("detail", {})
+    if not isinstance(detail, dict):
+        detail = {}
+        fused["detail"] = detail
+    if set(votes) != set(LIGHTS) or not all(
+        _valid_vote(votes.get(light), light) for light in LIGHTS
+    ):
+        detail["aoi_v3_multilight"] = {
+            "status": "ERROR",
+            "reason": "INCOMPLETE_OR_INVALID_V3_LIGHT_PROVENANCE",
+            "automatic_ok_from_v3_authorized": False,
+        }
+        return fused
+    detail["aoi_v3_multilight"] = {
+        "status": "READY",
+        "checkpoint_sha256": SNAPSHOT_SHA256,
+        "mode": "ng_veto_only",
+        "lights": {
+            light: {
+                "predicted": votes[light]["predicted"],
+                "ng_score_uncalibrated": votes[light]["ng_score_uncalibrated"],
+            } for light in LIGHTS
+        },
+        "ng_veto": any(votes[light]["ng_veto"] for light in LIGHTS),
+        "automatic_ok_from_v3_authorized": False,
+        "blind_test_of_epoch_3": False,
+    }
+    return fused
+
+
+def active_v3_veto(analysis: dict) -> tuple[str, bool]:
+    """Retorna (ABSENT | READY | ERROR, ng_veto), sem confiar em texto livre."""
+    if not isinstance(analysis, dict):
+        return "ABSENT", False
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict):
+        return "ABSENT", False
+    overall = detail.get("aoi_v3_multilight")
+    if overall is not None:
+        if (
+            not isinstance(overall, dict)
+            or overall.get("status") != "READY"
+            or overall.get("checkpoint_sha256") != SNAPSHOT_SHA256
+            or overall.get("mode") != "ng_veto_only"
+            or overall.get("automatic_ok_from_v3_authorized") is not False
+            or not isinstance(overall.get("lights"), dict)
+            or set(overall["lights"]) != set(LIGHTS)
+        ):
+            return "ERROR", False
+        for light in LIGHTS:
+            item = overall["lights"][light]
+            if not isinstance(item, dict):
+                return "ERROR", False
+            score = item.get("ng_score_uncalibrated")
+            if (
+                isinstance(score, bool) or not isinstance(score, (int, float))
+                or not math.isfinite(score) or not 0 <= score <= 1
+                or item.get("predicted") != ("NG" if score >= .5 else "OK")
+            ):
+                return "ERROR", False
+        veto = any(
+            overall["lights"][light]["predicted"] == "NG" for light in LIGHTS
+        )
+        return ("READY", veto) if overall.get("ng_veto") is veto else ("ERROR", False)
+    single = detail.get("aoi_v3_trial")
+    if single is None:
+        return "ABSENT", False
+    if not _valid_vote(single, str(analysis.get("lighting_mode") or "")):
+        return "ERROR", False
+    return "READY", single["ng_veto"]
+
+
+__all__ = ["attach_v3_multilight_evidence", "active_v3_veto"]
