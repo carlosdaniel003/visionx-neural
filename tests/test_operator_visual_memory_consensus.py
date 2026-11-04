@@ -6,6 +6,7 @@ import unittest
 
 from src.core.operator_visual_memory_consensus import (
     RULE, apply_operator_visual_memory_consensus, memory_ok_counterevidence,
+    verified_operator_visual_memory_ok,
 )
 from src.ui.production_confidence_gate import production_decision_policy
 
@@ -288,6 +289,31 @@ class OperatorVisualMemoryConsensusTests(unittest.TestCase):
         self.assertFalse(
             final["detail"]["operator_visual_memory_consensus"]["automatic_xp_authorized"]
         )
+
+    def test_visual_classification_verifies_the_same_proof_as_xp_gate(self):
+        analyses, fused = _event_0943_actual()
+        output = apply_operator_visual_memory_consensus(fused, analyses)
+        self.assertTrue(verified_operator_visual_memory_ok(output))
+        self.assertTrue(output["production_review_required"])
+        marker = output["detail"]["operator_visual_memory_consensus"]
+
+        # O marcador não pode transformar resultado de revisão em OK
+        # pela simples presença da string FALHA FALSA.
+        marker["aligned_anchor_lights"] = ["SIDE"]
+        self.assertFalse(verified_operator_visual_memory_ok(output))
+        policy = production_decision_policy(output)
+        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["operational_error"])
+
+    def test_visual_ok_remains_no_auto_press_even_when_proof_is_verified(self):
+        analyses, fused = _event_0943_actual()
+        output = apply_operator_visual_memory_consensus(fused, analyses)
+        self.assertTrue(verified_operator_visual_memory_ok(output))
+        policy = production_decision_policy(output)
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertTrue(policy["operator_review_required"])
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "")
 
     def test_actual_event_0943_production_fallback_requires_operator(self):
         analyses, fused = _event_0943_actual()
