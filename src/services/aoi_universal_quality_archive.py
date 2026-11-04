@@ -213,7 +213,7 @@ def universal_archive_events(
         if individual and individual.get("pair_inspected") is True:
             reviewed = individual.get("reviewed_label")
             if reviewed in ("OK", "NG"):
-                if operator and reviewed != label:
+                if (operator or v3_review) and reviewed != label:
                     raise ValueError("Qualificação individual contradiz operador: " + source)
                 label = reviewed
         category = item.get("category_hint")
