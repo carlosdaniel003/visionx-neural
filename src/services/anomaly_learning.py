@@ -271,13 +271,11 @@ def install_anomaly_learning(control_panel_cls) -> None:
             return original_save_label(self, normalized, source=source)
 
         if source == "button":
-            sent = bool(self.send_command_to_xp(
-                "0" if normalized == "OK" else "1"
-            ))
+            sent = self.send_command_to_xp("0" if normalized == "OK" else "1")
             # O ACK é consultado também no Modo Teste para só oferecer
             # reanálise pós-julgamento quando o XP recebeu 0/1. Não muda
             # a semântica anterior de treinamento manual no Teste.
-            self.last_decision_command_success = sent
+            self.last_decision_command_success = bool(sent)
             # Em Produção, sem ACK não registrar confirmação humana.
             combo = getattr(self, "combo_mode", None)
             mode = combo.currentText() if combo is not None else ""
