@@ -1,3 +1,26 @@
+## 04/11/2026 — Integração controlada V3 época 3 na estação (veto NG)
+
+O operador autorizou incorporar a CNN V3 da época 3 ao fluxo
+real. O checkpoint experimental classificou corretamente **13/14**
+correções humanas dentro do treino; ainda **liberou 1 NG real**
+nesses 14 e **3 NG provisórios** na validação, sem teste independente
+da época 3. Portanto a integração **não substitui inteiramente a CNN V2**
+nem concede PRESS_0/OK só com o voto V3.
+
+A V3 atua sobre pares gabarito/teste **sem depender da categoria AOI**:
+um NG V3 comprovadamente carregado por SHA pode vetar o OK legado
+e resultar em rejeição `1/NG` pelo gate binário de Produção; um OK
+V3 continua dependendo de confirmação pelas políticas existentes.
+Memória humana exata mantém prioridade, a apresentação acompanha a
+política XP, falha de checkpoint/luz interrompe o envio. O modo
+permanece **desligado por padrão** e exige ativação explícita NA
+ESTAÇÃO, que possui o arquivo `.pt`. Reversão via ponteiro local
+separado, sem mudar o checkpoint ou `live_active.json` da V2.
+
+[Procedimento e limites da implantação V3](docs/AOI_V3_PRODUCTION_NG_VETO_TRIAL_20261104.md).
+
+---
+
 ## 04/11/2026 — CNN V3: auditoria de aprendizagem por época
 
 O modelo selecionado na rodada de 18:38 permaneceu na época 0
