@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from threading import RLock
+from uuid import uuid4
 
 import cv2
 import numpy as np
@@ -267,6 +268,7 @@ class DatasetManager:
         event_id: str = "",
         source_frame: np.ndarray = None,
         final_analysis: dict = None,
+        reinspection_of_judged_event: bool = False,
     ) -> str:
         """Salva o JSON da anomalia; imagens são apenas auditoria opcional."""
         normalized_label = str(label or "").strip().upper()
@@ -327,7 +329,16 @@ class DatasetManager:
                 target_folder
             ).get(fingerprint_key)
             if existing is not None:
-                if normalized_label == "OK":
+                # Reinspeção humana explícita precisa de um NOVO JSON
+                # de julgamento, mesmo que seus pixels OK já existam.
+                # O arquivo pesado continua deduplicado normalmente.
+                if normalized_label == "OK" and not (
+                    reinspection_of_judged_event
+                    and str(source or "").lower() in {
+                        "button", "xp_keyboard", "keyboard", "manual",
+                        "operator", "physical_keyboard", "human",
+                    }
+                ):
                     return DatasetManager._upgrade_duplicate_record(
                         existing,
                         fingerprint=fingerprint,
@@ -348,6 +359,7 @@ class DatasetManager:
         )
         filename = (
             f"memory_{normalized_label}{lighting_suffix}_{timestamp}"
+            + (f"_{uuid4().hex[:8]}" if reinspection_of_judged_event else "")
         )
         filepath_test = target_folder / f"{filename}_test.png"
         filepath_reference = target_folder / f"{filename}_reference.png"
@@ -420,6 +432,9 @@ class DatasetManager:
                 "disagreement": bool(
                     ai_decision
                     and str(ai_decision).upper() != normalized_label
+                ),
+                "reinspection_of_judged_event": bool(
+                    reinspection_of_judged_event
                 ),
             },
             "aoi_info": {
