@@ -1,3 +1,58 @@
+## 04/11/2026 — Caso INVERTIDO 11:43: CNN TOP alta, duas âncoras OK no acervo
+
+Evento XP `a1e18960ebea42e4a180592137fea410` (11:43, Modo Teste).
+O operador informou `FALHA FALSA`; o resultado anterior era
+`REVISÃO OBRIGATÓRIA`, `multilight_local_review`.
+A nova arbitragem `review_multilight_ok_consensus` registrava
+`review_multilight_ok_attempt.reason=CNN_NOT_OK_LEANING_TOP`:
+score NG experimental da CNN SIDE=0,146014, TOP=0,878903,
+MID=0,106220. O limite anterior <=0,30 em cada iluminação
+bloqueava o evento. Todos os scores são **não calibrados**.
+
+A memória humana `OPERATOR_CONFIRMED` recuperou OK superior a NG
+em SIDE=0,963603/0,952183, TOP=0,981184/0,945457,
+MID=0,968618/0,939121. KNN visual da mesma categoria favoreceu
+OK nas três luzes e não corroborou NG em nenhuma. A KNN C TOP
+encontrou em primeiro lugar o **mesmo PNG OK** por A=0,840338
+e B=0,884361; na MID, A=0,912498 e B=0,893909 recuperaram
+o mesmo PNG OK da iluminação MID. Esses dois PNGs têm o mesmo
+prefixo de evento arquivado, categoria e iluminações distintas.
+Os vizinhos NG ficaram a pelo menos 0,075 abaixo em A e B.
+Na SIDE, KNN C estava em `REVISAO` por desacordo:
+A deu NG fraco 0,800839 e B recuperou OK 0,845481 com cinco
+vizinhos OK; não é NG confirmado. `physical_score=0` não
+é por si só prova de orientação correta.
+
+**Alteração:** `src/core/review_multilight_ok_consensus.py`
+adiciona modo `TOP_MID_ARCHIVE_OK_OVER_CNN_REVIEW`,
+sem suprimir o modo conservador anterior (evento 10:30).
+Exige checkpoint CNN verificado e igual entre luzes, TOP
+inconclusiva <0,90, SIDE/MID <=0,20; três luzes com memória
+humana OK acima de NG e índice visual sem NG corroborado;
+duas âncoras de PNG OK TOP/MID com identidade de fonte A/B
+e vantagem sobre vizinhos NG; divergência SIDE fraca com
+B visualmente favorável a OK; fontes, hashes e categorias
+coerentes; nenhum veto físico ou rótulo humano NG conclusivo.
+Caso falhe, mantém revisão e registra motivo.
+
+A classificação visual passa para `FALHA FALSA` **somente
+para confirmação humana**. A política XP reavalia o contrato,
+continua `auto_allowed=False`, `proposed_decision=""`:
+nem `PRESS_0` aproximado nem fallback `PRESS_1` indevido.
+A mudança não altera a CNN ativa, pesos, treinamento,
+arquivos `ok_archive`/`ng_archive` nem o agente XP.
+
+O ZIP/log fornecido contém **metadados e similaridades, não os
+pares de pixels** necessários para treino supervisionado.
+O GitHub não contém os PNGs locais nem o checkpoint ativo.
+Não é justificável retreinar ou instalar pesos sem um
+dataset rotulado por qualidade física e testes NG→OK em
+capturas independentes. Regressão por valores reais do log:
+`tests/test_review_multilight_top_mid_ok_recall.py`;
+executada no workflow `General Multilight Tests`.
+
+---
+
 ## 04/11/2026 — Evento INVERTIDO 10:30: revisão sem NG físico vira FALHA FALSA visual
 
 **Evento real:** `5ba7734c810e44f8a3c2fa6b3f575293`, Modo Teste,
