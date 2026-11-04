@@ -1,3 +1,26 @@
+## 04/11/2026 — CNN V3: importar revisões humanas com acervo renovado
+
+A nova preparação AOI da estação encontrou 1.112 capturas
+(784 rotuladas NG, 328 rotuladas OK), 0 falhas de extração.
+O primeiro treino V3 parou porque o documento de 9 decisões
+humanas exigia o hash do manifesto de outubro completo.
+
+A V3 passa a aceitar **somente em treino offline e com
+autorização explícita** manifesto novo com todas as nove
+fontes, verificando SHA-256 da captura original, do gabarito
+e do teste de cada exemplo. Os demais treinadores continuam
+exigindo o manifesto original; divergência em um par aborta.
+Dados de arquivo são **rótulos provisórios**, não 1.112
+verdades físicas independentes.
+
+Com `git pull origin central`, repetir somente o comando
+`train_aoi_quality_cnn_v3_offline` com o manifesto gerado
+em 04/11; **não é necessário reextrair** o acervo novamente.
+Comandos e detalhes em
+`docs/AOI_QUALITY_CNN_V3_20261104.md`.
+
+---
+
 ## 04/11/2026 — Motor CNN: candidato V3 comparativo AOI independente da memória
 
 No evento `c93e28847255450bb552b0cc53373440` (EMBORCADO,
