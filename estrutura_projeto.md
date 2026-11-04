@@ -1,3 +1,46 @@
+## 04/11/2026 — Resolução de revisão multilight sem NG para INVERTIDO
+
+Evento `5ba7734c810e44f8a3c2fa6b3f575293` (10:30, Teste):
+SIDE/TOP CNN REVIEW por NG scores 0,13916 e 0,27592;
+MID OK por score 0,004453; `multilight_review_modes` continha
+SIDE/TOP/MID porque `production_review_required` confunde a
+pendência operacional de XP com classificação de cada luz.
+Resultado antigo: `multilight_local_review`, `REVISÃO OBRIGATÓRIA`.
+Sem NG físico demonstrado nem NG KNN visual corroborado; humano
+OK sobre NG em três iluminações; C SIDE suporta OK via descritores
+visuais/geométricos da mesma fonte PNG.
+
+`src/core/review_multilight_ok_consensus.py` separa a nova classe
+visual `FALHA FALSA` da autorização `PRESS_0`. O contrato
+de três luzes exige inferência verificada, mesmo checkpoint, scores
+OK-leaning, vantagem OK contra NG nos registros humanos e na
+KNN visual, C SIDE A/B favoráveis e fonte PNG comum, contradições
+C TOP/MID insuficientes para atestar NG, sem hard-NG, captura
+parcial ou veto físico adverso. O resultado é um **candidato
+visual supervisionado, não prova de orientação correta**.
+`verified_review_multilight_ok` reavalia contexto original,
+relatório visual e snapshot humano; prova incoerente bloqueia
+a apresentação OK e a saída XP.
+
+Pipeline: `adhesive_multilight_inspection._finalize_multilight_decision`
+aplica a rota após `apply_knn_visual_corroboration` e
+`apply_operator_visual_memory_consensus`.
+`production_decision_policy` impede PRESS_0 aproximado e
+PRESS_1 preventivo, mesmo em modo binário; controlador de
+Produção apresenta classificação FALHA FALSA e permite
+**confirmação humana 0/1** em vez de parada de captura incompleta
+somente sob prova válida. `decision_verdict_feedback` mantém
+overlay verde apesar do flag de confirmação humana pendente.
+O debug expõe prova e eventual motivo de bloqueio.
+
+Cobertura: regressão real reconstruída a partir dos scores,
+sem PNGs; testes negativos de NG físico, competição NG,
+SHA/arquivo divergente, CNN forte, KNN incerta e marcador
+adulterado, mais regressões da UI/Produção. Não promove
+pesos ou atualiza automaticamente memória ou agente Windows XP.
+
+---
+
 ## 04/11/2026 — Regra de apresentação OK visual != permissão XP
 
 Bug validado no evento `3dcf76ffe38443aabc275b232cf70636`:
