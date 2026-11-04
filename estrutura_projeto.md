@@ -1,3 +1,39 @@
+## 04/11/2026 — CNN V3 isolada para recuperar generalização em EMBORCADO
+
+O motor `src/core/neural/aoi_quality_cnn_v3.py` implementa
+`AOIQualityCNNV3`, independente da classe V2. Encoder
+convolucional compartilhado entre gabarito e teste,
+representação de diferenças absolutas e correlação de
+features preservando grade espacial, escalas full/focus
+e três luzes. Treinamento real em PyTorch de candidatos
+**somente offline**, por `src/scripts/train_aoi_quality_cnn_v3_offline.py`,
+com contraste físico do par, augmentation fotométrica por lado,
+regularização de identidade, amostragem por categoria/rótulo
+e seleção de época exclusivamente na validação.
+
+Fonte: `universal_archive_events` sobre o manifesto do
+`faltando_neural_dataset --all-aoi-categories`. A pasta
+de arquivo é rótulo provisório salvo correção humana;
+nenhuma similaridade de memória é transformada em rótulo.
+Partição visual/temporal antileakage e resultados NG→OK,
+OK→NG, por categoria e luz. Compara o modelo pinado V2
+via SHA com pré-processamento `image_size`/`focus_fraction`
+nativos. Candidatos usam schema incompatível com produção.
+Não aciona XP, memória KNN nem troca checkpoint/ponteiro.
+
+Justificativa: evento `c93e28847255450bb552b0cc53373440`
+(EMBORCADO, 12:11) com scores CNN NG nas três luzes,
+mas peça visualmente presente na inspeção do operador.
+Risco histórico de rótulos AOI incorretos e ausência de
+NG reais por categoria/luz: sem teste independente o motor
+V3 ainda não é elegível para produção.
+
+Documentação: `docs/AOI_QUALITY_CNN_V3_20261104.md`.
+Regressão: `tests/test_aoi_quality_cnn_v3_offline.py`.
+CI: `.github/workflows/aoi-quality-cnn-v3-offline-tests.yml`.
+
+---
+
 ## 04/11/2026 — Novo ramo do consenso de revisão: TOP/MID OK arquivado contra CNN TOP alta
 
 Para o evento `a1e18960ebea42e4a180592137fea410`
