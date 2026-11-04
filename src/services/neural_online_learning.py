@@ -68,7 +68,12 @@ def eligible_online_case(task: dict) -> bool:
         category in SPECIALIST_TRAINERS
         and task.get("label") in ("OK", "NG")
         and _known_human_source(task.get("source", ""))
-        and _is_novel_specialist(task.get("analysis") or {}, category)
+        and (
+            _is_novel_specialist(task.get("analysis") or {}, category)
+            # Nova confirmação humana solicitada explicitamente pode
+            # corrigir uma memória anterior, mesmo na rota KNOWN_KNN.
+            or task.get("reinspection_of_judged_event") is True
+        )
     )
 
 
@@ -287,6 +292,9 @@ class OnlineLearningQueue:
                 "saved_at_utc": datetime.now(timezone.utc).isoformat(),
                 "images": images,
                 "training_requested": True,
+                "reinspection_of_judged_event": bool(
+                    task.get("reinspection_of_judged_event", False)
+                ),
                 "automatic_production_approval": False,
             }
             journal = self.events / (event_id + ".json")
