@@ -274,7 +274,9 @@ def train_v3(
     initial_review = operator_epoch_replay(
         human_train_rows, _assess(model, human_train_rows, image_size, .70),
     )
-    best_key = (*_selection_score(initial), initial_review["metrics"]["correct"])
+    # O checkpoint conservador continua sendo selecionado APENAS pela
+    # validação; as 14 correções humanas são diagnóstico de treino.
+    best_key = _selection_score(initial)
     best_epoch = 0
     best_state = deepcopy(model.state_dict())
     snapshots = []
@@ -316,12 +318,9 @@ def train_v3(
         comparison = epoch_review_comparison(
             initial, validation_scores, initial_review, reviewed,
         )
-        # O último componente só desempata validações idênticas: não pode
-        # melhorar treino humano sacrificando métricas na validação.
-        rank = (
-            *_selection_score(validation_scores),
-            reviewed["metrics"]["correct"],
-        )
+        # Nem mesmo um desempate no treino pode escolher pesos no lugar
+        # da validação congelada. A evolução humana ficará no relatório.
+        rank = _selection_score(validation_scores)
         not_worse_than_start = comparison[
             "validation_non_regression_gate_passed"
         ]
@@ -496,7 +495,7 @@ def train_v3(
             "independent_reference_test_photometric_augmentation": True,
             "common_pair_quarter_turn_augmentation": True,
             "selected_epoch_using_validation_only": best_epoch,
-            "human_review_used_only_to_break_validation_ties": True,
+            "human_review_never_used_for_safe_selection": True,
             "epoch_checkpoint_retention": "EVERY_TRAINED_EPOCH_DIAGNOSTIC_ONLY",
             "test_not_used_for_selection": True,
             "quality_only_balancing": True,
