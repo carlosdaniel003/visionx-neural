@@ -1,3 +1,32 @@
+## 04/11/2026 — Botão Reanalisar XP em Teste e Produção, inclusive após 0/1
+
+O botão **Reanalisar XP** fica visível nos modos Teste e Produção.
+Enquanto a inspeção XP está ativa e ainda não foi julgada, descarta
+o resultado e permite uma única recepção novamente da mesma anomalia.
+Após um 0/OK ou 1/NG já concluído, também pode solicitar uma repetição
+do último frame visual diretamente do receptor XP, sem desativar
+globalmente a deduplicação. Exige **novo frame recebido**, preflight
+SIDE, dois quadros estáveis, validação de imagem AOI e novo event_id.
+Não é replay de PNG antigo nem restaura uma tela que não está mais no XP.
+
+A repetição visual do evento **já julgado** é diagnóstica: Teste e
+Produção podem mostrar a nova classificação, mas **não reenviam 0/1
+nem criam novo registro de treinamento/contagem**. Na Produção, a
+janela de 1 segundo e o disparo automático são desativados somente
+nesse ciclo de reanálise. Ao clicar novamente, mantém-se esse
+isolamento. Se a tela XP mudou para uma peça visualmente diferente,
+o fluxo normal permanece ativo e a decisão automática segue as regras
+anteriores. O estado é distinguido pela assinatura visual do receptor,
+não pelo conteúdo do banco de memória.
+
+O bloqueio de duplicados só é liberado na **primeira reserva** do
+receptor. Não há mudança na aquisição SIDE/TOP/MID, nos modelos
+CNN/KNN, na memória de julgamentos, nos limites de segurança da
+inspeção, no agente XP nem no contrato de ACK. Validar com XP
+isolado, sobretudo o risco de a tela já ter avançado para outra peça.
+
+---
+
 ## 04/11/2026 — Produção: mostrar veredito por 1 segundo, sem rolagem
 
 Após finalizar a análise (SIDE ou SIDE/TOP/MID), o ODIN já apresenta

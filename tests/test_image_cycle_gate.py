@@ -105,9 +105,12 @@ class FakeReceiver:
         self.locked = False
         self.release_count += 1
 
-    def arm_same_frame_reinspection_once(self):
-        self.armed = bool(self.locked)
+    def arm_same_frame_reinspection_once(self, *, after_judgment=False):
+        self.armed = bool(self.locked or after_judgment)
         return self.armed
+
+    def can_reinspect_last_judged_frame(self):
+        return bool(not self.locked and self.release_count > 0 and not getattr(self, "armed", False))
 
     def cancel_same_frame_reinspection(self):
         self.armed = False
@@ -124,6 +127,7 @@ class FakePanel:
         self.accepted_images = 0
         self.started_captures = 0
         self.status_messages = []
+        self.decisions = []
         self.btn_start = FakeButton()
         self.btn_skip = FakeButton()
         self.btn_save_ok = FakeButton()
@@ -145,6 +149,7 @@ class FakePanel:
         self.is_locked = False
 
     def save_label(self, _decision, source="button"):
+        self.decisions.append((str(_decision), str(source)))
         self.is_locked = False
         return source
 
@@ -351,6 +356,126 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         self.assertIsNone(panel.current_analysis)
         self.assertFalse(panel._reinspect_requested)
         self.assertFalse(panel.reinspect_current_network_image())
+
+    def test_test_mode_reinspect_before_judgment_arms_one_new_capture(self):
+        panel = FakePanel()
+        panel.combo_mode = type("Combo", (), {
+            "currentText": lambda self: "Modo Teste",
+        })()
+        panel.handle_network_image(object(), "169.254.95.200")
+        panel.current_analysis = {"verdict": "FALHA FALSA"}
+        panel.current_sample, panel.current_ng = object(), object()
+        self.assertTrue(panel.reinspect_current_network_image())
+        self.assertFalse(panel.capture_cycle_active)
+        self.assertTrue(panel.network_receiver.armed)
+        self.assertEqual(panel.decisions, [])
+
+    def test_after_judgment_test_and_production_reinspection_never_repeats_xp(self):
+        for mode in ("Modo Teste", "Modo Produção"):
+            with self.subTest(mode=mode):
+                panel = FakePanel()
+                panel.combo_mode = type("Combo", (), {
+                    "currentText": lambda self, mode=mode: mode,
+                })()
+                panel.handle_network_image(object(), "169.254.95.200")
+                panel.current_analysis = {"verdict": "DEFEITO REAL"}
+                panel.current_sample, panel.current_ng = object(), object()
+                panel.save_label("NG", source="button")
+                self.assertTrue(panel.last_judged_network_reinspect_available)
+                self.assertFalse(panel.capture_cycle_active)
+                self.assertTrue(panel.reinspect_current_network_image())
+                self.assertTrue(panel.network_receiver.armed)
+                self.assertEqual(panel.decisions, [("NG", "button")])
+
+                # Receptor informa que a tela repetida corresponde ao
+                # julgamento anterior; novo event_id, SOMENTE diagnóstico.
+                panel.network_receiver.last_delivered_reinspection_read_only = True
+                panel.handle_network_image(object(), "169.254.95.200")
+                self.assertTrue(panel.network_reinspection_read_only)
+                panel.current_analysis = {"verdict": "DEFEITO REAL"}
+                panel.current_sample, panel.current_ng = object(), object()
+                self.assertFalse(panel.save_label("NG", source="production_auto"))
+                self.assertFalse(panel.save_label("OK", source="button"))
+                self.assertEqual(panel.decisions, [("NG", "button")])
+                self.assertTrue(panel.capture_cycle_active)
+                panel.skip_image()
+                self.assertFalse(panel.capture_cycle_active)
+                self.assertFalse(panel.network_reinspection_read_only)
+                self.assertFalse(panel.network_receiver.armed)
+
+    def test_after_judgment_different_next_frame_is_normal_cycle(self):
+        panel = FakePanel()
+        panel.combo_mode = type("Combo", (), {
+            "currentText": lambda self: "Modo Produção",
+        })()
+        panel.handle_network_image(object(), "169.254.95.200")
+        panel.current_analysis = {"verdict": "DEFEITO REAL"}
+        panel.current_sample, panel.current_ng = object(), object()
+        panel.save_label("NG", source="button")
+        self.assertTrue(panel.reinspect_current_network_image())
+        panel.network_receiver.last_delivered_reinspection_read_only = False
+        panel.handle_network_image(object(), "169.254.95.200")
+        self.assertFalse(panel.network_reinspection_read_only)
+        self.assertFalse(panel.last_judged_network_reinspect_available)
+        panel.current_analysis = {"verdict": "FALHA FALSA"}
+        panel.current_sample, panel.current_ng = object(), object()
+        panel.save_label("OK", source="production_auto")
+        self.assertEqual(panel.decisions, [
+            ("NG", "button"), ("OK", "production_auto"),
+        ])
+
+    def test_reinspect_diagnostic_again_remains_read_only(self):
+        panel = FakePanel()
+        panel.combo_mode = type("Combo", (), {
+            "currentText": lambda self: "Modo Teste",
+        })()
+        panel.handle_network_image(object(), "169.254.95.200")
+        panel.current_analysis = {"verdict": "DEFEITO REAL"}
+        panel.current_sample, panel.current_ng = object(), object()
+        panel.save_label("NG", source="button")
+        self.assertTrue(panel.reinspect_current_network_image())
+        panel.network_receiver.last_delivered_reinspection_read_only = True
+        panel.handle_network_image(object(), "169.254.95.200")
+        panel.current_analysis = {"verdict": "DEFEITO REAL"}
+        panel.current_sample, panel.current_ng = object(), object()
+
+        self.assertTrue(panel.reinspect_current_network_image())
+        self.assertFalse(panel.capture_cycle_active)
+        self.assertTrue(panel.network_receiver.armed)
+        self.assertEqual(panel.decisions, [("NG", "button")])
+
+    def test_receiver_after_judgment_one_shot_only_marks_previous_signature(self):
+        receiver = NetworkReceiver(port=0)
+        image = np.full((240, 320, 3), 40, dtype=np.uint8)
+        signature = receiver._frame_signature(image)
+        receiver._last_accepted_signature = signature.copy()
+        receiver._require_image_change = True
+        self.assertTrue(receiver.can_reinspect_last_judged_frame())
+        self.assertTrue(receiver.arm_same_frame_reinspection_once(
+            after_judgment=True,
+        ))
+        self.assertFalse(receiver.arm_same_frame_reinspection_once(
+            after_judgment=True,
+        ))
+        self.assertFalse(receiver._should_ignore_accepted_repeat(signature))
+        self.assertTrue(receiver._image_gate.try_reserve())
+        receiver._reserve_candidate(signature.copy())
+        self.assertTrue(receiver.last_delivered_reinspection_read_only)
+        self.assertFalse(receiver._allow_same_frame_once)
+        self.assertFalse(receiver._read_only_repeat_request)
+        self.assertTrue(receiver.confirm_reserved_image())
+        receiver.release_image_gate()
+
+        different = image.copy()
+        different[55:165, 80:220] = (250, 250, 250)
+        other_signature = receiver._frame_signature(different)
+        self.assertTrue(receiver.arm_same_frame_reinspection_once(
+            after_judgment=True,
+        ))
+        self.assertTrue(receiver._image_gate.try_reserve())
+        receiver._reserve_candidate(other_signature)
+        self.assertFalse(receiver.last_delivered_reinspection_read_only)
+        self.assertFalse(receiver._allow_same_frame_once)
 
     def test_reinspect_not_available_during_xp_send(self):
         panel = FakePanel()

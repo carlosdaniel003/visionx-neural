@@ -66,6 +66,7 @@ def _release_cycle(panel) -> None:
     panel.capture_cycle_active = False
     panel.capture_cycle_ignored_signals = 0
     panel.capture_cycle_source = None
+    panel.network_reinspection_read_only = False
     receiver = _receiver(panel)
     if receiver is not None and hasattr(receiver, "release_image_gate"):
         try:
@@ -176,6 +177,7 @@ def _force_discard_cleanup(panel, error: Exception | None = None) -> None:
     panel.capture_cycle_active = False
     panel.capture_cycle_ignored_signals = 0
     panel.capture_cycle_source = None
+    panel.network_reinspection_read_only = False
 
     if hasattr(panel, "production_review_pending"):
         panel.production_review_pending = False
@@ -303,6 +305,8 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
         self.capture_cycle_network_generation = 0
         self._reinspect_requested = False
         self._production_discard_authorized = False
+        self.network_reinspection_read_only = False
+        self.last_judged_network_reinspect_available = False
 
     def wrapped_handle_network_image(self, img_bgr, ip: str):
         if (
@@ -321,6 +325,12 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
 
         _lock_cycle(self)
         self.capture_cycle_source = "network"
+        receiver = _receiver(self)
+        self.network_reinspection_read_only = bool(
+            getattr(receiver, "last_delivered_reinspection_read_only", False)
+        )
+        if not self.network_reinspection_read_only:
+            self.last_judged_network_reinspect_available = False
         self.capture_cycle_network_generation = int(
             getattr(self, "capture_cycle_network_generation", 0)
         ) + 1
@@ -448,7 +458,10 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
         # A reinspeção explícita de Produção já terá armado a exceção.
         is_reinspect = bool(getattr(self, "_reinspect_requested", False))
         reanalysis_armed = (
-            is_reinspect or _arm_unjudged_network_reanalysis(self)
+            is_reinspect or (
+                not bool(getattr(self, "network_reinspection_read_only", False))
+                and _arm_unjudged_network_reanalysis(self)
+            )
         )
         self._production_discard_authorized = bool(
             mode == "Modo Produção" and active and source == "network"
@@ -493,46 +506,94 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
         return result
 
     def reinspect_current_network_image(self) -> bool:
-        """Descarta a análise ativa e aceita UMA nova transmissão XP igual.
+        """Reanalisa uma captura XP; nunca envia novamente o 0/1 já julgado.
 
-        Reprocessa o próximo payload com novo event_id e três luzes; não
-        reaproveita resultado CNN nem encaminha decisão anterior ao XP.
+        Com decisão pendente, descarta e arma um novo ciclo normal.
+        Após 0/1, uma única repetição visual do XP é apenas diagnóstica.
+        Uma próxima peça DIFERENTE não herda essa restrição.
         """
-        controller = getattr(self, "production_autonomy_controller", None)
+        mode = _mode(self)
         receiver = _receiver(self)
-        if not (
-            _mode(self) == "Modo Produção"
-            and getattr(self, "capture_cycle_source", None) == "network"
-            and bool(getattr(self, "capture_cycle_active", False))
-            and _has_analysis(self)
-            and _has_captured_images(self)
-            and getattr(controller, "pending_analysis", None)
-            is getattr(self, "current_analysis", None)
-            and getattr(controller, "state", "") != "emitting_auto_decision"
-            and not bool(getattr(self, "capture_cycle_discarding", False))
-            and not bool(getattr(self, "capture_cycle_local_transition", False))
-            and callable(getattr(receiver, "arm_same_frame_reinspection_once", None))
+        arm = getattr(receiver, "arm_same_frame_reinspection_once", None)
+        controller = getattr(self, "production_autonomy_controller", None)
+        blocked = bool(
+            getattr(self, "capture_cycle_discarding", False)
+            or getattr(self, "capture_cycle_local_transition", False)
+            or getattr(controller, "state", "") == "emitting_auto_decision"
+        )
+        if (
+            mode not in {"Modo Teste", "Modo Produção"}
+            or blocked or not callable(arm)
         ):
+            return False
+
+        active = bool(getattr(self, "capture_cycle_active", False))
+        source = getattr(self, "capture_cycle_source", None)
+        if active:
+            if (
+                source != "network"
+                or not _has_analysis(self)
+                or not _has_captured_images(self)
+                or (mode == "Modo Produção"
+                    and not bool(getattr(self, "network_reinspection_read_only", False))
+                    and getattr(controller, "pending_analysis", None)
+                    is not getattr(self, "current_analysis", None))
+            ):
+                _show_locked_message(
+                    self, "Aguarde a análise XP atual terminar para reanalisar."
+                )
+                return False
+            was_read_only = bool(
+                getattr(self, "network_reinspection_read_only", False)
+            )
+            armed = (
+                arm(after_judgment=True) if was_read_only else arm()
+            )
+            if not armed:
+                return False
+            # Sempre armar antes de liberar o gate: um frame não pode
+            # escapar como ciclo produtivo durante a transição.
+            self._reinspect_requested = True
+            self.skip_image()
+            if bool(getattr(self, "capture_cycle_active", False)):
+                receiver.cancel_same_frame_reinspection()
+                return False
+        elif (
+            bool(getattr(self, "last_judged_network_reinspect_available", False))
+            and callable(getattr(receiver, "can_reinspect_last_judged_frame", None))
+            and receiver.can_reinspect_last_judged_frame()
+        ):
+            if not arm(after_judgment=True):
+                return False
+        else:
             _show_locked_message(
-                self, "Reanálise disponível somente antes de enviar 0/1 ao XP."
+                self, "Reanálise XP indisponível: sem evento julgado recente "
+                "ou captura ainda em andamento."
             )
             return False
-        if not receiver.arm_same_frame_reinspection_once():
-            return False
-        self._reinspect_requested = True
-        self.skip_image()
-        succeeded = not bool(getattr(self, "capture_cycle_active", False))
-        if not succeeded:
-            receiver.cancel_same_frame_reinspection()
-            return False
+
         self.update_brain_status(
-            "Reanálise armada: aguardando novo frame XP estável, "
-            "mesmo se visualmente idêntico. Apenas uma repetição permitida.",
+            "Reanálise XP solicitada: aguardando novo frame estável. "
+            "Se for a anomalia já julgada, será somente diagnóstica, "
+            "sem novo 0/1. Uma nova peça diferente segue o fluxo normal.",
             True,
         )
+        _safe_sync(self)
         return True
 
     def wrapped_save_label(self, user_decision: str, source="button"):
+        if bool(getattr(self, "network_reinspection_read_only", False)):
+            _show_locked_message(
+                self, "Reanálise diagnóstica de evento já julgado: "
+                "não é permitido reenviar 0/1 nem criar novo treinamento."
+            )
+            return False
+        judged_network = bool(
+            getattr(self, "capture_cycle_active", False)
+            and getattr(self, "capture_cycle_source", None) == "network"
+            and _has_analysis(self)
+            and str(user_decision).upper() in {"OK", "NG"}
+        )
         try:
             result = original_save_label(self, user_decision, source=source)
         except Exception as exc:
@@ -548,6 +609,8 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
             return None
 
         if not bool(getattr(self, "is_locked", False)):
+            if judged_network:
+                self.last_judged_network_reinspect_available = True
             self.current_sample = None
             self.current_ng = None
             self.current_analysis = None
