@@ -629,10 +629,18 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
                 panel = _Panel()
                 controller = ProductionAutonomyController(panel)
                 panel.combo_mode.setCurrentText("Modo Produção")
-                analysis = (
-                    {"verdict": "FALHA FALSA", "is_defect": False}
-                    if label == "OK" else _complete_binary_ng()
-                )
+                if label == "OK":
+                    from src.core.side_early_decision import build_side_early_decision
+                    from tests.test_side_early_decision import SideEarlyDecisionTests
+                    side = SideEarlyDecisionTests._trial_ng_side()
+                    side.update(
+                        verdict="FALHA FALSA", is_defect=False,
+                        confidence=.9997,
+                    )
+                    side["detail"]["cnn_v2_ng_score_uncalibrated"] = .0003
+                    analysis = build_side_early_decision(side, "FALTANDO")
+                else:
+                    analysis = _complete_binary_ng()
                 panel.current_analysis = analysis
                 self.assertTrue(controller.analysis_ready(analysis))
                 self.assertEqual(controller._stage_remaining_ms, 1000)
