@@ -1,36 +1,37 @@
 
-## 04/11/2026 — Reinspeção XP pelo operador após decisão transmitida
+## 04/11/2026 — Reinspeção XP com segundo 0/1 e novo treino
 
-`src/ui/network_image_cycle_gate.py`: o botão `Reanalisar XP`
-funciona em Teste e Produção com captura XP ativa não julgada ou
-após um 0/1 confirmado. No primeiro caso, descarta e arma
-`arm_same_frame_reinspection_once()`; no segundo caso arma
-`arm_same_frame_reinspection_once(after_judgment=True)` quando
-o gate já está livre.
+`src/services/network_receiver.py` permite, por armamento explícito
+de uso único, receber a mesma assinatura visual após julgamento, apenas
+na primeira nova reserva. O flag
+`last_delivered_reinspection_of_judged_event` identifica somente a
+anomalia repetida; tela diferente segue o fluxo comum. Todas as
+validações SIDE, estabilidade, imagem e epicentro continuam ativas.
 
-`src/services/network_receiver.py`: a permissão de frame repetido
-é consumida na próxima reserva. Se a assinatura visual coincide
-com a última imagem aceita após o 0/1, publica
-`last_delivered_reinspection_read_only=True`; se uma peça nova
-diferente chegou primeiro, o estado permanece False e ela segue
-a produção normal. Reinspeção diagnóstica repetida arma o receptor
-antes de liberar o gate, evitando intervalo desprotegido.
-Modo Sombra e MSS permanecem fora da exceção.
+`src/ui/network_image_cycle_gate.py` trata a nova captura como evento
+independente julgável, sem a antiga trava `read_only`. Teste permite
+novo OK/NG manual; Produção reutiliza o ciclo normal com segundo timer
+de 1 segundo, segundo comando e métrica individual, preservando
+proteções de geração, pausa e transmissão única por evento.
+`src/ui/operational_controls.py` e `control_panel_ui.py` permitem
+julgar o novo evento sem desbloquear julgamentos fora de contexto.
 
-`src/ui/production_autonomy_controller.py`: quando
-`network_reinspection_read_only=True`, renderiza somente resultado
-visual sem timer 1s, sem `save_label`, sem contagem de decisão;
-`network_image_cycle_gate.py` também veta qualquer 0/1
-na tentativa de repetição já julgada, inclusive manual. Essa
-verificação redundante impede que um sinal atrasado para XP
-retransmita comando. A repetição recebe novo event_id e passa
-pelos mesmos filtros SIDE/epicentro/dupla estabilidade.
+`src/services/anomaly_learning.py` exige envio XP bem-sucedido antes
+de registrar confirmação humana em reinspeção de Teste ou Produção.
+O snapshot inclui o novo `event_id` e
+`reinspection_of_judged_event=True`; KNN persiste nova proveniência
+`OPERATOR_CONFIRMED` no ato do julgamento, mantendo o histórico.
+`src/services/decision_persistence.py` e
+`src/services/dataset_manager.py` preservam um novo JSON por
+reinspeção humana, inclusive quando há OK pixel-idêntico, sem replicar
+imagens pesadas. A CNN online de categorias elegíveis recebe também o
+novo caso supervisionado (`src/services/neural_online_learning.py`),
+com os gates de promoção existentes. Rótulo `production_auto`
+permanece apenas operacional; nunca se converte em treino humano.
 
-As assinaturas aproximadas usadas para repetição de tela XP não
-equivalem a identidade física inequívoca de uma peça. Por isso
-o comportamento seguro de repetição já julgada é **diagnóstico
-sem novo 0/1**. O botão não busca PNG histórico no HD nem
-substitui validação física isolada.
+Reinspecionar não reconstitui uma tela removida do XP, nem prova que
+duas assinaturas visualmente próximas sejam a mesma peça física.
+Testar a emissão de um segundo 0/1 com o XP isolado antes da linha.
 
 ## 14/10/2026 — Hipótese de roteamento por categoria, SOMENTE SIMULAÇÃO
 
