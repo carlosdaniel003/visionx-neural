@@ -107,6 +107,47 @@ class AnomalyLearningPolicyTests(unittest.TestCase):
                 # Não alterar a semântica já existente do Teste.
                 self.assertFalse(panel.is_locked)
 
+    def test_reinspection_in_test_requires_second_xp_command_before_learning(self):
+        from types import SimpleNamespace
+        for acknowledged in (True, False):
+            with self.subTest(acknowledged=acknowledged):
+                panel = self.panel_class(ai_defect=True)
+                panel.combo_mode = SimpleNamespace(
+                    currentText=lambda: "Modo Teste",
+                )
+                panel.capture_cycle_source = "network"
+                panel.network_reinspection_of_judged_event = True
+                panel.network_intake_last_image_event_id = "new-event"
+                commands = []
+                panel.send_command_to_xp = (
+                    lambda value: commands.append(value) or acknowledged
+                )
+                learned = []
+                persisted = []
+                panel._live_memory_writer = (
+                    lambda task: learned.append(task) or {"committed": True}
+                )
+                panel._anomaly_persistence_submitter = persisted.append
+
+                result = panel.save_label("OK", source="button")
+
+                self.assertEqual(commands, ["0"])
+                self.assertIs(panel.last_decision_command_success, acknowledged)
+                if acknowledged:
+                    self.assertEqual(len(learned), 1)
+                    self.assertEqual(len(persisted), 1)
+                    self.assertEqual(persisted[0]["event_id"], "new-event")
+                    self.assertTrue(
+                        persisted[0]["reinspection_of_judged_event"]
+                    )
+                    self.assertTrue(persisted[0]["save_images"])
+                    self.assertFalse(panel.is_locked)
+                else:
+                    self.assertIs(result, False)
+                    self.assertEqual(learned, [])
+                    self.assertEqual(persisted, [])
+                    self.assertTrue(panel.is_locked)
+
     def test_failed_production_manual_command_must_not_learn_or_advance(self):
         from types import SimpleNamespace
         panel = self.panel_class(ai_defect=True)
