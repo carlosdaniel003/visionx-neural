@@ -24,6 +24,7 @@ from src.core.operator_confirmed_archive_labels import (
 )
 from src.services.faltando_neural_qualification import QualificationStore
 from src.services.odin_operator_confirmed_labels import verified_operator_labels, EVIDENCE
+from src.services.aoi_v3_operator_image_reviews import load_v3_image_reviews
 from src.services.odin_operator_validation_labels import (
     EVIDENCE as VALIDATION_EVIDENCE, verified_validation_labels,
 )
@@ -83,6 +84,7 @@ def _load_review(root: Path) -> dict[str, dict]:
 
 def universal_archive_events(
     manifest_path: Path, *, allow_refreshed_validation_labels: bool = False,
+    use_v3_image_quality_reviews: bool = False,
 ) -> tuple[list[dict], dict]:
     """Importa pares AOI sem presumir vínculo multilight nem qualidade física.
 
@@ -100,6 +102,9 @@ def universal_archive_events(
             or doc.get("dataset_ready") is not False):
         raise ValueError("Manifesto multcategoria de preparação offline inválido")
     annotated = _load_review(store.root)
+    image_reviews = (
+        load_v3_image_reviews(store) if use_v3_image_quality_reviews else {}
+    )
     confirmed_quality = (
         verified_operator_labels(store.root)
         if (store.root / EVIDENCE).is_file() else {}
@@ -129,6 +134,13 @@ def universal_archive_events(
         raise ValueError(
             "Confirmação humana do caso 7 ausente: não treinar NG incorreto"
         )
+    for source, verified in image_reviews.items():
+        existing = confirmed_quality.get(source)
+        if existing and (
+            verified["quality_label"] == "IGNORE"
+            or existing["quality_label"] != verified["quality_label"]
+        ):
+            raise ValueError("Conflito entre revisões humanas: " + source)
     for source, review in annotated.items():
         if source not in store.by_path:
             raise ValueError("Fonte da triagem ausente do manifesto: " + source)
@@ -140,6 +152,12 @@ def universal_archive_events(
             raise ValueError("Categoria física NG contradiz arquivo OK: " + source)
 
     recorded, duplicates, skipped = [], 0, 0
+    v3_ignored = sum(
+        row["quality_label"] == "IGNORE" and source not in store.by_path
+        for source, row in image_reviews.items()
+    )
+    skipped += v3_ignored
+    v3_operator_quality = 0
     # The original offline manifest is immutable and may still list this
     # removed AOI mistake. Retire only the explicitly verified wrong NG;
     # never silently skip any other missing source or altered SHA.
@@ -152,6 +170,11 @@ def universal_archive_events(
     labels = Counter()
     categories = Counter()
     for source, item in sorted(store.by_path.items()):
+        v3_review = image_reviews.get(source)
+        if v3_review and v3_review["quality_label"] == "IGNORE":
+            skipped += 1
+            v3_ignored += 1
+            continue
         if source == RETIRED_SOURCE and retired_source_missing:
             skipped += 1
             continue
@@ -172,9 +195,16 @@ def universal_archive_events(
                 raise ValueError("Conflito entre triagens humanas: " + source)
             skipped += 1
             continue
-        label = operator["quality_label"] if operator else archive_label
+        label = (
+            v3_review["quality_label"] if v3_review else
+            operator["quality_label"] if operator else archive_label
+        )
         if operator and item["source_sha256"] != operator["source_sha256"]:
             raise ValueError("SHA da confirmação humana divergente: " + source)
+        if v3_review and review and review["visual_category"] in (
+            "FALTANDO", "INVERTIDO",
+        ) and label != "NG":
+            raise ValueError("Conflito de decisões de triagem: " + source)
         if operator and review and review["visual_category"] in (
             "FALTANDO", "INVERTIDO",
         ) and label != "NG":
@@ -187,7 +217,9 @@ def universal_archive_events(
                     raise ValueError("Qualificação individual contradiz operador: " + source)
                 label = reviewed
         category = item.get("category_hint")
-        if not isinstance(category, str) or not category.strip():
+        if not use_v3_image_quality_reviews and (
+            not isinstance(category, str) or not category.strip()
+        ):
             raise ValueError("Categoria AOI ausente")
         origin, reference, test = store.files[source]
         if reference.is_symlink() or test.is_symlink():
@@ -203,7 +235,8 @@ def universal_archive_events(
         physical = (operator.get("physical_type") if operator
                     else review["visual_category"] if review else None)
         provenance_label = (
-            "HUMAN_CONFIRMED_SHA256" if operator
+            "HUMAN_V3_IMAGE_SHA256" if v3_review
+            else "HUMAN_CONFIRMED_SHA256" if operator
             else "HUMAN_INDIVIDUAL_PAIR" if individual and
                  individual.get("pair_inspected") is True and
                  individual.get("reviewed_label") in ("OK", "NG")
@@ -224,6 +257,8 @@ def universal_archive_events(
             "event_link_verified": False,
         }
         recorded.append(row)
+        if v3_review:
+            v3_operator_quality += 1
         labels[label] += 1
         categories[(category, label)] += 1
     if not recorded or labels["NG"] < 3 or labels["OK"] < 3:
@@ -235,6 +270,9 @@ def universal_archive_events(
         "pairs_after_exact_deduplication": len(recorded),
         "exact_duplicates_skipped": duplicates,
         "human_ignored_sources": skipped,
+        "v3_operator_image_quality_verified": v3_operator_quality,
+        "v3_operator_image_quality_excluded": v3_ignored,
+        "v3_aoi_category_used_as_quality_label": False,
         "human_reviewed_general_ng": sum(
             x["label_provenance"] in (
                 "HUMAN_CONTACT_SHEET_NG", "HUMAN_CONFIRMED_SHA256",
