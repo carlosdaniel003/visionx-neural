@@ -1,3 +1,16 @@
+## 04/11/2026 — CNN V3: auditoria de aprendizagem por época
+
+O modelo selecionado na rodada de 18:38 permaneceu na época 0
+e reproduziu 0/14 acertos nas correções humanas. O novo treinador
+mede essas 14 imagens em **todas** as épocas, preserva snapshots
+diagnósticos de cada época com SHA e indica por que foi rejeitada.
+A seleção do candidato seguro continua baseada só na validação,
+não no treino humano nem no teste. Não modifica a Produção/XP.
+
+Detalhes: [CNN V3: aprendizagem por época](docs/AOI_V3_TREINO_SOMENTE_IMAGENS_REVISAO_15_20261104.md).
+
+---
+
 ## 04/11/2026 — CNN V3 sem categoria AOI: 14 rótulos físicos conferidos
 
 **Decisão:** a categoria retornada pela AOI não é verdade física nem
