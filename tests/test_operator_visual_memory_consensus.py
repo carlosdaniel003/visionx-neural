@@ -278,6 +278,35 @@ class OperatorVisualMemoryConsensusTests(unittest.TestCase):
                     "DEFEITO REAL",
                 )
 
+    def test_debug_reports_why_a_previously_seen_ok_was_not_recovered(self):
+        from src.services.capture_debug_payload import decision_record
+        analyses, fused = _event_0943_actual()
+        analyses["TOP"]["detail"]["knn_c"].pop("aligned_archive")
+        out = apply_operator_visual_memory_consensus(fused, analyses)
+        self.assertEqual(out["verdict"], "DEFEITO REAL")
+        attempt = out["detail"]["operator_visual_memory_attempt"]
+        self.assertEqual(
+            attempt["reason"], "INSUFFICIENT_OPERATOR_ARCHIVE_ANCHORS_OR_SUPPORT",
+        )
+        self.assertEqual(attempt["aligned_anchor_lights"], ["SIDE"])
+        self.assertEqual(set(attempt["support_lights"]), {"SIDE", "MID"})
+        exported = decision_record(out, {"category": CAT})
+        self.assertEqual(
+            exported["operator_visual_memory_attempt"]["reason"],
+            "INSUFFICIENT_OPERATOR_ARCHIVE_ANCHORS_OR_SUPPORT",
+        )
+
+    def test_debug_records_verified_anchors_without_xp_authorization(self):
+        from src.services.capture_debug_payload import decision_record
+        analyses, fused = _event_0943_actual()
+        recovered = apply_operator_visual_memory_consensus(fused, analyses)
+        exported = decision_record(recovered, {"category": CAT})
+        proof = exported["operator_visual_memory_consensus"]
+        self.assertEqual(proof["evidence_mode"], "TWO_ALIGNED_ARCHIVE_ANCHORS")
+        self.assertEqual(set(proof["aligned_anchor_lights"]), {"SIDE", "TOP"})
+        self.assertFalse(proof["automatic_xp_authorized"])
+        self.assertEqual(exported["verdict"], "FALHA FALSA")
+
     def test_conflicting_or_incomplete_memory_must_not_override_ng(self):
         cases = [
             lambda a, f: a["TOP"]["detail"]["confirmed_visual_recall"].update(
