@@ -759,6 +759,16 @@ def format_multilight_debug_report(panel) -> str:
                         "reason", "-"
                     )
                 ),
+                "CNN inconclusiva + memória visual OK — regra: " + str(
+                    (final_detail.get("review_multilight_ok_proof") or {}).get(
+                        "reason", "NOT_APPLIED"
+                    )
+                ),
+                "CNN inconclusiva + memória visual OK — bloqueio: " + str(
+                    (final_detail.get("review_multilight_ok_attempt") or {}).get(
+                        "reason", "-"
+                    )
+                ),
                 "Sinal CNN de revisão ≠ pedido de operador: "
                 "verificar abaixo a política de Produção e seu comando.",
 
