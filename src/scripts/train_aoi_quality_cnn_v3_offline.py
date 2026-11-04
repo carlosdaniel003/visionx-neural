@@ -77,7 +77,7 @@ class PhotometricPairDataset(PairDataset):
 def _selection_score(metrics: dict) -> tuple:
     """Escolha baseada SOMENTE na validação, com as duas classes."""
     if metrics["NG_total"] < 1 or metrics["OK_total"] < 1:
-        raise ValueError("Validação sem casos reais de ambas as classes")
+        raise ValueError("Validação sem rótulos OK e NG nas duas classes")
     return (
         round(metrics["balanced_accuracy"], 10),
         -metrics["NG_false_OK"],
@@ -104,7 +104,7 @@ def _coverage(rows: list[dict]) -> dict:
                 for light in ("SIDE", "TOP", "MID")
             } for cat in categories
         },
-        "all_categories_each_light_have_real_ok_and_ng": all(
+        "all_categories_each_light_have_ok_and_ng_labels": all(
             by_category_light[(cat, light, label)] > 0
             for cat in categories
             for light in ("SIDE", "TOP", "MID")
@@ -384,7 +384,7 @@ def train_v3(
         },
         "safety": {
             "all_quality_labels_operator_verified": coverage["all_data"]["fully_operator_verified"],
-            "all_category_light_class_pairs_present": coverage["test"]["all_categories_each_light_have_real_ok_and_ng"],
+            "all_category_light_class_pairs_present": coverage["test"]["all_categories_each_light_have_ok_and_ng_labels"],
             "physical_event_independence_proven": False,
             "blind_holdout": False,
             "production_eligible": False,
