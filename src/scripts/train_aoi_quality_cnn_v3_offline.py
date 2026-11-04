@@ -459,8 +459,8 @@ def train_v3(
         diagnosis = (
             "PROGRESSO_HUMANO_E_SELECAO_SEGURA"
             if best_epoch > 0 and trajectory[best_epoch][
-                "operator_training_replay"]["metrics"]["correct"]
-            ] > initial_review["metrics"]["correct"]
+                "operator_training_replay"
+            ]["metrics"]["correct"] > initial_review["metrics"]["correct"]
             else "PROGRESSO_HUMANO_DESCARTADO_PELO_GATE_DE_VALIDACAO"
         )
     else:
