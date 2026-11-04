@@ -1,8 +1,6 @@
 """CNN V3 — comparação real com gradientes, offline e sem ativação XP."""
 from __future__ import annotations
 
-from collections import Counter
-from copy import deepcopy
 from hashlib import sha256
 import json
 from pathlib import Path
