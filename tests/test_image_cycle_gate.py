@@ -372,7 +372,7 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         self.assertTrue(panel.network_receiver.armed)
         self.assertEqual(panel.decisions, [])
 
-    def test_after_judgment_test_and_production_reinspection_never_repeats_xp(self):
+    def test_after_judgment_test_and_production_reinspection_creates_new_judgment(self):
         for mode in ("Modo Teste", "Modo Produção"):
             with self.subTest(mode=mode):
                 panel = FakePanel()
@@ -389,21 +389,22 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
                 self.assertTrue(panel.network_receiver.armed)
                 self.assertEqual(panel.decisions, [("NG", "button")])
 
-                # Receptor informa que a tela repetida corresponde ao
-                # julgamento anterior; novo event_id, SOMENTE diagnóstico.
-                panel.network_receiver.last_delivered_reinspection_read_only = True
+                # Nova transmissão visual intencional do mesmo frame.
+                panel.network_receiver.last_delivered_reinspection_of_judged_event = True
                 panel.handle_network_image(object(), "169.254.95.200")
-                self.assertTrue(panel.network_reinspection_read_only)
+                self.assertTrue(panel.network_reinspection_of_judged_event)
                 panel.current_analysis = {"verdict": "DEFEITO REAL"}
                 panel.current_sample, panel.current_ng = object(), object()
-                self.assertFalse(panel.save_label("NG", source="production_auto"))
-                self.assertFalse(panel.save_label("OK", source="button"))
-                self.assertEqual(panel.decisions, [("NG", "button")])
-                self.assertTrue(panel.capture_cycle_active)
-                panel.skip_image()
+                source = "button" if mode == "Modo Teste" else "production_auto"
+                panel.save_label("OK", source=source)
+                self.assertEqual(panel.decisions, [
+                    ("NG", "button"), ("OK", source),
+                ])
                 self.assertFalse(panel.capture_cycle_active)
-                self.assertFalse(panel.network_reinspection_read_only)
-                self.assertFalse(panel.network_receiver.armed)
+                self.assertFalse(panel.network_reinspection_of_judged_event)
+                self.assertTrue(panel.last_judged_network_reinspect_available)
+                # Sem outra reinspeção, não há terceiro 0/1.
+                self.assertFalse(panel.capture_cycle_active)
 
     def test_xp_command_without_ack_does_not_mark_event_as_previously_judged(self):
         panel = FakePanel()
@@ -419,7 +420,7 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         self.assertFalse(panel.last_judged_network_reinspect_available)
         self.assertFalse(panel.reinspect_current_network_image())
 
-    def test_local_mss_replaces_diagnostic_xp_without_inheriting_read_only(self):
+    def test_local_mss_replaces_xp_reinspection_without_inheriting_flag(self):
         panel = FakePanel()
         panel.combo_mode = type("Combo", (), {
             "currentText": lambda self: "Modo Teste",
@@ -429,16 +430,16 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         panel.current_sample, panel.current_ng = object(), object()
         panel.save_label("NG", source="button")
         self.assertTrue(panel.reinspect_current_network_image())
-        panel.network_receiver.last_delivered_reinspection_read_only = True
+        panel.network_receiver.last_delivered_reinspection_of_judged_event = True
         panel.handle_network_image(object(), "169.254.95.200")
         panel.current_analysis = {"verdict": "DEFEITO REAL"}
         panel.current_sample, panel.current_ng = object(), object()
-        self.assertTrue(panel.network_reinspection_read_only)
+        self.assertTrue(panel.network_reinspection_of_judged_event)
 
-        # Captura MSS substitui a tela XP de diagnóstico.
+        # Captura MSS substitui reinspeção da tela XP.
         self.assertTrue(panel.start_monitoring())
         self.assertEqual(panel.capture_cycle_source, "local")
-        self.assertFalse(panel.network_reinspection_read_only)
+        self.assertFalse(panel.network_reinspection_of_judged_event)
         self.assertFalse(panel.last_judged_network_reinspect_available)
         panel.current_analysis = {"verdict": "FALHA FALSA"}
         panel.current_sample, panel.current_ng = object(), object()
@@ -457,9 +458,9 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         panel.current_sample, panel.current_ng = object(), object()
         panel.save_label("NG", source="button")
         self.assertTrue(panel.reinspect_current_network_image())
-        panel.network_receiver.last_delivered_reinspection_read_only = False
+        panel.network_receiver.last_delivered_reinspection_of_judged_event = False
         panel.handle_network_image(object(), "169.254.95.200")
-        self.assertFalse(panel.network_reinspection_read_only)
+        self.assertFalse(panel.network_reinspection_of_judged_event)
         self.assertFalse(panel.last_judged_network_reinspect_available)
         panel.current_analysis = {"verdict": "FALHA FALSA"}
         panel.current_sample, panel.current_ng = object(), object()
@@ -468,7 +469,7 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
             ("NG", "button"), ("OK", "production_auto"),
         ])
 
-    def test_reinspect_diagnostic_again_remains_read_only(self):
+    def test_repeat_reinspection_arms_one_more_capture(self):
         panel = FakePanel()
         panel.combo_mode = type("Combo", (), {
             "currentText": lambda self: "Modo Teste",
@@ -478,7 +479,7 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         panel.current_sample, panel.current_ng = object(), object()
         panel.save_label("NG", source="button")
         self.assertTrue(panel.reinspect_current_network_image())
-        panel.network_receiver.last_delivered_reinspection_read_only = True
+        panel.network_receiver.last_delivered_reinspection_of_judged_event = True
         panel.handle_network_image(object(), "169.254.95.200")
         panel.current_analysis = {"verdict": "DEFEITO REAL"}
         panel.current_sample, panel.current_ng = object(), object()
@@ -504,9 +505,9 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         self.assertFalse(receiver._should_ignore_accepted_repeat(signature))
         self.assertTrue(receiver._image_gate.try_reserve())
         receiver._reserve_candidate(signature.copy())
-        self.assertTrue(receiver.last_delivered_reinspection_read_only)
+        self.assertTrue(receiver.last_delivered_reinspection_of_judged_event)
         self.assertFalse(receiver._allow_same_frame_once)
-        self.assertFalse(receiver._read_only_repeat_request)
+        self.assertFalse(receiver._post_judgment_repeat_request)
         self.assertTrue(receiver.confirm_reserved_image())
         receiver.release_image_gate()
 
@@ -518,7 +519,7 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         ))
         self.assertTrue(receiver._image_gate.try_reserve())
         receiver._reserve_candidate(other_signature)
-        self.assertFalse(receiver.last_delivered_reinspection_read_only)
+        self.assertFalse(receiver.last_delivered_reinspection_of_judged_event)
         self.assertFalse(receiver._allow_same_frame_once)
 
     def test_reinspect_not_available_during_xp_send(self):
