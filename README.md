@@ -1,3 +1,49 @@
+## 04/11/2026 — Regressão real EMBORCADO 09:43: memória OK recuperada
+
+O operador confirmou **FALHA FALSA** no evento
+`ca2b12df6a9f47279e13e0a4856772c3`, Modo Teste. O veredito
+anterior foi `DEFEITO REAL` pela fusão `multilight_strong_single`,
+apesar de `physical_score=0`, KNN C SIDE `SUGERE_OK`,
+memória humana OK SIDE=0,98948237 / TOP=0,98555393 e MID=0,95932525,
+com NG humano inferior nas três luzes. A CNN trial classificou NG
+0,99421895 na SIDE; TOP/MID ficaram em revisão.
+
+**Causa:** a regra de memória adicionada anteriormente exigia
+três NG fortes da CNN, memória MID OK >=0,965, todos os registros
+originados da mesma luz e margens individuais >=0,07. A captura
+rejeitava essas condições embora SIDE/TOP tenham
+`aligned_archive=RECONCILED_OK` com registro humano
+`OPERATOR_CONFIRMED` e PNG OK do mesmo índice.
+
+**Correção:** `operator_visual_memory_consensus` conserva a rota
+histórica de três luzes estritas e adiciona uma alternativa genérica:
+duas iluminações com **fontes humanas OK e PNGs OK alinhados pelo
+mesmo record_id**, similaridade e distância dos NG verificadas, mais
+terceira luz favorecendo OK em memória humana + índice visual.
+A fonte humana da terceira luz pode vir de outra iluminação da
+mesma categoria; ela não conta como âncora. Uma CNN NG forte isolada
+não anula essas contraprovas. Os vetos físicos locais e finais e
+corroboração NG continuam prioritários.
+
+A classificação exibida passa para `FALHA FALSA` **para confirmação
+humana**. Não há correspondência RGB exata, nem autorização de
+`0/OK` automático; o fallback de Produção também não pode
+transformar esse caso em `1/NG` por falta de certeza.
+
+Diagnóstico disponível: `decision.operator_visual_memory_consensus`
+indica regra, âncoras e apoios; quando não aplicada após iniciar a
+verificação, `decision.operator_visual_memory_attempt.reason` indica
+qual gate bloqueou a classificação. A seção multilight do debug
+também exibe esses dados.
+
+Regressões: `tests/test_operator_visual_memory_consensus.py`, com os
+valores reais do debug (sem os frames RGB) e controles negativos
+sobre NG físico, terceiro apoio, alinhamento de arquivo e XP.
+Não houve alteração dos pesos da CNN nem do protocolo XP.
+O comportamento precisa de verificação física na estação isolada.
+
+---
+
 ## 04/11/2026 — Prioridade da memória humana multilight sobre falso NG CNN
 
 O módulo `src/core/operator_visual_memory_consensus.py` atua após a fusão
