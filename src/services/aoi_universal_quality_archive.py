@@ -81,8 +81,15 @@ def _load_review(root: Path) -> dict[str, dict]:
     return rows
 
 
-def universal_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
-    """Ingest all categories as SINGLE-VIEW provisional quality decisions."""
+def universal_archive_events(
+    manifest_path: Path, *, allow_refreshed_validation_labels: bool = False,
+) -> tuple[list[dict], dict]:
+    """Importa pares AOI sem presumir vínculo multilight nem qualidade física.
+
+    A opção de manifesto renovado só permite reutilizar nove vereditos
+    humanos quando fonte, gabarito e teste repetem EXATAMENTE os hashes
+    já auditados; mantém o contrato histórico estrito por padrão.
+    """
     store = QualificationStore(Path(manifest_path))
     doc = store.manifest
     if (doc.get("stage") != MANIFEST_STAGE
@@ -97,8 +104,22 @@ def universal_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
         verified_operator_labels(store.root)
         if (store.root / EVIDENCE).is_file() else {}
     )
+    refreshed_validation = False
+    validated_nine = 0
     if (store.root / VALIDATION_EVIDENCE).is_file():
-        additional = verified_validation_labels(store)
+        additional = verified_validation_labels(
+            store, allow_refreshed_manifest=allow_refreshed_validation_labels,
+        )
+        validated_nine = len(additional)
+        if allow_refreshed_validation_labels:
+            evidence_path = store.root / VALIDATION_EVIDENCE
+            original_review_manifest = json.loads(
+                evidence_path.read_text(encoding="utf-8")
+            )["source_manifest_sha256"]
+            refreshed_validation = (
+                original_review_manifest !=
+                sha256(store.manifest_path.read_bytes()).hexdigest()
+            )
         overlap = set(confirmed_quality) & set(additional)
         if overlap:
             raise ValueError("Duas revisões humanas para as mesmas imagens: " + str(overlap))
@@ -230,6 +251,11 @@ def universal_archive_events(manifest_path: Path) -> tuple[list[dict], dict]:
         ),
         "operator_confirmed_rows_outside_manifest": len(confirmed_quality) -
             len(set(confirmed_quality).intersection(store.by_path)),
+        "operator_validation_nine_sha_verified": validated_nine,
+        "operator_validation_evidence_reused_on_refreshed_manifest":
+            refreshed_validation,
+        "operator_validation_reuse_verified_source_and_both_crops":
+            bool(refreshed_validation and validated_nine == 9),
         "quality_source": (
             "ARCHIVE_FOLDER_PROVISIONAL_WITH_SHA_PINNED_OPERATOR_CORRECTIONS"
             if confirmed_quality else
