@@ -1,3 +1,50 @@
+## 04/11/2026 — Correção de manifesto renovado (1.112 capturas)
+
+O inventário real da estação foi atualizado:
+- 1.112 capturas, 784 com rótulo de pasta NG e 328 com rótulo OK;
+- 679 SIDE, 216 TOP, 217 MID;
+- 0 falhas de extração;
+- 212 conjuntos de trincas com vínculo apenas pelo nome, NÃO validadas como evento físico;
+- nenhuma captura automaticamente aprovada para treino físico.
+
+O treinamento inicial parou em
+`verified_validation_labels -> Revisão humana não corresponde ao manifesto original`.
+Motivo: o documento histórico de 26/10 contém um SHA-256 do **manifesto
+inteiro antigo**, não da versão de 04/11. As nove fontes do documento
+permanecem presentes no inventário enviado, todas com SHA-256 de PNG
+original idêntico. A presença/identidade dos recortes derivados
+ainda depende da execução real na estação.
+
+**Solução limitada à CNN V3 offline:** `verified_validation_labels`
+tem parâmetro explícito `allow_refreshed_manifest=False`.
+O modo histórico permanece estrito; a V3 permite revalidar cada um
+dos 9 julgamentos pelo SHA-256 do PNG original, do gabarito extraído
+e do teste extraído, além de conferir esquema, categoria, veredito e
+presença das nove fontes. Não usa igualdade de nome ou um rótulo
+provisório para presumir que uma imagem permaneceu igual. Em caso
+de qualquer divergência, aborta. O importador relata o reuso
+com `operator_validation_evidence_reused_on_refreshed_manifest`.
+Não modifica documentos, recortes, acervo, pesos ou XP.
+
+**Retomar:** após `git pull origin central`, NÃO precisa gerar um
+manifesto novo. O caminho abaixo aponta para o manifesto de 04/11
+que já foi extraído com sucesso:
+
+```powershell
+python -X utf8 -m src.scripts.train_aoi_quality_cnn_v3_offline --root . --manifest "C:\visionx-neural-main\reports\faltando_neural\run_20261104T163621_087850Z\manifest.json" --epochs 6 --allow-provisional-archive-labels --allow-verified-trial-pointer-readonly
+```
+
+Se aparecer uma divergência de SHA de gabarito/teste, não
+substituir o documento histórico nem desativar a validação:
+revisar a nova extração versus o par originalmente confirmado.
+
+O arquivo `latest_event.json` enviado pelo operador indica
+`state=QUEUED` e `promoted=null`, o que NÃO comprova
+que ocorreu treinamento ou ativação de uma CNN. Esse status
+pertence à fila online, separada do treinamento V3 offline.
+
+---
+
 # 04/11/2026 — CNN AOI V3 por pares: recuperação de generalização, sem memória
 
 ## Origem: evento EMBORCADO 12:11, registrado em Teste
