@@ -22,7 +22,6 @@ import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from src.core.neural.aoi_quality_cnn_v3 import AOIQualityCNNV3, MODEL_SCHEMA_V3
-from src.core.neural.faltando_live import PINNED_CHECKPOINT_SHA256, PINNED_RELATIVE_CHECKPOINT
 from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2
 from src.scripts.train_aoi_universal_quality_offline import (
     _metrics, _pinned_initialization, _trial_readonly_snapshot,
