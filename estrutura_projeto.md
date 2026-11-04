@@ -1,3 +1,36 @@
+## 04/11/2026 — V3 época 3: integração reversível de NG na Produção
+
+- `src/core/neural/aoi_v3_trial_contract.py`: contrato e SHA pinado do
+  snapshot de época 3, sem importar Torch.
+- `src/core/neural/aoi_quality_cnn_v3_production_trial.py`: inspeção real
+  SIDE/TOP/MID pelo modelo visual V3, leitura somente de checkpoint
+  `epoch_03_experimental_only.pt`, com verificação estrita do hash e
+  schema; PyTorch carregado somente após ativação local.
+- `src/core/neural/aoi_quality_cnn_v3_trial_consensus.py`: consolida
+  evidências das três luzes no multilight e define voto NG de veto
+  sem depender da categoria.
+- `main.py`: novo wrapper V3 instalado DEPOIS da memória humana
+  exata e KNN C, preservando prioridade `KNOWN_KNN`.
+- `src/core/multilight_fusion.py`: carrega voto auditável V3 de
+  SIDE/TOP/MID após a fusão clássica.
+- `src/ui/production_confidence_gate.py`: apenas a política binária
+  de Produção usa voto NG válido para vetar o auto-OK e rejeitar
+  via NG quando inspeção está completa; em erro do voto, interrompe XP.
+- `src/scripts/activate_aoi_quality_v3_production_trial.py`: ativa ou
+  remove ponteiro separado em `reports/aoi_quality_cnn_v3/production_v3_trial.json`,
+  exigindo relatório e pesos locais inalterados; não altera
+  `reports/neural_online/live_active.json`.
+- `tests/test_aoi_quality_v3_production_trial.py` e
+  `tests/test_aoi_quality_v3_production_policy.py`: verificam
+  integridade e política de decisão sem conceder auto-OK pela V3.
+
+**Limite deliberado:** apenas NG-veto em novas inspeções; a V3
+não é classificador único de `0/1` nem está aprovada como
+modelo generalizável a novas placas. Ver
+[documentação](docs/AOI_V3_PRODUCTION_NG_VETO_TRIAL_20261104.md).
+
+---
+
 ## 04/11/2026 — CNN V3: checkpoints diagnósticos e replay humano por época
 
 `src/services/aoi_v3_epoch_diagnostics.py` concentra
