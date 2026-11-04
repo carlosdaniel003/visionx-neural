@@ -437,6 +437,28 @@ class ProductionAutonomyController(QObject):
             )
             return
 
+        # Uma revisão física *incompleta* exige parada operacional.
+        # Já a classificação OK visual corroborada é captura completa,
+        # sem autorização de PRESS_0 automático. Não descrevê-la como
+        # erro de aquisição: oferecer o 0/1 humano para a mesma peça.
+        if (
+            analysis.get("detail", {}).get("production_binary_auto") is True
+            and policy.get("reason")
+            == "cnn_review_multilight_ok_requires_confirmation_v1"
+            and policy.get("verdict") == "FALHA FALSA"
+            and policy.get("operator_review_required") is True
+            and policy.get("auto_allowed") is False
+            and policy.get("proposed_decision") == ""
+        ):
+            self.state = "operator_review"
+            enter_production_review(self.panel, analysis)
+            show = getattr(
+                self.panel, "show_production_intervention_feedback", None,
+            )
+            if callable(show):
+                show("FALHA FALSA")
+            return
+
         if analysis.get("detail", {}).get("production_binary_auto") is True:
             self._stop_for_operational_error(
                 "captura ou rota de julgamento incompleta. "
