@@ -1,3 +1,33 @@
+## 04/11/2026 — Prioridade da memória humana multilight sobre falso NG CNN
+
+O módulo `src/core/operator_visual_memory_consensus.py` atua após a fusão
+SIDE/TOP/MID e a análise KNN visual, independentemente do modo Teste,
+Produção ou Sombra. Em categorias da CNN V2, uma CNN experimental com
+consenso inválido não deve esconder três referências **humanas OK**
+recuperadas pela memória persistente quando:
+- as três memórias são da **categoria e iluminação atuais**, têm fonte
+  `OPERATOR_CONFIRMED`, similaridade OK forte e margem sobre NG;
+- o índice visual da mesma categoria favorece OK nas três luzes,
+  sem NG corroborado, e a KNN C SIDE confirma sugestão de OK;
+- não há suspeita registrada de ausência física nem rótulo exato conflitante.
+
+Nessa situação a classificação visual passa de **DEFEITO REAL** a
+**FALHA FALSA**, preservando o veredito CNN bruto e os IDs de proveniência.
+A captura continua **aproximada, não par RGB exato**: em Produção a
+`production_decision_policy` bloqueia o fallback automático
+`production_binary_unverified_ng_v1`, exige confirmação antes de 0/1 e
+não autoriza 0/OK simplesmente por similaridade. Exemplos com KNN
+contraditório, luz faltando ou evidência física NG continuam no fluxo
+original. Não modifica pesos CNN, não retreina o archive e não altera
+o protocolo XP.
+
+Reprodução de regressão:
+`python -m unittest tests.test_operator_visual_memory_consensus -v`.
+Os testes reconstituem scores de debug, mas não substituem inspeção física
+de OK/NG inéditos nem homologação na estação.
+
+---
+
 ## 04/11/2026 — Reanalisar XP cria novo julgamento e novo aprendizado
 
 O botão **Reanalisar XP** está disponível em Teste e Produção.
