@@ -225,6 +225,87 @@ class TrainingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "rótulos OK e NG"):
             _selection_score({"NG_total": 0, "OK_total": 12})
 
+    def test_quality_only_split_ignores_any_aoi_category_and_pins_human_groups(self):
+        rows = [
+            {**r, "category_hint": "FALSAMENTE_" + str(i)}
+            for i, r in enumerate(self.records)
+        ]
+        # Um outro arquivo, mesmo minuto de captura, deve acompanhar
+        # a amostra humana para evitar vazamento para validação/teste.
+        rows[14] = {**rows[14], "split_group": rows[0]["split_group"]}
+        pinned = {r["sources"][0] for r in rows[:14]}
+        args = {"balance_by_aoi_category": False,
+                "pinned_training_sources": pinned}
+        a, b, c, partition = split_universal_events(rows, **args)
+        self.assertFalse(partition["aoi_category_used_for_split"])
+        self.assertEqual(partition["pinned_training_source_count"], 14)
+        self.assertTrue(pinned <= {r["sources"][0] for r in a})
+        self.assertIn(rows[14]["id"], {r["id"] for r in a})
+        self.assertTrue(all(
+            r["sources"][0] not in pinned for r in b+c
+        ))
+        # Renomear arbitrariamente a categoria AOI não muda os folds.
+        different = [{**r, "category_hint": None} for r in rows]
+        aa, bb, cc, _ = split_universal_events(different, **args)
+        self.assertEqual(
+            [[r["id"] for r in fold] for fold in (a, b, c)],
+            [[r["id"] for r in fold] for fold in (aa, bb, cc)],
+        )
+        with self.assertRaisesRegex(ValueError, "ausente"):
+            split_universal_events(rows, pinned_training_sources={"missing"},
+                                   balance_by_aoi_category=False)
+
+    def test_training_can_warm_start_from_hash_verified_v3_candidate(self):
+        import json
+        folder = self.root/"reports/aoi_quality_cnn_v3/candidates/old_v3"
+        folder.mkdir(parents=True)
+        candidate = folder/"aoi_quality_cnn_v3_candidate.pt"
+        model = AOIQualityCNNV3()
+        manifest_sha = sha256(self.manifest.read_bytes()).hexdigest()
+        torch.save({
+            "schema": SCHEMA,
+            "architecture_schema": MODEL_SCHEMA_V3,
+            "source_manifest_sha256": manifest_sha,
+            "image_size": 64, "focus_fraction": .70,
+            "lights": ("SIDE", "TOP", "MID"),
+            "candidate_only": True, "production_approved": False,
+            "automatic_xp_authorized": False,
+            "state_dict": model.state_dict(),
+        }, candidate)
+        report_file = folder/"training_report.json"
+        report_file.write_text(json.dumps({
+            "schema": "visionx.aoi_quality_cnn_v3_training_report.v1",
+            "candidate_only": True,
+            "production_approved": False,
+            "automatic_xp_authorized": False,
+            "provenance": {"manifest_sha256": manifest_sha},
+            "candidate_path": candidate.relative_to(self.root).as_posix(),
+            "candidate_sha256": sha256(candidate.read_bytes()).hexdigest(),
+        }), encoding="utf-8")
+        original_sha = sha256(candidate.read_bytes()).hexdigest()
+        with patch(
+            "src.scripts.train_aoi_quality_cnn_v3_offline.universal_archive_events",
+            return_value=(self.records, self._provenance()),
+        ):
+            result = train_v3(
+                self.root, self.manifest,
+                epochs=1, image_size=64,
+                initialize_from_v3_report=report_file,
+                allow_provisional_archive_labels=True,
+                compare_verified_pinned_cnn=False,
+            )
+        self.assertEqual(
+            result["initial_v3_candidate"]["candidate_sha256"], original_sha,
+        )
+        self.assertIsNotNone(result["verified_previous_v3_baseline"])
+        self.assertTrue(
+            result["training"][
+                "selected_epoch_cannot_worsen_either_validation_error_against_start"
+            ]
+        )
+        self.assertFalse(result["production_approved"])
+        self.assertEqual(sha256(candidate.read_bytes()).hexdigest(), original_sha)
+
     def test_group_split_keeps_duplicates_and_minutes_together(self):
         t, v, h, partition = split_universal_events(self.records)
         self.assertEqual(len(t)+len(v)+len(h), len(self.records))
