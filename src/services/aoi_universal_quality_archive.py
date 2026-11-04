@@ -315,6 +315,8 @@ def universal_archive_events(
 def split_universal_events(
     records: list[dict], *, seed: int = 42,
     test_fraction: float = .20, validation_fraction: float = .20,
+    balance_by_aoi_category: bool = True,
+    pinned_training_sources: set[str] | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], dict]:
     """Three non-overlapping splits with minute and visual duplication fences.
 
@@ -329,6 +331,17 @@ def split_universal_events(
         raise ValueError("Partição de 3 conjuntos inválida")
     if len({x["id"] for x in records}) != len(records):
         raise ValueError("IDs repetidos na base universal")
+    if type(balance_by_aoi_category) is not bool:
+        raise ValueError("Política de balanceamento inválida")
+    pinned = pinned_training_sources if pinned_training_sources is not None else set()
+    if not isinstance(pinned, set) or not all(
+        isinstance(source, str) and bool(source) for source in pinned
+    ):
+        raise ValueError("Fontes supervisionadas inválidas")
+    available_sources = {src for r in records for src in r.get("sources", [])}
+    missing = pinned - available_sources
+    if missing:
+        raise ValueError("Imagem humana de treino ausente: " + sorted(missing)[0])
     parents = list(range(len(records)))
     def find(i):
         while parents[i] != i:
@@ -376,7 +389,12 @@ def split_universal_events(
     if len(buckets) < 5:
         raise ValueError("Poucos grupos visualmente independentes")
     groups = list(buckets.values())
-    counts = Counter((r["category_hint"], r["label"]) for r in records)
+    def balance_key(row):
+        return (
+            (row["category_hint"], row["label"])
+            if balance_by_aoi_category else row["label"]
+        )
+    counts = Counter(balance_key(r) for r in records)
     targets = {"train": 1-test_fraction-validation_fraction,
                "validation": validation_fraction, "test": test_fraction}
     allocated = {fold: [] for fold in targets}
@@ -385,12 +403,13 @@ def split_universal_events(
     rng.shuffle(groups)
     # Allocate large/rare groups first; optimize categorical quality balance.
     groups.sort(key=lambda group: (
-        -max(len(group) / max(1, counts[(r["category_hint"], r["label"])])
+        -max(len(group) / max(1, counts[balance_key(r)])
              for r in group),
         -len(group),
     ))
+    pinned_groups = 0
     for group in groups:
-        here = Counter((r["category_hint"], r["label"]) for r in group)
+        here = Counter(balance_key(r) for r in group)
         scores = {}
         for fold, ratio in targets.items():
             score = 0.
@@ -404,7 +423,16 @@ def split_universal_events(
                     1., len(records),
                 )
             scores[fold] = score
-        chosen = min(targets, key=lambda name: (scores[name], name))
+        force_train = any(
+            source in pinned
+            for row in group for source in row.get("sources", [])
+        )
+        chosen = (
+            "train" if force_train
+            else min(targets, key=lambda name: (scores[name], name))
+        )
+        if force_train:
+            pinned_groups += 1
         allocated[chosen].extend(group)
         acc[chosen].update(here)
     for fold, rows in allocated.items():
@@ -422,17 +450,25 @@ def split_universal_events(
             "aoi_minute_all_categories_kept_together": True,
             "physical_event_association_verified": False,
             "group_count": len(groups),
+            "aoi_category_used_for_split": balance_by_aoi_category,
+            "pinned_training_source_count": len(pinned),
+            "pinned_training_visual_groups": pinned_groups,
             "folds": {
                 fold: {
                     "records": len(rows),
                     "by_label": dict(Counter(r["label"] for r in rows)),
-                    "by_aoi_category_and_label": {
-                        cat: {
-                            label: sum(r["category_hint"] == cat and r["label"] == label
-                                       for r in rows)
-                            for label in ("OK", "NG")
-                        } for cat in sorted(set(r["category_hint"] for r in records))
-                    },
+                    **({
+                        "by_aoi_category_and_label": {
+                            cat: {
+                                label: sum(
+                                    r["category_hint"] == cat and r["label"] == label
+                                    for r in rows
+                                )
+                                for label in ("OK", "NG")
+                            }
+                            for cat in sorted(set(r["category_hint"] for r in records))
+                        },
+                    } if balance_by_aoi_category else {}),
                     "source_ids": names[fold],
                 } for fold, rows in allocated.items()
             },
