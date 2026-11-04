@@ -149,6 +149,10 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
         cycle_source == "network"
         and getattr(panel, "network_reinspection_of_judged_event", False)
     )
+    if intentional_reinspection and active_id:
+        # A imagem foi recebida novamente pelo XP: vincular o aprendizado
+        # ao event_id desta aquisição, nunca ao multilight anterior.
+        event_id = active_id
     return {
         "reinspection_of_judged_event": intentional_reinspection,
         "source_frame": source_frame,
