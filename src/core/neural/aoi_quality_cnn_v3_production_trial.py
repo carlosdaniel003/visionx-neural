@@ -15,9 +15,8 @@ from threading import RLock
 
 import numpy as np
 
-from src.core.neural.aoi_quality_cnn_v3 import AOIQualityCNNV3, MODEL_SCHEMA_V3
-from src.core.neural.faltando_preprocessing import _focus_crop, _letterbox_rgb
-from src.services.aoi_v3_epoch_diagnostics import EPOCH_SCHEMA
+# PyTorch e a arquitetura V3 são carregados somente quando o operador
+# ativa o ponteiro local, preservando o startup legado da estação.
 
 from src.core.neural.aoi_v3_trial_contract import (
     TRIAL_POINTER, POINTER_SCHEMA, SNAPSHOT_RELATIVE_PATH,
@@ -34,6 +33,8 @@ def validate_trial_snapshot(root: Path) -> tuple[dict, Path]:
     if sha256(path.read_bytes()).hexdigest() != SNAPSHOT_SHA256:
         raise ValueError("SHA da época 3 não corresponde à revisão humana")
     import torch
+    from src.core.neural.aoi_quality_cnn_v3 import MODEL_SCHEMA_V3
+    from src.services.aoi_v3_epoch_diagnostics import EPOCH_SCHEMA
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     if (
         not isinstance(checkpoint, dict)
@@ -128,6 +129,7 @@ class AOIQualityV3ProductionTrial:
             current_stat = (stat.st_mtime_ns, stat.st_size)
             if self._model is None or current_stat != self._checkpoint_stat:
                 checkpoint, _ = validate_trial_snapshot(self.root)
+                from src.core.neural.aoi_quality_cnn_v3 import AOIQualityCNNV3
                 model = AOIQualityCNNV3()
                 model.load_state_dict(
                     checkpoint["model_weights_not_production_state_dict"],
@@ -137,6 +139,9 @@ class AOIQualityV3ProductionTrial:
                 self._model = model
                 self._checkpoint_stat = current_stat
             import torch
+            from src.core.neural.faltando_preprocessing import (
+                _focus_crop, _letterbox_rgb,
+            )
             inputs = [
                 torch.zeros((1, 3, 3, 96, 96), dtype=torch.float32)
                 for _ in range(4)
