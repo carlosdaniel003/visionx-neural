@@ -609,7 +609,14 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
             return None
 
         if not bool(getattr(self, "is_locked", False)):
-            if judged_network:
+            # Só registrar peça já julgada quando houve ACK 0/1 do XP
+            # ou a tecla física veio do próprio XP. Um botão local com
+            # envio falho não deve tornar o evento um replay read-only.
+            command_confirmed = bool(
+                source == "xp_keyboard"
+                or getattr(self, "last_decision_command_success", None) is True
+            )
+            if judged_network and command_confirmed:
                 self.last_judged_network_reinspect_available = True
             self.current_sample = None
             self.current_ng = None

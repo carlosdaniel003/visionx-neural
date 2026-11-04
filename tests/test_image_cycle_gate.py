@@ -128,6 +128,7 @@ class FakePanel:
         self.started_captures = 0
         self.status_messages = []
         self.decisions = []
+        self.command_success = True
         self.btn_start = FakeButton()
         self.btn_skip = FakeButton()
         self.btn_save_ok = FakeButton()
@@ -150,6 +151,7 @@ class FakePanel:
 
     def save_label(self, _decision, source="button"):
         self.decisions.append((str(_decision), str(source)))
+        self.last_decision_command_success = bool(self.command_success)
         self.is_locked = False
         return source
 
@@ -402,6 +404,20 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
                 self.assertFalse(panel.capture_cycle_active)
                 self.assertFalse(panel.network_reinspection_read_only)
                 self.assertFalse(panel.network_receiver.armed)
+
+    def test_xp_command_without_ack_does_not_mark_event_as_previously_judged(self):
+        panel = FakePanel()
+        panel.combo_mode = type("Combo", (), {
+            "currentText": lambda self: "Modo Teste",
+        })()
+        panel.handle_network_image(object(), "169.254.95.200")
+        panel.current_analysis = {"verdict": "DEFEITO REAL"}
+        panel.current_sample, panel.current_ng = object(), object()
+        panel.command_success = False
+
+        panel.save_label("NG", source="button")
+        self.assertFalse(panel.last_judged_network_reinspect_available)
+        self.assertFalse(panel.reinspect_current_network_image())
 
     def test_after_judgment_different_next_frame_is_normal_cycle(self):
         panel = FakePanel()
