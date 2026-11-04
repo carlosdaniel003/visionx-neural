@@ -121,6 +121,30 @@ class AIVerdictFeedbackStateTests(unittest.TestCase):
             ("REVISÃO OBRIGATÓRIA", "ng"),
         )
 
+    def test_real_1030_invertido_review_classified_as_false_failure(self):
+        from tests.test_review_multilight_ok_consensus import (
+            real_event_inputs, fuse_real_event,
+        )
+        from src.core.review_multilight_ok_consensus import (
+            apply_review_multilight_ok_consensus,
+        )
+        analyses, report = real_event_inputs()
+        before = fuse_real_event(analyses, report)
+        self.assertEqual(
+            verdict_feedback_state(before), ("REVISÃO OBRIGATÓRIA", "ng"),
+        )
+        after = apply_review_multilight_ok_consensus(before, analyses)
+        self.assertTrue(after["production_review_required"])
+        self.assertEqual(
+            verdict_feedback_state(after), ("FALHA FALSA", "ok"),
+        )
+        after["detail"]["review_multilight_ok_proof"][
+            "physical_orientation_verified"
+        ] = True
+        self.assertEqual(
+            verdict_feedback_state(after), ("REVISÃO OBRIGATÓRIA", "ng"),
+        )
+
     def test_forged_visual_ok_marker_does_not_override_physical_ng(self):
         from src.core.operator_visual_memory_consensus import (
             apply_operator_visual_memory_consensus,
@@ -194,6 +218,25 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
         self.assertEqual(
             overlay._slide_in.startValue().x(),
             target.x() + VERDICT_FEEDBACK_SLIDE_PX,
+        )
+
+    def test_real_1030_visual_ok_overlay_is_green_and_xp_still_manual(self):
+        from tests.test_review_multilight_ok_consensus import (
+            real_event_inputs, fuse_real_event,
+        )
+        from src.core.review_multilight_ok_consensus import (
+            apply_review_multilight_ok_consensus,
+        )
+        analyses, report = real_event_inputs()
+        after = apply_review_multilight_ok_consensus(
+            fuse_real_event(analyses, report), analyses,
+        )
+        panel = self._panel()
+        self.assertTrue(panel.show_ai_verdict_feedback(after))
+        self.assertEqual(panel.ai_verdict_feedback.verdict_label.text(), "FALHA FALSA")
+        self.assertEqual(panel.ai_verdict_feedback.verdict_label.property("tone"), "ok")
+        self.assertFalse(
+            after["detail"]["review_multilight_ok_proof"]["automatic_xp_authorized"]
         )
 
     def test_real_1011_memory_ok_overlay_stays_green_with_xp_review_pending(self):
