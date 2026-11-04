@@ -632,9 +632,9 @@ class ControlPanelUI:
         window.btn_skip.setObjectName("secondaryButton")
         window.btn_reinspect.setObjectName("secondaryButton")
         window.btn_reinspect.setToolTip(
-            "Reanalisa a anomalia visual recebida do XP. Após um "
-            "julgamento já enviado, a repetição é somente diagnóstica, "
-            "sem reenviar 0/1. Exige novo frame XP estável."
+            "Solicita nova inspeção da anomalia no XP. A repetição "
+            "recebe novo evento e permite outro 0/1 e aprendizado. "
+            "Exige novo frame SIDE estável; teste primeiro com XP isolado."
         )
         window.btn_reinspect.setEnabled(False)
         window.btn_reinspect.setVisible(
