@@ -1,3 +1,34 @@
+## 04/11/2026 — Interface: FALHA FALSA com confirmação XP pendente
+
+No evento de Teste `3dcf76ffe38443aabc275b232cf70636`
+às 10:11, o relatório final já apontava
+`verdict=FALHA FALSA`, `is_defect=False` e
+`fusion_rule=operator_visual_memory_multilight_ok_v1`, porém
+`operator_review_required=True` fazia o overlay mostrar
+`REVISÃO OBRIGATÓRIA`. A regra nova não estava entre as rotas
+visuais OK reconhecidas por `verdict_feedback_state`.
+
+`src/core/operator_visual_memory_consensus.py` agora exporta
+`verified_operator_visual_memory_ok`, um contrato compartilhado:
+três luzes, fonte humana confirmada, suporte/âncoras coerentes,
+ausência de NG físico e sem identidade RGB exata. A UI usa essa
+verificação para apresentar **FALHA FALSA** com tom OK; não trata
+a pendência de confirmação como classe de defeito. A política
+`production_decision_policy` reutiliza o mesmo contrato e
+continua com `auto_allowed=False`, `proposed_decision=""`
+nessa rota aproximada. O indicador
+`operator_review_required` **continua verdadeiro** apenas
+para distinguir ausência de permissão de comando XP.
+
+Regressões de interface e política em
+`tests/test_decision_verdict_feedback.py` e
+`tests/test_operator_visual_memory_consensus.py`;
+workflows `ODIN Unified Verdict and Memory Overlay` e
+`General Multilight Tests`. Não foram alterados CNN, KNN,
+memória persistida ou agentes XP.
+
+---
+
 ## 04/11/2026 — Regressão real EMBORCADO 09:43: memória OK recuperada
 
 O operador confirmou **FALHA FALSA** no evento
