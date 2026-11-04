@@ -697,7 +697,12 @@ def _legacy_continuous_policy(analysis: dict, detail: dict, policy: dict) -> dic
     # pode ser transformado em NG PREVENTIVO no fallback continuo.
     from src.core.human_multilight_priority import RULE as HUMAN_MULTILIGHT_RULE
     from src.core.side_memory_first import RULE as SIDE_MEMORY_RULE
-    if detail.get("fusion_rule") in {HUMAN_MULTILIGHT_RULE, SIDE_MEMORY_RULE}:
+    from src.core.review_multilight_ok_consensus import (
+        RULE as REVIEW_MULTILIGHT_OK_RULE,
+    )
+    if detail.get("fusion_rule") in {
+        HUMAN_MULTILIGHT_RULE, SIDE_MEMORY_RULE, REVIEW_MULTILIGHT_OK_RULE,
+    }:
         # Tanto o OK visual valido quanto a adulteracao/inconsistencia
         # do marcador SIDE ficam fora da rejeicao preventiva automatica.
         return policy
@@ -854,6 +859,38 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "operator_review_required": False, "proposed_decision": "",
             "operational_error": True,
             "reason": "operator_visual_memory_invalid_contract_v1",
+        }
+
+    # CNN original inconclusiva nas três luzes, com contraprova
+    # direcional de OK por humano/índice visual + KNN C SIDE. A prova
+    # é reavaliada antes de tomar qualquer decisão no XP: aproximação
+    # não pode virar 0 automático, nem fallback 1/NG preventivo.
+    from src.core.review_multilight_ok_consensus import (
+        RULE as REVIEW_MULTILIGHT_OK_RULE,
+        verified_review_multilight_ok,
+    )
+    if detail.get("fusion_rule") == REVIEW_MULTILIGHT_OK_RULE:
+        if (
+            verified_review_multilight_ok(analysis)
+            and _completed_continuous_inspection(analysis, detail)
+        ):
+            return {
+                **policy,
+                "verdict": "FALHA FALSA",
+                "auto_allowed": False,
+                "operator_review_required": True,
+                "proposed_decision": "",
+                "reason": "cnn_review_multilight_ok_requires_confirmation_v1",
+                "unverified_physical_label": True,
+            }
+        return {
+            **policy,
+            "verdict": "",
+            "auto_allowed": False,
+            "operator_review_required": False,
+            "proposed_decision": "",
+            "operational_error": True,
+            "reason": "cnn_review_multilight_ok_integrity_fault_v1",
         }
 
     from src.core.operator_exact_frame_recall import (
