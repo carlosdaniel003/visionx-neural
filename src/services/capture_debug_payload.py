@@ -283,6 +283,12 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
             analysis_time_start_source or ""
         ),
         "analysis_time_contract": str(analysis_time_contract or ""),
+        "review_multilight_ok_proof": json_safe(
+            detail.get("review_multilight_ok_proof", {})
+        ),
+        "review_multilight_ok_attempt": json_safe(
+            detail.get("review_multilight_ok_attempt", {})
+        ),
         "operator_visual_memory_consensus": json_safe(
             detail.get("operator_visual_memory_consensus", {})
         ),
