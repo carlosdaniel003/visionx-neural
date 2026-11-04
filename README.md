@@ -1,3 +1,20 @@
+## 04/11/2026 — Relato do operador e critérios permanentes do ODIN AOI
+
+As dificuldades recorrentes relatadas durante meses de desenvolvimento
+(alternância OK→NG/NG→OK, perda de decisões humanas após centenas de
+eventos, superioridade prática observada da memória, acúmulo de regras
+com regressões e valor das imagens históricas anteriores ao salvamento
+automático) foram registradas como requisitos, sem declará-las resolvidas.
+
+Documento de referência para próximas mudanças:
+[Relato do operador e critérios de sucesso](docs/ODIN_AOI_RELATO_OPERADOR_E_CRITERIOS_DE_SUCESSO_20261104.md).
+
+O documento também inclui o primeiro relatório real de treino V3
+(200/215 no teste rotulado, com 10 NG→OK e 5 OK→NG, ainda não
+aprovado para produção). A referência não autoriza promoção do modelo.
+
+---
+
 ## 04/11/2026 — CNN V3: importar revisões humanas com acervo renovado
 
 A nova preparação AOI da estação encontrou 1.112 capturas
