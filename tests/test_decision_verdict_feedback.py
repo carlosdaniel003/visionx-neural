@@ -94,6 +94,48 @@ class AIVerdictFeedbackStateTests(unittest.TestCase):
             ("REVISÃO OBRIGATÓRIA", "ng"),
         )
 
+    def test_verified_multilight_memory_shows_false_failure_not_review(self):
+        from src.core.operator_visual_memory_consensus import (
+            apply_operator_visual_memory_consensus,
+        )
+        from tests.test_operator_visual_memory_consensus import _event_0943_actual
+
+        analyses, fused = _event_0943_actual()
+        corrected = apply_operator_visual_memory_consensus(fused, analyses)
+        corrected["detail"].pop("production_continuous_auto", None)
+        corrected["detail"].pop("production_binary_auto", None)
+        self.assertTrue(corrected["production_review_required"])
+        self.assertTrue(corrected["detail"]["operator_review_required"])
+        self.assertEqual(corrected["verdict"], "FALHA FALSA")
+        self.assertEqual(
+            verdict_feedback_state(corrected),
+            ("FALHA FALSA", "ok"),
+        )
+
+        # Não pintar OK se o marcador de origem da memória for adulterado.
+        corrected["detail"]["operator_visual_memory_consensus"][
+            "aligned_anchor_lights"
+        ] = ["SIDE"]
+        self.assertEqual(
+            verdict_feedback_state(corrected),
+            ("REVISÃO OBRIGATÓRIA", "ng"),
+        )
+
+    def test_forged_visual_ok_marker_does_not_override_physical_ng(self):
+        from src.core.operator_visual_memory_consensus import (
+            apply_operator_visual_memory_consensus,
+        )
+        from tests.test_operator_visual_memory_consensus import _event_0943_actual
+        analyses, fused = _event_0943_actual()
+        corrected = apply_operator_visual_memory_consensus(fused, analyses)
+        corrected["detail"].pop("production_continuous_auto", None)
+        corrected["detail"].pop("production_binary_auto", None)
+        corrected["detail"]["decision_trace"]["hard_missing_evidence"] = True
+        self.assertEqual(
+            verdict_feedback_state(corrected),
+            ("REVISÃO OBRIGATÓRIA", "ng"),
+        )
+
     def test_legacy_analysis_without_verdict_can_still_map_when_final(self):
         self.assertEqual(
             verdict_feedback_state({"is_defect": False}),
@@ -152,6 +194,26 @@ class AIVerdictFeedbackOverlayTests(unittest.TestCase):
         self.assertEqual(
             overlay._slide_in.startValue().x(),
             target.x() + VERDICT_FEEDBACK_SLIDE_PX,
+        )
+
+    def test_real_1011_memory_ok_overlay_stays_green_with_xp_review_pending(self):
+        from src.core.operator_visual_memory_consensus import (
+            apply_operator_visual_memory_consensus,
+        )
+        from tests.test_operator_visual_memory_consensus import _event_0943_actual
+        analyses, fused = _event_0943_actual()
+        final = apply_operator_visual_memory_consensus(fused, analyses)
+        final["detail"].pop("production_continuous_auto", None)
+        final["detail"].pop("production_binary_auto", None)
+        panel = self._panel()
+        self.assertTrue(panel.show_ai_verdict_feedback(final))
+        self.assertEqual(panel.ai_verdict_feedback.verdict_label.text(), "FALHA FALSA")
+        self.assertEqual(panel.ai_verdict_feedback.verdict_label.property("tone"), "ok")
+        self.assertTrue(final["production_review_required"])
+        self.assertFalse(
+            final["detail"]["operator_visual_memory_consensus"][
+                "automatic_xp_authorized"
+            ]
         )
 
     def test_mandatory_review_uses_red_state_text(self):
