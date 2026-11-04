@@ -23,8 +23,13 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from src.core.neural.aoi_quality_cnn_v3 import AOIQualityCNNV3, MODEL_SCHEMA_V3
 from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2
+from src.services.aoi_v3_binary_quality_metrics import (
+    binary_quality_metrics, quality_coverage,
+)
+from src.services.aoi_v3_verified_candidate import load_verified_v3_candidate
+from src.services.aoi_v3_operator_image_reviews import REVIEW_PATH
 from src.scripts.train_aoi_universal_quality_offline import (
-    _metrics, _pinned_initialization, _trial_readonly_snapshot,
+    _pinned_initialization, _trial_readonly_snapshot,
 )
 from src.scripts.train_faltando_cnn_v2_online import (
     PairDataset, _assess, _supervised_loss,
@@ -85,40 +90,6 @@ def _selection_score(metrics: dict) -> tuple:
     )
 
 
-def _coverage(rows: list[dict]) -> dict:
-    by_category_light = Counter()
-    by_source = Counter()
-    for row in rows:
-        by_source[row.get("label_provenance", "UNKNOWN")] += 1
-        for light in row["views"]:
-            by_category_light[(row["category_hint"], light, row["label"])] += 1
-    categories = sorted({r["category_hint"] for r in rows})
-    return {
-        "by_quality_provenance": dict(by_source),
-        "by_category_light": {
-            cat: {
-                light: {
-                    label: by_category_light[(cat, light, label)]
-                    for label in ("OK", "NG")
-                }
-                for light in ("SIDE", "TOP", "MID")
-            } for cat in categories
-        },
-        "all_categories_each_light_have_ok_and_ng_labels": all(
-            by_category_light[(cat, light, label)] > 0
-            for cat in categories
-            for light in ("SIDE", "TOP", "MID")
-            for label in ("OK", "NG")
-        ),
-        "fully_operator_verified": all(
-            row.get("label_provenance") in {
-                "HUMAN_CONFIRMED_SHA256", "HUMAN_INDIVIDUAL_PAIR",
-                "HUMAN_CONTACT_SHEET_NG",
-            } for row in rows
-        ),
-    }
-
-
 def _loss_v3(model, batch, *, identity_weight: float = .10):
     ref, test, focus_ref, focus_test, mask, truth = batch
     logits, lights = model(ref, test, focus_ref, focus_test, mask)
@@ -147,6 +118,7 @@ def train_v3(
     allow_provisional_archive_labels: bool = False,
     allow_verified_trial_pointer_readonly: bool = False,
     compare_verified_pinned_cnn: bool = True,
+    initialize_from_v3_report: Path | None = None,
 ) -> dict:
     if allow_provisional_archive_labels is not True:
         raise ValueError(
@@ -184,18 +156,43 @@ def train_v3(
     # o importador revalida SHA-256 de cada PNG e dos dois recortes AOI.
     events, provenance = universal_archive_events(
         manifest, allow_refreshed_validation_labels=True,
+        use_v3_image_quality_reviews=True,
     )
+    human_train_sources = {
+        source for row in events
+        if row.get("label_provenance") == "HUMAN_V3_IMAGE_SHA256"
+        for source in row["sources"]
+    }
+    if len(human_train_sources) != 14:
+        raise ValueError("CNN V3 exige 14 imagens humanas verificadas por SHA")
+    # Remover a categoria AOI dos exemplos usados pela CNN V3. O nome
+    # original do PNG é somente a localização para recuperar seus pixels.
+    events = [dict(row) for row in events]
+    for row in events:
+        row.pop("category_hint", None)
+    provenance.pop("by_category_and_label", None)
     if any(len(e["views"]) != 1 for e in events):
         raise ValueError("Grupo multilight sem vínculo físico confirmado")
     train, validation, test, partition = split_universal_events(
         events, seed=seed, validation_fraction=validation_fraction,
-        test_fraction=test_fraction,
+        test_fraction=test_fraction, balance_by_aoi_category=False,
+        pinned_training_sources=human_train_sources,
     )
+    if (
+        len({src for row in train for src in row["sources"]}
+            & human_train_sources) != 14
+        or any(
+            source in human_train_sources
+            for fold in (validation, test)
+            for row in fold for source in row["sources"]
+        )
+    ):
+        raise ValueError("Vazamento de correção humana entre treino/teste V3")
     coverage = {
-        "all_data": _coverage(events),
-        "train": _coverage(train),
-        "validation": _coverage(validation),
-        "test": _coverage(test),
+        "all_data": quality_coverage(events),
+        "train": quality_coverage(train),
+        "validation": quality_coverage(validation),
+        "test": quality_coverage(test),
     }
     if any(len(fold) < 2 for fold in (train, validation, test)):
         raise ValueError("Partições insuficientes para treino/verificação")
@@ -223,10 +220,22 @@ def train_v3(
         }
         base_model = FaltandoCNNV2()
         base_model.load_state_dict(pinned["state_dict"], strict=True)
-    model = AOIQualityCNNV3()
-    sample_counts = Counter((r["category_hint"], r["label"]) for r in train)
+    v3_source = None
+    if initialize_from_v3_report is not None:
+        model, v3_source = load_verified_v3_candidate(
+            root, initialize_from_v3_report, provenance["manifest_sha256"],
+        )
+        if image_size != v3_source["image_size"]:
+            raise ValueError("A CNN V3 anterior exige a mesma resolução de treino")
+    else:
+        model = AOIQualityCNNV3()
+    sample_counts = Counter(row["label"] for row in train)
+    # Balancear por qualidade física/provisória, nunca por categoria AOI.
+    # Amostras conferidas pelo operador têm reforço moderado, sem dominar
+    # centenas de exemplos históricos do mesmo conjunto.
     sample_weights = [
-        min(5., 1. / (sample_counts[(row["category_hint"], row["label"])] ** .5))
+        (2.0 if row.get("label_provenance") == "HUMAN_V3_IMAGE_SHA256" else 1.0)
+        / sample_counts[row["label"]]
         for row in train
     ]
     loader = DataLoader(
@@ -239,7 +248,9 @@ def train_v3(
         ), num_workers=0,
     )
     # A validação permanece congelada; augmentation só no treino.
-    initial = _metrics(validation, _assess(model, validation, image_size, .70))
+    initial = binary_quality_metrics(
+        validation, _assess(model, validation, image_size, .70),
+    )
     best_key = _selection_score(initial)
     best_epoch = 0
     best_state = deepcopy(model.state_dict())
@@ -260,11 +271,19 @@ def train_v3(
             torch.nn.utils.clip_grad_norm_(model.parameters(), 2.)
             optimizer.step()
             accumulated += float(loss.detach().item())
-        validation_scores = _metrics(
+        validation_scores = binary_quality_metrics(
             validation, _assess(model, validation, image_size, .70),
         )
         rank = _selection_score(validation_scores)
-        selected = rank > best_key
+        # Se houver base anterior, não aceitar uma melhora de média que
+        # aumente um dos dois tipos de erro nesta validação.
+        not_worse_than_start = all(
+            validation_scores[key] <= initial[key]
+            for key in ("NG_false_OK", "OK_false_NG")
+        )
+        selected = rank > best_key and (
+            v3_source is None or not_worse_than_start
+        )
         if selected:
             best_key = rank
             best_epoch = epoch
@@ -284,15 +303,23 @@ def train_v3(
         )
 
     model.load_state_dict(best_state)
-    final_validation = _metrics(
+    final_validation = binary_quality_metrics(
         validation, _assess(model, validation, image_size, .70),
     )
     # TESTE somente agora; não escolhe época, nem corrige limiares.
     final_test_rows = _assess(model, test, image_size, .70)
-    final_test = _metrics(test, final_test_rows)
+    final_test = binary_quality_metrics(test, final_test_rows)
+    baseline_v3_test = None
+    if v3_source is not None:
+        old_v3, _ = load_verified_v3_candidate(
+            root, initialize_from_v3_report, provenance["manifest_sha256"],
+        )
+        baseline_v3_test = binary_quality_metrics(
+            test, _assess(old_v3, test, image_size, .70),
+        )
     baseline_test = None
     if base_model is not None:
-        baseline_test = _metrics(
+        baseline_test = binary_quality_metrics(
             test,
             _assess(
                 base_model, test,
@@ -310,6 +337,12 @@ def train_v3(
         _, _, digest = _pinned_initialization(root)
         if digest != baseline_sha:
             raise ValueError("Modelo baseline alterado durante experimento")
+    if v3_source is not None:
+        _, rechecked = load_verified_v3_candidate(
+            root, initialize_from_v3_report, provenance["manifest_sha256"],
+        )
+        if rechecked != v3_source:
+            raise ValueError("Candidato V3 inicial alterado durante experimento")
 
     stamp = datetime.now(timezone.utc)
     folder = root/"reports/aoi_quality_cnn_v3/candidates"/(
@@ -326,10 +359,15 @@ def train_v3(
         "focus_fraction": .70,
         "lights": ("SIDE", "TOP", "MID"),
         "source_manifest_sha256": provenance["manifest_sha256"],
+        "initial_v3_candidate_sha256": (
+            v3_source["candidate_sha256"] if v3_source else None
+        ),
+        "aoi_category_used_for_training": False,
+        "operator_verified_training_sources": 14,
         "baseline_v2_sha256": baseline_sha,
         "trained_with_provisional_archive_labels": True,
         "aoi_category_is_not_physical_defect": True,
-        "source_training": "AOI_REFERENCE_TEST_PAIRS_NO_KNN_MEMORY_INPUT",
+        "source_training": "REFERENCE_TEST_PAIRS_IMAGE_ONLY_QUALITY_BINARY",
         "identity_reference_regularization": .10,
         "candidate_only": True,
         "production_approved": False,
@@ -347,6 +385,11 @@ def train_v3(
         "live_active_modified": False,
         "archive_modified": False,
         "memory_or_knn_used_for_inference": False,
+        "aoi_category_used_for_training_selection_evaluation": False,
+        "operator_image_review_file": REVIEW_PATH.as_posix(),
+        "operator_image_review_verified": 14,
+        "operator_image_review_ignored": 1,
+        "operator_images_reserved_exclusively_for_training": True,
         "training_performed": True,
         "training_uses_operator_quality_when_verified": True,
         "training_uses_provisional_archive_labels": True,
@@ -361,12 +404,20 @@ def train_v3(
             "common_pair_quarter_turn_augmentation": True,
             "selected_epoch_using_validation_only": best_epoch,
             "test_not_used_for_selection": True,
+            "quality_only_balancing": True,
+            "per_quality_inverse_frequency_sampling": True,
+            "operator_verified_weight_multiplier": 2.0,
+            "v3_baseline_initialized_from_verified_report": bool(v3_source),
+            "selected_epoch_cannot_worsen_either_validation_error_against_start":
+                bool(v3_source),
         },
         "epoch_history": trajectory,
         "validation": final_validation,
         "test": final_test,
         "test_cases": final_test_rows["cases"],
         "verified_pinned_v2_baseline": baseline_test,
+        "verified_previous_v3_baseline": baseline_v3_test,
+        "initial_v3_candidate": v3_source,
         "baseline_v2_sha256": baseline_sha,
         "baseline_v2_native_preprocessing": baseline_preprocessing,
         "comparison_on_same_test": {
@@ -388,7 +439,9 @@ def train_v3(
         },
         "safety": {
             "all_quality_labels_operator_verified": coverage["all_data"]["fully_operator_verified"],
-            "all_category_light_class_pairs_present": coverage["test"]["all_categories_each_light_have_ok_and_ng_labels"],
+            "each_available_light_has_both_labels": coverage["test"]["each_available_light_has_both_labels"],
+            "operator_verified_14_excluded_from_test": True,
+            "former_v3_test_no_longer_blind": True,
             "physical_event_independence_proven": False,
             "blind_holdout": False,
             "production_eligible": False,
@@ -397,7 +450,9 @@ def train_v3(
         "candidate_sha256": v3_hash,
         "limitations": [
             "Rótulo da pasta não significa inspeção física confirmada.",
-            "Algumas categorias/iluminações podem não ter NG para medir recall.",
+            "Algumas iluminações podem não conter ambas as qualidades reais.",
+            "A categoria AOI não é utilizada para treinar, balancear ou selecionar a V3.",
+            "As 14 correções humanas são treino, jamais pontuação de teste.",
             "Testes de arquivo histórico já vistos NÃO são avaliação cega.",
             "Não utilizar modelo nem limiar V3 na estação sem aprovação separada.",
             "Não enviar 0/1 ao XP nem atualizar memória com previsão da CNN.",
@@ -424,6 +479,7 @@ def main(argv=None) -> int:
     p.add_argument("--allow-provisional-archive-labels", action="store_true")
     p.add_argument("--allow-verified-trial-pointer-readonly", action="store_true")
     p.add_argument("--skip-verified-pinned-cnn-comparison", action="store_true")
+    p.add_argument("--initialize-from-v3-report", type=Path)
     a = p.parse_args(argv)
     result = train_v3(
         a.root, a.manifest, epochs=a.epochs, seed=a.seed,
@@ -431,6 +487,7 @@ def main(argv=None) -> int:
         allow_provisional_archive_labels=a.allow_provisional_archive_labels,
         allow_verified_trial_pointer_readonly=a.allow_verified_trial_pointer_readonly,
         compare_verified_pinned_cnn=not a.skip_verified_pinned_cnn_comparison,
+        initialize_from_v3_report=a.initialize_from_v3_report,
     )
     print(json.dumps({
         "selected_epoch": result["training"]["selected_epoch_using_validation_only"],
