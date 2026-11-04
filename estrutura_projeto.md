@@ -1,3 +1,38 @@
+## 04/11/2026 — Novo ramo do consenso de revisão: TOP/MID OK arquivado contra CNN TOP alta
+
+Para o evento `a1e18960ebea42e4a180592137fea410`
+(INVERTIDO, 11:43), `review_multilight_ok_attempt` registrava
+`CNN_NOT_OK_LEANING_TOP`: TOP CNN NG=0,878903 embora as três
+comparações humanas e de assinatura favorecessem OK.
+A regra prévia só admitia CNN <=0,30 nas três luzes e SIDE
+KNN C `SUGERE_OK`, combinação não atendida.
+
+`src/core/review_multilight_ok_consensus.py` passa a
+selecionar duas rotas mutuamente excludentes sem criar
+novo ponto de integração: `THREE_LIGHT_CNN_OK_LEANING`
+(contrato antigo) e `TOP_MID_ARCHIVE_OK_OVER_CNN_REVIEW`
+(novo ramo). O segundo valida checkpoint, TOP abaixo de
+0,90, SIDE/MID <=0,20, memória humana OK da própria luz,
+margens positivas nas três luzes, relatório KNN visual sem
+NG corroborado, duas referências TOP/MID no mesmo grupo
+de evento do `ok_archive`, com A/B apontando o mesmo PNG
+e SHA por luz, distância da classe NG e discordância SIDE
+KNN fraca (B favorece OK). Não usa timestamp concreto
+nem nome de PNG codificado como regra; os prefixos servem
+apenas para verificar coerência de grupo de captura.
+
+`apply_review_multilight_ok_consensus` publica apenas
+`verdict=FALHA FALSA`, `production_review_required=True`,
+`eligible_for_final_decision=False`; `verified_review_multilight_ok`
+refaz os cálculos sobre snapshots brutos. Os gates XP e UI
+existentes continuam aplicáveis e negam `0` automático
+sem prova exata. Testes `test_review_multilight_top_mid_ok_recall.py`
+cobrem reprodução numérica 11:43, conflitos NG, veto físico,
+hash/margem/votos adulterados e saída XP. Re-treino CNN
+não realizado sem dados e validação independentes.
+
+---
+
 ## 04/11/2026 — Resolução de revisão multilight sem NG para INVERTIDO
 
 Evento `5ba7734c810e44f8a3c2fa6b3f575293` (10:30, Teste):
