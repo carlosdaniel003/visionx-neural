@@ -112,7 +112,7 @@ def _confirmed_human_ok_requires_other_lights(analysis: dict, category: str) -> 
     Only prevents premature rejection. Never authorizes 0/OK or changes
     the current CNN's NG label. Explicit physical missing evidence wins.
     """
-    if (canonical_memory_category(category) != "FALTANDO"
+    if (not uses_faltando_v2(category)
             or analysis.get("is_defect") is not True
             or analysis.get("hard_missing_evidence") is True):
         return False
