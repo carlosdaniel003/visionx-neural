@@ -177,6 +177,16 @@ def verdict_feedback_state(analysis: dict | None) -> tuple[str, str]:
         ):
             return "FALHA FALSA", "ok"
 
+    # A arbitragem humana multilight já decidiu FALHA FALSA. O flag
+    # de revisão pertence à AUTORIZAÇÃO XP, não à classificação exibida.
+    # Conferir o contrato real para não confiar em qualquer string OK.
+    if verdict == "FALHA FALSA" and analysis.get("is_defect") is False:
+        from src.core.operator_visual_memory_consensus import (
+            verified_operator_visual_memory_ok,
+        )
+        if verified_operator_visual_memory_ok(analysis):
+            return "FALHA FALSA", "ok"
+
     # Revisão sem reconhecimento verificado continua explícita.
     if review_required:
         return "REVISÃO OBRIGATÓRIA", "ng"
