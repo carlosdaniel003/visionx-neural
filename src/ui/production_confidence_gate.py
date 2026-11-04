@@ -830,25 +830,16 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     # o fallback binário converta esta contraevidência em 1/NG automático.
     from src.core.operator_visual_memory_consensus import (
         RULE as OPERATOR_VISUAL_MEMORY_RULE,
-        SCHEMA as OPERATOR_VISUAL_MEMORY_SCHEMA,
+        verified_operator_visual_memory_ok,
     )
     if detail.get("fusion_rule") == OPERATOR_VISUAL_MEMORY_RULE:
-        marker = detail.get("operator_visual_memory_consensus")
-        supported = bool(
-            isinstance(marker, dict)
-            and marker.get("schema") == OPERATOR_VISUAL_MEMORY_SCHEMA
-            and marker.get("label") == "OK"
-            and marker.get("automatic_xp_authorized") is False
-            and marker.get("rgb_exact_pair") is False
-            and set(marker.get("lights") or ()) == {"SIDE", "TOP", "MID"}
-            and marker.get("category") == detail.get("multilight_category")
-            and detail.get("cnn_raw_verdict_before_memory") == "DEFEITO REAL"
-            and analysis.get("verdict") == "FALHA FALSA"
-            and analysis.get("multilight_final") is True
-            and detail.get("multilight_final") is True
+        # O mesmo contrato validado pela interface protege a política XP.
+        # A classificação é OK visual; sem par RGB idêntico, exige
+        # confirmação e não autoriza PRESS_0 nem o fallback PRESS_1.
+        if (
+            verified_operator_visual_memory_ok(analysis)
             and _completed_continuous_inspection(analysis, detail)
-        )
-        if supported:
+        ):
             return {
                 **policy,
                 "verdict": "FALHA FALSA",
