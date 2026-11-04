@@ -1,3 +1,26 @@
+## 04/11/2026 — Evidência humana reaproveitável entre manifestos somente na V3
+
+`src/services/odin_operator_validation_labels.py` passa a aceitar
+`allow_refreshed_manifest=False`. No modo opt-in, mantém exigência
+de fonte original + gabarito extraído + teste extraído SHA-256
+idênticos aos nove julgamentos de 26/10; o hash do manifesto
+de outubro não é usado como veto do inventário maior. Comportamento
+antigo permanece como padrão para scripts de replay e reparos.
+
+`src/services/aoi_universal_quality_archive.py` expõe a permissão
+separadamente em `allow_refreshed_validation_labels=False`,
+e só `src/scripts/train_aoi_quality_cnn_v3_offline.py` ativa.
+Proveniência retorna contagem de nove vereditos e flag de reuso.
+Os 14 casos de triagem e os outros 15 vereditos humanos continuam
+validando fontes e hashes. Não gera vínculo de evento pela trinca
+nomeada, modifica a pasta ou ativa CNN/XP.
+
+Regressões em `tests/test_aoi_universal_24_human_repair.py`
+cobrem importação em manifesto novo, regra histórica estrita,
+gabarito/teste adulterado, fonte ausente e documento inválido.
+
+---
+
 ## 04/11/2026 — CNN V3 isolada para recuperar generalização em EMBORCADO
 
 O motor `src/core/neural/aoi_quality_cnn_v3.py` implementa
