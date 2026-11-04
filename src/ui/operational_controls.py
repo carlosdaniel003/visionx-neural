@@ -473,7 +473,6 @@ class OperationalControlsPresenter:
                 and getattr(panel, "current_ng", None) is not None
                 and (
                     mode == "Modo Teste"
-                    or bool(getattr(panel, "network_reinspection_read_only", False))
                     or getattr(controller, "pending_analysis", None)
                     is getattr(panel, "current_analysis", None)
                 )
@@ -490,20 +489,13 @@ class OperationalControlsPresenter:
             )
             reinspect.setVisible(mode in {"Modo Teste", "Modo Produção"})
             self._set_enabled(reinspect, reinspect_enabled)
-            # A reanálise de peça já julgada não pode criar outro 0/1,
-            # mesmo que o estado usual do modo permita clique humano.
-            if bool(getattr(panel, "network_reinspection_read_only", False)):
-                self._set_enabled(panel.btn_save_ok, False)
-                self._set_enabled(panel.btn_save_ng, False)
         self._set_enabled(
             panel.btn_save_ok,
             state.approve_enabled
-            and not bool(getattr(panel, "network_reinspection_read_only", False)),
         )
         self._set_enabled(
             panel.btn_save_ng,
             state.reject_enabled
-            and not bool(getattr(panel, "network_reinspection_read_only", False)),
         )
 
         for button in (
