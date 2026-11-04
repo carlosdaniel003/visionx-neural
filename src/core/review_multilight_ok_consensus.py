@@ -29,6 +29,14 @@ MIN_KNN_SIDE_A = 0.85
 MIN_KNN_SIDE_B = 0.90
 MAX_WEAK_KNN_NG = 0.85
 
+# Rota alternativa: uma TOP CNN alta, ainda inconclusiva, pode ser
+# contrariada por duas capturas TOP/MID que recuperam o MESMO evento OK
+# arquivado, cada uma confirmada pelos descritores A e B. Não libera XP.
+TOP_MID_MODE = "TOP_MID_ARCHIVE_OK_OVER_CNN_REVIEW"
+TOP_MID_CNN_NG_CEILING = 0.90
+TOP_MID_OTHER_CNN_MAX = 0.20
+TOP_MID_ARCHIVE_NG_GAP = 0.075
+
 
 def _score(value):
     if type(value) not in (int, float):
@@ -48,6 +56,153 @@ def _reject(diagnostic: dict | None, reason: str):
             "reason": reason, "diagnostic_only": True,
         })
     return None
+
+
+def _ok_archive_pair_for_light(
+    light: str, vote: dict, sets: dict, category: str,
+) -> dict | None:
+    """Dois descritores retornam o mesmo PNG OK, com NG distante."""
+    if not (
+        vote.get("status") == "REVISAO"
+        and vote.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+        and vote.get("suggestion_A") == "REVISAO"
+        and vote.get("suggestion_B") == "REVISAO"
+        and isinstance(sets, dict)
+    ):
+        return None
+    thresholds = {
+        "TOP": (.83, .88),
+        "MID": (.90, .88),
+    }
+    if light not in thresholds:
+        return None
+    selected = []
+    for key, minimum, observed in (
+        ("neighbors_A", thresholds[light][0], vote.get("similarity_A")),
+        ("neighbors_B", thresholds[light][1], vote.get("similarity_B")),
+    ):
+        rows = sets.get(key)
+        if not isinstance(rows, list) or len(rows) < 5:
+            return None
+        rows = rows[:5]
+        if any(
+            not isinstance(r, dict)
+            or r.get("label") not in {"OK", "NG"}
+            or _score(r.get("similarity")) is None
+            for r in rows
+        ):
+            return None
+        best = rows[0]
+        best_score = _score(best["similarity"])
+        ng_scores = [
+            _score(r["similarity"])
+            for r in rows if r["label"] == "NG"
+        ]
+        if not (
+            best.get("label") == "OK"
+            and best_score >= minimum
+            and _score(observed) is not None
+            and abs(_score(observed) - best_score) <= 0.00001
+            and (not ng_scores or best_score - max(ng_scores)
+                 >= TOP_MID_ARCHIVE_NG_GAP)
+        ):
+            return None
+        path = best.get("path")
+        pixel_sha = best.get("source_pixel_sha256")
+        suffix = f"_{category}_{light}.png"
+        if not (
+            isinstance(path, str)
+            and path.startswith("public/ok_archive/")
+            and ".." not in path.split("/")
+            and path.endswith(suffix)
+            and bool(path[len("public/ok_archive/"):-len(suffix)])
+            and _sha(pixel_sha)
+        ):
+            return None
+        selected.append((path, pixel_sha, best_score, max(ng_scores, default=None)))
+    if selected[0][:2] != selected[1][:2]:
+        return None
+    return {
+        "path": selected[0][0],
+        "pixel_sha256": selected[0][1],
+        "group": selected[0][0][:-len(f"_{category}_{light}.png")],
+        "similarity_A": selected[0][2],
+        "similarity_B": selected[1][2],
+        "best_ng_A": selected[0][3],
+        "best_ng_B": selected[1][3],
+    }
+
+
+def _weak_side_c_disagreement(vote: dict, sets: dict) -> dict | None:
+    """NG fraco em A não elimina B OK dominante, sem tornar C conclusiva."""
+    if not (
+        vote.get("status") == "REVISAO"
+        and vote.get("reason") == "DISCORDANCIA_KNN_A_B"
+        and vote.get("suggestion_A") == "REVISAO"
+        and vote.get("suggestion_B") == "REVISAO"
+        and vote.get("vote_A") == "NG"
+        and vote.get("vote_B") == "OK"
+        and isinstance(sets, dict)
+    ):
+        return None
+    a, b = sets.get("neighbors_A"), sets.get("neighbors_B")
+    if not all(isinstance(rows, list) and len(rows) >= 5 for rows in (a, b)):
+        return None
+    a, b = a[:5], b[:5]
+    if any(
+        not isinstance(r, dict)
+        or r.get("label") not in {"OK", "NG"}
+        or _score(r.get("similarity")) is None
+        for r in a + b
+    ):
+        return None
+    score_a, score_b = _score(vote.get("similarity_A")), _score(
+        vote.get("similarity_B")
+    )
+    if not (
+        score_a is not None and score_b is not None
+        and a[0].get("label") == "NG"
+        and b[0].get("label") == "OK"
+        and abs(a[0]["similarity"] - score_a) <= .00001
+        and abs(b[0]["similarity"] - score_b) <= .00001
+        and score_a <= .82
+        and score_b >= .84
+        and score_b - score_a >= .03
+        and sum(row["label"] == "OK" for row in b) >= 4
+        and any(row["label"] == "OK" for row in a)
+        and all(
+            row["similarity"] < score_b - .04
+            for row in b if row["label"] == "NG"
+        )
+    ):
+        return None
+    return {"best_ng_A": score_a, "best_ok_B": score_b,
+            "ok_neighbors_B": sum(row["label"] == "OK" for row in b)}
+
+
+def _top_mid_recurrent_archive_ok(
+    votes: dict, neighbors: dict, category: str,
+) -> dict | None:
+    """Confere duas âncoras OK independentes da SIDE, em mesmo evento."""
+    side = _weak_side_c_disagreement(
+        votes.get("SIDE"), neighbors.get("SIDE"),
+    )
+    if side is None:
+        return None
+    matched = {}
+    for light in ("TOP", "MID"):
+        matched[light] = _ok_archive_pair_for_light(
+            light, votes[light], neighbors[light], category,
+        )
+        if matched[light] is None:
+            return None
+    if matched["TOP"]["group"] != matched["MID"]["group"]:
+        return None
+    return {
+        "mode": TOP_MID_MODE,
+        "side_dissent": side,
+        "archive_anchors": matched,
+    }
 
 
 def review_multilight_ok_evidence(
@@ -135,15 +290,24 @@ def review_multilight_ok_evidence(
             return _reject(diagnostic, "CHECKPOINT_CHANGED_OR_INVALID")
         checkpoint = sha
         score = _score(item.get("ng_score_uncalibrated"))
-        if score is None or score > MAX_CNN_NG or (
+        if score is None or score >= TOP_MID_CNN_NG_CEILING or (
             item.get("verdict") != (
                 "FALHA FALSA" if score <= .10 else "REVISÃO OBRIGATÓRIA"
             )
         ):
             return _reject(diagnostic, "CNN_NOT_OK_LEANING_" + light)
         cnn_scores[light] = score
-    if min(cnn_scores.values()) > AT_LEAST_ONE_CNN_NG:
-        return _reject(diagnostic, "NO_CONCLUSIVE_CNN_OK_LIGHT")
+    classic_mode = (
+        max(cnn_scores.values()) <= MAX_CNN_NG
+        and min(cnn_scores.values()) <= AT_LEAST_ONE_CNN_NG
+    )
+    top_mid_mode = (
+        MAX_CNN_NG < cnn_scores["TOP"] < TOP_MID_CNN_NG_CEILING
+        and cnn_scores["SIDE"] <= TOP_MID_OTHER_CNN_MAX
+        and cnn_scores["MID"] <= TOP_MID_OTHER_CNN_MAX
+    )
+    if not (classic_mode or top_mid_mode):
+        return _reject(diagnostic, "CNN_THREE_LIGHT_CONSENSUS_INSUFFICIENT")
 
     report = d.get("knn_visual_corroboration")
     if not isinstance(report, dict) or not (
@@ -173,15 +337,21 @@ def review_multilight_ok_evidence(
             ok is None or ng is None or type(margin) not in (float, int)
             or not isfinite(float(margin))
             or abs((ng - ok) - margin) > 0.00001
-            or ok < MIN_VISUAL_OK or ok - ng < MIN_VISUAL_MARGIN
+            or ok < MIN_VISUAL_OK
+            or ok - ng < (
+                .017 if top_mid_mode and light == "SIDE"
+                else MIN_VISUAL_MARGIN
+            )
         ):
             return _reject(diagnostic, "VISUAL_OK_ADVANTAGE_INSUFFICIENT_" + light)
         visual_points[light] = {"ok": ok, "ng": ng}
     if (
         sum(point["ok"] >= .97 for point in visual_points.values()) < 2
         or max(point["ok"] for point in visual_points.values()) < .98
-        or not any(point["ok"] - point["ng"] >= .04
-                   for point in visual_points.values())
+        or not any(
+            point["ok"] - point["ng"] >= (.035 if top_mid_mode else .04)
+            for point in visual_points.values()
+        )
     ):
         return _reject(diagnostic, "VISUAL_MULTI_LIGHT_SUPPORT_WEAK")
 
@@ -214,7 +384,14 @@ def review_multilight_ok_evidence(
             return _reject(diagnostic, "INVALID_HUMAN_REFERENCE_" + light)
         ok, ng = _score(rec.get("best_ok_similarity")), _score(rec.get("best_ng_similarity"))
         if ok is None or ng is None or (
-            ok < MIN_HUMAN_OK or ok - ng < MIN_HUMAN_MARGIN
+            ok < (
+                {"SIDE": .96, "TOP": .98, "MID": .965}[light]
+                if top_mid_mode else MIN_HUMAN_OK
+            )
+            or ok - ng < (
+                .01 if top_mid_mode and light == "SIDE"
+                else .025 if top_mid_mode else MIN_HUMAN_MARGIN
+            )
         ):
             return _reject(diagnostic, "HUMAN_OK_ADVANTAGE_INSUFFICIENT_" + light)
         human_points[light] = {
@@ -239,6 +416,28 @@ def review_multilight_ok_evidence(
             and vote.get("auto_decision_authorized") is False
         ):
             return _reject(diagnostic, "UNVERIFIED_KNN_C_" + light)
+    if top_mid_mode:
+        archive = _top_mid_recurrent_archive_ok(votes, neighbors, category)
+        if archive is None:
+            return _reject(diagnostic, "TOP_MID_ARCHIVE_OK_PAIR_UNVERIFIED")
+        return {
+            "schema": SCHEMA,
+            "category": category,
+            "label": "OK",
+            "source": "OPERATOR_VISUAL_RECALL_PLUS_TWO_ARCHIVE_ANCHORS",
+            "evidence_mode": TOP_MID_MODE,
+            "cnn_model_sha256": checkpoint,
+            "cnn_ng_scores_uncalibrated": cnn_scores,
+            "human_memory": human_points,
+            "knn_visual": visual_points,
+            "knn_c_archive": archive,
+            "rgb_exact_pair": False,
+            "physical_orientation_verified": False,
+            "automatic_xp_authorized": False,
+            "reason": "CNN_TOP_REVIEW_CONTRADICTED_BY_TWO_ARCHIVE_OK_LIGHTS",
+        }
+    for light in LIGHTS:
+        vote = votes[light]
         if light == "SIDE":
             if not (
                 vote.get("status") == "SUGERE_OK"
@@ -364,12 +563,21 @@ def apply_review_multilight_ok_consensus(
     result["production_review_required"] = True
     result["eligible_for_final_decision"] = False
     result["reason"] = (
-        "FALHA FALSA • CONSENSO VISUAL MULTILIGHT: CNN experimental "
-        "favoreceu OK nas três iluminações; memória humana OK superou "
-        "NG nas três luzes, índice visual concordou e KNN C SIDE "
-        "recuperou um mesmo PNG OK em A/B. Não é prova física de "
-        "orientação correta nem par RGB exato. Confirmação humana "
-        "necessária antes de 0/1 no XP."
+        (
+            "FALHA FALSA • TOP/MID recuperaram o mesmo evento OK do "
+            "arquivo pelos descritores KNN C A/B; memória humana e índice "
+            "visual favorecem OK nas três iluminações. A CNN TOP trial "
+            "ficou próxima do limite NG, sem corroboracão independente; "
+            "SIDE teve NG KNN fraco e B favoreceu OK. "
+        ) if proof.get("evidence_mode") == TOP_MID_MODE else (
+            "FALHA FALSA • CONSENSO VISUAL MULTILIGHT: CNN experimental "
+            "favoreceu OK nas três iluminações; memória humana OK superou "
+            "NG nas três luzes, índice visual concordou e KNN C SIDE "
+            "recuperou um mesmo PNG OK em A/B. "
+        )
+    ) + (
+        "Sem prova física de orientação nem par RGB exato. "
+        "Confirmação humana antes de qualquer 0/1 XP."
     )
     d["fusion_rule"] = RULE
     d["operator_review_required"] = True
