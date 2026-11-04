@@ -138,8 +138,10 @@ def persist_epoch_diagnostics(
 ) -> list[dict]:
     """Retém cada época treinada com schema incompatível com Produção.
 
-    Somente dados/weights de TREINO e VALIDAÇÃO são serializados; o
-    teste separado nunca é executado para essas variantes experimentais.
+    Cada snapshot contém apenas métricas de TREINO e VALIDAÇÃO.
+    O teste separado só é calculado para o checkpoint conservador
+    selecionado; quando a mesma época também tem um snapshot, o campo
+    test_evaluated_for_this_epoch registra esse fato com precisão.
     """
     if (
         len(snapshots) != len(history)-1
@@ -170,7 +172,7 @@ def persist_epoch_diagnostics(
             "operator_training_metrics":
                 assessment["operator_training_replay"]["metrics"],
             "in_sample_not_independent_test": True,
-            "test_evaluated_for_this_epoch": False,
+            "test_evaluated_for_this_epoch": number == safe_selected_epoch,
             "selected_by_safe_gate": number == safe_selected_epoch,
             "diagnostics_only": True,
             "candidate_only": True,
@@ -188,7 +190,7 @@ def persist_epoch_diagnostics(
             "validation_NG_false_OK": assessment["validation"]["NG_false_OK"],
             "validation_OK_false_NG": assessment["validation"]["OK_false_NG"],
             "safe_gate_selected": number == safe_selected_epoch,
-            "test_evaluated_for_this_epoch": False,
+            "test_evaluated_for_this_epoch": number == safe_selected_epoch,
             "production_approved": False,
             "automatic_xp_authorized": False,
         })
