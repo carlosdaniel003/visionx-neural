@@ -106,17 +106,27 @@ def _archive_human_anchor(local: dict, human_id: str, light: str) -> bool:
     )
 
 
-def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
+def memory_ok_counterevidence(
+    analyses: dict, fused: dict, *, diagnostic: dict | None = None,
+) -> dict | None:
     """Verifica as três iluminações e duas fontes visuais independentes.
 
     Não decide por quantidade de imagens na pasta nem por semelhança única.
     NG físico ou memória NG competitiva impede qualquer promoção.
     """
-    if not isinstance(fused, dict) or not isinstance(analyses, dict):
+    def _skip(reason: str):
+        if isinstance(diagnostic, dict):
+            diagnostic.update({
+                "schema": SCHEMA, "status": "NOT_APPLIED",
+                "reason": reason, "diagnostic_only": True,
+            })
         return None
+
+    if not isinstance(fused, dict) or not isinstance(analyses, dict):
+        return _skip("INVALID_INPUT")
     detail = fused.get("detail")
     if not isinstance(detail, dict):
-        return None
+        return _skip("MISSING_FINAL_DETAIL")
     category = canonical_memory_category(fused.get("multilight_category", ""))
     if not (
         uses_faltando_v2(category)
@@ -134,7 +144,7 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
         )
         and _no_hard_ng(fused)
     ):
-        return None
+        return _skip("BASE_CONTEXT_INELIGIBLE")
     report = detail.get("knn_visual_corroboration")
     if not isinstance(report, dict) or not (
         report.get("schema") == "visionx.knn_visual_corroboration.v1"
@@ -143,10 +153,10 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
         and report.get("strong_ng_lights") == []
         and report.get("trend_ng_lights") == []
     ):
-        return None
+        return _skip("UNTRUSTED_OR_CONTRADICTORY_VISUAL_REPORT")
     rows = report.get("lights")
     if not isinstance(rows, dict) or set(rows) != set(LIGHTS):
-        return None
+        return _skip("INCOMPLETE_VISUAL_LIGHTS")
 
     # A KNN C oferece uma terceira contraprova da SIDE. Nas outras luzes
     # seu voto pode estar em revisão, mas a busca independente deve
@@ -164,16 +174,16 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
         and knn.get("diagnostic_only") is True
         and knn.get("auto_decision_authorized") is False
     ):
-        return None
+        return _skip("SIDE_KNN_C_NOT_SUGGESTING_OK")
     for key, minimum in (("neighbors_A", 0.96), ("neighbors_B", 0.90)):
         neighbors = knn.get(key)
         if not isinstance(neighbors, list) or len(neighbors) < 5 or any(
             not isinstance(item, dict) or item.get("label") != "OK"
             for item in neighbors[:5]
         ):
-            return None
+            return _skip("SIDE_KNN_C_INCONSISTENT_TOP_FIVE")
         if (_score(neighbors[0].get("similarity")) or 0) < minimum:
-            return None
+            return _skip("SIDE_KNN_C_SIMILARITY_WEAK")
 
     observations = {}
     model_sha = None
@@ -191,7 +201,7 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
             and local.get("recognition_route") == "NEW_CNN"
             and canonical_memory_category(local.get("cnn_v2_aoi_category")) == category
         ):
-            return None
+            return _skip("INVALID_CNN_LIGHT")
         # Veto físico em QUALQUER luz tem precedência: o frame dominante
         # pode não carregar todos os metadados locais de ausência.
         trace = local.get("decision_trace")
@@ -203,20 +213,20 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
                     "missing_hard_absence", "memory_conflict",
                 )
             ):
-                return None
+                return _skip("LOCAL_PHYSICAL_NG_OR_MEMORY_CONFLICT")
         physical = local.get("physical_missing_veto")
         if isinstance(physical, dict) and (
             physical.get("status") in {"SUSPECT_ABSENCE", "NG_CORROBORATED", "UNAVAILABLE"}
             or physical.get("suspect_lights")
             or physical.get("unavailable_lights")
         ):
-            return None
+            return _skip("LOCAL_PHYSICAL_ABSENCE_VETO")
 
         digest = local.get("cnn_v2_checkpoint_sha256")
         if not isinstance(digest, str) or len(digest) != 64:
-            return None
+            return _skip("MODEL_CHECKPOINT_UNVERIFIED")
         if model_sha is not None and digest != model_sha:
-            return None
+            return _skip("MODEL_CHECKPOINT_CHANGED")
         model_sha = digest
 
         human = local.get("confirmed_visual_recall")
@@ -229,9 +239,9 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
             and human.get("status") in {"HUMAN_OK_VISUAL_CANDIDATE", "NO_MATCH"}
             and human.get("reason") == "VISUAL_SIMILARITY_NOT_EXACT_IDENTITY"
         ):
-            return None
+            return _skip("MISSING_OPERATOR_MEMORY")
         if light != "MID" and human["status"] != "HUMAN_OK_VISUAL_CANDIDATE":
-            return None
+            return _skip("MISSING_HUMAN_OK_CANDIDATE")
         source = human.get("best_ok_source")
         if not isinstance(source, dict) or not (
             source.get("source") == "OPERATOR_CONFIRMED"
@@ -240,12 +250,12 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
             and isinstance(source.get("record_id"), str)
             and len(source["record_id"]) == 64
         ):
-            return None
+            return _skip("UNTRUSTED_OPERATOR_SOURCE")
         same_light = source["lighting_mode"] == light
         score_ok = _score(human.get("best_ok_similarity"))
         score_ng = _score(human.get("best_ng_similarity"))
         if score_ok is None or score_ng is None:
-            return None
+            return _skip("INVALID_OPERATOR_SCORES")
         human_margin = score_ok - score_ng
 
         visual = rows[light]
@@ -254,11 +264,11 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
             and visual.get("cross_category_ng") is False
             and visual.get("ng_support") in (0, 1)
         ):
-            return None
+            return _skip("UNTRUSTED_VISUAL_LIGHT")
         ok_summary = visual.get("ok")
         ng_summary = visual.get("ng")
         if not isinstance(ok_summary, dict) or not isinstance(ng_summary, dict):
-            return None
+            return _skip("INVALID_VISUAL_SUMMARIES")
         best_ok = _score(ok_summary.get("best_similarity"))
         best_ng = _score(ng_summary.get("best_similarity"))
         margin = visual.get("ng_margin_over_ok")
@@ -267,7 +277,7 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
             or type(margin) not in (float, int) or not isfinite(margin)
             or abs(float(margin) - (best_ng - best_ok)) > 0.00001
         ):
-            return None
+            return _skip("INVALID_VISUAL_MARGIN")
         archive_margin = best_ok - best_ng
         strict = bool(
             same_light
@@ -321,7 +331,14 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
         and len(supporting_lights) == len(LIGHTS)
     )
     if not strict_consensus and not anchored_consensus:
-        return None
+        if isinstance(diagnostic, dict):
+            diagnostic.update({
+                "strict_lights": list(strict_lights),
+                "aligned_anchor_lights": list(aligned_anchors),
+                "support_lights": list(supporting_lights),
+                "human_archive_observations": observations,
+            })
+        return _skip("INSUFFICIENT_OPERATOR_ARCHIVE_ANCHORS_OR_SUPPORT")
     return {
         "schema": SCHEMA,
         "label": "OK",
@@ -347,8 +364,17 @@ def apply_operator_visual_memory_consensus(
     """Prioridade do conhecimento supervisionado no veredito, sem liberar XP."""
     if not isinstance(fused, dict):
         return fused
-    proof = memory_ok_counterevidence(analyses, fused)
+    diagnostic = {}
+    proof = memory_ok_counterevidence(analyses, fused, diagnostic=diagnostic)
     if proof is None:
+        if diagnostic.get("reason") not in {
+            "INVALID_INPUT", "MISSING_FINAL_DETAIL", "BASE_CONTEXT_INELIGIBLE",
+        }:
+            result = deepcopy(fused)
+            detail = result.get("detail")
+            if isinstance(detail, dict):
+                detail["operator_visual_memory_attempt"] = diagnostic
+            return result
         return fused
     result = deepcopy(fused)
     detail = result["detail"]
@@ -359,11 +385,16 @@ def apply_operator_visual_memory_consensus(
     result["confidence"] = 0.5
     result["production_review_required"] = True
     result["eligible_for_final_decision"] = False
+    evidence_description = (
+        "duas âncoras humanas OK alinhadas a PNGs do acervo e terceira "
+        "iluminação com suporte OK"
+        if proof["evidence_mode"] == "TWO_ALIGNED_ARCHIVE_ANCHORS" else
+        "três iluminações com memória humana OK estritamente corroborada"
+    )
     result["reason"] = (
-        "MEMÓRIA HUMANA MULTILIGHT: OK anteriormente confirmado com "
-        "contraprova visual favorável em SIDE/TOP/MID e KNN C SIDE OK; "
-        "CNN experimental contradiz as referências. Sem par RGB exato: "
-        "decisão de XP requer nova confirmação humana."
+        "MEMÓRIA HUMANA MULTILIGHT: " + evidence_description
+        + "; KNN C SIDE sugere OK. CNN experimental contradiz o histórico. "
+        "Sem par RGB exato: XP exige confirmação humana; 0 automático bloqueado."
     )
     detail["fusion_rule"] = RULE
     detail["operator_review_required"] = True
