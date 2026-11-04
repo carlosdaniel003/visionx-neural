@@ -317,7 +317,21 @@ def train_v3(
     # TESTE somente agora; não escolhe época, nem corrige limiares.
     final_test_rows = _assess(model, test, image_size, .70)
     final_test = binary_quality_metrics(test, final_test_rows)
+    human_train_rows = [
+        row for row in train
+        if row.get("label_provenance") == "HUMAN_V3_IMAGE_SHA256"
+    ]
+    if len(human_train_rows) != 14:
+        raise ValueError("Revisão de treino V3 sem as 14 imagens confirmadas")
+    reviewed_prediction = _assess(model, human_train_rows, image_size, .70)
+    reviewed_training = {
+        "metrics": binary_quality_metrics(human_train_rows, reviewed_prediction),
+        "cases": reviewed_prediction["cases"],
+        "in_sample_not_independent_test": True,
+        "must_not_be_reported_as_production_accuracy": True,
+    }
     baseline_v3_test = None
+    baseline_v3_reviewed = None
     if v3_source is not None:
         old_v3, _ = load_verified_v3_candidate(
             root, initialize_from_v3_report, provenance["manifest_sha256"],
@@ -325,6 +339,16 @@ def train_v3(
         baseline_v3_test = binary_quality_metrics(
             test, _assess(old_v3, test, image_size, .70),
         )
+        previous_prediction = _assess(
+            old_v3, human_train_rows, image_size, .70,
+        )
+        baseline_v3_reviewed = {
+            "metrics": binary_quality_metrics(
+                human_train_rows, previous_prediction,
+            ),
+            "cases": previous_prediction["cases"],
+            "in_sample_not_independent_test": True,
+        }
     baseline_test = None
     if base_model is not None:
         baseline_test = binary_quality_metrics(
@@ -425,6 +449,8 @@ def train_v3(
         "test_cases": final_test_rows["cases"],
         "verified_pinned_v2_baseline": baseline_test,
         "verified_previous_v3_baseline": baseline_v3_test,
+        "operator_verified_training_replay": reviewed_training,
+        "previous_v3_operator_verified_training_replay": baseline_v3_reviewed,
         "initial_v3_candidate": v3_source,
         "baseline_v2_sha256": baseline_sha,
         "baseline_v2_native_preprocessing": baseline_preprocessing,
@@ -503,6 +529,13 @@ def main(argv=None) -> int:
         "v3_ng_escaped": result["test"]["NG_false_OK"],
         "baseline_v2": result["verified_pinned_v2_baseline"],
         "candidate_path": result["candidate_path"],
+        "operator_verified_14_correct_in_training_replay":
+            result["operator_verified_training_replay"]["metrics"]["correct"],
+        "previous_v3_14_correct_in_training_replay": (
+            result["previous_v3_operator_verified_training_replay"]["metrics"]["correct"]
+            if result["previous_v3_operator_verified_training_replay"] else None
+        ),
+        "training_replay_not_independent_test": True,
         "production_approved": False,
     }, ensure_ascii=False, indent=2))
     return 0
