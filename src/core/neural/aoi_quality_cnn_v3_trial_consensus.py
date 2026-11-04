@@ -6,7 +6,7 @@ ou MID pode bloquear uma autorização OK que venha do motor legado.
 from __future__ import annotations
 
 import math
-from src.core.neural.aoi_quality_cnn_v3_production_trial import (
+from src.core.neural.aoi_v3_trial_contract import (
     LIGHTS, POINTER_SCHEMA, SNAPSHOT_SHA256,
 )
 
