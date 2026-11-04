@@ -125,6 +125,60 @@ class NewNineConfirmedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "manifesto original"):
             verified_validation_labels(self.store)
 
+    def test_refreshed_manifest_accepts_all_nine_pinned_sources_and_pairs(self):
+        """O histórico permanece fixo; somente o inventário cresceu."""
+        self.store.manifest_path.write_text(
+            '{"new_archive_count":1112,"validation_still_same":true}',
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "manifesto original"):
+            verified_validation_labels(self.store)
+        results = verified_validation_labels(
+            self.store, allow_refreshed_manifest=True,
+        )
+        self.assertEqual(len(results), 9)
+        self.assertEqual(
+            Counter(v["quality_label"] for v in results.values()),
+            {"OK": 6, "NG": 3},
+        )
+        # O arquivo auditado não recebe um hash artificial do inventário novo.
+        self.assertNotEqual(
+            sha256(self.store.manifest_path.read_bytes()).hexdigest(),
+            self.doc["source_manifest_sha256"],
+        )
+        self.assertEqual(
+            json.loads(self.evidence_file.read_text(encoding="utf-8"))[
+                "source_manifest_sha256"
+            ], self.doc["source_manifest_sha256"],
+        )
+
+    def test_refreshed_manifest_rejects_mutated_pair_even_with_original_png(self):
+        self.store.manifest_path.write_text('{"new":2}', encoding="utf-8")
+        source = self.items[0]["source_path"]
+        self.store.files[source][2].write_bytes(_png(250))
+        with self.assertRaisesRegex(ValueError, "Integridade SHA"):
+            verified_validation_labels(
+                self.store, allow_refreshed_manifest=True,
+            )
+
+    def test_refreshed_manifest_rejects_removed_or_relabelled_confirmed_source(self):
+        self.store.manifest_path.write_text('{"new":3}', encoding="utf-8")
+        source = self.items[0]["source_path"]
+        self.store.by_path.pop(source)
+        with self.assertRaisesRegex(ValueError, "não existe no manifesto"):
+            verified_validation_labels(
+                self.store, allow_refreshed_manifest=True,
+            )
+
+    def test_refreshed_manifest_does_not_ignore_tampered_evidence_schema(self):
+        self.store.manifest_path.write_text('{"new":4}', encoding="utf-8")
+        self.doc["source_manifest_sha256"] = "not-a-digest"
+        self.write_evidence()
+        with self.assertRaisesRegex(ValueError, "Proveniência"):
+            verified_validation_labels(
+                self.store, allow_refreshed_manifest=True,
+            )
+
 
 class SecondRepairGatesTests(unittest.TestCase):
     def test_24_human_metrics_correct(self):
