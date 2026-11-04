@@ -115,7 +115,10 @@ class TrainingTests(unittest.TestCase):
             cases.append({
                 "id": f"event_{i:03d}", "category_hint": category,
                 "label": label,
-                "label_provenance": "ARCHIVE_FOLDER_PROVISIONAL",
+                "label_provenance": (
+                    "HUMAN_V3_IMAGE_SHA256" if i < 14
+                    else "ARCHIVE_FOLDER_PROVISIONAL"
+                ),
                 "split_group": f"AOI_MINUTE:{i:04d}",
                 "views": {light: {"reference": src, "test": tst}},
                 "sources": [f"public/{label.lower()}_archive/{i:03d}.png"],
@@ -161,6 +164,17 @@ class TrainingTests(unittest.TestCase):
         self.assertFalse(report["automatic_xp_authorized"])
         self.assertFalse(report["memory_or_knn_used_for_inference"])
         self.assertFalse(report["safety"]["production_eligible"])
+        self.assertFalse(report["aoi_category_used_for_training_selection_evaluation"])
+        self.assertEqual(report["operator_image_review_verified"], 14)
+        self.assertEqual(report["operator_image_review_ignored"], 1)
+        self.assertTrue(report["operator_images_reserved_exclusively_for_training"])
+        self.assertFalse(report["partition"]["aoi_category_used_for_split"])
+        self.assertEqual(report["partition"]["pinned_training_source_count"], 14)
+        self.assertNotIn("by_aoi_category", report["test"])
+        self.assertNotIn("by_category_and_label", report["provenance"])
+        self.assertEqual(report["coverage"]["train"]["human_verified_v3"], 14)
+        self.assertEqual(report["coverage"]["validation"]["human_verified_v3"], 0)
+        self.assertEqual(report["coverage"]["test"]["human_verified_v3"], 0)
         self.assertTrue(report["training"]["test_not_used_for_selection"])
         self.assertEqual(len(report["epoch_history"]), 2)
         self.assertEqual(
