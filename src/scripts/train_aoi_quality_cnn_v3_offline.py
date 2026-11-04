@@ -204,8 +204,20 @@ def train_v3(
     # teste (não é treino, teacher nem pré-treinamento da V3).
     base_model = None
     baseline_sha = None
+    baseline_preprocessing = None
     if compare_verified_pinned_cnn:
         _, pinned, baseline_sha = _pinned_initialization(root)
+        base_size = pinned.get("image_size")
+        base_focus = pinned.get("focus_fraction")
+        if (
+            type(base_size) is not int or not 64 <= base_size <= 512
+            or not isinstance(base_focus, (int, float))
+            or isinstance(base_focus, bool) or not .5 <= base_focus <= .90
+        ):
+            raise ValueError("Pré-processamento do checkpoint V2 não verificado")
+        baseline_preprocessing = {
+            "image_size": base_size, "focus_fraction": float(base_focus),
+        }
         base_model = FaltandoCNNV2()
         base_model.load_state_dict(pinned["state_dict"], strict=True)
     model = AOIQualityCNNV3()
@@ -278,7 +290,12 @@ def train_v3(
     baseline_test = None
     if base_model is not None:
         baseline_test = _metrics(
-            test, _assess(base_model, test, image_size, .70),
+            test,
+            _assess(
+                base_model, test,
+                baseline_preprocessing["image_size"],
+                baseline_preprocessing["focus_fraction"],
+            ),
         )
     if _trial_readonly_snapshot(
         root, opt_in=allow_verified_trial_pointer_readonly,
@@ -348,6 +365,7 @@ def train_v3(
         "test_cases": final_test_rows["cases"],
         "verified_pinned_v2_baseline": baseline_test,
         "baseline_v2_sha256": baseline_sha,
+        "baseline_v2_native_preprocessing": baseline_preprocessing,
         "comparison_on_same_test": {
             "v3_ng_false_ok": final_test["NG_false_OK"],
             "v3_ok_false_ng": final_test["OK_false_NG"],
