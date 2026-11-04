@@ -145,14 +145,22 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
         event_id = evidence_id if source_frame is not None else ""
     elif not event_id and source_frame is not None:
         event_id = evidence_id
+    intentional_reinspection = bool(
+        cycle_source == "network"
+        and getattr(panel, "network_reinspection_of_judged_event", False)
+    )
     return {
+        "reinspection_of_judged_event": intentional_reinspection,
         "source_frame": source_frame,
         "ng_image": _image_snapshot(getattr(panel, "current_ng", None)),
         "label": normalized,
         "sample_image": _image_snapshot(getattr(panel, "current_sample", None)),
         "aoi_info": info,
         "analysis": analysis,
-        "save_images": bool(shadow or eligible or ai_decision != normalized),
+        "save_images": bool(
+            shadow or eligible or ai_decision != normalized
+            or intentional_reinspection
+        ),
         "source": source,
         "ai_decision": ai_decision,
         "event_id": event_id,
@@ -276,14 +284,20 @@ def install_anomaly_learning(control_panel_cls) -> None:
             # reanálise pós-julgamento quando o XP recebeu 0/1. Não muda
             # a semântica anterior de treinamento manual no Teste.
             self.last_decision_command_success = bool(sent)
-            # Em Produção, sem ACK não registrar confirmação humana.
+            # Reinspeção julgada exige um segundo envio real mesmo no Teste.
+            # Não gravar confirmação se essa ordem falhar. O fluxo legado
+            # de Teste para capturas não reinspecionadas fica preservado.
             combo = getattr(self, "combo_mode", None)
             mode = combo.currentText() if combo is not None else ""
-            if mode == "Modo Produção" and not sent:
+            reinspecting = bool(
+                getattr(self, "capture_cycle_source", None) == "network"
+                and getattr(self, "network_reinspection_of_judged_event", False)
+            )
+            if (mode == "Modo Produção" or reinspecting) and not sent:
                 notice = getattr(self, "update_brain_status", None)
                 if callable(notice):
                     notice(
-                        "Correção manual não confirmada pelo XP; "
+                        "Julgamento não confirmado pelo XP; "
                         "captura preservada para nova tentativa.", True,
                     )
                 return False
