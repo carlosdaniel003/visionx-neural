@@ -340,6 +340,19 @@ class ProductionAutonomyController(QObject):
             if callable(show_verdict):
                 show_verdict(analysis)
 
+        # Uma imagem XP repetida APÓS um julgamento já transmitido é
+        # somente para diagnóstico. Mostrar o veredito sem iniciar o
+        # temporizador de 1s, enviar 0/1 ou contar uma segunda peça.
+        if bool(getattr(self.panel, "network_reinspection_read_only", False)):
+            self._cancel_pending()
+            self.state = "reinspection_read_only"
+            self.panel.update_brain_status(
+                "Reanálise de imagem XP já julgada • somente diagnóstico. "
+                "Nenhum novo 0/1 será enviado. Descarte para continuar.",
+                True,
+            )
+            return True
+
         self._cancel_pending()
         self._record_analysis_metrics(analysis)
         self.pending_analysis = analysis
@@ -477,6 +490,7 @@ class ProductionAutonomyController(QObject):
         # entre análise e envio invalida o comando sem transmiti-lo.
         if (
             self.paused
+            or bool(getattr(self.panel, "network_reinspection_read_only", False))
             or not self._analysis_still_current(generation)
             or bool(getattr(self.panel, "production_review_pending", False))
             or decision not in {"OK", "NG"}
@@ -605,6 +619,7 @@ class ProductionAutonomyController(QObject):
         """
         label = str(decision or "").strip().upper()
         if (label not in {"OK", "NG"}
+                or bool(getattr(self.panel, "network_reinspection_read_only", False))
                 or source not in {"button", "xp_keyboard"}
                 or not self.is_production()
                 or not self.paused

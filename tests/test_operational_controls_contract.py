@@ -30,6 +30,16 @@ class OperationalControlsVisualContractTests(unittest.TestCase):
         self.assertIn("operationStateBar", self.source)
         self.assertIn("operationStateBadge", self.source)
 
+    def test_reinspect_button_visible_in_test_and_production_after_judgment(self):
+        ui = Path("src/ui/control_panel_ui.py").read_text(encoding="utf-8")
+        self.assertIn('QPushButton("Reanalisar XP")', ui)
+        self.assertIn('window.btn_reinspect.clicked.connect', ui)
+        self.assertIn('window.reinspect_current_network_image()', ui)
+        self.assertIn('{"Modo Teste", "Modo Produção"}', ui)
+        self.assertIn("last_judged_network_reinspect_available", self.source)
+        self.assertIn("can_reinspect_last_judged_frame", self.source)
+        self.assertIn("network_reinspection_read_only", self.source)
+
     def test_production_pause_has_explicit_status_message(self):
         self.assertIn("production_autonomy_paused", self.source)
         self.assertIn("PRODUÇÃO PAUSADA", self.source)

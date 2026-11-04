@@ -1303,3 +1303,41 @@ visual**, ainda que o XP mantenha a tela praticamente idêntica.
   O pré-disparo existente de DOWN continua sendo utilizado ao
   liberar o ciclo. Verificar no XP isolado para confirmar que um
   frame idêntico reaparece como nova análise, sem avançar a peça.
+
+## 04/11/2026 — Reanalisar XP antes e depois de um julgamento 0/1
+
+Os controles operacionais de **Modo Teste** e **Modo Produção**
+exibem o botão **Reanalisar XP**. O botão não aparece no Modo Sombra
+nem é ativado durante captura local MSS ou transmissão 0/1 em curso.
+
+- **Antes do 0/1:** o botão descarta o resultado XP ativo, cancela
+  eventual timer automático de Produção e arma uma nova reserva
+  para imagem visualmente repetida da mesma anomalia. O próximo
+  ciclo é julgado conforme as regras habituais do modo.
+- **Depois do 0/1:** com a captura anterior encerrada e o gate
+  livre, arma uma reanálise única da última anomalia visual
+  ainda exibida pelo XP. Se o receptor receber novamente uma
+  assinatura de imagem correspondente, o próximo evento é
+  **somente diagnóstico**, sem segunda ordem XP, sem dataset,
+  sem atualização da memória e sem contagem de outra peça.
+- **Imagem XP diferente:** a exceção é consumida, mas a nova
+  imagem segue o fluxo normal de peça nova. Não é transformada
+  indevidamente em inspeção diagnóstica da anterior.
+- **Repetir um diagnóstico:** o mesmo botão pode ser usado de
+  novo, sempre rearmando a proteção **antes** de liberar o gate.
+  Um frame repetido após descarte é permitido por uma única
+  reserva, conservando validação SIDE, estabilidade dos frames
+  e OCR/epicentro.
+
+**Limitação:** o botão consulta imagens transmitidas novamente
+pelo XP; ele não recupera um frame que já desapareceu da tela e
+não busca imagens arquivadas em disco. Caso a peça tenha avançado,
+será necessário reapresentar essa anomalia no XP para reanalisá-la.
+
+**Segurança:** o controlador de Produção não agenda 0/1 nem
+registra métricas no modo diagnóstico. O wrapper de comandos
+também bloqueia 0/1 manual ou automático nesse ciclo, inclusive
+callbacks atrasados. Não altera os especialistas, as regras
+de aprendizado ou o agente Windows XP. Validar com o XP
+fisicamente isolado e confirmar que nenhuma duplicação de 0/1
+ocorre na mesma peça.

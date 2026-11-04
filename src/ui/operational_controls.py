@@ -458,20 +458,53 @@ class OperationalControlsPresenter:
         reinspect_enabled = False
         if reinspect is not None:
             controller = getattr(panel, "production_autonomy_controller", None)
-            reinspect_enabled = bool(
-                mode == "Modo Produção"
-                and state.name == "production_auto"
-                and getattr(panel, "capture_cycle_source", None) == "network"
-                and bool(getattr(panel, "capture_cycle_active", False))
-                and getattr(controller, "pending_analysis", None)
-                is getattr(panel, "current_analysis", None)
-                and getattr(controller, "state", "") != "emitting_auto_decision"
-                and not bool(getattr(panel, "capture_cycle_discarding", False))
+            receiver = getattr(panel, "network_receiver", None)
+            active = bool(getattr(panel, "capture_cycle_active", False))
+            source = getattr(panel, "capture_cycle_source", None)
+            busy = bool(
+                getattr(panel, "capture_cycle_discarding", False)
+                or getattr(panel, "capture_cycle_local_transition", False)
+                or getattr(controller, "state", "") == "emitting_auto_decision"
             )
-            reinspect.setVisible(mode == "Modo Produção")
+            active_reinspect = bool(
+                active and source == "network"
+                and getattr(panel, "current_analysis", None) is not None
+                and getattr(panel, "current_sample", None) is not None
+                and getattr(panel, "current_ng", None) is not None
+                and (
+                    mode == "Modo Teste"
+                    or bool(getattr(panel, "network_reinspection_read_only", False))
+                    or getattr(controller, "pending_analysis", None)
+                    is getattr(panel, "current_analysis", None)
+                )
+            )
+            recent_judged = bool(
+                not active
+                and getattr(panel, "last_judged_network_reinspect_available", False)
+                and callable(getattr(receiver, "can_reinspect_last_judged_frame", None))
+                and receiver.can_reinspect_last_judged_frame()
+            )
+            reinspect_enabled = bool(
+                mode in {"Modo Teste", "Modo Produção"}
+                and not busy and (active_reinspect or recent_judged)
+            )
+            reinspect.setVisible(mode in {"Modo Teste", "Modo Produção"})
             self._set_enabled(reinspect, reinspect_enabled)
-        self._set_enabled(panel.btn_save_ok, state.approve_enabled)
-        self._set_enabled(panel.btn_save_ng, state.reject_enabled)
+            # A reanálise de peça já julgada não pode criar outro 0/1,
+            # mesmo que o estado usual do modo permita clique humano.
+            if bool(getattr(panel, "network_reinspection_read_only", False)):
+                self._set_enabled(panel.btn_save_ok, False)
+                self._set_enabled(panel.btn_save_ng, False)
+        self._set_enabled(
+            panel.btn_save_ok,
+            state.approve_enabled
+            and not bool(getattr(panel, "network_reinspection_read_only", False)),
+        )
+        self._set_enabled(
+            panel.btn_save_ng,
+            state.reject_enabled
+            and not bool(getattr(panel, "network_reinspection_read_only", False)),
+        )
 
         for button in (
             panel.btn_light_mid,

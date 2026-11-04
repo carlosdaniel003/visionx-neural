@@ -341,6 +341,32 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         self.assertFalse(controller.paused_manual_decision("NG"))
         self.assertEqual(panel.saved, [])
 
+    def test_reinspection_of_judged_xp_event_is_read_only_in_production(self):
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        panel.network_reinspection_read_only = True
+        analysis = _complete_binary_ng()
+        panel.current_analysis = analysis
+        panel.last_analysis_time_seconds = 4.0
+
+        self.assertTrue(controller.analysis_ready(analysis))
+        self.assertEqual(controller.state, "reinspection_read_only")
+        self.assertIsNone(controller.pending_analysis)
+        self.assertFalse(controller._stage_timer.isActive())
+        self.assertEqual(panel.visible_verdicts, [("DEFEITO REAL", "ng")])
+        self.assertEqual(panel.saved, [])
+        self.assertEqual(panel.judgments, [])
+        self.assertEqual(panel.analysis_records, [])
+
+        controller._finish_presentation(controller.generation)
+        controller._emit_auto_decision(controller.generation, "NG")
+        self.assertFalse(controller.paused_manual_decision("NG"))
+        self.assertEqual(panel.saved, [])
+        self.assertEqual(panel.judgments, [])
+        self.assertIn("Nenhum novo 0/1", panel.status[-1][0])
+        panel.close()
+
     def test_pause_before_analysis_keeps_result_waiting_until_resume(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)

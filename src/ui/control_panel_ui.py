@@ -624,7 +624,7 @@ class ControlPanelUI:
 
         window.btn_start = QPushButton("Capturar Local (MSS)")
         window.btn_skip = QPushButton("Descartar Imagem")
-        window.btn_reinspect = QPushButton("Analisar novamente (XP)")
+        window.btn_reinspect = QPushButton("Reanalisar XP")
         window.btn_save_ok = QPushButton("Salvar Dataset: OK")
         window.btn_save_ng = QPushButton("Confirmar Defeito (NG)")
 
@@ -632,11 +632,14 @@ class ControlPanelUI:
         window.btn_skip.setObjectName("secondaryButton")
         window.btn_reinspect.setObjectName("secondaryButton")
         window.btn_reinspect.setToolTip(
-            "Descarta a análise sem 0/1 e permite uma nova inspeção "
-            "do mesmo frame enviado pelo XP, somente uma vez."
+            "Reanalisa a anomalia visual recebida do XP. Após um "
+            "julgamento já enviado, a repetição é somente diagnóstica, "
+            "sem reenviar 0/1. Exige novo frame XP estável."
         )
         window.btn_reinspect.setEnabled(False)
-        window.btn_reinspect.setVisible(False)
+        window.btn_reinspect.setVisible(
+            window.combo_mode.currentText() in {"Modo Teste", "Modo Produção"}
+        )
         window.btn_save_ok.setObjectName("outlineAccentButton")
         window.btn_save_ng.setObjectName("primaryButton")
         self.action_buttons = [

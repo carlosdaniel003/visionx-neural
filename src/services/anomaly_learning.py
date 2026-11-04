@@ -272,12 +272,14 @@ def install_anomaly_learning(control_panel_cls) -> None:
 
         if source == "button":
             sent = self.send_command_to_xp("0" if normalized == "OK" else "1")
-            # O Modo Teste mantém sua semântica existente. Em Produção,
-            # não gravar 'verdade humana' se o comando XP local falhou.
+            # O ACK é consultado também no Modo Teste para só oferecer
+            # reanálise pós-julgamento quando o XP recebeu 0/1. Não muda
+            # a semântica anterior de treinamento manual no Teste.
+            self.last_decision_command_success = bool(sent)
+            # Em Produção, sem ACK não registrar confirmação humana.
             combo = getattr(self, "combo_mode", None)
             mode = combo.currentText() if combo is not None else ""
             if mode == "Modo Produção" and not sent:
-                self.last_decision_command_success = False
                 notice = getattr(self, "update_brain_status", None)
                 if callable(notice):
                     notice(
@@ -285,8 +287,6 @@ def install_anomaly_learning(control_panel_cls) -> None:
                         "captura preservada para nova tentativa.", True,
                     )
                 return False
-            if mode == "Modo Produção":
-                self.last_decision_command_success = True
 
         ai_decision = (
             "NG"

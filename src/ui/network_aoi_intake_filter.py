@@ -619,6 +619,7 @@ def reject_invalid_network_capture(panel, reason: str, audit: dict | None = None
     panel.capture_cycle_active = False
     panel.capture_cycle_ignored_signals = 0
     panel.capture_cycle_source = None
+    panel.network_reinspection_read_only = False
     panel.current_analysis = None
     panel.current_sample = None
     panel.current_ng = None

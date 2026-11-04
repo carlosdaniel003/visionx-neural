@@ -68,6 +68,10 @@ class NetworkReceiver(QThread):
         self._require_image_change = False
         # Exceção manual de uso único para repetir o MESMO frame XP.
         self._allow_same_frame_once = False
+        # Reinspecao solicitada APOS 0/1: somente leitura, se a
+        # assinatura XP recebida continuar sendo a mesma anomalia.
+        self._read_only_repeat_request = False
+        self.last_delivered_reinspection_read_only = False
         self._duplicate_frames = 0
 
         # Tela que chegou ao painel, mas foi classificada como central/transição.
@@ -465,23 +469,42 @@ class NetworkReceiver(QThread):
                 and self._same_signature(signature, self._last_accepted_signature)
             )
 
-    def arm_same_frame_reinspection_once(self) -> bool:
-        """Permite uma única nova reserva do frame aceito, após descarte manual.
+    def arm_same_frame_reinspection_once(
+        self, *, after_judgment: bool = False,
+    ) -> bool:
+        """Libera uma única reserva do frame repetido sem desativar o gate.
 
-        Não desativa a validação AOI, estabilidade de dois frames ou gate.
-        Não deve ser usado após julgamento 0/1 transmitido.
+        Antes de 0/1, só pode ser armada com o ciclo travado (descarte).
+        Após 0/1, o gate já está aberto; a nova captura será SOMENTE
+        diagnóstica se o frame visual ainda coincidir com o último aceito.
+        Uma próxima peça diferente segue seu fluxo normal de Produção.
         """
         with self._state_lock:
-            if (self._last_accepted_signature is None
-                    or self._image_gate.is_open()
-                    or self._reserved_signature is not None):
+            if (
+                self._last_accepted_signature is None
+                or self._reserved_signature is not None
+                or (self._image_gate.is_open() and not after_judgment)
+                or self._allow_same_frame_once
+            ):
                 return False
             self._allow_same_frame_once = True
+            self._read_only_repeat_request = bool(after_judgment)
             return True
+
+    def can_reinspect_last_judged_frame(self) -> bool:
+        """Estado do botão após 0/1, sem modificar a thread do receptor."""
+        with self._state_lock:
+            return bool(
+                self._image_gate.is_open()
+                and self._last_accepted_signature is not None
+                and self._reserved_signature is None
+                and not self._allow_same_frame_once
+            )
 
     def cancel_same_frame_reinspection(self) -> None:
         with self._state_lock:
             self._allow_same_frame_once = False
+            self._read_only_repeat_request = False
 
     def confirm_reserved_image(self) -> bool:
         """Confirma que a reserva atual contém epicentro válido."""
@@ -644,8 +667,17 @@ class NetworkReceiver(QThread):
     def _reserve_candidate(self, signature: np.ndarray) -> None:
         with self._state_lock:
             self._reserved_signature = signature.copy()
+            # Apenas o mesmo frame previamente julgado é diagnóstico.
+            # Se uma peça nova chegar primeiro, ela continua produtiva.
+            self.last_delivered_reinspection_read_only = bool(
+                self._read_only_repeat_request
+                and self._same_signature(
+                    signature, self._last_accepted_signature,
+                )
+            )
             # Exceção consumida na PRIMEIRA reserva, nunca perpetuada.
             self._allow_same_frame_once = False
+            self._read_only_repeat_request = False
             self._last_rejected_reason = ""
             self._clear_candidate_locked()
 

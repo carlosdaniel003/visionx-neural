@@ -27,6 +27,7 @@ on:
       - "src/ui/operational_controls.py"
       - "src/ui/control_panel_ui.py"
       - "tests/test_image_cycle_gate.py"
+      - "tests/test_operational_controls_contract.py"
       - "tests/test_network_aoi_intake_filter.py"
       - ".github/workflows/network-aoi-intake-tests.yml"
   workflow_dispatch:
@@ -66,5 +67,6 @@ jobs:
           python -m unittest `
             tests.test_network_aoi_intake_filter `
             tests.test_image_cycle_gate `
+            tests.test_operational_controls_contract `
             tests.test_qt_button_signal_adapter `
             -v

@@ -1,3 +1,37 @@
+
+## 04/11/2026 — Reinspeção XP pelo operador após decisão transmitida
+
+`src/ui/network_image_cycle_gate.py`: o botão `Reanalisar XP`
+funciona em Teste e Produção com captura XP ativa não julgada ou
+após um 0/1 confirmado. No primeiro caso, descarta e arma
+`arm_same_frame_reinspection_once()`; no segundo caso arma
+`arm_same_frame_reinspection_once(after_judgment=True)` quando
+o gate já está livre.
+
+`src/services/network_receiver.py`: a permissão de frame repetido
+é consumida na próxima reserva. Se a assinatura visual coincide
+com a última imagem aceita após o 0/1, publica
+`last_delivered_reinspection_read_only=True`; se uma peça nova
+diferente chegou primeiro, o estado permanece False e ela segue
+a produção normal. Reinspeção diagnóstica repetida arma o receptor
+antes de liberar o gate, evitando intervalo desprotegido.
+Modo Sombra e MSS permanecem fora da exceção.
+
+`src/ui/production_autonomy_controller.py`: quando
+`network_reinspection_read_only=True`, renderiza somente resultado
+visual sem timer 1s, sem `save_label`, sem contagem de decisão;
+`network_image_cycle_gate.py` também veta qualquer 0/1
+na tentativa de repetição já julgada, inclusive manual. Essa
+verificação redundante impede que um sinal atrasado para XP
+retransmita comando. A repetição recebe novo event_id e passa
+pelos mesmos filtros SIDE/epicentro/dupla estabilidade.
+
+As assinaturas aproximadas usadas para repetição de tela XP não
+equivalem a identidade física inequívoca de uma peça. Por isso
+o comportamento seguro de repetição já julgada é **diagnóstico
+sem novo 0/1**. O botão não busca PNG histórico no HD nem
+substitui validação física isolada.
+
 ## 14/10/2026 — Hipótese de roteamento por categoria, SOMENTE SIMULAÇÃO
 
 - A auditoria do candidato `0,50` detectou 5 NG previamente liberados que passam a 3 NG conclusivos + 2 revisões, porém criou 7 falsos NG e 2 revisões em exemplos OK DESLOCADO. Todos os problemas novos estão em `DESLOCADO`; não houve outra regressão indicada pelas transições.
