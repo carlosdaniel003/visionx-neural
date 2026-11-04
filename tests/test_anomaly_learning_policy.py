@@ -84,6 +84,29 @@ class AnomalyLearningPolicyTests(unittest.TestCase):
         self.assertTrue(saved[0]["save_images"])
         self.assertEqual(saved[0]["ai_decision"], "OK")
 
+    def test_test_mode_button_records_xp_ack_for_post_judgment_reinspection(self):
+        from types import SimpleNamespace
+        for acknowledged in (True, False):
+            with self.subTest(acknowledged=acknowledged):
+                panel = self.panel_class(ai_defect=True)
+                panel.combo_mode = SimpleNamespace(
+                    currentText=lambda: "Modo Teste",
+                )
+                commands = []
+                def send(command):
+                    commands.append(command)
+                    return acknowledged
+                panel.send_command_to_xp = send
+                panel._live_memory_writer = lambda _task: {"committed": True}
+                panel._anomaly_persistence_submitter = lambda _task: None
+
+                panel.save_label("NG", source="button")
+
+                self.assertEqual(commands, ["1"])
+                self.assertIs(panel.last_decision_command_success, acknowledged)
+                # Não alterar a semântica já existente do Teste.
+                self.assertFalse(panel.is_locked)
+
     def test_failed_production_manual_command_must_not_learn_or_advance(self):
         from types import SimpleNamespace
         panel = self.panel_class(ai_defect=True)
