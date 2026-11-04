@@ -375,8 +375,8 @@ def train_v3(
         human_train_rows, _assess(model, human_train_rows, image_size, .70),
     )
     if reviewed_training["metrics"] != trajectory[best_epoch][
-        "operator_training_replay"]["metrics"]
-    ]:
+        "operator_training_replay"
+    ]["metrics"]:
         raise ValueError("Replay do melhor checkpoint diverge da época guardada")
     baseline_v3_test = None
     baseline_v3_reviewed = None
