@@ -1,3 +1,29 @@
+## 04/11/2026 — Memória visual multilight contra falso NG CNN experimental
+
+`src/core/operator_visual_memory_consensus.py`: arbitragem pura,
+sem I/O, exige três fontes `OPERATOR_CONFIRMED` verificadas, margens
+OK/NG nas três luzes, suporte do KNN visual independente, KNN C SIDE
+concordante e ausência de hard-NG físico. A MID pode ter status
+`NO_MATCH` isoladamente com score >=0,965, desde que o conjunto de
+três luzes seja consistente; essa tolerância não cria par RGB exato.
+A classificação visual passa a FALHA FALSA (insegurança explícita,
+sem autorização 0 automático). Dados da CNN original são preservados.
+
+`src/ui/adhesive_multilight_inspection.py`: mesma aplicação
+pós-fusão em Teste/Produção/Sombra. `src/ui/production_confidence_gate.py`:
+no modo binário, contraprova humana válida impede que o fallback
+indeciso envie 1/NG; oferece confirmação humana antes do XP.
+Prova alterada/incompleta gera erro operacional sem envio.
+Testes: `tests/test_operator_visual_memory_consensus.py`;
+workflow General Multilight Tests.
+
+Não altera memória exata/cronológica nem checkpoint CNN. Para
+`ok_archive`/`ng_archive` sem proveniência humana explícita,
+o módulo não transforma nomes de pasta em verdade física. Para liberar
+automação aproximada, requer validação industrial independente.
+
+---
+
 
 ## 04/11/2026 — Reinspeção XP com segundo 0/1 e novo treino
 
