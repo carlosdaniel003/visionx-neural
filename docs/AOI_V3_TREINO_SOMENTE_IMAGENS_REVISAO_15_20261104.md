@@ -1,3 +1,56 @@
+## 04/11/2026 — Diagnóstico do aprendizado em CADA época (V3 offline)
+
+A execução com as 14 correções do operador apresentou:
+`selected_epoch=0`, `previous_v3_14_correct_in_training_replay=0`
+e `operator_verified_14_correct_in_training_replay=0`. O checkpoint
+selecionado foi a V3 ANTERIOR, pois a seleção conservadora rejeitou
+todas as seis épocas. Isso **não demonstra** que nenhuma das seis
+épocas aprendeu: o relatório antigo só avaliava as 14 imagens
+após carregar o checkpoint selecionado.
+
+O treinador V3 agora mede todos os 14 casos humanos (9 NG e
+5 OK) **antes e depois de cada época** e registra:
+- `operator_training_replay.metrics`: total correto, NG→OK, OK→NG;
+- `mean_true_label_score` e `mean_true_label_log_loss`:
+  mudança gradual, mesmo quando o limiar de 0,5 ainda não é cruzado;
+- `comparison_with_epoch_zero`: quais imagens passaram a OK/NG
+  correto ou pioraram, e quantos erros independentes de validação
+  apareceram em relação à V3 inicial;
+- `selection_reason`: explícito quando a época foi rejeitada por
+  regressão OK→NG ou NG→OK na validação.
+
+O **checkpoint conservador permanece selecionado SOMENTE pela
+validação**, nunca pelos 14 exemplos do treino. Se nenhuma época
+respeitar o gate de não regressão, continua na época 0.
+
+Ao mesmo tempo, após verificar os hashes e o ponteiro produtivo,
+o treinador preserva **cada época treinada** em
+`epoch_diagnostics/epoch_NN_experimental_only.pt`, com SHA-256
+individual no relatório. São pesos com schema `diagnostic_only`,
+sem campo `state_dict` de checkpoint produtivo, sem avaliação pelo
+teste independente, sem permissão para produção ou XP.
+`human_learning_diagnosis` indica se alguma época melhorou o
+replay humano e qual foi a melhor época EXPLORATÓRIA para estudo.
+Esse indicador é *diagnóstico in-sample*, não critério para promoção.
+
+**Como executar novamente:** manter o comando de treinamento abaixo,
+com `--initialize-from-v3-report` apontando para o checkpoint
+**original de 17:35**, SHA
+`781d5d4d6cb80461a990e9a325560b75688f24f4647846ef12023e3898e15e1c`,
+não para o candidato de 18:38 que apenas reproduziu a época 0
+e tem outro SHA de arquivo.
+
+**Após a execução**, enviar `training_report.json` novo. A seção
+`epoch_history` finalmente permitirá distinguir:
+(1) falha em aprender as 14 imagens em todas as épocas;
+(2) aprendizagem de imagens humanas com regressão de OK/NG
+na validação;
+(3) aprendizagem aprovada pelo gate de validação.
+Sem prova de generalização em peças inéditas, nenhum desses
+candidatos será promovido automaticamente.
+
+---
+
 ## Complemento — como interpretar o replay das 14 correções
 
 O relatório/terminal da nova execução mostram
