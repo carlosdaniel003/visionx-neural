@@ -1,3 +1,17 @@
+## Complemento — como interpretar o replay das 14 correções
+
+O relatório/terminal da nova execução mostram
+`previous_v3_14_correct_in_training_replay` e
+`operator_verified_14_correct_in_training_replay`.
+São contagens calculadas nos 14 exemplos agora **incluídos no
+treino**. Servem para verificar se a CNN passou a reproduzir os
+julgamentos humanos, mas **não** comprovam generalização nem
+substituem `test` e `verified_previous_v3_baseline`,
+que comparam ambos os modelos sobre a mesma nova partição.
+Se os 14 forem acertados, não declarar "100%" de acerto industrial.
+
+---
+
 # ODIN AOI — CNN V3: aprender somente pelas imagens e pela qualidade OK/NG
 
 **Data:** 04/11/2026. **Escopo:** experimento offline CNN V3, sem mudança
