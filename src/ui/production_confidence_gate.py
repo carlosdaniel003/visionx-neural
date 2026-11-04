@@ -825,6 +825,46 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     if detail.get("production_binary_auto") is not True:
         return _legacy_continuous_policy(analysis, detail, policy)
 
+    # Memória humana multilight contradiz uma CNN experimental que votou NG.
+    # É um OK visual plausível, mas NÃO é par RGB exato; não permitir que
+    # o fallback binário converta esta contraevidência em 1/NG automático.
+    from src.core.operator_visual_memory_consensus import (
+        RULE as OPERATOR_VISUAL_MEMORY_RULE,
+        SCHEMA as OPERATOR_VISUAL_MEMORY_SCHEMA,
+    )
+    if detail.get("fusion_rule") == OPERATOR_VISUAL_MEMORY_RULE:
+        marker = detail.get("operator_visual_memory_consensus")
+        supported = bool(
+            isinstance(marker, dict)
+            and marker.get("schema") == OPERATOR_VISUAL_MEMORY_SCHEMA
+            and marker.get("label") == "OK"
+            and marker.get("automatic_xp_authorized") is False
+            and marker.get("rgb_exact_pair") is False
+            and set(marker.get("lights") or ()) == {"SIDE", "TOP", "MID"}
+            and marker.get("category") == detail.get("multilight_category")
+            and detail.get("cnn_raw_verdict_before_memory") == "DEFEITO REAL"
+            and analysis.get("verdict") == "FALHA FALSA"
+            and analysis.get("multilight_final") is True
+            and detail.get("multilight_final") is True
+            and _completed_continuous_inspection(analysis, detail)
+        )
+        if supported:
+            return {
+                **policy,
+                "verdict": "FALHA FALSA",
+                "auto_allowed": False,
+                "operator_review_required": True,
+                "proposed_decision": "",
+                "reason": "operator_visual_memory_requires_confirmation_v1",
+                "unverified_physical_label": True,
+            }
+        return {
+            **policy, "verdict": "", "auto_allowed": False,
+            "operator_review_required": False, "proposed_decision": "",
+            "operational_error": True,
+            "reason": "operator_visual_memory_invalid_contract_v1",
+        }
+
     from src.core.operator_exact_frame_recall import (
         RULE as EXACT_FRAME_RULE,
         SIDE_RULE as EXACT_SIDE_RULE,
