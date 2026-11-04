@@ -419,6 +419,34 @@ class NetworkImageCycleIntegrationTests(unittest.TestCase):
         self.assertFalse(panel.last_judged_network_reinspect_available)
         self.assertFalse(panel.reinspect_current_network_image())
 
+    def test_local_mss_replaces_diagnostic_xp_without_inheriting_read_only(self):
+        panel = FakePanel()
+        panel.combo_mode = type("Combo", (), {
+            "currentText": lambda self: "Modo Teste",
+        })()
+        panel.handle_network_image(object(), "169.254.95.200")
+        panel.current_analysis = {"verdict": "DEFEITO REAL"}
+        panel.current_sample, panel.current_ng = object(), object()
+        panel.save_label("NG", source="button")
+        self.assertTrue(panel.reinspect_current_network_image())
+        panel.network_receiver.last_delivered_reinspection_read_only = True
+        panel.handle_network_image(object(), "169.254.95.200")
+        panel.current_analysis = {"verdict": "DEFEITO REAL"}
+        panel.current_sample, panel.current_ng = object(), object()
+        self.assertTrue(panel.network_reinspection_read_only)
+
+        # Captura MSS substitui a tela XP de diagnóstico.
+        self.assertTrue(panel.start_monitoring())
+        self.assertEqual(panel.capture_cycle_source, "local")
+        self.assertFalse(panel.network_reinspection_read_only)
+        self.assertFalse(panel.last_judged_network_reinspect_available)
+        panel.current_analysis = {"verdict": "FALHA FALSA"}
+        panel.current_sample, panel.current_ng = object(), object()
+        panel.save_label("OK", source="button")
+        self.assertEqual(panel.decisions, [
+            ("NG", "button"), ("OK", "button"),
+        ])
+
     def test_after_judgment_different_next_frame_is_normal_cycle(self):
         panel = FakePanel()
         panel.combo_mode = type("Combo", (), {

@@ -355,6 +355,13 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
 
     def _launch_local_capture(self, *args, **kwargs) -> bool:
         _lock_cycle(self)
+        # MSS é uma captura nova, não o replay XP diagnosticado.
+        # Limpar este estado ANTES de qualquer sinal de imagem local.
+        self.network_reinspection_read_only = False
+        self.last_judged_network_reinspect_available = False
+        receiver = _receiver(self)
+        if callable(getattr(receiver, "cancel_same_frame_reinspection", None)):
+            receiver.cancel_same_frame_reinspection()
         self.capture_cycle_source = "local"
         try:
             original_start_monitoring(self, *args, **kwargs)
