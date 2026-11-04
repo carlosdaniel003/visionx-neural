@@ -51,3 +51,14 @@ de autorização, ponteiro live ou transmissão 0/1 do XP.
 Com ODIN fechado, `git pull origin central`, reiniciar.
 Na reprodução do caso: exibir FALHA FALSA + confirmação humana necessária.
 O botão/tecla **0** continua sendo a confirmação manual necessária.
+
+
+## 04/11/2026 — Apresentação encurtada em Produção
+
+O veredito OK recorrente validado continua aparecendo como
+`FALHA FALSA`; o contrato de confirmação manual para casos não
+autorizados não foi alterado. Para decisões **automáticas** do Modo
+Produção, o controlador não percorre mais a interface: mostra o
+veredito por 1 segundo antes de enviar 0/1 pelo gate existente.
+O período substitui a antiga rolagem, sem modificar o veto físico
+ou reinterpretar um OK pendente como autorização automática.
