@@ -1,3 +1,47 @@
+## 04/11/2026 — Evento INVERTIDO 10:30: revisão sem NG físico vira FALHA FALSA visual
+
+**Evento real:** `5ba7734c810e44f8a3c2fa6b3f575293`, Modo Teste,
+categoria AOI `INVERTIDO`, julgamento físico informado pelo operador: OK.
+A fusão declarava `multilight_local_review`: SIDE NG CNN 0,13915791,
+TOP 0,27591601, MID 0,00445298. Os três pedidos internos de revisão
+bloqueavam a classificação, embora `physical_score=0` em todas as luzes,
+sem NG KNN visual corroborado. Human recall favoreceu OK sobre NG em
+SIDE (0,95869/0,93315), TOP (0,97218/0,94046), MID
+(0,95244/0,92008), assim como o índice visual independente.
+A KNN C SIDE recuperou a mesma fonte PNG OK nos descritores A/B;
+TOP/MID C mostraram NG com similaridade fraca, não provas físicas.
+
+A nova rota **`cnn_review_three_light_operator_ok_support_v1`**,
+implementada em `src/core/review_multilight_ok_consensus.py` e
+executada após corroboração KNN e a regra preexistente de memória,
+exige: três CNN válidas do mesmo SHA, scores NG <=0,30 com ao menos
+uma luz <=0,05; referências visuais OK de operador em três luzes,
+maiores que NG com margens; índice visual completo e favorável a OK,
+sem NG corroborado; KNN C SIDE com votos A/B OK e o mesmo PNG OK
+em primeiro nos dois descritores, enquanto os NG TOP/MID não são
+confiáveis; ausência de hard-NG e veto físico adverso.
+
+**Escopo e segurança:** altera o veredito visual para `FALHA FALSA`
+em Teste, Produção e Sombra quando o contrato é válido, sem
+inventar par RGB exato, sem afirmar validação física de orientação,
+sem treinar nem mudar pesos/checkpoints. **Não autoriza PRESS_0
+automático**; o gate XP revalida as evidências antes da emissão.
+No modo binário de Produção, um OK visual válido e sem permissão
+automática abre a confirmação humana 0/1 da mesma peça em vez
+de acusar falsamente "captura incompleta". Marcador adulterado,
+veto físico ou captura incompleta causam bloqueio/parada segura.
+
+Auditoria: `decision.review_multilight_ok_proof` e
+`decision.review_multilight_ok_attempt`. Regressões com valores
+do log, incluindo cenários adversos e estado de interface/XP:
+`tests/test_review_multilight_ok_consensus.py`,
+`tests/test_decision_verdict_feedback.py`,
+`tests/test_production_continuous_auto.py`.
+Testes sintéticos reproduzem números e proveniências do log; não
+substituem validação física com as imagens e peças reais.
+
+---
+
 ## 04/11/2026 — Interface: FALHA FALSA com confirmação XP pendente
 
 No evento de Teste `3dcf76ffe38443aabc275b232cf70636`
