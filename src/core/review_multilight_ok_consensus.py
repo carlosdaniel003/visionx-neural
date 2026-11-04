@@ -248,16 +248,19 @@ def review_multilight_ok_evidence(
                 and vote.get("vote_A") == vote.get("vote_B") == "OK"
             ):
                 return _reject(diagnostic, "KNN_C_SIDE_DOES_NOT_SUPPORT_OK")
-        elif not (
-            vote.get("status") == "REVISAO"
-            and vote.get("suggestion_A") == "REVISAO"
-            and vote.get("suggestion_B") == "REVISAO"
-            and max(
-                _score(vote.get("similarity_A")) or 1,
-                _score(vote.get("similarity_B")) or 1,
-            ) <= MAX_WEAK_KNN_NG
-        ):
-            return _reject(diagnostic, "KNN_C_NG_NOT_WEAK_" + light)
+        else:
+            similarity_a = _score(vote.get("similarity_A"))
+            similarity_b = _score(vote.get("similarity_B"))
+            if not (
+                vote.get("status") == "REVISAO"
+                and vote.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+                and vote.get("suggestion_A") == "REVISAO"
+                and vote.get("suggestion_B") == "REVISAO"
+                and similarity_a is not None
+                and similarity_b is not None
+                and max(similarity_a, similarity_b) <= MAX_WEAK_KNN_NG
+            ):
+                return _reject(diagnostic, "KNN_C_NG_NOT_WEAK_" + light)
     side_neighbor = neighbors["SIDE"]
     if not isinstance(side_neighbor, dict):
         return _reject(diagnostic, "KNN_C_SIDE_NEIGHBORS_MISSING")
