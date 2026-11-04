@@ -1304,40 +1304,35 @@ visual**, ainda que o XP mantenha a tela praticamente idêntica.
   liberar o ciclo. Verificar no XP isolado para confirmar que um
   frame idêntico reaparece como nova análise, sem avançar a peça.
 
-## 04/11/2026 — Reanalisar XP antes e depois de um julgamento 0/1
+## 04/11/2026 — Reanalisar XP com novo julgamento e treinamento
 
-Os controles operacionais de **Modo Teste** e **Modo Produção**
-exibem o botão **Reanalisar XP**. O botão não aparece no Modo Sombra
-nem é ativado durante captura local MSS ou transmissão 0/1 em curso.
+Em **Modo Teste** e **Modo Produção**, o botão **Reanalisar XP**
+permite repetir uma anomalia recebida da rede, inclusive após um
+julgamento 0/OK ou 1/NG já transmitido. O receptor exige nova captura
+SIDE, dois frames estáveis, validade AOI/epicentro e novo event_id,
+sem desativar globalmente a deduplicação.
 
-- **Antes do 0/1:** o botão descarta o resultado XP ativo, cancela
-  eventual timer automático de Produção e arma uma nova reserva
-  para imagem visualmente repetida da mesma anomalia. O próximo
-  ciclo é julgado conforme as regras habituais do modo.
-- **Depois do 0/1:** com a captura anterior encerrada e o gate
-  livre, arma uma reanálise única da última anomalia visual
-  ainda exibida pelo XP. Se o receptor receber novamente uma
-  assinatura de imagem correspondente, o próximo evento é
-  **somente diagnóstico**, sem segunda ordem XP, sem dataset,
-  sem atualização da memória e sem contagem de outra peça.
-- **Imagem XP diferente:** a exceção é consumida, mas a nova
-  imagem segue o fluxo normal de peça nova. Não é transformada
-  indevidamente em inspeção diagnóstica da anterior.
-- **Repetir um diagnóstico:** o mesmo botão pode ser usado de
-  novo, sempre rearmando a proteção **antes** de liberar o gate.
-  Um frame repetido após descarte é permitido por uma única
-  reserva, conservando validação SIDE, estabilidade dos frames
-  e OCR/epicentro.
+- **Antes de julgar:** descarta a inspeção pendente e arma a próxima
+  recepção igual como novo ciclo normal. Descarte válido também pode
+  armar automaticamente uma recepção igual.
+- **Depois de julgar:** o botão arma uma única repetição da última
+  imagem XP aceita. Se a assinatura for a mesma, o novo evento
+  **pode ser julgado de novo com um segundo 0/1 transmitido ao XP**,
+  seja manualmente em Teste, seja pelo fluxo de Produção.
+- **Correção humana:** após a segunda transmissão, o rótulo OK ou NG
+  vira uma nova fonte humana com data e event_id próprios na memória
+  persistente. O dataset registra o segundo julgamento sem duplicar
+  imagens pesadas iguais; CNN online elegível pode retreinar com o
+  rótulo atualizado, sujeita às validações de promoção.
+- **Imagem diferente:** é uma peça nova, sem a marca de reinspeção
+  da anterior. Cada ciclo mantém defesa contra comandos atrasados,
+  mesma geração e apenas uma transmissão 0/1 por julgamento.
+- **Sem conexão XP:** uma reinspeção manual não registra novo
+  treinamento como se o segundo comando tivesse sido transmitido.
 
-**Limitação:** o botão consulta imagens transmitidas novamente
-pelo XP; ele não recupera um frame que já desapareceu da tela e
-não busca imagens arquivadas em disco. Caso a peça tenha avançado,
-será necessário reapresentar essa anomalia no XP para reanalisá-la.
-
-**Segurança:** o controlador de Produção não agenda 0/1 nem
-registra métricas no modo diagnóstico. O wrapper de comandos
-também bloqueia 0/1 manual ou automático nesse ciclo, inclusive
-callbacks atrasados. Não altera os especialistas, as regras
-de aprendizado ou o agente Windows XP. Validar com o XP
-fisicamente isolado e confirmar que nenhuma duplicação de 0/1
-ocorre na mesma peça.
+O botão não restaura um frame que desapareceu do Windows XP.
+A imagem precisa reaparecer pela rede e voltar a ser validada.
+A cópia `agente_industrial_xp.py` **não precisa ser alterada** para
+essa mudança: o protocolo PRESS_0/PRESS_1 e a captura já existem.
+O agente XP e a saída física devem ser testados **isoladamente**:
+um segundo comando pode avançar o processo físico novamente.
