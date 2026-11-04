@@ -739,6 +739,26 @@ def format_multilight_debug_report(panel) -> str:
                 f"Consenso CNN: {final_detail.get('cnn_v2_consensus', 'não calculado')}",
                 f"Consenso CNN motivo: {final_detail.get('cnn_v2_consensus_reason', '-')}",
                 f"Consenso CNN elegível automático: {final_detail.get('cnn_v2_supervised_auto_eligible', False)}",
+                "Memória humana multilight — regra: " + str(
+                    (final_detail.get("operator_visual_memory_consensus") or {}).get(
+                        "evidence_mode", "NOT_APPLIED"
+                    )
+                ),
+                "Memória humana multilight — âncoras verificadas: " + str(
+                    (final_detail.get("operator_visual_memory_consensus") or {}).get(
+                        "aligned_anchor_lights", []
+                    )
+                ),
+                "Memória humana multilight — luzes de apoio: " + str(
+                    (final_detail.get("operator_visual_memory_consensus") or {}).get(
+                        "support_lights", []
+                    )
+                ),
+                "Memória humana multilight — bloqueio (se não aplicada): " + str(
+                    (final_detail.get("operator_visual_memory_attempt") or {}).get(
+                        "reason", "-"
+                    )
+                ),
                 "Sinal CNN de revisão ≠ pedido de operador: "
                 "verificar abaixo a política de Produção e seu comando.",
 
