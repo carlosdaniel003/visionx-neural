@@ -6,6 +6,9 @@ on:
     paths:
       - "src/core/neural/aoi_quality_cnn_v3.py"
       - "src/scripts/train_aoi_quality_cnn_v3_offline.py"
+      - "src/services/odin_operator_validation_labels.py"
+      - "src/services/aoi_universal_quality_archive.py"
+      - "tests/test_aoi_universal_24_human_repair.py"
       - "tests/test_aoi_quality_cnn_v3_offline.py"
       - ".github/workflows/aoi-quality-cnn-v3-offline-tests.yml"
   pull_request:
@@ -13,6 +16,9 @@ on:
     paths:
       - "src/core/neural/aoi_quality_cnn_v3.py"
       - "src/scripts/train_aoi_quality_cnn_v3_offline.py"
+      - "src/services/odin_operator_validation_labels.py"
+      - "src/services/aoi_universal_quality_archive.py"
+      - "tests/test_aoi_universal_24_human_repair.py"
       - "tests/test_aoi_quality_cnn_v3_offline.py"
       - ".github/workflows/aoi-quality-cnn-v3-offline-tests.yml"
   workflow_dispatch:
@@ -34,7 +40,7 @@ jobs:
           python -m pip install numpy opencv-python-headless
       - name: Check syntax and training isolation
         run: |
-          python -m py_compile src/core/neural/aoi_quality_cnn_v3.py src/scripts/train_aoi_quality_cnn_v3_offline.py tests/test_aoi_quality_cnn_v3_offline.py
+          python -m py_compile src/core/neural/aoi_quality_cnn_v3.py src/scripts/train_aoi_quality_cnn_v3_offline.py src/services/odin_operator_validation_labels.py src/services/aoi_universal_quality_archive.py tests/test_aoi_quality_cnn_v3_offline.py tests/test_aoi_universal_24_human_repair.py
       - name: Run model, training and safety regressions
         run: |
-          python -m unittest tests.test_aoi_quality_cnn_v3_offline -v
+          python -m unittest tests.test_aoi_quality_cnn_v3_offline tests.test_aoi_universal_24_human_repair tests.test_aoi_universal_quality_offline -v
