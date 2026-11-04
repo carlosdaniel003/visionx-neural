@@ -255,6 +255,27 @@ class SideEarlyDecisionTests(unittest.TestCase):
                 build_side_early_decision(changed, "FALTANDO")
             )
 
+    def test_human_ok_side_counterevidence_defers_shared_cnn_categories(self):
+        # FALTANDO V2 é compartilhada por EMBORCADO/INVERTIDO/DESLOCADO.
+        # Não fechar SIDE como NG sem consultar TOP/MID quando houver
+        # julgamento humano OK aproximado na categoria atual.
+        from copy import deepcopy
+        for category in ("FALTANDO", "EMBORCADO", "INVERTIDO", "DESLOCADO"):
+            with self.subTest(category=category):
+                analysis = self._trial_ng_side()
+                analysis["detail"]["cnn_v2_aoi_category"] = category
+                analysis["detail"]["confirmed_visual_recall"] = {
+                    "schema": "visionx.human_visual_recall.v1",
+                    "status": "HUMAN_OK_VISUAL_CANDIDATE",
+                    "source": "PERSISTENT_HUMAN_LABELS",
+                    "diagnostic_only": True,
+                    "auto_ok_authorized": False,
+                }
+                self.assertIsNone(build_side_early_decision(analysis, category))
+                hard = deepcopy(analysis)
+                hard["hard_missing_evidence"] = True
+                self.assertIsNotNone(build_side_early_decision(hard, category))
+
     def test_defer_on_two_weak_ok_votes_only_not_on_one_vote_or_missing_knn(self):
         from copy import deepcopy
         sample = self._trial_ng_side()
