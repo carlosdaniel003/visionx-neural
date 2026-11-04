@@ -230,6 +230,9 @@ class DecisionPersistenceQueue:
                 event_id=event_id,
                 source_frame=item.get("source_frame"),
                 final_analysis=final_analysis,
+                reinspection_of_judged_event=bool(
+                    task.get("reinspection_of_judged_event", False)
+                ),
             )
             persisted = bool(json_path) or persisted
             all_saved = all_saved and bool(json_path)
@@ -265,7 +268,8 @@ class DecisionPersistenceQueue:
                     # Campos de orquestração não pertencem ao contrato legado
                     # do DatasetManager quando a captura é monoimagem.
                     work.pop("multilight_samples", None)
-                    work.pop("event_id", None)
+                    # O evento reinspecionado precisa manter seu ID próprio
+                    # no registro; save_sample já recebe event_id.
                     json_path = self.dataset_manager.save_sample(**work)
                     persisted = bool(json_path)
                     if json_path:
