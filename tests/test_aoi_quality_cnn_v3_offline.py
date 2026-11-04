@@ -175,6 +175,11 @@ class TrainingTests(unittest.TestCase):
         self.assertEqual(report["coverage"]["train"]["human_verified_v3"], 14)
         self.assertEqual(report["coverage"]["validation"]["human_verified_v3"], 0)
         self.assertEqual(report["coverage"]["test"]["human_verified_v3"], 0)
+        self.assertEqual(report["operator_verified_training_replay"]["metrics"]["total"], 14)
+        self.assertTrue(
+            report["operator_verified_training_replay"]["in_sample_not_independent_test"]
+        )
+        self.assertIsNone(report["previous_v3_operator_verified_training_replay"])
         self.assertTrue(report["training"]["test_not_used_for_selection"])
         self.assertEqual(len(report["epoch_history"]), 2)
         self.assertEqual(
@@ -298,6 +303,11 @@ class TrainingTests(unittest.TestCase):
             result["initial_v3_candidate"]["candidate_sha256"], original_sha,
         )
         self.assertIsNotNone(result["verified_previous_v3_baseline"])
+        self.assertEqual(result["operator_verified_training_replay"]["metrics"]["total"], 14)
+        self.assertEqual(
+            result["previous_v3_operator_verified_training_replay"]["metrics"]["total"],
+            14,
+        )
         self.assertTrue(
             result["training"][
                 "selected_epoch_cannot_worsen_either_validation_error_against_start"
