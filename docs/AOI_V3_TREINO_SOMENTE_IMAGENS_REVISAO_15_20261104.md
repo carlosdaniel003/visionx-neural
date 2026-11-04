@@ -27,8 +27,12 @@ Ao mesmo tempo, após verificar os hashes e o ponteiro produtivo,
 o treinador preserva **cada época treinada** em
 `epoch_diagnostics/epoch_NN_experimental_only.pt`, com SHA-256
 individual no relatório. São pesos com schema `diagnostic_only`,
-sem campo `state_dict` de checkpoint produtivo, sem avaliação pelo
-teste independente, sem permissão para produção ou XP.
+sem campo `state_dict` de checkpoint produtivo, sem permissão
+para produção ou XP. **Somente a época conservadora selecionada**
+é avaliada no teste independente; quando ela também possui uma
+cópia diagnóstica, o campo `test_evaluated_for_this_epoch` é verdadeiro.
+Nenhuma época recusada pelo gate utiliza o teste e nenhum snapshot
+contém resultados desse teste.
 `human_learning_diagnosis` indica se alguma época melhorou o
 replay humano e qual foi a melhor época EXPLORATÓRIA para estudo.
 Esse indicador é *diagnóstico in-sample*, não critério para promoção.
