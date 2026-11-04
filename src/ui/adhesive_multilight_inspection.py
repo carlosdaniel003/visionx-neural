@@ -501,6 +501,13 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
             getattr(panel, "adhesive_multilight_learning_samples", None),
             category, knn,
         )
+        # Julgamentos humanos multilight de alta concordância são
+        # contraprova da CNN experimental em TODOS os modos. O módulo
+        # altera a apresentação, nunca libera 0/1 por aproximação.
+        from src.core.operator_visual_memory_consensus import (
+            apply_operator_visual_memory_consensus,
+        )
+        fused = apply_operator_visual_memory_consensus(fused, analyses)
         # A recuperação TOP/MID de 29/10 só é reconhecida DEPOIS do
         # primeiro exame físico (que inspeciona o veredito CNN original).
         # Coletar a contraprova física da captura atual antes do gate XP.
