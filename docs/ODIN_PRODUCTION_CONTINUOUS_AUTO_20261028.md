@@ -402,3 +402,26 @@ segundo, troca de evento e modo, ausência de rolagem, nenhuma liberação
 com captura incompleta, falha de ACK e **apenas um PRESS_0/PRESS_1**
 por evento. A janela de 1 segundo diminui significativamente a
 oportunidade de intervenção.
+
+## 04/11/2026 — Nova decisão em reinspeção XP solicitada
+
+A operação `Reanalisar XP` substitui a antiga exceção diagnóstica
+somente leitura. Quando o XP retransmite a mesma anomalia após um 0/1,
+o ODIN cria novo evento, executa a inspeção normal, apresenta o veredito
+por 1 segundo e permite outro 0/1 mediante os mesmos gates de modo,
+pausa, identidade, validação e sucesso de envio TCP. A nova decisão
+conta como julgamento independente; callbacks de evento anterior
+continuam incapazes de transmitir novamente.
+
+Se o operador optar por Teste e corrigir para 0/OK, essa confirmação
+humana entra imediatamente na memória KNN e prevalece contra a decisão
+AUTO anterior nas correspondências validadas. O dataset grava outro
+registro humano; CNN online elegível recebe novo caso supervisionado.
+A decisão AUTO original continua no banco operacional SQLite e não é
+reclassificada retroativamente como verdade humana. Não existe
+aprendizado de rótulo na reanálise descartada ou no envio manual falho.
+
+**Segurança:** a repetição exige novo frame XP SIDE estável. Não é
+replay de arquivo e assinatura visual aproximada não prova que a
+mesma peça física esteja parada. Validar com acionamento físico
+isolado antes de permitir um segundo 0/1 na máquina industrial.
