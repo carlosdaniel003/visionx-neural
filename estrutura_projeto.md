@@ -1,3 +1,24 @@
+## 04/11/2026 — Regra de apresentação OK visual != permissão XP
+
+Bug validado no evento `3dcf76ffe38443aabc275b232cf70636`:
+`decision.verdict=FALHA FALSA` com
+`operator_review_required=True`, mas o overlay do veredito
+rebaixava a `REVISÃO OBRIGATÓRIA`, pois faltava reconhecer
+`operator_visual_memory_multilight_ok_v1`.
+
+Contrato comum `verified_operator_visual_memory_ok` em
+`src/core/operator_visual_memory_consensus.py` é consultado
+por `src/ui/decision_verdict_feedback.py` e
+`src/ui/production_confidence_gate.py`, preservando separação
+entre classificação OK suportada pela memória e autorização
+do comando 0/XP. O estado do overlay passa a
+`FALHA FALSA` enquanto a confirmação para XP permanece
+pendente, sem forçar auto-OK. Marcador inconsistente ou
+evidência física NG não é apresentado como OK.
+Testes unitários/Qt e workflows dedicados cobrem o caso.
+
+---
+
 ## 04/11/2026 — Ajuste de arbitração por fontes alinhadas após debug 09:43
 
 Caso real `ca2b12df6a9f47279e13e0a4856772c3`, EMBORCADO:
