@@ -232,6 +232,63 @@ class OperatorVisualMemoryConsensusTests(unittest.TestCase):
         self.assertTrue(out["production_review_required"])
         self.assertEqual(out["detail"]["fusion_rule"], RULE)
 
+    def test_real_fusion_then_knn_then_human_memory_arbitration(self):
+        # Integra a fusão REAL do ODIN; não apenas dicionário já fundido.
+        from unittest.mock import patch
+        from src.core.multilight_fusion import fuse_multilight
+        from src.core.knn_visual_corroboration import (
+            apply_knn_visual_corroboration,
+        )
+        analyses, observed = _event_0943_actual()
+        for light in LIGHTS:
+            item = analyses[light]
+            detail = item["detail"]
+            score = detail["cnn_v2_ng_score_uncalibrated"]
+            detail.update({
+                "cnn_v2_active": True,
+                "cnn_v2_experimental": True,
+                "final_score": score,
+                "physical_score": 0.0,
+                "fusion_rule": "cnn_v2_dualscale_direct",
+                "operator_review_required": True,
+                "decision_trace": {
+                    "fusion_rule": "cnn_v2_dualscale_direct",
+                    "operator_review_required": True,
+                    "physical_score": 0.0,
+                    "final_score": score,
+                },
+            })
+            item["confidence"] = max(score, 1.0 - score)
+        fused = fuse_multilight(analyses, CAT)
+        self.assertEqual(fused["verdict"], "DEFEITO REAL")
+        self.assertEqual(
+            fused["detail"]["fusion_rule"], "multilight_strong_single",
+        )
+        self.assertEqual(
+            fused["detail"]["multilight_strong_positive_modes"], ["SIDE"],
+        )
+        self.assertEqual(fused["detail"]["cnn_v2_consensus"], "REVIEW")
+        self.assertEqual(
+            fused["detail"]["cnn_v2_consensus_reason"],
+            "INVALID_LIGHT_EVIDENCE",
+        )
+        report = deepcopy(observed["detail"]["knn_visual_corroboration"])
+        with patch(
+            "src.core.knn_visual_corroboration.evaluate_knn_visual_corroboration",
+            return_value=report,
+        ):
+            corroborated = apply_knn_visual_corroboration(fused, {}, CAT, None)
+        self.assertEqual(corroborated["verdict"], "DEFEITO REAL")
+        final = apply_operator_visual_memory_consensus(
+            corroborated, analyses,
+        )
+        self.assertEqual(final["verdict"], "FALHA FALSA")
+        self.assertEqual(final["detail"]["fusion_rule"], RULE)
+        self.assertTrue(final["production_review_required"])
+        self.assertFalse(
+            final["detail"]["operator_visual_memory_consensus"]["automatic_xp_authorized"]
+        )
+
     def test_actual_event_0943_production_fallback_requires_operator(self):
         analyses, fused = _event_0943_actual()
         corrected = apply_operator_visual_memory_consensus(fused, analyses)
