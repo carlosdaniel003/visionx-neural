@@ -162,6 +162,36 @@ class NetworkLatestCandidateTests(unittest.TestCase):
         self.receiver.release_image_gate()
         self.assertTrue(self.receiver._should_ignore_accepted_repeat(sig))
 
+    def test_post_judgment_reinspection_flags_only_same_screen_once(self):
+        old = self.receiver._frame_signature(self.first)
+        different = self.receiver._frame_signature(self.second)
+        self.receiver._reserved_signature = old.copy()
+        self.assertTrue(self.receiver.confirm_reserved_image())
+        self.receiver.release_image_gate()
+
+        self.assertTrue(self.receiver.can_reinspect_last_judged_frame())
+        self.assertTrue(
+            self.receiver.arm_same_frame_reinspection_once(after_judgment=True)
+        )
+        self.assertFalse(self.receiver._should_ignore_accepted_repeat(old))
+        self.receiver._reserve_candidate(old)
+        self.assertTrue(
+            self.receiver.last_delivered_reinspection_of_judged_event
+        )
+        self.assertTrue(self.receiver.confirm_reserved_image())
+        self.receiver.release_image_gate()
+        self.assertTrue(self.receiver._should_ignore_accepted_repeat(old))
+
+        self.assertTrue(
+            self.receiver.arm_same_frame_reinspection_once(after_judgment=True)
+        )
+        self.receiver._reserve_candidate(different)
+        self.assertFalse(
+            self.receiver.last_delivered_reinspection_of_judged_event
+        )
+        self.assertTrue(self.receiver.confirm_reserved_image())
+        self.receiver.release_image_gate()
+
     def test_one_shot_reinspection_cannot_arm_outside_active_capture(self):
         sig = self.receiver._frame_signature(self.first)
         self.assertFalse(self.receiver.arm_same_frame_reinspection_once())
