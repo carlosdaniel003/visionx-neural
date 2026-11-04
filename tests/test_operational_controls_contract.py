@@ -38,7 +38,7 @@ class OperationalControlsVisualContractTests(unittest.TestCase):
         self.assertIn('{"Modo Teste", "Modo Produção"}', ui)
         self.assertIn("last_judged_network_reinspect_available", self.source)
         self.assertIn("can_reinspect_last_judged_frame", self.source)
-        self.assertIn("network_reinspection_read_only", self.source)
+        self.assertNotIn("network_reinspection_read_only", self.source)
 
     def test_production_pause_has_explicit_status_message(self):
         self.assertIn("production_autonomy_paused", self.source)
