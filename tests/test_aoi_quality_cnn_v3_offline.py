@@ -96,7 +96,12 @@ class TrainingTests(unittest.TestCase):
         categories = ("EMBORCADO", "INVERTIDO", "FALTANDO")
         for i in range(36):
             category = categories[i % 3]
-            label = "NG" if (i // 3) % 2 else "OK"
+            # Quatorze casos humanos: 9 NG + 5 OK (acervo real).
+            # Restante fica misto para validação/teste independente.
+            label = (
+                ("OK" if i < 5 else "NG") if i < 14
+                else ("NG" if (i // 3) % 2 else "OK")
+            )
             light = ("SIDE", "TOP", "MID")[i % 3]
             raw = rng.integers(30, 120, (72, 72, 3), dtype=np.uint8)
             reference = raw.copy()
@@ -182,6 +187,28 @@ class TrainingTests(unittest.TestCase):
         self.assertIsNone(report["previous_v3_operator_verified_training_replay"])
         self.assertTrue(report["training"]["test_not_used_for_selection"])
         self.assertEqual(len(report["epoch_history"]), 2)
+        self.assertTrue(report["human_review_evaluated_every_epoch"])
+        self.assertEqual(len(report["epoch_diagnostic_checkpoints"]), 1)
+        self.assertEqual(report["epoch_diagnostic_schema"],
+                         "visionx.aoi_quality_cnn_v3_epoch_diagnostic_only.v1")
+        for item in report["epoch_history"]:
+            replay = item["operator_training_replay"]
+            self.assertEqual(replay["metrics"]["total"], 14)
+            self.assertEqual(replay["metrics"]["NG_total"], 9)
+            self.assertEqual(replay["metrics"]["OK_total"], 5)
+            self.assertTrue(replay["in_sample_not_independent_test"])
+        checkpoint = self.root / report["epoch_diagnostic_checkpoints"][0]["path"]
+        self.assertTrue(checkpoint.is_file())
+        self.assertEqual(
+            sha256(checkpoint.read_bytes()).hexdigest(),
+            report["epoch_diagnostic_checkpoints"][0]["sha256"],
+        )
+        saved = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        self.assertFalse(saved["automatic_xp_authorized"])
+        self.assertFalse(saved["production_approved"])
+        self.assertFalse(saved["test_evaluated_for_this_epoch"])
+        self.assertNotIn("state_dict", saved)
+        self.assertNotIn("test", saved)
         self.assertEqual(
             report["test"]["total"],
             report["test"]["NG_total"] + report["test"]["OK_total"],
@@ -312,6 +339,14 @@ class TrainingTests(unittest.TestCase):
             result["training"][
                 "selected_epoch_cannot_worsen_either_validation_error_against_start"
             ]
+        )
+        self.assertEqual(len(result["epoch_history"]), 2)
+        self.assertEqual(len(result["epoch_diagnostic_checkpoints"]), 1)
+        self.assertTrue(result["human_learning_diagnosis"][
+            "test_evaluated_only_for_safe_candidate"])
+        self.assertEqual(
+            result["epoch_history"][0]["operator_training_replay"]["metrics"]["total"],
+            14,
         )
         self.assertFalse(result["production_approved"])
         self.assertEqual(sha256(candidate.read_bytes()).hexdigest(), original_sha)
