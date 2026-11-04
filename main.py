@@ -25,6 +25,9 @@ from src.core.best_match_memory import install_best_match_memory
 from src.core.dual_scale_memory import install_dual_scale_memory
 from src.core.full_frame_memory import install_full_frame_memory
 from src.core.neural.faltando_live import install_faltando_cnn_live
+from src.core.neural.aoi_quality_cnn_v3_production_trial import (
+    install_aoi_quality_v3_production_trial,
+)
 from src.core.verified_memory_router import install_memory_first_router
 from src.core.knn_c_live import install_live_knn_strategy_c
 from src.core.experts.knn_expert import KNNExpert
@@ -197,6 +200,10 @@ def main():
     install_memory_first_router(MoEOrchestrator)
     # Casos NOVOS: estratégia C OK/NG em consulta visual A/B, sem XP automático.
     install_live_knn_strategy_c(MoEOrchestrator)
+    # CNN V3 época 3: somente depois da memória/KNN C, para nunca
+    # substituir a decisão humana KNOWN. O ensaio só fica ativo com
+    # ponteiro local SHA-verificado e não autoriza OK automático.
+    install_aoi_quality_v3_production_trial(MoEOrchestrator)
 
     # Ordem dos wrappers operacionais:
     # 1. aprendizado humano;
