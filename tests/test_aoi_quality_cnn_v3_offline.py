@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from hashlib import sha256
-import json
 from pathlib import Path
 import tempfile
 import unittest
