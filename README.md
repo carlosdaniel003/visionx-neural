@@ -1,3 +1,26 @@
+## 04/11/2026 — CNN V3 sem categoria AOI: 14 rótulos físicos conferidos
+
+**Decisão:** a categoria retornada pela AOI não é verdade física nem
+entrada de decisão da V3. A CNN continua vendo os pixels dos pares
+gabarito/teste e a luz real. Treinamento, amostragem por classe,
+split, seleção de época e métricas usam somente OK/NG.
+
+As 15 imagens revisadas pelo operador foram vinculadas ao manifesto
+por SHA-256: **9 NG confirmados (6 adesivos nos terminais e
+3 componentes virados)**, **5 OK confirmados** e **1 incerto ignorado**,
+inclusive quando seu PNG já foi excluído. Os 14 confirmados
+entram no treino e os grupos semelhantes ficam longe do
+teste/validação. O modelo anterior de 93% pode ser carregado
+via relatório e hash verificados, sem alterar pesos produtivos.
+
+A próxima rodada compara a V3 anterior com a V3 ajustada nas
+novas partições e produz replay separado das 14 imagens
+**dentro do treino**, sem confundi-lo com acerto em novas peças.
+
+[Etapa CNN V3 somente por imagens e qualidade](docs/AOI_V3_TREINO_SOMENTE_IMAGENS_REVISAO_15_20261104.md).
+
+---
+
 ## 04/11/2026 — Relato do operador e critérios permanentes do ODIN AOI
 
 As dificuldades recorrentes relatadas durante meses de desenvolvimento
