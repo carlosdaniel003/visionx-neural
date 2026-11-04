@@ -830,6 +830,62 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     if detail.get("production_binary_auto") is not True:
         return _legacy_continuous_policy(analysis, detail, policy)
 
+    # Trial explícito da V3: a época 3 aprendeu 13/14 exemplos, mas
+    # ainda liberou um NG humano e três NG na validação. Portanto ela
+    # SOMENTE veta liberação OK quando reconhece NG; nunca autoriza
+    # PRESS_0 sozinha. Falha de integridade deve interromper o XP.
+    from src.core.neural.aoi_quality_cnn_v3_trial_consensus import active_v3_veto
+    v3_status, v3_ng_veto = active_v3_veto(analysis)
+    if v3_status == "ERROR":
+        return {
+            **policy,
+            "verdict": "",
+            "auto_allowed": False,
+            "operator_review_required": False,
+            "proposed_decision": "",
+            "operational_error": True,
+            "reason": "aoi_quality_v3_epoch3_integrity_or_lighting_fault",
+            "unverified_physical_label": True,
+        }
+    if v3_status == "READY" and v3_ng_veto:
+        side_early_completed = (
+            analysis.get("lighting_mode") == "SIDE"
+            and analysis.get("multilight_final") is True
+            and detail.get("multilight_final") is True
+            and detail.get("eligible_for_final_decision") is True
+            and analysis.get("eligible_for_final_decision") is True
+        )
+        if (
+            _completed_continuous_inspection(analysis, detail)
+            or side_early_completed
+        ):
+            return {
+                **policy,
+                "verdict": "DEFEITO REAL",
+                "auto_allowed": True,
+                "operator_review_required": False,
+                "proposed_decision": "NG",
+                "reason": "aoi_quality_v3_epoch3_ng_veto_trial_v1",
+                "unverified_physical_label": True,
+                "source_verdict": policy.get("verdict", ""),
+                "source_reason": policy.get("reason", ""),
+                "v3_checkpoint_sha256": (
+                    detail.get("aoi_v3_multilight", {}).get("checkpoint_sha256")
+                    if isinstance(detail.get("aoi_v3_multilight"), dict)
+                    else detail.get("aoi_v3_trial", {}).get("checkpoint_sha256")
+                ),
+            }
+        return {
+            **policy,
+            "verdict": "",
+            "auto_allowed": False,
+            "operator_review_required": False,
+            "proposed_decision": "",
+            "operational_error": True,
+            "reason": "aoi_quality_v3_epoch3_capture_not_complete",
+            "unverified_physical_label": True,
+        }
+
     # Memória humana multilight contradiz uma CNN experimental que votou NG.
     # É um OK visual plausível, mas NÃO é par RGB exato; não permitir que
     # o fallback binário converta esta contraevidência em 1/NG automático.
