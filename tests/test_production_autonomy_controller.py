@@ -4,13 +4,11 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QComboBox, QScrollArea, QWidget
 
 from src.ui.production_autonomy_controller import (
-    HORIZONTAL_SCROLL_DURATION_MS,
-    RENDER_SETTLE_MS,
-    SCROLL_DURATION_MS,
-    TOP_HOLD_MS,
+    VERDICT_HOLD_MS,
     ProductionAutonomyController,
 )
 
@@ -63,9 +61,18 @@ class _Panel(QWidget):
         self.judgments = []
         self.interventions = []
         self.intervention_clears = 0
+        self.visible_verdicts = []
+        self.confidence_paints = []
 
     def update_brain_status(self, message, active=False):
         self.status.append((str(message), bool(active)))
+
+    def _update_confidence_panel(self, analysis):
+        self.confidence_paints.append(analysis)
+
+    def show_ai_verdict_feedback(self, analysis):
+        from src.ui.decision_verdict_feedback import verdict_feedback_state
+        self.visible_verdicts.append(verdict_feedback_state(analysis))
 
     def save_label(self, decision, source="button"):
         self.saved.append((str(decision), str(source)))
@@ -188,7 +195,7 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         self.assertIs(controller.pending_analysis, analysis)
         panel.close()
 
-    def test_analysis_ready_records_pre_scroll_analysis_time_once(self):
+    def test_analysis_ready_records_pre_decision_analysis_time_once(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
@@ -590,79 +597,142 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         self.assertFalse(panel.session_visible)
         self.assertGreaterEqual(panel.intervention_clears, 1)
 
-    def test_scroll_to_bottom_dispatches_next_qt_cycle_without_wait(self):
+    def test_verdict_is_shown_then_auto_ng_after_one_second_without_scrolling(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
+        bar = panel.root_scroll.verticalScrollBar()
+        bar.setValue(230)
+        original_scroll = bar.value()
         analysis = _complete_binary_ng()
         panel.current_analysis = analysis
+
         self.assertTrue(controller.analysis_ready(analysis))
-        controller._stage_timer.stop()
-        generation = controller.generation
-
-        controller._scroll_finished(generation)
-        self.assertEqual(controller.state, "presentation_complete")
-        self.assertEqual(controller._stage_remaining_ms, 1)
+        self.assertEqual(panel.visible_verdicts, [("DEFEITO REAL", "ng")])
+        self.assertEqual(controller._stage_remaining_ms, VERDICT_HOLD_MS)
+        self.assertEqual(bar.value(), original_scroll)
         self.assertEqual(panel.saved, [])
-
-        controller._stage_timer.stop()
-        controller._run_stage_callback()
-        self.assertEqual(controller.state, "auto_decision_pending")
-        self.assertEqual(controller._stage_remaining_ms, 1)
+        QTest.qWait(300)
         self.assertEqual(panel.saved, [])
+        self.assertEqual(bar.value(), original_scroll)
 
-        controller._stage_timer.stop()
-        controller._run_stage_callback()
+        QTest.qWait(850)
         self.assertEqual(panel.saved, [("NG", "production_auto")])
         self.assertEqual(panel.auto_records, ["NG"])
-        controller._emit_auto_decision(generation, "NG")
-        self.assertEqual(len(panel.saved), 1)
+        self.assertEqual(bar.value(), original_scroll)
+        self.assertEqual(controller.state, "idle")
         panel.close()
 
-    def test_pause_at_scroll_bottom_blocks_decision_until_resume(self):
+    def test_verdict_ok_and_ng_use_same_one_second_timer(self):
+        for label in ("OK", "NG"):
+            with self.subTest(label=label):
+                panel = _Panel()
+                controller = ProductionAutonomyController(panel)
+                panel.combo_mode.setCurrentText("Modo Produção")
+                if label == "OK":
+                    from src.core.side_early_decision import build_side_early_decision
+                    from tests.test_side_early_decision import SideEarlyDecisionTests
+                    side = SideEarlyDecisionTests._trial_ng_side()
+                    side.update(
+                        verdict="FALHA FALSA", is_defect=False,
+                        confidence=.9997,
+                    )
+                    side["detail"]["cnn_v2_ng_score_uncalibrated"] = .0003
+                    analysis = build_side_early_decision(side, "FALTANDO")
+                else:
+                    analysis = _complete_binary_ng()
+                panel.current_analysis = analysis
+                self.assertTrue(controller.analysis_ready(analysis))
+                self.assertEqual(controller._stage_remaining_ms, 1000)
+                self.assertEqual(panel.visible_verdicts[-1][0],
+                                 "FALHA FALSA" if label == "OK" else "DEFEITO REAL")
+                self.assertIsNone(controller._auto_dispatch_started_generation)
+                self.assertEqual(panel.saved, [])
+                # Avançar o Qt simulado sem tempo de parede para exercitar
+                # o mesmo gate de autorização após o timer.
+                controller._stage_timer.stop()
+                controller._run_stage_callback()
+                self.assertEqual(controller.state, "auto_decision_pending")
+                self.assertEqual(panel.saved, [])
+                controller._stage_timer.stop()
+                controller._run_stage_callback()
+                self.assertEqual(panel.saved, [(label, "production_auto")])
+                panel.close()
+
+    def test_space_pause_freezes_one_second_without_sending_auto_decision(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
         analysis = _complete_binary_ng()
         panel.current_analysis = analysis
         self.assertTrue(controller.analysis_ready(analysis))
-        controller._stage_timer.stop()
-        generation = controller.generation
-
+        QTest.qWait(200)
         self.assertTrue(controller.toggle_pause())
-        controller._scroll_finished(generation)
-        self.assertEqual(controller._stage_remaining_ms, 1)
+        self.assertTrue(controller.paused)
         self.assertFalse(controller._stage_timer.isActive())
+        self.assertTrue(callable(controller._stage_callback))
+        # Callback atrasado enquanto pausado não deve ser perdido.
+        controller._run_stage_callback()
+        self.assertTrue(callable(controller._stage_callback))
+        QTest.qWait(1100)
         self.assertEqual(panel.saved, [])
 
         self.assertFalse(controller.toggle_pause())
-        controller._stage_timer.stop()
-        controller._run_stage_callback()
-        controller._stage_timer.stop()
-        controller._run_stage_callback()
+        self.assertTrue(controller._stage_timer.isActive())
+        QTest.qWait(1000)
         self.assertEqual(panel.saved, [("NG", "production_auto")])
         panel.close()
 
-    def test_presentation_is_intentionally_visible_and_non_instant(self):
-        self.assertGreaterEqual(RENDER_SETTLE_MS, 300)
-        self.assertGreaterEqual(TOP_HOLD_MS, 300)
-        self.assertGreaterEqual(SCROLL_DURATION_MS, 6000)
-        self.assertGreaterEqual(HORIZONTAL_SCROLL_DURATION_MS, 2000)
-        # A apresentação permanece longa, mas sem espera após a rolagem.
+    def test_cancel_or_change_mode_blocks_pending_one_second_command(self):
+        for change in ("cancel", "mode", "replace"):
+            with self.subTest(change=change):
+                panel = _Panel()
+                controller = ProductionAutonomyController(panel)
+                panel.combo_mode.setCurrentText("Modo Produção")
+                analysis = _complete_binary_ng()
+                panel.current_analysis = analysis
+                self.assertTrue(controller.analysis_ready(analysis))
+                generation = controller.generation
+                if change == "cancel":
+                    controller.cancel_current()
+                elif change == "mode":
+                    panel.combo_mode.setCurrentText("Modo Teste")
+                else:
+                    panel.current_analysis = _complete_binary_ng()
+                controller._stage_timer.stop()
+                controller._run_stage_callback()
+                controller._emit_auto_decision(generation, "NG")
+                self.assertEqual(panel.saved, [])
+                panel.close()
+
+    def test_one_second_replaces_all_post_analysis_scroll_stages(self):
+        self.assertEqual(VERDICT_HOLD_MS, 1_000)
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        panel.current_analysis = _complete_binary_ng()
+        self.assertTrue(controller.analysis_ready(panel.current_analysis))
+        self.assertNotIn(controller.state, {"scrolling", "presentation_top"})
+        self.assertFalse(hasattr(controller, "_scroll_animation"))
+        self.assertFalse(hasattr(controller, "_go_to_top"))
+        self.assertFalse(hasattr(controller, "_start_scroll"))
+        self.assertEqual(controller._stage_remaining_ms, VERDICT_HOLD_MS)
+        controller.cancel_current()
+        panel.close()
 
 
 class ProductionAutonomySourceContractTests(unittest.TestCase):
-    def test_controller_uses_qproperty_animation_not_sleep(self):
+    def test_production_controller_uses_qtimer_not_scroll_animation_or_sleep(self):
         source = (
             ROOT / "src" / "ui" / "production_autonomy_controller.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("QPropertyAnimation", source)
-        self.assertIn('b"value"', source)
-        self.assertIn("verticalScrollBar()", source)
-        self.assertIn("_active_specialist_horizontal_bar", source)
-        self.assertIn("horizontalScrollBar()", source)
-        self.assertIn("adhesive_multilight_analysis_view", source)
+        self.assertIn("VERDICT_HOLD_MS = 1_000", source)
+        self.assertIn("QTimer", source)
+        self.assertNotIn("QPropertyAnimation", source)
+        self.assertNotIn("verticalScrollBar()", source)
+        self.assertNotIn("horizontalScrollBar()", source)
+        self.assertNotIn("_start_scroll", source)
         self.assertNotIn("time.sleep(", source)
 
     def test_space_is_window_shortcut_only_for_production_controller(self):

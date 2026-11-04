@@ -359,3 +359,46 @@ isolado, replay OK e NG não vistos, NG visualmente semelhante a OK,
 erros de comunicação, novo julgamento humano corretivo, alteração de
 um pixel e falha da sonda física. Não presumir que um teste in-sample
 comprove segurança operacional.
+
+
+## 04/11/2026 — Resultado visível por 1.000 ms; sem rolagem na Produção
+
+**Regra vigente, que substitui a rolagem e os atrasos históricos
+das seções anteriores.**
+
+Quando a inspeção produtiva conclui uma decisão visual SIDE ou
+SIDE/TOP/MID e o resultado final é renderizado, o controlador:
+
+1. atualiza os painéis e o aviso flutuante do veredito
+   `FALHA FALSA` ou `DEFEITO REAL`;
+2. sem alterar a barra vertical nem horizontal, nem voltar ao topo,
+   agenda somente **1.000 ms** de apresentação com `QTimer`;
+3. após o segundo, revalida `production_decision_policy()`, a
+   identificação do evento/captura, a pausa por espaço, armamentos
+   supervisionados e transmissão única ao XP; se aprovada, envia
+   **0/OK ou 1/NG** no próximo ciclo Qt;
+4. diante de ausência de autorização, falha ou evento inválido,
+   conserva as travas/parada operacional existentes, sem forçar 0/1.
+
+O temporizador é pausável: `Espaço` interrompe a contagem, retomar
+conserva o tempo restante. `Espaço + 0/1` corrige a captura pausada
+antes de qualquer transmissão automática; como a janela é de apenas
+1 segundo, ela **não oferece o tempo de revisão da antiga rolagem**.
+O comando já transmitido não pode ser desfeito pela pausa.
+Troca de modo, substituição de evento ou descarte cancelam comandos
+pendentes e callbacks atrasados. Não existe `sleep`, animação ou
+espera de rolagem após a análise.
+
+**Escopo:** somente a apresentação pós-análise no `Modo Produção`.
+O módulo do agente XP permanece intacto, assim como
+SIDE/TOP/MID durante a **aquisição**, fusão, validação física,
+memória automática e humana, CNN/KNN, proveniência, métricas,
+quarentena, decisão binária e confirmação de envio XP. O tempo de
+análise já calculado segue separado do segundo de apresentação.
+
+**Validação operacional:** testar primeiro sem acionamento físico,
+com XP isolado. Confirmar OK e NG, pausa e correção humana durante o
+segundo, troca de evento e modo, ausência de rolagem, nenhuma liberação
+com captura incompleta, falha de ACK e **apenas um PRESS_0/PRESS_1**
+por evento. A janela de 1 segundo diminui significativamente a
+oportunidade de intervenção.

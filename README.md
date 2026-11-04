@@ -1,3 +1,28 @@
+## 04/11/2026 — Produção: mostrar veredito por 1 segundo, sem rolagem
+
+Após finalizar a análise (SIDE ou SIDE/TOP/MID), o ODIN já apresenta
+`FALHA FALSA` ou `DEFEITO REAL` no aviso visual e inicia um único
+temporizador Qt de **1.000 ms**. Concluído o segundo, executa o fluxo
+automático **0/OK** ou **1/NG** já existente, após revalidar categoria,
+captura, evento atual, autorizações físicas e sucesso do transporte XP.
+Não existe mais a rolagem vertical/horizontal automática da interface,
+nem o retorno ao topo para a apresentação dos especialistas. O conteúdo
+continua disponível ao operador para inspeção manual.
+
+`Espaço` pausa e congela o tempo restante; despausar retoma apenas
+esse tempo. Correção manual `Espaço + 0/1` permanece possível **antes**
+do comando automático ser transmitido, mas a janela passa a ser curta.
+Trocar de modo, descartar ou perder o evento impede 0/1 atrasado.
+Modo Teste/Sombra, capturas, modelos CNN/KNN, aprendizado, memória,
+julgamento binário e agente XP **não foram alterados**.
+Validação com o XP fisicamente isolado é obrigatória.
+Contrato atualizado: `docs/ODIN_PRODUCTION_CONTINUOUS_AUTO_20261028.md`.
+
+**Esta regra de 04/11 substitui a apresentação rolante descrita
+nas notas históricas de 03/11 e anteriores abaixo.**
+
+---
+
 ## 03/11/2026 — Memória automática em Produção e atalho pela SIDE
 
 Uma decisão automática com comando 0/1 confirmado pelo XP passa a
