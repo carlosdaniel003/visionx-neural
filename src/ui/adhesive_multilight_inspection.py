@@ -508,6 +508,13 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
             apply_operator_visual_memory_consensus,
         )
         fused = apply_operator_visual_memory_consensus(fused, analyses)
+        # CNN trial pode deixar as três luzes em revisão mesmo quando
+        # evidências humana + KNN visual + geometria SIDE favorecem OK.
+        # A correção é somente de classificação visual: XP não recebe 0/1.
+        from src.core.review_multilight_ok_consensus import (
+            apply_review_multilight_ok_consensus,
+        )
+        fused = apply_review_multilight_ok_consensus(fused, analyses)
         # A recuperação TOP/MID de 29/10 só é reconhecida DEPOIS do
         # primeiro exame físico (que inspeciona o veredito CNN original).
         # Coletar a contraprova física da captura atual antes do gate XP.
