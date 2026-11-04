@@ -341,30 +341,42 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         self.assertFalse(controller.paused_manual_decision("NG"))
         self.assertEqual(panel.saved, [])
 
-    def test_reinspection_of_judged_xp_event_is_read_only_in_production(self):
+    def test_reinspection_of_judged_xp_event_creates_second_auto_judgment(self):
         panel = _Panel()
         controller = ProductionAutonomyController(panel)
         panel.combo_mode.setCurrentText("Modo Produção")
-        panel.network_reinspection_read_only = True
-        analysis = _complete_binary_ng()
-        panel.current_analysis = analysis
+
+        original = _complete_binary_ng()
+        panel.current_analysis = original
         panel.last_analysis_time_seconds = 4.0
+        self.assertTrue(controller.analysis_ready(original))
+        first_generation = controller.generation
+        controller._stage_timer.stop()
+        controller._emit_auto_decision(first_generation, "NG")
+        self.assertEqual(panel.saved, [("NG", "production_auto")])
+        self.assertEqual(panel.judgments, [("NG", "automatic", 4.0)])
 
-        self.assertTrue(controller.analysis_ready(analysis))
-        self.assertEqual(controller.state, "reinspection_read_only")
-        self.assertIsNone(controller.pending_analysis)
-        self.assertFalse(controller._stage_timer.isActive())
-        self.assertEqual(panel.visible_verdicts, [("DEFEITO REAL", "ng")])
-        self.assertEqual(panel.saved, [])
-        self.assertEqual(panel.judgments, [])
-        self.assertEqual(panel.analysis_records, [])
+        panel.network_reinspection_of_judged_event = True
+        repeated = _complete_binary_ng()
+        panel.current_analysis = repeated
+        panel.last_analysis_time_seconds = 2.0
+        self.assertTrue(controller.analysis_ready(repeated))
+        second_generation = controller.generation
+        self.assertEqual(controller.state, "rendered_wait")
+        self.assertIs(controller.pending_analysis, repeated)
+        self.assertTrue(controller._stage_timer.isActive())
+        controller._stage_timer.stop()
+        controller._emit_auto_decision(second_generation, "NG")
 
-        controller._finish_presentation(controller.generation)
-        controller._emit_auto_decision(controller.generation, "NG")
-        self.assertFalse(controller.paused_manual_decision("NG"))
-        self.assertEqual(panel.saved, [])
-        self.assertEqual(panel.judgments, [])
-        self.assertIn("Nenhum novo 0/1", panel.status[-1][0])
+        self.assertEqual(panel.saved, [
+            ("NG", "production_auto"), ("NG", "production_auto"),
+        ])
+        self.assertEqual(panel.judgments, [
+            ("NG", "automatic", 4.0), ("NG", "automatic", 2.0),
+        ])
+        controller._emit_auto_decision(second_generation, "NG")
+        controller._emit_auto_decision(first_generation, "NG")
+        self.assertEqual(len(panel.saved), 2)
         panel.close()
 
     def test_pause_before_analysis_keeps_result_waiting_until_resume(self):
