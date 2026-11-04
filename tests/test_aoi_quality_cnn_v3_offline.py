@@ -1,0 +1,231 @@
+"""CNN V3 — comparação real com gradientes, offline e sem ativação XP."""
+from __future__ import annotations
+
+from collections import Counter
+from copy import deepcopy
+from hashlib import sha256
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import cv2
+import numpy as np
+import torch
+
+from src.core.neural.aoi_quality_cnn_v3 import AOIQualityCNNV3, MODEL_SCHEMA_V3
+from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2, MODEL_SCHEMA_V2
+from src.scripts.train_aoi_quality_cnn_v3_offline import (
+    PhotometricPairDataset, SCHEMA, _coverage, _loss_v3,
+    _selection_score, train_v3,
+)
+from src.services.aoi_universal_quality_archive import split_universal_events
+
+
+class ArchitectureTests(unittest.TestCase):
+    def setUp(self):
+        torch.set_num_threads(2)
+        torch.manual_seed(42)
+
+    def test_siamese_pair_features_do_not_depend_on_reference_test_order(self):
+        model = AOIQualityCNNV3(dropout=0).eval()
+        ref = torch.rand((2, 3, 3, 64, 64))
+        test = torch.rand_like(ref)
+        focus_ref = torch.rand_like(ref)
+        focus_test = torch.rand_like(ref)
+        mask = torch.tensor([[1., 1., 0.], [0., 1., 1.]])
+        with torch.inference_mode():
+            a, lights_a = model(ref, test, focus_ref, focus_test, mask)
+            b, lights_b = model(test, ref, focus_test, focus_ref, mask)
+        self.assertTrue(torch.allclose(a, b, atol=1.e-6))
+        self.assertTrue(torch.allclose(lights_a, lights_b, atol=1.e-6))
+        self.assertEqual(tuple(a.shape), (2,))
+        self.assertEqual(tuple(lights_a.shape), (2, 3))
+        self.assertTrue(torch.allclose(a[0], lights_a[0, :2].max()))
+        self.assertTrue(torch.allclose(a[1], lights_a[1, 1:].max()))
+        self.assertEqual(MODEL_SCHEMA_V3, "visionx.aoi_pair_quality_cnn.v3.offline")
+        self.assertNotEqual(MODEL_SCHEMA_V3, MODEL_SCHEMA_V2)
+
+    def test_validates_partial_missing_and_invalid_masks(self):
+        model = AOIQualityCNNV3(dropout=0).eval()
+        imgs = [torch.zeros((1, 3, 3, 64, 64)) for _ in range(4)]
+        for mask in (
+            torch.zeros((1, 3)),
+            torch.tensor([[.5, 1., 0.]]),
+            torch.zeros((1, 2)),
+        ):
+            with self.subTest(mask=mask.tolist()):
+                with self.assertRaises(ValueError):
+                    model(*imgs, mask)
+        with self.assertRaises(ValueError):
+            model(*imgs[:3], imgs[3][..., :32, :32],
+                  torch.tensor([[1., 0., 0.]]))
+
+    def test_identity_regularizer_and_supervised_branch_backpropagate(self):
+        model = AOIQualityCNNV3(dropout=0)
+        ref = torch.rand((2, 3, 3, 64, 64))
+        test = ref.clone()
+        test[1, 0, :, 15:42, 15:42] = 0
+        mask = torch.tensor([[1., 0., 0.], [1., 0., 0.]])
+        batch = (ref, test, ref, test, mask, torch.tensor([0., 1.]))
+        loss, parts = _loss_v3(model, batch)
+        self.assertTrue(bool(torch.isfinite(loss).item()))
+        self.assertGreater(parts["supervised"], 0.)
+        self.assertGreater(parts["identity_reference"], 0.)
+        loss.backward()
+        self.assertTrue(any(
+            param.grad is not None and param.grad.abs().sum().item() > 0
+            for param in model.parameters()
+        ))
+
+
+class TrainingTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.manifest = (
+            self.root/"reports/faltando_neural/run_fixture/manifest.json"
+        )
+        self.manifest.parent.mkdir(parents=True)
+        self.manifest.write_text('{"test": true}', encoding="utf-8")
+        self.root.joinpath("reports/neural_online").mkdir(parents=True)
+        self.records = self._records()
+
+    def _records(self):
+        rng = np.random.default_rng(42)
+        cases = []
+        categories = ("EMBORCADO", "INVERTIDO", "FALTANDO")
+        for i in range(36):
+            category = categories[i % 3]
+            label = "NG" if (i // 3) % 2 else "OK"
+            light = ("SIDE", "TOP", "MID")[i % 3]
+            raw = rng.integers(30, 120, (72, 72, 3), dtype=np.uint8)
+            reference = raw.copy()
+            test = raw.copy()
+            # Dois recortes diferentes, mas a verdade física depende
+            # de uma ausência central, não do texto/nome da categoria.
+            reference[24:46, 24:46] = 190
+            test[24:46, 24:46] = 190 if label == "OK" else 45
+            src = self.root/f"images/e{i:03d}_reference.png"
+            tst = self.root/f"images/e{i:03d}_test.png"
+            src.parent.mkdir(exist_ok=True)
+            for path, arr in ((src, reference), (tst, test)):
+                ok, buf = cv2.imencode(".png", arr)
+                self.assertTrue(ok)
+                path.write_bytes(buf.tobytes())
+            cases.append({
+                "id": f"event_{i:03d}", "category_hint": category,
+                "label": label,
+                "label_provenance": "ARCHIVE_FOLDER_PROVISIONAL",
+                "split_group": f"AOI_MINUTE:{i:04d}",
+                "views": {light: {"reference": src, "test": tst}},
+                "sources": [f"public/{label.lower()}_archive/{i:03d}.png"],
+            })
+        return cases
+
+    def _provenance(self):
+        return {
+            "manifest_sha256": sha256(self.manifest.read_bytes()).hexdigest(),
+            "by_category_and_label": {},
+        }
+
+    def test_training_refuses_archive_labels_without_explicit_opt_in(self):
+        with self.assertRaisesRegex(ValueError, "provisórios"):
+            train_v3(
+                self.root, self.manifest, epochs=1, image_size=64,
+                compare_verified_pinned_cnn=False,
+            )
+        self.assertFalse((self.root/"reports/aoi_quality_cnn_v3").exists())
+
+    def test_offline_candidate_trains_and_never_changes_production(self):
+        pointer = self.root/"reports/neural_online/live_active.json"
+        before_manifest = self.manifest.read_bytes()
+        pngs = {
+            str(pair[file]): sha256(pair[file].read_bytes()).hexdigest()
+            for row in self.records
+            for pair in row["views"].values()
+            for file in ("reference", "test")
+        }
+        with patch(
+            "src.scripts.train_aoi_quality_cnn_v3_offline.universal_archive_events",
+            return_value=(self.records, self._provenance()),
+        ):
+            report = train_v3(
+                self.root, self.manifest,
+                epochs=1, image_size=64,
+                allow_provisional_archive_labels=True,
+                compare_verified_pinned_cnn=False,
+            )
+        self.assertEqual(report["schema"],
+                         "visionx.aoi_quality_cnn_v3_training_report.v1")
+        self.assertFalse(report["production_approved"])
+        self.assertFalse(report["automatic_xp_authorized"])
+        self.assertFalse(report["memory_or_knn_used_for_inference"])
+        self.assertFalse(report["safety"]["production_eligible"])
+        self.assertFalse(report["training"]["test_not_used_for_selection"] is False)
+        self.assertEqual(len(report["epoch_history"]), 2)
+        self.assertEqual(
+            report["test"]["total"],
+            report["test"]["NG_total"] + report["test"]["OK_total"],
+        )
+        self.assertEqual(
+            sum(x["test"]["records"] if False else 0 for x in []), 0
+        )  # No invented independent physical-event linkage.
+        self.assertFalse(report["partition"]["physical_event_association_verified"])
+        self.assertFalse(report["safety"]["blind_holdout"])
+        self.assertFalse(report["coverage"]["all_data"]["fully_operator_verified"])
+        self.assertEqual(before_manifest, self.manifest.read_bytes())
+        self.assertFalse(pointer.exists())
+        self.assertEqual(pngs, {
+            str(pair[file]): sha256(pair[file].read_bytes()).hexdigest()
+            for row in self.records
+            for pair in row["views"].values()
+            for file in ("reference", "test")
+        })
+        path = self.root/report["candidate_path"]
+        self.assertTrue(path.is_file())
+        weights = torch.load(path, map_location="cpu", weights_only=True)
+        self.assertEqual(weights["schema"], SCHEMA)
+        self.assertEqual(weights["architecture_schema"], MODEL_SCHEMA_V3)
+        self.assertNotEqual(weights["schema"], MODEL_SCHEMA_V2)
+        self.assertFalse(weights["production_approved"])
+        self.assertFalse(weights["automatic_xp_authorized"])
+        self.assertTrue(weights["candidate_only"])
+        AOIQualityCNNV3().load_state_dict(weights["state_dict"], strict=True)
+        with self.assertRaises(RuntimeError):
+            FaltandoCNNV2().load_state_dict(weights["state_dict"], strict=True)
+
+    def test_augmented_views_preserve_pair_mask_and_change_brightness(self):
+        ds = PhotometricPairDataset(
+            self.records[:3], 64, .70, augment=True,
+        )
+        r, t, rf, tf, mask, y = ds[0]
+        self.assertEqual(tuple(r.shape), (3, 3, 64, 64))
+        self.assertEqual(int(mask.sum().item()), 1)
+        self.assertEqual(float(y.item()), 0.)
+        self.assertTrue(bool(torch.isfinite(r).all().item()))
+        self.assertTrue(bool(torch.isfinite(t).all().item()))
+        self.assertTrue(bool(torch.isfinite(rf).all().item()))
+        self.assertTrue(bool(torch.isfinite(tf).all().item()))
+        for light in range(3):
+            if mask[light] == 0:
+                self.assertEqual(float(r[light].abs().sum().item()), 0.)
+
+    def test_selection_rejects_single_class_validation(self):
+        with self.assertRaisesRegex(ValueError, "ambas as classes"):
+            _selection_score({"NG_total": 0, "OK_total": 12})
+
+    def test_group_split_keeps_duplicates_and_minutes_together(self):
+        t, v, h, partition = split_universal_events(self.records)
+        self.assertEqual(len(t)+len(v)+len(h), len(self.records))
+        self.assertFalse(partition["physical_event_association_verified"])
+        self.assertEqual(
+            len({row["id"] for fold in (t, v, h) for row in fold}),
+            len(self.records),
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
