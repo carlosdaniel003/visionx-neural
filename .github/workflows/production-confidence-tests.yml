@@ -7,6 +7,9 @@ on:
     paths:
       - "main.py"
       - "src/ui/production_confidence_gate.py"
+      - "src/core/neural/aoi_v3_trial_contract.py"
+      - "src/core/neural/aoi_quality_cnn_v3_trial_consensus.py"
+      - "tests/test_aoi_quality_v3_production_policy.py"
       - "src/core/side_early_decision.py"
       - "src/core/side_memory_first.py"
       - "tests/test_side_memory_first.py"
@@ -23,6 +26,9 @@ on:
       - "src/core/side_early_decision.py"
       - "src/core/side_memory_first.py"
       - "src/ui/production_confidence_gate.py"
+      - "src/core/neural/aoi_v3_trial_contract.py"
+      - "src/core/neural/aoi_quality_cnn_v3_trial_consensus.py"
+      - "tests/test_aoi_quality_v3_production_policy.py"
       - "tests/test_side_early_decision.py"
       - "tests/test_side_memory_first.py"
       - "tests/test_production_confidence_gate.py"
@@ -47,8 +53,8 @@ jobs:
 
       - name: Compile policy
         run: |
-          python -m py_compile src/core/side_early_decision.py src/core/side_memory_first.py tests/test_side_memory_first.py src/ui/production_confidence_gate.py
+          python -m py_compile src/core/neural/aoi_v3_trial_contract.py src/core/neural/aoi_quality_cnn_v3_trial_consensus.py tests/test_aoi_quality_v3_production_policy.py src/core/side_early_decision.py src/core/side_memory_first.py tests/test_side_memory_first.py src/ui/production_confidence_gate.py
 
       - name: Unit tests
         run: |
-          python -m unittest tests.test_side_early_decision tests.test_side_memory_first tests.test_production_confidence_gate -v
+          python -m unittest tests.test_side_early_decision tests.test_side_memory_first tests.test_production_confidence_gate tests.test_aoi_quality_v3_production_policy -v
