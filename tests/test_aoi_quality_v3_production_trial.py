@@ -138,13 +138,13 @@ class SnapshotAndPointerTests(TrialFixture):
         image = np.full((80, 120, 3), 127, dtype=np.uint8)
         self.assertIsNone(engine.predict(image, image, "SIDE"))
         (self.root/TRIAL_POINTER).parent.mkdir(parents=True, exist_ok=True)
-        (self.root/TRIAL_POINTER).write_text(
-            json.dumps(trial_pointer_payload()), encoding="utf-8"
-        )
         with patch(
             "src.core.neural.aoi_quality_cnn_v3_production_trial.SNAPSHOT_SHA256",
             self.digest,
         ):
+            (self.root/TRIAL_POINTER).write_text(
+                json.dumps(trial_pointer_payload()), encoding="utf-8"
+            )
             outcome = engine.predict(image, image, "SIDE")
             self.assertEqual(outcome["schema"], POINTER_SCHEMA)
             self.assertIn(outcome["predicted"], {"OK", "NG"})
