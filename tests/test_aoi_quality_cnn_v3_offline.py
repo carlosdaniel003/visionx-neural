@@ -164,15 +164,12 @@ class TrainingTests(unittest.TestCase):
         self.assertFalse(report["automatic_xp_authorized"])
         self.assertFalse(report["memory_or_knn_used_for_inference"])
         self.assertFalse(report["safety"]["production_eligible"])
-        self.assertFalse(report["training"]["test_not_used_for_selection"] is False)
+        self.assertTrue(report["training"]["test_not_used_for_selection"])
         self.assertEqual(len(report["epoch_history"]), 2)
         self.assertEqual(
             report["test"]["total"],
             report["test"]["NG_total"] + report["test"]["OK_total"],
         )
-        self.assertEqual(
-            sum(x["test"]["records"] if False else 0 for x in []), 0
-        )  # No invented independent physical-event linkage.
         self.assertFalse(report["partition"]["physical_event_association_verified"])
         self.assertFalse(report["safety"]["blind_holdout"])
         self.assertFalse(report["coverage"]["all_data"]["fully_operator_verified"])
