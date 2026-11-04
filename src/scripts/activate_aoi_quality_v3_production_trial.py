@@ -38,7 +38,9 @@ def verify_epoch3_report(root: Path) -> dict:
         or report.get("candidate_only") is not True
         or report.get("production_approved") is not False
         or report.get("automatic_xp_authorized") is not False
-        or report.get("selected_epoch") != 0
+        or report.get("training", {}).get(
+            "selected_epoch_using_validation_only"
+        ) != 0
         or report.get("operator_image_review_verified") != 14
         or report.get("aoi_category_used_for_training_selection_evaluation")
            is not False
