@@ -20,6 +20,17 @@ MIN_HUMAN_MARGIN = 0.07
 MIN_VISUAL_OK = 0.96
 MIN_VISUAL_MARGIN = 0.07
 
+# Rota complementar: duas luzes com memória HUMANA vinculada ao próprio
+# arquivo OK verificado; terceira luz é contraprova direcional, e não
+# precisa ter o mesmo recorte/iluminação da fonte humana mais próxima.
+ANCHOR_HUMAN_MIN = 0.98
+ANCHOR_MARGIN_MIN = 0.06
+ANCHOR_ARCHIVE_MIN = 0.98
+ANCHOR_ARCHIVE_MARGIN_MIN = 0.06
+SUPPORT_HUMAN_MIN = 0.95
+SUPPORT_ARCHIVE_MIN = 0.95
+SUPPORT_MARGIN_MIN = 0.075
+
 
 def _score(value):
     if type(value) not in (float, int):
@@ -51,6 +62,50 @@ def _no_hard_ng(fused: dict) -> bool:
     return _score(detail.get("physical_score")) == 0.0
 
 
+def _archive_human_anchor(local: dict, human_id: str, light: str) -> bool:
+    """Conferência em mesma métrica: JSON humano + PNG OK da luz atual.
+
+    A auditoria KNNArchiveAlignment já verifica hash e proveniência no
+    índice persistente. Aqui revalidamos o contrato antes de reutilizá-lo.
+    """
+    knn = local.get("knn_c")
+    aligned = knn.get("aligned_archive") if isinstance(knn, dict) else None
+    if not isinstance(aligned, dict):
+        return False
+    source = aligned.get("archive_source")
+    if not isinstance(source, dict):
+        return False
+    score = _score(aligned.get("archive_similarity"))
+    link = _score(aligned.get("human_archive_similarity"))
+    opposite = _score(aligned.get("best_opposite_archive_similarity"))
+    return bool(
+        aligned.get("schema") == "visionx.knn_c_archive_alignment.v1"
+        and aligned.get("status") == "RECONCILED_OK"
+        and aligned.get("reason") == "HUMAN_AND_ARCHIVE_ALIGNED"
+        and aligned.get("diagnostic_only") is True
+        and aligned.get("auto_decision_authorized") is False
+        and aligned.get("category") == canonical_memory_category(
+            local.get("cnn_v2_aoi_category")
+        )
+        and aligned.get("label") == "OK"
+        and aligned.get("human_record_id") == human_id
+        and source.get("record_id") == human_id
+        and source.get("label") == "OK"
+        and source.get("lighting_mode") == light
+        and isinstance(source.get("source_sha256"), str)
+        and len(source["source_sha256"]) == 64
+        and isinstance(source.get("path"), str)
+        and source["path"].startswith("public/ok_archive/")
+        and ".." not in source["path"].split("/")
+        and score is not None
+        and link is not None
+        and opposite is not None
+        and score >= ANCHOR_ARCHIVE_MIN
+        and link >= 0.97
+        and score - opposite >= ANCHOR_ARCHIVE_MARGIN_MIN
+    )
+
+
 def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
     """Verifica as três iluminações e duas fontes visuais independentes.
 
@@ -71,7 +126,12 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
         and detail.get("recognition_route") == "NEW_CNN"
         and detail.get("cnn_v2_consensus") == "REVIEW"
         and detail.get("cnn_v2_consensus_reason") == "INVALID_LIGHT_EVIDENCE"
-        and set(detail.get("multilight_strong_positive_modes") or ()) == set(LIGHTS)
+        # Pode existir só UMA CNN NG forte; as outras luzes ficam em
+        # revisão. Exigir três NG fortes anulava o objetivo da memória.
+        and bool(set(detail.get("multilight_strong_positive_modes") or ()) & set(LIGHTS))
+        and set(detail.get("multilight_strong_positive_modes") or ()).issubset(
+            set(LIGHTS)
+        )
         and _no_hard_ng(fused)
     ):
         return None
@@ -117,6 +177,9 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
 
     observations = {}
     model_sha = None
+    strict_lights = []
+    aligned_anchors = []
+    supporting_lights = []
     for light in LIGHTS:
         item = analyses.get(light)
         local = item.get("detail") if isinstance(item, dict) else None
@@ -129,6 +192,26 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
             and canonical_memory_category(local.get("cnn_v2_aoi_category")) == category
         ):
             return None
+        # Veto físico em QUALQUER luz tem precedência: o frame dominante
+        # pode não carregar todos os metadados locais de ausência.
+        trace = local.get("decision_trace")
+        for entry in (item, local, trace):
+            if isinstance(entry, dict) and any(
+                entry.get(field) is True
+                for field in (
+                    "hard_missing_evidence", "raw_hard_missing_evidence",
+                    "missing_hard_absence", "memory_conflict",
+                )
+            ):
+                return None
+        physical = local.get("physical_missing_veto")
+        if isinstance(physical, dict) and (
+            physical.get("status") in {"SUSPECT_ABSENCE", "NG_CORROBORATED", "UNAVAILABLE"}
+            or physical.get("suspect_lights")
+            or physical.get("unavailable_lights")
+        ):
+            return None
+
         digest = local.get("cnn_v2_checkpoint_sha256")
         if not isinstance(digest, str) or len(digest) != 64:
             return None
@@ -147,27 +230,23 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
             and human.get("reason") == "VISUAL_SIMILARITY_NOT_EXACT_IDENTITY"
         ):
             return None
-        # O índice histórico usa >=.97 como candidato; MID .967 pode
-        # continuar NO_MATCH sem perder a contraprova multilight.
         if light != "MID" and human["status"] != "HUMAN_OK_VISUAL_CANDIDATE":
             return None
         source = human.get("best_ok_source")
         if not isinstance(source, dict) or not (
             source.get("source") == "OPERATOR_CONFIRMED"
             and source.get("label") == "OK"
-            and source.get("lighting_mode") == light
+            and source.get("lighting_mode") in LIGHTS
             and isinstance(source.get("record_id"), str)
             and len(source["record_id"]) == 64
         ):
             return None
+        same_light = source["lighting_mode"] == light
         score_ok = _score(human.get("best_ok_similarity"))
         score_ng = _score(human.get("best_ng_similarity"))
-        if (
-            score_ok is None or score_ng is None
-            or score_ok < MIN_HUMAN[light]
-            or score_ok - score_ng < MIN_HUMAN_MARGIN
-        ):
+        if score_ok is None or score_ng is None:
             return None
+        human_margin = score_ok - score_ng
 
         visual = rows[light]
         if not isinstance(visual, dict) or not (
@@ -176,23 +255,73 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
             and visual.get("ng_support") in (0, 1)
         ):
             return None
-        best_ok = _score(visual.get("ok", {}).get("best_similarity"))
-        best_ng = _score(visual.get("ng", {}).get("best_similarity"))
+        ok_summary = visual.get("ok")
+        ng_summary = visual.get("ng")
+        if not isinstance(ok_summary, dict) or not isinstance(ng_summary, dict):
+            return None
+        best_ok = _score(ok_summary.get("best_similarity"))
+        best_ng = _score(ng_summary.get("best_similarity"))
         margin = visual.get("ng_margin_over_ok")
         if (
             best_ok is None or best_ng is None
             or type(margin) not in (float, int) or not isfinite(margin)
-            or best_ok < MIN_VISUAL_OK
-            or best_ok - best_ng < MIN_VISUAL_MARGIN
             or abs(float(margin) - (best_ng - best_ok)) > 0.00001
         ):
             return None
+        archive_margin = best_ok - best_ng
+        strict = bool(
+            same_light
+            and score_ok >= MIN_HUMAN[light]
+            and human_margin >= MIN_HUMAN_MARGIN
+            and best_ok >= MIN_VISUAL_OK
+            and archive_margin >= MIN_VISUAL_MARGIN
+        )
+        if strict:
+            strict_lights.append(light)
+
+        # A evidência forte necessita vínculo de proveniência entre
+        # registro humano e PNG OK arquivado na MESMA iluminação.
+        anchored = bool(
+            same_light
+            and human["status"] == "HUMAN_OK_VISUAL_CANDIDATE"
+            and score_ok >= ANCHOR_HUMAN_MIN
+            and human_margin >= ANCHOR_MARGIN_MIN
+            and best_ok >= ANCHOR_ARCHIVE_MIN
+            and archive_margin >= ANCHOR_ARCHIVE_MARGIN_MIN
+            and _archive_human_anchor(local, source["record_id"], light)
+        )
+        if anchored:
+            aligned_anchors.append(light)
+        supports = bool(
+            anchored or (
+                score_ok >= SUPPORT_HUMAN_MIN
+                and human_margin >= SUPPORT_MARGIN_MIN
+                and best_ok >= SUPPORT_ARCHIVE_MIN
+                and archive_margin >= SUPPORT_MARGIN_MIN
+            )
+        )
+        if supports:
+            supporting_lights.append(light)
         observations[light] = {
             "human_ok": score_ok, "human_ng": score_ng,
             "human_record_id": source["record_id"],
+            "human_source_lighting": source["lighting_mode"],
             "archive_ok": best_ok, "archive_ng": best_ng,
+            "same_light_human": same_light,
+            "aligned_human_archive_anchor": anchored,
         }
 
+    # Dois contratos independentes: (A) três luzes estritas (histórico);
+    # (B) duas âncoras alinhadas + terceira luz apenas apoiando OK.
+    # O contrato B tolera iluminação cruzada na terceira luz, mas exige
+    # validação de origem/arquivo nas outras duas. Nenhum deles libera XP.
+    strict_consensus = len(strict_lights) == len(LIGHTS)
+    anchored_consensus = (
+        len(aligned_anchors) >= 2
+        and len(supporting_lights) == len(LIGHTS)
+    )
+    if not strict_consensus and not anchored_consensus:
+        return None
     return {
         "schema": SCHEMA,
         "label": "OK",
@@ -200,6 +329,12 @@ def memory_ok_counterevidence(analyses: dict, fused: dict) -> dict | None:
         "model_sha256": model_sha,
         "lights": observations,
         "source": "OPERATOR_CONFIRMED_PLUS_VISUAL_KNN",
+        "evidence_mode": (
+            "THREE_STRICT_LIGHTS" if strict_consensus
+            else "TWO_ALIGNED_ARCHIVE_ANCHORS"
+        ),
+        "aligned_anchor_lights": list(aligned_anchors),
+        "support_lights": list(supporting_lights),
         "rgb_exact_pair": False,
         "automatic_xp_authorized": False,
         "reason": "THREE_LIGHT_HUMAN_OK_WITH_KNN_COUNTEREVIDENCE",
