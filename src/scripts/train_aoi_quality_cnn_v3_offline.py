@@ -227,6 +227,14 @@ def train_v3(
         )
         if image_size != v3_source["image_size"]:
             raise ValueError("A CNN V3 anterior exige a mesma resolução de treino")
+        if (
+            provenance.get("v3_operator_source_candidate_sha256")
+            and v3_source["candidate_sha256"] !=
+                provenance["v3_operator_source_candidate_sha256"]
+        ):
+            raise ValueError(
+                "Correção humana V3 não pertence ao checkpoint informado"
+            )
     else:
         model = AOIQualityCNNV3()
     sample_counts = Counter(row["label"] for row in train)
