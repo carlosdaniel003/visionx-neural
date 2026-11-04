@@ -26,6 +26,10 @@ from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2
 from src.services.aoi_v3_binary_quality_metrics import (
     binary_quality_metrics, quality_coverage,
 )
+from src.services.aoi_v3_epoch_diagnostics import (
+    EPOCH_SCHEMA, operator_epoch_replay, epoch_review_comparison,
+    best_exploratory_epoch, persist_epoch_diagnostics,
+)
 from src.services.aoi_v3_verified_candidate import load_verified_v3_candidate
 from src.services.aoi_v3_operator_image_reviews import REVIEW_PATH
 from src.scripts.train_aoi_universal_quality_offline import (
@@ -255,14 +259,36 @@ def train_v3(
             generator=torch.Generator().manual_seed(seed),
         ), num_workers=0,
     )
+    # Toda época é medida nos 14 exemplos humanos do TREINO.
+    # Nunca confundir replay humano (in-sample) com holdout/teste.
+    human_train_rows = [
+        row for row in train
+        if row.get("label_provenance") == "HUMAN_V3_IMAGE_SHA256"
+    ]
+    if len(human_train_rows) != 14:
+        raise ValueError("Revisão de treino V3 sem as 14 imagens confirmadas")
     # A validação permanece congelada; augmentation só no treino.
     initial = binary_quality_metrics(
         validation, _assess(model, validation, image_size, .70),
     )
-    best_key = _selection_score(initial)
+    initial_review = operator_epoch_replay(
+        human_train_rows, _assess(model, human_train_rows, image_size, .70),
+    )
+    best_key = (*_selection_score(initial), initial_review["metrics"]["correct"])
     best_epoch = 0
     best_state = deepcopy(model.state_dict())
-    trajectory = [{"epoch": 0, "validation": initial, "selected": True}]
+    snapshots = []
+    trajectory = [{
+        "epoch": 0,
+        "validation": initial,
+        "operator_training_replay": initial_review,
+        "comparison_with_epoch_zero": epoch_review_comparison(
+            initial, initial, initial_review, initial_review,
+        ),
+        "safe_gate_passed": True,
+        "selected": True,
+        "selection_reason": "CHECKPOINT_INICIAL_ANTES_DO_TREINO",
+    }]
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=learning_rate, weight_decay=.01,
     )
@@ -282,30 +308,58 @@ def train_v3(
         validation_scores = binary_quality_metrics(
             validation, _assess(model, validation, image_size, .70),
         )
-        rank = _selection_score(validation_scores)
-        # Se houver base anterior, não aceitar uma melhora de média que
-        # aumente um dos dois tipos de erro nesta validação.
-        not_worse_than_start = all(
-            validation_scores[key] <= initial[key]
-            for key in ("NG_false_OK", "OK_false_NG")
+        # Esses 14 julgamentos pertencem ao treino; não são usadas
+        # para produzir acurácia operacional nem escolher pelo teste.
+        reviewed = operator_epoch_replay(
+            human_train_rows, _assess(model, human_train_rows, image_size, .70),
         )
-        selected = rank > best_key and (
-            v3_source is None or not_worse_than_start
+        comparison = epoch_review_comparison(
+            initial, validation_scores, initial_review, reviewed,
         )
+        # O último componente só desempata validações idênticas: não pode
+        # melhorar treino humano sacrificando métricas na validação.
+        rank = (
+            *_selection_score(validation_scores),
+            reviewed["metrics"]["correct"],
+        )
+        not_worse_than_start = comparison[
+            "validation_non_regression_gate_passed"
+        ]
+        gate_passed = v3_source is None or not_worse_than_start
+        selected = rank > best_key and gate_passed
         if selected:
             best_key = rank
             best_epoch = epoch
             best_state = deepcopy(model.state_dict())
+        if selected:
+            reason = "VALIDACAO_APROVADA"
+        elif not gate_passed:
+            reason = "REGRESSAO_EM_VALIDACAO_" + "_".join(
+                comparison["validation_errors_worse"]
+            )
+        else:
+            reason = "SEM_GANHO_NA_PONTUACAO_DE_VALIDACAO"
+        # Guardar os pesos de TODAS as épocas, mas fora do checkpoint
+        # conservador. Persistência ocorre após as verificações de SHA.
+        snapshots.append((epoch, deepcopy(model.state_dict())))
         trajectory.append({
             "epoch": epoch,
             "training_loss": round(accumulated / len(loader), 7),
             "validation": validation_scores,
+            "operator_training_replay": reviewed,
+            "comparison_with_epoch_zero": comparison,
+            "safe_gate_passed": gate_passed,
             "selected": selected,
+            "selection_reason": reason,
         })
         print(
             f"CNN V3 OFFLINE {epoch}/{epochs} "
+            f"humanos_14={reviewed['metrics']['correct']}/14 "
+            f"(NG={reviewed['metrics']['NG_correct']}/9, "
+            f"OK={reviewed['metrics']['OK_correct']}/5) "
             f"val_OK_falsos_NG={validation_scores['OK_false_NG']} "
             f"val_NG_falsos_OK={validation_scores['NG_false_OK']} "
+            f"gate={'OK' if gate_passed else 'BLOQUEADO'} "
             f"melhor_epoca={best_epoch}",
             flush=True,
         )
@@ -317,19 +371,13 @@ def train_v3(
     # TESTE somente agora; não escolhe época, nem corrige limiares.
     final_test_rows = _assess(model, test, image_size, .70)
     final_test = binary_quality_metrics(test, final_test_rows)
-    human_train_rows = [
-        row for row in train
-        if row.get("label_provenance") == "HUMAN_V3_IMAGE_SHA256"
-    ]
-    if len(human_train_rows) != 14:
-        raise ValueError("Revisão de treino V3 sem as 14 imagens confirmadas")
-    reviewed_prediction = _assess(model, human_train_rows, image_size, .70)
-    reviewed_training = {
-        "metrics": binary_quality_metrics(human_train_rows, reviewed_prediction),
-        "cases": reviewed_prediction["cases"],
-        "in_sample_not_independent_test": True,
-        "must_not_be_reported_as_production_accuracy": True,
-    }
+    reviewed_training = operator_epoch_replay(
+        human_train_rows, _assess(model, human_train_rows, image_size, .70),
+    )
+    if reviewed_training["metrics"] != trajectory[best_epoch][
+        "operator_training_replay"]["metrics"]
+    ]:
+        raise ValueError("Replay do melhor checkpoint diverge da época guardada")
     baseline_v3_test = None
     baseline_v3_reviewed = None
     if v3_source is not None:
@@ -339,16 +387,7 @@ def train_v3(
         baseline_v3_test = binary_quality_metrics(
             test, _assess(old_v3, test, image_size, .70),
         )
-        previous_prediction = _assess(
-            old_v3, human_train_rows, image_size, .70,
-        )
-        baseline_v3_reviewed = {
-            "metrics": binary_quality_metrics(
-                human_train_rows, previous_prediction,
-            ),
-            "cases": previous_prediction["cases"],
-            "in_sample_not_independent_test": True,
-        }
+        baseline_v3_reviewed = initial_review
     baseline_test = None
     if base_model is not None:
         baseline_test = binary_quality_metrics(
@@ -407,6 +446,26 @@ def train_v3(
         "selected_epoch": best_epoch,
     }, candidate_path)
     v3_hash = sha256(candidate_path.read_bytes()).hexdigest()
+    diagnostics = persist_epoch_diagnostics(
+        folder, snapshots, trajectory,
+        manifest_sha256=provenance["manifest_sha256"],
+        previous_candidate_sha256=(
+            v3_source["candidate_sha256"] if v3_source else None
+        ),
+        image_size=image_size, safe_selected_epoch=best_epoch,
+    )
+    exploratory = best_exploratory_epoch(trajectory)
+    progress_at_any_epoch = exploratory is not None
+    if progress_at_any_epoch:
+        diagnosis = (
+            "PROGRESSO_HUMANO_E_SELECAO_SEGURA"
+            if best_epoch > 0 and trajectory[best_epoch][
+                "operator_training_replay"]["metrics"]["correct"]
+            ] > initial_review["metrics"]["correct"]
+            else "PROGRESSO_HUMANO_DESCARTADO_PELO_GATE_DE_VALIDACAO"
+        )
+    else:
+        diagnosis = "NENHUMA_CORRECAO_HUMANA_APRENDIDA_NAS_EPOCAS"
     report = {
         "schema": REPORT_SCHEMA,
         "created_at_utc": stamp.isoformat(),
@@ -422,6 +481,8 @@ def train_v3(
         "operator_image_review_verified": 14,
         "operator_image_review_ignored": 1,
         "operator_images_reserved_exclusively_for_training": True,
+        "human_review_evaluated_every_epoch": True,
+        "exploratory_checkpoints_diagnostic_only": True,
         "training_performed": True,
         "training_uses_operator_quality_when_verified": True,
         "training_uses_provisional_archive_labels": True,
@@ -435,6 +496,8 @@ def train_v3(
             "independent_reference_test_photometric_augmentation": True,
             "common_pair_quarter_turn_augmentation": True,
             "selected_epoch_using_validation_only": best_epoch,
+            "human_review_used_only_to_break_validation_ties": True,
+            "epoch_checkpoint_retention": "EVERY_TRAINED_EPOCH_DIAGNOSTIC_ONLY",
             "test_not_used_for_selection": True,
             "quality_only_balancing": True,
             "per_quality_inverse_frequency_sampling": True,
@@ -444,6 +507,27 @@ def train_v3(
                 bool(v3_source),
         },
         "epoch_history": trajectory,
+        "epoch_diagnostic_schema": EPOCH_SCHEMA,
+        "epoch_diagnostic_checkpoints": diagnostics,
+        "human_learning_diagnosis": {
+            "status": diagnosis,
+            "initial_14_correct": initial_review["metrics"]["correct"],
+            "safe_selected_14_correct": reviewed_training["metrics"]["correct"],
+            "maximum_14_correct_over_epochs": max(
+                row["operator_training_replay"]["metrics"]["correct"]
+                for row in trajectory
+            ),
+            "best_exploratory_epoch": exploratory,
+            "best_exploratory_checkpoint": next((
+                item for item in diagnostics
+                if item["epoch"] == exploratory
+            ), None),
+            "exploratory_selected_using_test": False,
+            "training_replay_not_holdout": True,
+            "test_evaluated_only_for_safe_candidate": True,
+            "production_approved": False,
+            "automatic_xp_authorized": False,
+        },
         "validation": final_validation,
         "test": final_test,
         "test_cases": final_test_rows["cases"],
@@ -475,6 +559,8 @@ def train_v3(
             "all_quality_labels_operator_verified": coverage["all_data"]["fully_operator_verified"],
             "each_available_light_has_both_labels": coverage["test"]["each_available_light_has_both_labels"],
             "operator_verified_14_excluded_from_test": True,
+            "exploratory_epochs_have_no_test_based_selection": True,
+            "exploratory_snapshots_incompatible_with_production_loader": True,
             "former_v3_test_no_longer_blind": True,
             "physical_event_independence_proven": False,
             "blind_holdout": False,
@@ -487,6 +573,7 @@ def train_v3(
             "Algumas iluminações podem não conter ambas as qualidades reais.",
             "A categoria AOI não é utilizada para treinar, balancear ou selecionar a V3.",
             "As 14 correções humanas são treino, jamais pontuação de teste.",
+            "Uma época experimental pode aprender casos humanos e regredir validação; checkpoint diagnóstico não autoriza produção.",
             "Testes de arquivo histórico já vistos NÃO são avaliação cega.",
             "Não utilizar modelo nem limiar V3 na estação sem aprovação separada.",
             "Não enviar 0/1 ao XP nem atualizar memória com previsão da CNN.",
@@ -535,6 +622,15 @@ def main(argv=None) -> int:
             result["previous_v3_operator_verified_training_replay"]["metrics"]["correct"]
             if result["previous_v3_operator_verified_training_replay"] else None
         ),
+        "max_14_correct_in_any_epoch": result["human_learning_diagnosis"][
+            "maximum_14_correct_over_epochs"],
+        "best_exploratory_epoch": result["human_learning_diagnosis"][
+            "best_exploratory_epoch"],
+        "learning_diagnosis": result["human_learning_diagnosis"]["status"],
+        "epoch_diagnostic_checkpoints": [
+            {"epoch": row["epoch"], "path": row["path"], "sha256": row["sha256"]}
+            for row in result["epoch_diagnostic_checkpoints"]
+        ],
         "training_replay_not_independent_test": True,
         "production_approved": False,
     }, ensure_ascii=False, indent=2))
