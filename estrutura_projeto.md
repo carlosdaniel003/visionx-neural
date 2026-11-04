@@ -1,3 +1,31 @@
+## 04/11/2026 — CNN V3: qualidade binária independente de categoria AOI
+
+- `docs/aoi_v3_operator_image_quality_20261104.json`: 14 decisões humanas
+  OK/NG por PNG+SHA-256; uma imagem ambígua IGNORE removida do arquivo.
+- `src/services/aoi_v3_operator_image_reviews.py`: verifica inventário,
+  SHA e decisões sem usar categoria para atribuir qualidade.
+- `src/services/aoi_universal_quality_archive.py`: opt-in V3
+  `use_v3_image_quality_reviews`; demais consumidores permanecem intactos.
+- `split_universal_events(balance_by_aoi_category=False,
+  pinned_training_sources=...)`: separa por classe e bloqueia vazamento
+  das 14 confirmações e de quase duplicatas/minutos associados ao holdout.
+- `src/services/aoi_v3_binary_quality_metrics.py`: matriz OK/NG
+  global e por iluminação, sem categoria AOI.
+- `src/services/aoi_v3_verified_candidate.py`: recupera o candidato
+  V3 93% por relatório e SHA, estritamente leitura e schema verificado.
+- `src/scripts/train_aoi_quality_cnn_v3_offline.py`: inicialização
+  opcional da V3 anterior, reforço 2x de exemplos humanos, balanceamento
+  somente OK/NG e controle de degradação de ambos os erros na validação.
+  O relatório inclui replay anterior/depois das 14 imagens com campo
+  explícito `in_sample_not_independent_test=True`.
+
+A categoria AOI persiste nos nomes dos PNGs e no roteamento legado
+da estação, mas **não** controla a aprendizagem/decisão da V3.
+Checkpoints produtivos, memória e XP não são modificados.
+[Procedimento](docs/AOI_V3_TREINO_SOMENTE_IMAGENS_REVISAO_15_20261104.md).
+
+---
+
 ## 04/11/2026 — Evidência humana reaproveitável entre manifestos somente na V3
 
 `src/services/odin_operator_validation_labels.py` passa a aceitar
