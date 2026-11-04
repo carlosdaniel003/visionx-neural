@@ -358,6 +358,104 @@ def memory_ok_counterevidence(
     }
 
 
+
+def verified_operator_visual_memory_ok(analysis: dict | None) -> bool:
+    """Confere a classificação OK final sem autorizar 0/XP.
+
+    O veredito e a obrigação de confirmação são eixos independentes:
+    uma classificação visual OK corroborada não deve ser renderizada
+    como REVISÃO OBRIGATÓRIA por ter auto_allowed=False.
+    """
+    if not isinstance(analysis, dict) or not (
+        analysis.get("verdict") == "FALHA FALSA"
+        and analysis.get("is_defect") is False
+        and analysis.get("multilight_final") is True
+    ):
+        return False
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict) or not (
+        detail.get("fusion_rule") == RULE
+        and detail.get("multilight_final") is True
+        and detail.get("cnn_raw_verdict_before_memory") == "DEFEITO REAL"
+        and detail.get("recognition_route") == "NEW_CNN"
+        and _no_hard_ng(analysis)
+    ):
+        return False
+    marker = detail.get("operator_visual_memory_consensus")
+    if not isinstance(marker, dict) or not (
+        marker.get("schema") == SCHEMA
+        and marker.get("label") == "OK"
+        and marker.get("source") == "OPERATOR_CONFIRMED_PLUS_VISUAL_KNN"
+        and marker.get("automatic_xp_authorized") is False
+        and marker.get("rgb_exact_pair") is False
+        and marker.get("category") == detail.get("multilight_category")
+        and marker.get("category") == analysis.get("multilight_category")
+        and marker.get("evidence_mode") in {
+            "THREE_STRICT_LIGHTS", "TWO_ALIGNED_ARCHIVE_ANCHORS"
+        }
+    ):
+        return False
+    lights = marker.get("lights")
+    if not isinstance(lights, dict) or set(lights) != set(LIGHTS):
+        return False
+    anchored = []
+    supported = []
+    for light, observation in lights.items():
+        if not isinstance(observation, dict):
+            return False
+        human_ok = _score(observation.get("human_ok"))
+        human_ng = _score(observation.get("human_ng"))
+        archive_ok = _score(observation.get("archive_ok"))
+        archive_ng = _score(observation.get("archive_ng"))
+        if any(v is None for v in (human_ok, human_ng, archive_ok, archive_ng)):
+            return False
+        if not (
+            isinstance(observation.get("human_record_id"), str)
+            and len(observation["human_record_id"]) == 64
+            and observation.get("human_source_lighting") in LIGHTS
+        ):
+            return False
+        same_light = observation.get("human_source_lighting") == light
+        if observation.get("same_light_human") is not same_light:
+            return False
+        anchored_light = observation.get("aligned_human_archive_anchor") is True
+        if anchored_light:
+            if not (
+                same_light
+                and human_ok >= ANCHOR_HUMAN_MIN
+                and human_ok - human_ng >= ANCHOR_MARGIN_MIN
+                and archive_ok >= ANCHOR_ARCHIVE_MIN
+                and archive_ok - archive_ng >= ANCHOR_ARCHIVE_MARGIN_MIN
+            ):
+                return False
+            anchored.append(light)
+        if anchored_light or (
+            human_ok >= SUPPORT_HUMAN_MIN
+            and human_ok - human_ng >= SUPPORT_MARGIN_MIN
+            and archive_ok >= SUPPORT_ARCHIVE_MIN
+            and archive_ok - archive_ng >= SUPPORT_MARGIN_MIN
+        ):
+            supported.append(light)
+        if marker["evidence_mode"] == "THREE_STRICT_LIGHTS":
+            if not (
+                same_light
+                and human_ok >= MIN_HUMAN[light]
+                and human_ok - human_ng >= MIN_HUMAN_MARGIN
+                and archive_ok >= MIN_VISUAL_OK
+                and archive_ok - archive_ng >= MIN_VISUAL_MARGIN
+            ):
+                return False
+    if marker.get("evidence_mode") == "TWO_ALIGNED_ARCHIVE_ANCHORS":
+        if len(anchored) < 2 or set(supported) != set(LIGHTS):
+            return False
+    if (
+        marker.get("aligned_anchor_lights") != anchored
+        or marker.get("support_lights") != supported
+    ):
+        return False
+    return True
+
+
 def apply_operator_visual_memory_consensus(
     fused: dict | None, analyses: dict | None,
 ) -> dict | None:
@@ -414,4 +512,5 @@ def apply_operator_visual_memory_consensus(
 __all__ = [
     "SCHEMA", "RULE", "memory_ok_counterevidence",
     "apply_operator_visual_memory_consensus",
+    "verified_operator_visual_memory_ok",
 ]
