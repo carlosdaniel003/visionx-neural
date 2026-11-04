@@ -1,3 +1,31 @@
+## 04/11/2026 — Ajuste de arbitração por fontes alinhadas após debug 09:43
+
+Caso real `ca2b12df6a9f47279e13e0a4856772c3`, EMBORCADO:
+CNN SIDE NG 0,9942189, TOP/MID em revisão; humano OK forte
+SIDE/TOP (0,98948 / 0,98555) e MID apoio (0,95933, fonte TOP);
+visuais OK mais próximos em todas as luzes, sem NG corroborado.
+A regra de três NG fortes e limiares iguais na MID bloqueava o OK.
+
+Em `src/core/operator_visual_memory_consensus.py`, o contrato
+`TWO_ALIGNED_ARCHIVE_ANCHORS` exige duas âncoras OK humanas
+`OPERATOR_CONFIRMED`, alinhadas aos PNGs OK sob
+`knn_c.aligned_archive` com mesmo record_id, mesma categoria/luz,
+similaridades e margens verificadas. A terceira luz fornece
+**apoio direcional**, podendo recuperar humano de outra luz sem
+se tornar prova de identidade exata. Regra histórica
+`THREE_STRICT_LIGHTS` permanece. Veto físico e NG corroborado
+sempre bloqueiam a correção. `FALHA FALSA` apenas assistida,
+sem transmissão XP aproximada automática.
+
+`capture_debug_payload.decision_record` expõe os campos
+`operator_visual_memory_consensus` e
+`operator_visual_memory_attempt`. A seção `JULGAMENTO FINAL
+MULTILIGHT` do debug exporta modo de prova, luzes-âncora,
+apoios e motivo de bloqueio. Regressões com valores reais são
+independentes da tela física. CI `General Multilight Tests`.
+
+---
+
 ## 04/11/2026 — Memória visual multilight contra falso NG CNN experimental
 
 `src/core/operator_visual_memory_consensus.py`: arbitragem pura,
