@@ -119,6 +119,80 @@ def _event():
     return analyses, fused
 
 
+def _event_0943_actual():
+    """Reproduz números publicados no debug ca2b12df... (sem frames RGB).
+
+    Os records OK SIDE e TOP têm RECONCILED_OK e fonte humana = archive.
+    A MID só favorece OK em busca aproximada com fonte de luz TOP; isso
+    NÃO é par idêntico nem autorização de 0/XP.
+    """
+    analyses, fused = _event()
+    fused["detail"]["multilight_strong_positive_modes"] = ["SIDE"]
+    fused["detail"]["multilight_review_modes"] = list(LIGHTS)
+    fused["detail"]["multilight_positive_modes"] = ["SIDE"]
+    raw = {"SIDE": .9942189455032349, "TOP": .36052122712135315,
+           "MID": .8710354566574097}
+    human_ok = {"SIDE": .98948237, "TOP": .98555393, "MID": .95932525}
+    human_ng = {"SIDE": .92038249, "TOP": .91687198, "MID": .87290055}
+    archive_ok = {"SIDE": .989482, "TOP": .985554, "MID": .957441}
+    archive_ng = {"SIDE": .920382, "TOP": .902279, "MID": .838078}
+    for light in LIGHTS:
+        local = analyses[light]["detail"]
+        local["cnn_v2_ng_score_uncalibrated"] = raw[light]
+        human = local["confirmed_visual_recall"]
+        human["best_ok_similarity"] = human_ok[light]
+        human["best_ng_similarity"] = human_ng[light]
+        if light == "MID":
+            human["best_ok_source"]["lighting_mode"] = "TOP"
+        else:
+            record = human["best_ok_source"]["record_id"]
+            # Dois índices independentes: humano confirmado + PNG OK.
+            local["knn_c"]["aligned_archive"] = {
+                "schema": "visionx.knn_c_archive_alignment.v1",
+                "status": "RECONCILED_OK",
+                "reason": "HUMAN_AND_ARCHIVE_ALIGNED",
+                "diagnostic_only": True,
+                "auto_decision_authorized": False,
+                "category": CAT, "label": "OK",
+                "human_record_id": record,
+                "archive_similarity": human_ok[light],
+                "human_archive_similarity": 1.0,
+                "best_opposite_archive_similarity": human_ng[light],
+                "archive_source": {
+                    "label": "OK", "lighting_mode": light,
+                    "record_id": record, "source_sha256": "a"*64,
+                    "path": (
+                        "public/ok_archive/2026-11-04_0905_EMBORCADO_"
+                        + light + ".png"
+                    ),
+                },
+            }
+        visual = fused["detail"]["knn_visual_corroboration"]["lights"][light]
+        visual["ok"]["best_similarity"] = archive_ok[light]
+        visual["ng"]["best_similarity"] = archive_ng[light]
+        visual["ng_margin_over_ok"] = round(
+            archive_ng[light] - archive_ok[light], 6
+        )
+        visual["ng_support"] = 0 if light == "MID" else 1
+
+    # SIDE KNN C: cinco vizinhos de cada descritor são OK,
+    # mas CNN acusa defeito 99,42% e consenso global é REVIEW.
+    knn = analyses["SIDE"]["detail"]["knn_c"]
+    knn["neighbors_A"] = [
+        {"label": "OK", "similarity": x} for x in
+        (.98246287, .97105543, .96610195, .95174236, .93018909)
+    ]
+    knn["neighbors_B"] = [
+        {"label": "OK", "similarity": x} for x in
+        (.943372, .90488756, .89996702, .89201255, .86289666)
+    ]
+    analyses["TOP"].update(verdict="REVISÃO OBRIGATÓRIA", is_defect=False)
+    analyses["MID"].update(verdict="REVISÃO OBRIGATÓRIA", is_defect=False)
+    fused["confidence"] = raw["SIDE"]
+    fused["detail"]["final_score"] = raw["SIDE"]
+    return analyses, fused
+
+
 class OperatorVisualMemoryConsensusTests(unittest.TestCase):
     def test_real_emborcado_false_ng_recovers_multilight_ok_visual(self):
         analyses, fused = _event()
@@ -141,6 +215,68 @@ class OperatorVisualMemoryConsensusTests(unittest.TestCase):
                 out = apply_operator_visual_memory_consensus(fused, analyses)
                 self.assertEqual(out["verdict"], "FALHA FALSA")
                 self.assertEqual(out["detail"]["fusion_rule"], RULE)
+
+    def test_actual_event_0943_with_one_cnn_ng_light_and_cross_light_mid_ok(self):
+        analyses, fused = _event_0943_actual()
+        proof = memory_ok_counterevidence(analyses, fused)
+        self.assertIsNotNone(proof)
+        self.assertEqual(proof["evidence_mode"], "TWO_ALIGNED_ARCHIVE_ANCHORS")
+        self.assertEqual(set(proof["aligned_anchor_lights"]), {"SIDE", "TOP"})
+        self.assertEqual(proof["lights"]["MID"]["human_source_lighting"], "TOP")
+        self.assertFalse(proof["rgb_exact_pair"])
+        self.assertFalse(proof["automatic_xp_authorized"])
+        out = apply_operator_visual_memory_consensus(fused, analyses)
+        self.assertEqual(out["verdict"], "FALHA FALSA")
+        self.assertFalse(out["is_defect"])
+        self.assertEqual(out["detail"]["cnn_raw_verdict_before_memory"], "DEFEITO REAL")
+        self.assertTrue(out["production_review_required"])
+        self.assertEqual(out["detail"]["fusion_rule"], RULE)
+
+    def test_actual_event_0943_production_fallback_requires_operator(self):
+        analyses, fused = _event_0943_actual()
+        corrected = apply_operator_visual_memory_consensus(fused, analyses)
+        policy = production_decision_policy(corrected)
+        self.assertFalse(policy["auto_allowed"])
+        self.assertTrue(policy["operator_review_required"])
+        self.assertEqual(policy["proposed_decision"], "")
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertEqual(
+            policy["reason"], "operator_visual_memory_requires_confirmation_v1",
+        )
+
+    def test_actual_event_0943_needs_two_valid_aligned_anchors_and_mid_support(self):
+        mutations = [
+            lambda a, f: a["TOP"]["detail"]["knn_c"].pop("aligned_archive"),
+            lambda a, f: a["TOP"]["detail"]["knn_c"]["aligned_archive"].update(
+                human_record_id="b"*64),
+            lambda a, f: a["SIDE"]["detail"]["knn_c"]["aligned_archive"][
+                "archive_source"].update(label="NG"),
+            lambda a, f: a["TOP"]["detail"]["knn_c"]["aligned_archive"].update(
+                best_opposite_archive_similarity=.97),
+            lambda a, f: a["MID"]["detail"]["confirmed_visual_recall"].update(
+                best_ok_similarity=.9499),
+            lambda a, f: a["MID"]["detail"]["confirmed_visual_recall"].update(
+                best_ng_similarity=.94),
+            lambda a, f: f["detail"]["knn_visual_corroboration"]["lights"][
+                "MID"]["ok"].update(best_similarity=.949),
+            lambda a, f: a["MID"]["detail"].update(hard_missing_evidence=True),
+            lambda a, f: a["MID"]["detail"]["physical_missing_veto"].update(
+                status="SUSPECT_ABSENCE"),
+            lambda a, f: f["detail"]["knn_visual_corroboration"].update(
+                trend_ng_lights=["TOP", "MID"]),
+            lambda a, f: a["SIDE"]["detail"]["knn_c"].update(
+                status="REVISAO"),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutation=str(mutate)):
+                analyses, fused = _event_0943_actual()
+                analyses["MID"]["detail"]["physical_missing_veto"] = {}
+                mutate(analyses, fused)
+                self.assertIsNone(memory_ok_counterevidence(analyses, fused))
+                self.assertEqual(
+                    apply_operator_visual_memory_consensus(fused, analyses)["verdict"],
+                    "DEFEITO REAL",
+                )
 
     def test_conflicting_or_incomplete_memory_must_not_override_ng(self):
         cases = [
