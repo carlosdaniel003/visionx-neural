@@ -1,3 +1,25 @@
+## 04/11/2026 — CNN V3: checkpoints diagnósticos e replay humano por época
+
+`src/services/aoi_v3_epoch_diagnostics.py` concentra
+`operator_epoch_replay`, `epoch_review_comparison`,
+`best_exploratory_epoch` e `persist_epoch_diagnostics`.
+A cada época, as 14 capturas humanas são reavaliadas como treino
+in-sample, com matriz OK/NG, scores médios e IDs que melhoraram.
+Os checkpoints de cada época são retidos APENAS para diagnóstico
+em `epoch_diagnostics/epoch_NN_experimental_only.pt`,
+schema incompatível com a V3 aprovada e com o carregador produtivo.
+Hashes e razões para seleção/rejeição são auditados no relatório.
+
+A seleção do `aoi_quality_cnn_v3_candidate.pt` permanece
+dependente SOMENTE da validação + gate sem regressão e o teste
+é avaliado só para o candidato conservador. Nenhum modelo
+experimental avalia teste ou autoriza comandos XP.
+Testes em `tests/test_aoi_v3_epoch_diagnostics.py` e
+`tests/test_aoi_quality_cnn_v3_offline.py`.
+[Documentação](docs/AOI_V3_TREINO_SOMENTE_IMAGENS_REVISAO_15_20261104.md).
+
+---
+
 ## 04/11/2026 — CNN V3: qualidade binária independente de categoria AOI
 
 - `docs/aoi_v3_operator_image_quality_20261104.json`: 14 decisões humanas
