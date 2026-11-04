@@ -206,7 +206,10 @@ class TrainingTests(unittest.TestCase):
         saved = torch.load(checkpoint, map_location="cpu", weights_only=True)
         self.assertFalse(saved["automatic_xp_authorized"])
         self.assertFalse(saved["production_approved"])
-        self.assertFalse(saved["test_evaluated_for_this_epoch"])
+        self.assertEqual(
+            saved["test_evaluated_for_this_epoch"],
+            report["training"]["selected_epoch_using_validation_only"] == 1,
+        )
         self.assertNotIn("state_dict", saved)
         self.assertNotIn("test", saved)
         self.assertEqual(
