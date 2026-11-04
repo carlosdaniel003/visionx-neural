@@ -1,3 +1,43 @@
+## 04/11/2026 — Motor CNN: candidato V3 comparativo AOI independente da memória
+
+No evento `c93e28847255450bb552b0cc53373440` (EMBORCADO,
+12:11, Teste), o operador mostrou o componente presente, mas
+a CNN FALTANDO V2 pontuou NG em SIDE=0,999112, TOP=0,966406
+e MID=0,997423, sem evidência física corroborada. A V2 aplica
+pesos originalmente treinados com dados desbalanceados de
+FALTANDO também nas demais categorias. Essa falha é de
+**generalização do motor**, não de `par RGB exato`.
+
+Foi criada `AOIQualityCNNV3` em
+`src/core/neural/aoi_quality_cnn_v3.py`, uma arquitetura
+**nova de comparação direta gabarito/teste**, com encoder
+compartilhado e mapas espaciais de diferenças/correlação,
+duas escalas e três iluminações. Um treinador offline
+`src.scripts.train_aoi_quality_cnn_v3_offline` usa pares
+reais extraídos das capturas AOI, augmentations fotométricas
+**distintas** para gabarito/teste e regularização leve
+de identidade (referência comparada a si mesma deve favorecer OK).
+Não depende da memória/KNN na inferência.
+
+O trainer usa separação protegida treino/validação/teste,
+registra cobertura OK/NG por categoria/luz, contabiliza rótulos
+humanos versus rótulos provisórios de pasta e compara o
+candidato com a CNN V2 original verificada por SHA, preservando
+a resolução nativa de cada checkpoint. Saída incompatível
+com o carregador produtivo; `live_active.json`, pesos ativos,
+memória, acervo e XP permanecem intactos. Nenhum ganho
+industrial foi demonstrado sem rodar o treino e avaliar
+eventos reais independentes.
+
+Documentação/comandos:
+`docs/AOI_QUALITY_CNN_V3_20261104.md`.
+Testes:
+`tests/test_aoi_quality_cnn_v3_offline.py`.
+Workflow:
+`AOI Quality CNN V3 Offline Tests`.
+
+---
+
 ## 04/11/2026 — Caso INVERTIDO 11:43: CNN TOP alta, duas âncoras OK no acervo
 
 Evento XP `a1e18960ebea42e4a180592137fea410` (11:43, Modo Teste).
