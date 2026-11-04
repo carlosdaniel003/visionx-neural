@@ -1,29 +1,34 @@
-## 04/11/2026 — Botão Reanalisar XP em Teste e Produção, inclusive após 0/1
+## 04/11/2026 — Reanalisar XP cria novo julgamento e novo aprendizado
 
-O botão **Reanalisar XP** fica visível nos modos Teste e Produção.
-Enquanto a inspeção XP está ativa e ainda não foi julgada, descarta
-o resultado e permite uma única recepção novamente da mesma anomalia.
-Após um 0/OK ou 1/NG já concluído, também pode solicitar uma repetição
-do último frame visual diretamente do receptor XP, sem desativar
-globalmente a deduplicação. Exige **novo frame recebido**, preflight
-SIDE, dois quadros estáveis, validação de imagem AOI e novo event_id.
-Não é replay de PNG antigo nem restaura uma tela que não está mais no XP.
+O botão **Reanalisar XP** está disponível em Teste e Produção.
+A repetição da mesma anomalia visual só é autorizada após solicitação
+explícita do operador (ou descarte válido sem 0/1); o receptor continua
+exigindo novo frame transmitido, preflight SIDE, estabilidade, validação
+AOI e novo event_id. Não recupera PNGs do disco nem a tela já avançada.
 
-A repetição visual do evento **já julgado** é diagnóstica: Teste e
-Produção podem mostrar a nova classificação, mas **não reenviam 0/1
-nem criam novo registro de treinamento/contagem**. Na Produção, a
-janela de 1 segundo e o disparo automático são desativados somente
-nesse ciclo de reanálise. Ao clicar novamente, mantém-se esse
-isolamento. Se a tela XP mudou para uma peça visualmente diferente,
-o fluxo normal permanece ativo e a decisão automática segue as regras
-anteriores. O estado é distinguido pela assinatura visual do receptor,
-não pelo conteúdo do banco de memória.
+**Correção do contrato anterior:** uma reanálise intencional APÓS um
+0/OK ou 1/NG transmitido NÃO é mais somente diagnóstico. Trata-se de
+nova inspeção julgável. Em Produção o segundo ciclo apresenta o
+veredito por 1 segundo e envia novamente 0/1, com geração própria,
+controle de pausa, confirmação de transporte e contagem independente.
+Em Teste, um novo clique humano 0/1 também envia outro comando XP;
+falha na transmissão dessa reinspeção impede seu aprendizado.
 
-O bloqueio de duplicados só é liberado na **primeira reserva** do
-receptor. Não há mudança na aquisição SIDE/TOP/MID, nos modelos
-CNN/KNN, na memória de julgamentos, nos limites de segurança da
-inspeção, no agente XP nem no contrato de ACK. Validar com XP
-isolado, sobretudo o risco de a tela já ter avançado para outra peça.
+A confirmação humana do novo evento alimenta imediatamente a memória
+KNN persistente com proveniência e cronologia novas, e registra um JSON
+de julgamento independente mesmo quando os pixels OK já existiam.
+Imagens pesadas iguais continuam deduplicadas. Para categorias com
+treinador CNN elegível, o caso humano reenviado é enfileirado para novo
+treinamento online mesmo quando a rota de reconhecimento foi KNOWN_KNN;
+promover um novo checkpoint continua condicionado às regressões.
+A decisão humana mais recente prevalece em reconhecimentos posteriores
+qualificados; decisões AUTO continuam em memória operacional separada
+e **não viram supervisão humana**.
+
+O botão não desativa globalmente a deduplicação, não libera callbacks
+antigos para emitir 0/1 e não transforma uma imagem nova numa cópia
+da anterior. A validação com saída física do XP isolada é obrigatória:
+o segundo 0/1 pode avançar o estado da AOI novamente.
 
 ---
 
