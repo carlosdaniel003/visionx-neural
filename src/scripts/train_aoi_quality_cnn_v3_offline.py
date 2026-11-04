@@ -180,7 +180,11 @@ def train_v3(
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    events, provenance = universal_archive_events(manifest)
+    # Novo inventário pode crescer sem invalidar nove decisões humanas:
+    # o importador revalida SHA-256 de cada PNG e dos dois recortes AOI.
+    events, provenance = universal_archive_events(
+        manifest, allow_refreshed_validation_labels=True,
+    )
     if any(len(e["views"]) != 1 for e in events):
         raise ValueError("Grupo multilight sem vínculo físico confirmado")
     train, validation, test, partition = split_universal_events(
