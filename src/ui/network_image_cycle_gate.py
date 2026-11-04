@@ -327,7 +327,7 @@ def install_network_image_cycle_gate(control_panel_cls, presenter_cls) -> None:
         self.capture_cycle_source = "network"
         receiver = _receiver(self)
         self.network_reinspection_of_judged_event = bool(
-            getattr(receiver, "last_delivered_reinspection_read_only", False)
+            getattr(receiver, "last_delivered_reinspection_of_judged_event", False)
         )
         if not self.network_reinspection_of_judged_event:
             self.last_judged_network_reinspect_available = False
