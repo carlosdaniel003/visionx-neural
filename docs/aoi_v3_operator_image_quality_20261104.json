@@ -1,0 +1,119 @@
+{
+  "schema": "visionx.aoi_v3_operator_quality_by_image.v1",
+  "reviewed_on": "2026-11-04",
+  "source_manifest_sha256": "c3f8f017d2ae17cbe876a6342056fbdfe041690bd4062ddeeba195982e64e843",
+  "source_training_report_candidate_sha256": "781d5d4d6cb80461a990e9a325560b75688f24f4647846ef12023e3898e15e1c",
+  "review_scope": "FIRST_V3_15_ERRORS",
+  "reviewed_by": "AOI_OPERATOR",
+  "quality_not_aoi_category": true,
+  "allowed_for_offline_training": true,
+  "approved_for_production": false,
+  "physical_event_association_verified": false,
+  "entries": [
+    {
+      "case_number": 1,
+      "source_path": "public/ok_archive/2026-10-05_1420_MUITO_ADESIVO.png",
+      "source_sha256": "b5be831a1956862f2594cea6d9d932c1e1569d49e0f3dc4f873d81b07511c728",
+      "quality_label": "OK",
+      "physical_observation": "NONE"
+    },
+    {
+      "case_number": 2,
+      "source_path": "public/ng_archive/2026-10-21_1454_MUITO_ADESIVO_MID.png",
+      "source_sha256": "8e57fc12eaa5207ba94a59748addc5190dcb72871fc2a4094b94d6662b938a5d",
+      "quality_label": "NG",
+      "physical_observation": "ADHESIVE_ON_TERMINAL"
+    },
+    {
+      "case_number": 3,
+      "source_path": "public/ng_archive/2026-10-21_1454_MUITO_ADESIVO_SIDE_3.png",
+      "source_sha256": "cfafb03331cfca80ab067ed9b644154d77bbc64d1d96d712d8d364500334e00f",
+      "quality_label": "NG",
+      "physical_observation": "ADHESIVE_ON_TERMINAL"
+    },
+    {
+      "case_number": 4,
+      "source_path": "public/ok_archive/2026-10-09_0857_DESLOCADO_MID.png",
+      "source_sha256": "801488a99f1a4f26b0be31c4d5272fd4c1589855cd9f70b691003fdc3b76f4a8",
+      "quality_label": "OK",
+      "physical_observation": "NONE"
+    },
+    {
+      "case_number": 5,
+      "source_path": "public/ok_archive/2026-11-03_1258_DESLOCADO_MID.png",
+      "source_sha256": "bc5305f994388af6e8de14136a38b13e429c9aa45aa033de70fb99597493ca8b",
+      "quality_label": "OK",
+      "physical_observation": "NONE"
+    },
+    {
+      "case_number": 6,
+      "source_path": "public/ok_archive/2026-11-03_1258_DESLOCADO_TOP.png",
+      "source_sha256": "2ef8c2d25502c621a05b1d85d8233222d7c634d8f1d7951ee5d38895cc736ac5",
+      "quality_label": "OK",
+      "physical_observation": "NONE"
+    },
+    {
+      "case_number": 7,
+      "source_path": "public/ng_archive/2026-10-21_1455_FALTANDO.png",
+      "source_sha256": "b743808b89fae09638c9ea01a6b63dc23b81a2b9530b2d9a791ea448cab249d5",
+      "quality_label": "NG",
+      "physical_observation": "ADHESIVE_ON_TERMINAL"
+    },
+    {
+      "case_number": 8,
+      "source_path": "public/ng_archive/2026-10-21_1455_MUITO_ADESIVO_2.png",
+      "source_sha256": "9e7e252259a62837b9a20b76277bec09102aecb560c1da7a0066b21e59f7d77b",
+      "quality_label": "NG",
+      "physical_observation": "ADHESIVE_ON_TERMINAL"
+    },
+    {
+      "case_number": 9,
+      "source_path": "public/ng_archive/2026-10-21_1458_FALTANDO_3.png",
+      "source_sha256": "d39f1805835520d17de7c5d3a028235b9007fe49c36a900d345c98160491a293",
+      "quality_label": "IGNORE",
+      "physical_observation": "UNCERTAIN"
+    },
+    {
+      "case_number": 10,
+      "source_path": "public/ng_archive/2026-10-21_1432_FALTANDO_MID.png",
+      "source_sha256": "abd468120f808a9650e667d94c538e58c3d0d2d5aaa7f5d648e3e0d09e9c6393",
+      "quality_label": "NG",
+      "physical_observation": "ADHESIVE_ON_TERMINAL"
+    },
+    {
+      "case_number": 11,
+      "source_path": "public/ng_archive/2026-10-21_1432_FALTANDO_SIDE.png",
+      "source_sha256": "a4f79ee87ab5efb1a6f854f22cd34f3ba1db50e316b257645a823109bce448f0",
+      "quality_label": "NG",
+      "physical_observation": "ADHESIVE_ON_TERMINAL"
+    },
+    {
+      "case_number": 12,
+      "source_path": "public/ng_archive/2026-10-21_1459_FALTANDO.png",
+      "source_sha256": "0d0de0e8ed9401327ff107b2d0334614cfe89b71314c0977748df9153a585ef4",
+      "quality_label": "NG",
+      "physical_observation": "UPSIDE_DOWN_COMPONENT"
+    },
+    {
+      "case_number": 13,
+      "source_path": "public/ng_archive/2026-10-21_1459_FALTANDO_2.png",
+      "source_sha256": "4be14c7eb3434128e63e5f21ff7a4376b84d1cbcece504a845261147d8e34600",
+      "quality_label": "NG",
+      "physical_observation": "UPSIDE_DOWN_COMPONENT"
+    },
+    {
+      "case_number": 14,
+      "source_path": "public/ng_archive/2026-10-21_1459_FALTANDO_5.png",
+      "source_sha256": "9edb553a8b653dc15ea6569b569521411e3572edbc9475e0d84b7c5b6361c636",
+      "quality_label": "NG",
+      "physical_observation": "UPSIDE_DOWN_COMPONENT"
+    },
+    {
+      "case_number": 15,
+      "source_path": "public/ok_archive/2026-10-02_1031_FALTANDO.png",
+      "source_sha256": "4118714bc4b8fd93855074e0a1a15a4cddc82ede3dfa816b3af6600b37c040cc",
+      "quality_label": "OK",
+      "physical_observation": "NONE"
+    }
+  ]
+}
