@@ -208,7 +208,7 @@ class TrainingTests(unittest.TestCase):
                 self.assertEqual(float(r[light].abs().sum().item()), 0.)
 
     def test_selection_rejects_single_class_validation(self):
-        with self.assertRaisesRegex(ValueError, "ambas as classes"):
+        with self.assertRaisesRegex(ValueError, "rótulos OK e NG"):
             _selection_score({"NG_total": 0, "OK_total": 12})
 
     def test_group_split_keeps_duplicates_and_minutes_together(self):
