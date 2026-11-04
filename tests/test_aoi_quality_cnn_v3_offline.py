@@ -14,7 +14,7 @@ import torch
 from src.core.neural.aoi_quality_cnn_v3 import AOIQualityCNNV3, MODEL_SCHEMA_V3
 from src.core.neural.faltando_cnn_v2 import FaltandoCNNV2, MODEL_SCHEMA_V2
 from src.scripts.train_aoi_quality_cnn_v3_offline import (
-    PhotometricPairDataset, SCHEMA, _coverage, _loss_v3,
+    PhotometricPairDataset, SCHEMA, _loss_v3,
     _selection_score, train_v3,
 )
 from src.services.aoi_universal_quality_archive import split_universal_events
