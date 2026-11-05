@@ -101,9 +101,11 @@ class SideArchivePresenceFeedback(QObject):
     def _deliver(self, event_id, analysis, result):
         """Executado na thread Qt; nunca atualiza UI de outra peça ou pós-0/1."""
         panel = self.panel
-        if (getattr(panel, "current_analysis", None) is not analysis
-                or str(getattr(panel, "adhesive_multilight_primary_event_id", "") or "")
-                != event_id):
+        if getattr(panel, "current_analysis", None) is not analysis:
+            return
+        xp_event = str(getattr(panel, "adhesive_multilight_primary_event_id", "") or "")
+        mss_event = str(getattr(panel, "local_capture_debug_event_id", "") or "")
+        if event_id not in {xp_event, mss_event}:
             return
         detail = analysis.get("detail")
         if not isinstance(detail, dict):
@@ -111,6 +113,24 @@ class SideArchivePresenceFeedback(QObject):
         if detail.get("side_archive_visual_presence", {}).get("status") != "PENDING":
             return
         detail["side_archive_visual_presence"] = result
+        # A captura MSS usa o mesmo resultado do scanner do XP. O relatório
+        # local também registra a consulta concluída, sem alterar o veredito.
+        if event_id == mss_event:
+            try:
+                from src.services.capture_evidence import (
+                    capture_debug_record, update_capture_debug_record,
+                )
+                record = capture_debug_record(panel)
+                if (isinstance(record, dict)
+                        and record.get("event_id") == mss_event
+                        and record.get("source") == "local_mss"):
+                    updated = dict(record)
+                    decision = dict(updated.get("decision") or {})
+                    decision["archive_visual_presence"] = result
+                    updated["decision"] = decision
+                    update_capture_debug_record(panel, updated)
+            except (OSError, ValueError, TypeError) as exc:
+                print(f"Falha não fatal ao registrar comparação MSS: {exc}")
         # Atualiza apenas o painel de referências e os avisos vinculados;
         # não reexecuta especialistas, motor CNN, gate ou comandos ao XP.
         refresh = getattr(panel, "_update_reference_panel", None)
@@ -144,4 +164,30 @@ def submit_side_archive_presence(
     )
 
 
-__all__ = ["SideArchivePresenceFeedback", "submit_side_archive_presence"]
+def submit_local_mss_archive_presence(panel, analysis: dict, category: str) -> bool:
+    """Usa o mesmo scanner XP para o frame MSS real, sem inferir rótulos.
+
+    Consulta SIDE/TOP/MID porque a janela MSS não garante a iluminação
+    correta do PNG aberto. Uma correspondência RGB exata continua exata
+    somente do FRAME, jamais do par gabarito/teste.
+    """
+    event_id = str(getattr(panel, "local_capture_debug_event_id", "") or "")
+    monitor = getattr(panel, "monitor", None)
+    frame = getattr(monitor, "last_capture_frame", None)
+    if (not event_id or not isinstance(analysis, dict)
+            or not isinstance(frame, np.ndarray) or frame.size == 0):
+        return False
+    controller = getattr(panel, "_side_archive_presence_feedback", None)
+    if controller is None:
+        controller = SideArchivePresenceFeedback(panel)
+        panel._side_archive_presence_feedback = controller
+    return controller.inspect(
+        analysis, frame, category, event_id,
+        frames={light: frame for light in ("SIDE", "TOP", "MID")},
+    )
+
+
+__all__ = [
+    "SideArchivePresenceFeedback", "submit_side_archive_presence",
+    "submit_local_mss_archive_presence",
+]
