@@ -431,17 +431,30 @@ def install_local_capture_safety(control_panel_cls) -> None:
         try:
             result = original_process_aoi_images(self, *args, **kwargs)
             if was_local:
-                _finalize_local_capture_debug(self, aoi_info)
-                # A consulta visual da tela inteira, já utilizada pelo XP,
-                # ocorre em worker: não retarda a classificação nem cria
-                # autorização 0/1 por simples rótulo do acervo.
+                # Registrar o diagnóstico ANTES de serializar o evento.
+                # Antes, o relatório era finalizado primeiro e sempre
+                # continha archive_visual_presence={} ao ser copiado.
                 from src.ui.archive_visual_presence_feedback import (
                     submit_local_mss_archive_presence,
                 )
-                submit_local_mss_archive_presence(
+                submitted = submit_local_mss_archive_presence(
                     self, getattr(self, "current_analysis", None),
                     str((aoi_info or {}).get("category", "")),
                 )
+                if not submitted:
+                    analysis = getattr(self, "current_analysis", None)
+                    if isinstance(analysis, dict):
+                        analysis.setdefault("detail", {})[
+                            "side_archive_visual_presence"
+                        ] = {
+                            "schema": "visionx.side_archive_visual_presence.v1",
+                            "status": "UNAVAILABLE", "label": "",
+                            "source": "PUBLIC_ARCHIVE_PNG",
+                            "diagnostic_only": True,
+                            "decision_authorized": False,
+                            "reason": "NO_VALID_MSS_FRAME_OR_EVENT",
+                        }
+                _finalize_local_capture_debug(self, aoi_info)
             return result
         except Exception as exc:
             self.local_capture_last_error = str(exc)
