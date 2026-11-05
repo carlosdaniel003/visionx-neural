@@ -562,6 +562,11 @@ def install_faltando_cnn_live(orchestrator_cls, *, predictor=None) -> None:
 
     orchestrator_cls.inspect = inspect
     orchestrator_cls.prepare_faltando_cnn = prepare_faltando_cnn
+    # A fila de treino deve conhecer qual motor o painel realmente usa,
+    # inclusive quando a decisão foi feita pela memória KNOWN_KNN.
+    orchestrator_cls._aoi_v3_primary_operational = (
+        getattr(engine, "is_v3_primary", False) is True
+    )
     orchestrator_cls._faltando_cnn_live_installed = True
 
 
