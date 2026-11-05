@@ -23,6 +23,8 @@ on:
       - "src/services/capture_debug_payload.py"
       - "tests/test_aoi_v3_primary_mss.py"
       - "tests/test_archive_rendered_source_match.py"
+      - "src/scripts/audit_v3_archive_image.py"
+      - "tests/test_audit_v3_archive_image.py"
       - ".github/workflows/aoi-v3-primary-mss-tests.yml"
   pull_request:
     branches: [central]
@@ -47,7 +49,7 @@ jobs:
         run: python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" PyQt6 scipy scikit-image
       - name: Compile changed modules
         run: |
-          python -m py_compile main.py src/core/neural/aoi_quality_cnn_v3_primary.py src/core/neural/aoi_quality_cnn_v3_production_trial.py src/ui/archive_visual_presence_feedback.py src/services/archive_rendered_source_match.py src/ui/local_capture_safety.py src/core/verified_memory_router.py src/core/multilight_fusion.py src/ui/neural_telemetry_model.py src/ui/production_confidence_gate.py src/services/capture_debug_payload.py tests/test_aoi_v3_primary_mss.py
+          python -m py_compile main.py src/core/neural/aoi_quality_cnn_v3_primary.py src/core/neural/aoi_quality_cnn_v3_production_trial.py src/ui/archive_visual_presence_feedback.py src/services/archive_rendered_source_match.py src/ui/local_capture_safety.py src/core/verified_memory_router.py src/core/multilight_fusion.py src/ui/neural_telemetry_model.py src/ui/production_confidence_gate.py src/services/capture_debug_payload.py src/scripts/audit_v3_archive_image.py tests/test_aoi_v3_primary_mss.py tests/test_audit_v3_archive_image.py
       - name: Test V3 and MSS contracts without physical XP
         run: |
-          python -m unittest tests.test_aoi_v3_primary_mss tests.test_archive_rendered_source_match tests.test_aoi_quality_v3_production_policy tests.test_archive_visual_presence tests.test_neural_telemetry_panels -v
+          python -m unittest tests.test_aoi_v3_primary_mss tests.test_archive_rendered_source_match tests.test_audit_v3_archive_image tests.test_aoi_quality_v3_production_policy tests.test_archive_visual_presence tests.test_neural_telemetry_panels -v
