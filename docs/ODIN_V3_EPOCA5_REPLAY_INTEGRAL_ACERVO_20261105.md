@@ -103,3 +103,30 @@ arquivo pesquisado e sem liberar 0/OK por correspondência ambígua.
 
 Este teste **não** retreina, não altera KNN/memória/arquivos,
 não aciona 0/1 e não muda a Produção.
+
+
+## 05/11/2026 — Índice XP: nomes históricos HH-MM-SS-ms
+
+O replay da época 5 encontrou **15 arquivos NG com CNN correta, mas
+`NO_EXACT_FRAME` no índice operacional**. Todos tinham nomes no padrão
+`YYYY-MM-DD_HH-MM-SS-ms_CATEGORIA.png`; o parser
+`archive_category_from_filename` só reconhecia `HHMM`, por isso não
+criava o escopo `CATEGORIA_SIDE` para esses arquivos legados.
+
+A leitura de nomes agora admite ambos os formatos, sem renomear imagens
+ou modificar pixels, hashes, categorias, rótulos, CNN, KNN, memória
+humana, política XP ou envio 0/1. A iluminação ausente continua SIDE,
+e os sufixos `_2`/`_3` e as luzes explícitas continuam suportados.
+
+`tests/test_aoi_v3_full_archive_batch.py` contém regressão com os
+15 nomes do relatório, teste `exact_only`, separação de categorias,
+recusa de pixels alterados e replay integral sintético.
+
+Após `git pull origin central`, repetir o comando de auditoria acima
+na estação com ODIN fechado e XP desconectado. **Esperado, se os
+1.110 arquivos originais estiverem intactos e sem novos conflitos:**
+`runtime_archive_exact_replay.exact_unambiguous = 1110` e
+`not_exact_or_ambiguous = 0`. Isto é uma expectativa a conferir,
+não um resultado medido na estação. O reconhecimento da própria
+fonte no índice continua sendo diagnóstico, sem provar acerto
+em novas capturas nem autorizar decisão automática.

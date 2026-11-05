@@ -253,6 +253,96 @@ class FullArchiveV3Tests(unittest.TestCase):
                 for item in conflict["cases"]
             ))
 
+
+    def test_15_legacy_timestamp_pngs_are_exact_in_the_xp_archive_index(self):
+        """Nomes históricos HH-MM-SS-ms devem participar do mesmo índice SHA do XP."""
+        from src.services.archive_visual_presence import ArchiveVisualPresenceIndex
+        from src.services.image_archive_dedup import archive_category_from_filename
+
+        historic = [
+            ("07-35-16-002", "INVERTIDO"),
+            ("07-36-02-003", "EMBORCADO"),
+            ("07-36-23-677", "FALTANDO"),
+            ("07-53-17-716", "FALTANDO"),
+            ("07-53-46-861", "FALTANDO"),
+            ("08-18-16-864", "FALTANDO"),
+            ("08-46-47-733", "EMBORCADO"),
+            ("09-52-44-983", "INVERTIDO"),
+            ("09-52-52-159", "EMBORCADO"),
+            ("09-53-09-631", "FALTANDO"),
+            ("09-53-18-089", "FALTANDO"),
+            ("09-53-25-614", "FALTANDO"),
+            ("10-21-26-929", "FALTANDO"),
+            ("10-22-13-326", "FALTANDO"),
+            ("10-22-21-943", "FALTANDO"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            samples = []
+            for n, (timestamp, category) in enumerate(historic, start=1):
+                filename = f"2026-10-01_{timestamp}_{category}.png"
+                image = np.full((320, 640, 3), 130 + n, dtype=np.uint8)
+                cv2.line(image, (25, 40), (580, 265), (n * 8, 80, 230), 5)
+                path = _write(root, "NG", filename, n, image=image)
+                self.assertEqual(
+                    archive_category_from_filename(path), category + "_SIDE",
+                )
+                samples.append((path, category, image))
+            self.assertEqual(
+                archive_category_from_filename(
+                    Path("2026-10-01_10-22-21-943_FALTANDO_MID_3.png")
+                ), "FALTANDO_MID",
+            )
+            self.assertEqual(
+                archive_category_from_filename(
+                    Path("2026-10-21_0949_FALTANDO_SIDE_2.png")
+                ), "FALTANDO_SIDE",
+            )
+
+            index = ArchiveVisualPresenceIndex(
+                ok_dir=root / "public/ok_archive",
+                ng_dir=root / "public/ng_archive",
+            )
+            for path, category, image in samples:
+                found = index.inspect(image, category, "SIDE", exact_only=True)
+                self.assertEqual(found["status"], "EXACT_FRAME", path.name)
+                self.assertEqual(found["exact_frame_labels"], ["NG"], path.name)
+                self.assertIn(
+                    str(path), found["exact_frame_paths"]["NG"], path.name,
+                )
+                self.assertFalse(found["decision_authorized"])
+                other_category = (
+                    "FALTANDO" if category != "FALTANDO" else "INVERTIDO"
+                )
+                self.assertEqual(
+                    index.inspect(
+                        image, other_category, "SIDE", exact_only=True,
+                    )["status"], "NO_EXACT_FRAME",
+                )
+            altered = samples[0][2].copy()
+            altered[0, 0, 0] ^= 1
+            self.assertEqual(
+                index.inspect(altered, "INVERTIDO", "SIDE", exact_only=True)[
+                    "status"
+                ], "NO_EXACT_FRAME",
+            )
+
+            replay = audit_full_archive(
+                root, extractor=FakeExtractor(), predictor=FakeV3(),
+                verify_runtime_archive=True,
+            )
+            self.assertTrue(replay["all_files_evaluated"])
+            recall = replay["runtime_archive_exact_replay"]
+            self.assertEqual(recall["scanned"], 15)
+            self.assertEqual(recall["own_file_retrieved"], 15)
+            self.assertEqual(recall["exact_unambiguous"], 15)
+            self.assertEqual(recall["not_exact_or_ambiguous"], 0)
+            self.assertEqual(recall["cross_label_conflicts"], 0)
+            self.assertTrue(all(
+                row["runtime_archive_recall"]["own_file_retrieved"]
+                for row in replay["cases"]
+            ))
+
     def test_exact_only_never_claims_super_similar_is_exact(self):
         from src.services.archive_visual_presence import ArchiveVisualPresenceIndex
         with tempfile.TemporaryDirectory() as directory:

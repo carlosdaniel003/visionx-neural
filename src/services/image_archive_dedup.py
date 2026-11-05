@@ -36,11 +36,11 @@ _PARTS = (
 )
 _VISUAL_THRESHOLDS = (.985, .975, .965, .82)
 _MAX_MAE = (.04, .045, .045, .060)
-_ARCHIVE_STEM = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{4}_(.+)$")
+_ARCHIVE_STEM = re.compile(r"^\d{4}-\d{2}-\d{2}_(?:\d{4}|\d{2}-\d{2}-\d{2}-\d{3})_(.+)$")
 
 
 def archive_category_from_filename(path: Path) -> str:
-    """Recupera categoria+luz de nomes atuais e _2/_3; legado sem luz=SIDE."""
+    """Recupera categoria/luz com horário HHMM ou HH-MM-SS-ms; sem luz=SIDE."""
     match = _ARCHIVE_STEM.match(Path(path).stem.upper())
     if not match:
         return ""
