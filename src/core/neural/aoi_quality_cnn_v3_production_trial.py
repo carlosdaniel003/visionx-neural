@@ -203,6 +203,9 @@ def install_aoi_quality_v3_production_trial(orchestrator_cls, *,
         detail = result.get("detail")
         if not isinstance(detail, dict):
             return result
+        # Uma V3 já usada como motor principal não deve ser inferida duas vezes.
+        if detail.get("cnn_v3_primary") is True:
+            return result
         # Categoria AOI não filtra a CNN V3: ambas as rotas novas entram.
         if detail.get("recognition_route") not in {"NEW_CNN", "NEW_EXPERTS"}:
             return result
