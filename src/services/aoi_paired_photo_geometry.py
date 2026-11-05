@@ -56,11 +56,20 @@ def reconcile_paired_photos(
     expected_top = source_geom.get("relative_top")
     expected_bottom = source_geom.get("relative_bottom")
     bar_bottom = target_geom.get("bar_bottom")
+    source_bar_bottom = source_geom.get("bar_bottom")
     x1, x2 = target_geom.get("x1"), target_geom.get("x2")
     try:
-        coords = [expected_top, expected_bottom, bar_bottom, x1, x2]
+        coords = [
+            expected_top, expected_bottom, bar_bottom,
+            source_bar_bottom, x1, x2,
+        ]
         if not all(isinstance(a, int) for a in coords):
             raise ValueError("Geometria incompleta")
+        # A AOI apresenta dois quadros na mesma linha; rejeitar quando
+        # as supostas barras pertencem a regiões verticalmente distantes.
+        # Usa a mesma tolerância do detector de barras irmãs existente.
+        if abs(bar_bottom - source_bar_bottom) > 30:
+            raise ValueError("Barras não co-registradas")
         top, bottom = bar_bottom + expected_top, bar_bottom + expected_bottom
         bounded_height = int(result[known].shape[0])
         if (bottom - top != bounded_height or bottom <= top
