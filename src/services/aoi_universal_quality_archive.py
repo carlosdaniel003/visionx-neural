@@ -296,6 +296,7 @@ def universal_archive_events(
         "v3_ng_escape_review_enabled": use_v3_ng_escape_reviews,
         "v3_ng_escape_review_sha256": ng_escape_review_sha256,
         "v3_ng_escape_confirmed_sources": len(ng_escape_reviews),
+        "v3_ng_escape_source_paths": sorted(ng_escape_reviews),
         "v3_ng_escape_sources_in_dataset": sum(
             any(source in ng_escape_reviews for source in r["sources"])
             for r in recorded
