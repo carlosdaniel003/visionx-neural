@@ -32,6 +32,7 @@ from src.services.aoi_v3_epoch_diagnostics import (
 )
 from src.services.aoi_v3_verified_candidate import load_verified_v3_candidate
 from src.services.aoi_v3_operator_image_reviews import REVIEW_PATH
+from src.services.aoi_v3_ng_escape_reviews import REVIEW_PATH as NG_ESCAPE_REVIEW_PATH
 from src.scripts.train_aoi_universal_quality_offline import (
     _pinned_initialization, _trial_readonly_snapshot,
 )
@@ -123,6 +124,8 @@ def train_v3(
     allow_verified_trial_pointer_readonly: bool = False,
     compare_verified_pinned_cnn: bool = True,
     initialize_from_v3_report: Path | None = None,
+    initialize_from_verified_epoch3: bool = False,
+    use_operator_ng_escape_reviews: bool = False,
 ) -> dict:
     if allow_provisional_archive_labels is not True:
         raise ValueError(
@@ -139,6 +142,12 @@ def train_v3(
         or validation_fraction + test_fraction > .50
     ):
         raise ValueError("Hiperparâmetros CNN V3 inválidos")
+    if initialize_from_verified_epoch3 and initialize_from_v3_report is not None:
+        raise ValueError("Escolha somente uma origem de pesos V3")
+    if use_operator_ng_escape_reviews and not initialize_from_verified_epoch3:
+        raise ValueError(
+            "Os 25 NG exigem inicialização do checkpoint V3 época 3 auditado"
+        )
     root = Path(root).resolve()
     manifest = Path(manifest)
     manifest = (manifest if manifest.is_absolute() else root/manifest).resolve()
@@ -161,14 +170,27 @@ def train_v3(
     events, provenance = universal_archive_events(
         manifest, allow_refreshed_validation_labels=True,
         use_v3_image_quality_reviews=True,
+        use_v3_ng_escape_reviews=use_operator_ng_escape_reviews,
     )
-    human_train_sources = {
+    original_human_sources = {
         source for row in events
         if row.get("label_provenance") == "HUMAN_V3_IMAGE_SHA256"
         for source in row["sources"]
     }
-    if len(human_train_sources) != 14:
+    if len(original_human_sources) != 14:
         raise ValueError("CNN V3 exige 14 imagens humanas verificadas por SHA")
+    escape_sources = set(provenance.get("v3_ng_escape_source_paths", []))
+    if use_operator_ng_escape_reviews:
+        if (
+            len(escape_sources) != 25
+            or provenance.get("v3_ng_escape_sources_in_dataset") != 25
+        ):
+            raise ValueError(
+                "Os 25 NG revisados precisam estar presentes após deduplicação"
+            )
+    elif escape_sources:
+        raise ValueError("NG revisados importados sem autorização explícita")
+    human_train_sources = original_human_sources | escape_sources
     # Remover a categoria AOI dos exemplos usados pela CNN V3. O nome
     # original do PNG é somente a localização para recuperar seus pixels.
     events = [dict(row) for row in events]
@@ -184,7 +206,7 @@ def train_v3(
     )
     if (
         len({src for row in train for src in row["sources"]}
-            & human_train_sources) != 14
+            & human_train_sources) != len(human_train_sources)
         or any(
             source in human_train_sources
             for fold in (validation, test)
@@ -225,7 +247,26 @@ def train_v3(
         base_model = FaltandoCNNV2()
         base_model.load_state_dict(pinned["state_dict"], strict=True)
     v3_source = None
-    if initialize_from_v3_report is not None:
+    if initialize_from_verified_epoch3:
+        from src.core.neural.aoi_quality_cnn_v3_production_trial import (
+            validate_trial_snapshot,
+        )
+        from src.core.neural.aoi_v3_trial_contract import SNAPSHOT_SHA256
+        checkpoint, source = validate_trial_snapshot(root)
+        if image_size != checkpoint["image_size"]:
+            raise ValueError("Checkpoint época 3 requer tamanho 96")
+        model = AOIQualityCNNV3()
+        model.load_state_dict(
+            checkpoint["model_weights_not_production_state_dict"], strict=True,
+        )
+        v3_source = {
+            "source_kind": "PINNED_EPOCH_03_DIAGNOSTIC",
+            "candidate_sha256": SNAPSHOT_SHA256,
+            "checkpoint_sha256": SNAPSHOT_SHA256,
+            "candidate_path": source.relative_to(root).as_posix(),
+            "image_size": image_size,
+        }
+    elif initialize_from_v3_report is not None:
         model, v3_source = load_verified_v3_candidate(
             root, initialize_from_v3_report, provenance["manifest_sha256"],
         )
@@ -246,7 +287,9 @@ def train_v3(
     # Amostras conferidas pelo operador têm reforço moderado, sem dominar
     # centenas de exemplos históricos do mesmo conjunto.
     sample_weights = [
-        (2.0 if row.get("label_provenance") == "HUMAN_V3_IMAGE_SHA256" else 1.0)
+        (2.0 if row.get("label_provenance") in {
+            "HUMAN_V3_IMAGE_SHA256", "HUMAN_V3_NG_ESCAPE_SHA256",
+        } else 1.0)
         / sample_counts[row["label"]]
         for row in train
     ]
@@ -267,6 +310,22 @@ def train_v3(
     ]
     if len(human_train_rows) != 14:
         raise ValueError("Revisão de treino V3 sem as 14 imagens confirmadas")
+    escape_train_rows = [
+        row for row in train if any(
+            source in escape_sources for source in row["sources"]
+        )
+    ]
+    if len(escape_train_rows) != len(escape_sources):
+        raise ValueError("Os 25 NG revisados não ficaram isolados no treino")
+    # Os 25 NG físicos são supervisão de treino, NÃO conjunto independente.
+    def assess_escapes(model_to_check):
+        if not use_operator_ng_escape_reviews:
+            return None
+        return binary_quality_metrics(
+            escape_train_rows,
+            _assess(model_to_check, escape_train_rows, image_size, .70),
+        )
+
     # A validação permanece congelada; augmentation só no treino.
     initial = binary_quality_metrics(
         validation, _assess(model, validation, image_size, .70),
@@ -274,6 +333,7 @@ def train_v3(
     initial_review = operator_epoch_replay(
         human_train_rows, _assess(model, human_train_rows, image_size, .70),
     )
+    initial_escapes = assess_escapes(model)
     # O checkpoint conservador continua sendo selecionado APENAS pela
     # validação; as 14 correções humanas são diagnóstico de treino.
     best_key = _selection_score(initial)
@@ -284,6 +344,7 @@ def train_v3(
         "epoch": 0,
         "validation": initial,
         "operator_training_replay": initial_review,
+        "operator_ng_escape_training_replay": initial_escapes,
         "comparison_with_epoch_zero": epoch_review_comparison(
             initial, initial, initial_review, initial_review,
         ),
@@ -315,6 +376,7 @@ def train_v3(
         reviewed = operator_epoch_replay(
             human_train_rows, _assess(model, human_train_rows, image_size, .70),
         )
+        escape_reviewed = assess_escapes(model)
         comparison = epoch_review_comparison(
             initial, validation_scores, initial_review, reviewed,
         )
@@ -346,6 +408,7 @@ def train_v3(
             "training_loss": round(accumulated / len(loader), 7),
             "validation": validation_scores,
             "operator_training_replay": reviewed,
+            "operator_ng_escape_training_replay": escape_reviewed,
             "comparison_with_epoch_zero": comparison,
             "safe_gate_passed": gate_passed,
             "selected": selected,
@@ -359,7 +422,9 @@ def train_v3(
             f"val_OK_falsos_NG={validation_scores['OK_false_NG']} "
             f"val_NG_falsos_OK={validation_scores['NG_false_OK']} "
             f"gate={'OK' if gate_passed else 'BLOQUEADO'} "
-            f"melhor_epoca={best_epoch}",
+            f"melhor_epoca={best_epoch}"
+            + (f" NG_revistos_25={escape_reviewed['NG_correct']}/25"
+               if escape_reviewed is not None else ""),
             flush=True,
         )
 
@@ -373,6 +438,7 @@ def train_v3(
     reviewed_training = operator_epoch_replay(
         human_train_rows, _assess(model, human_train_rows, image_size, .70),
     )
+    escaped_training = assess_escapes(model)
     if reviewed_training["metrics"] != trajectory[best_epoch][
         "operator_training_replay"
     ]["metrics"]:
@@ -380,9 +446,16 @@ def train_v3(
     baseline_v3_test = None
     baseline_v3_reviewed = None
     if v3_source is not None:
-        old_v3, _ = load_verified_v3_candidate(
-            root, initialize_from_v3_report, provenance["manifest_sha256"],
-        )
+        if initialize_from_verified_epoch3:
+            old_v3 = AOIQualityCNNV3()
+            checkpoint, _ = validate_trial_snapshot(root)
+            old_v3.load_state_dict(
+                checkpoint["model_weights_not_production_state_dict"], strict=True,
+            )
+        else:
+            old_v3, _ = load_verified_v3_candidate(
+                root, initialize_from_v3_report, provenance["manifest_sha256"],
+            )
         baseline_v3_test = binary_quality_metrics(
             test, _assess(old_v3, test, image_size, .70),
         )
@@ -408,11 +481,22 @@ def train_v3(
         if digest != baseline_sha:
             raise ValueError("Modelo baseline alterado durante experimento")
     if v3_source is not None:
-        _, rechecked = load_verified_v3_candidate(
-            root, initialize_from_v3_report, provenance["manifest_sha256"],
-        )
-        if rechecked != v3_source:
-            raise ValueError("Candidato V3 inicial alterado durante experimento")
+        if initialize_from_verified_epoch3:
+            _, checked_path = validate_trial_snapshot(root)
+            if checked_path.relative_to(root).as_posix() != v3_source["candidate_path"]:
+                raise ValueError("Snapshot V3 época 3 mudou durante treino")
+        else:
+            _, rechecked = load_verified_v3_candidate(
+                root, initialize_from_v3_report, provenance["manifest_sha256"],
+            )
+            if rechecked != v3_source:
+                raise ValueError("Candidato V3 inicial alterado durante experimento")
+    if use_operator_ng_escape_reviews:
+        review_path = root / NG_ESCAPE_REVIEW_PATH
+        if sha256(review_path.read_bytes()).hexdigest() != provenance.get(
+            "v3_ng_escape_review_sha256"
+        ):
+            raise ValueError("Revisão de 25 NG modificada durante o treino")
 
     stamp = datetime.now(timezone.utc)
     folder = root/"reports/aoi_quality_cnn_v3/candidates"/(
@@ -433,7 +517,12 @@ def train_v3(
             v3_source["candidate_sha256"] if v3_source else None
         ),
         "aoi_category_used_for_training": False,
-        "operator_verified_training_sources": 14,
+        "operator_verified_training_sources": len(human_train_sources),
+        "operator_ng_escape_verified_training_sources": len(escape_sources),
+        "operator_ng_escape_review_sha256": provenance.get(
+            "v3_ng_escape_review_sha256",
+        ),
+        "initial_verified_epoch3_snapshot": initialize_from_verified_epoch3,
         "baseline_v2_sha256": baseline_sha,
         "trained_with_provisional_archive_labels": True,
         "aoi_category_is_not_physical_defect": True,
@@ -479,6 +568,15 @@ def train_v3(
         "operator_image_review_file": REVIEW_PATH.as_posix(),
         "operator_image_review_verified": 14,
         "operator_image_review_ignored": 1,
+        "operator_ng_escape_review_enabled": use_operator_ng_escape_reviews,
+        "operator_ng_escape_review_file": (
+            NG_ESCAPE_REVIEW_PATH.as_posix()
+            if use_operator_ng_escape_reviews else None
+        ),
+        "operator_ng_escape_review_verified": len(escape_sources),
+        "operator_ng_escape_review_sha256": provenance.get(
+            "v3_ng_escape_review_sha256"
+        ),
         "operator_images_reserved_exclusively_for_training": True,
         "human_review_evaluated_every_epoch": True,
         "exploratory_checkpoints_diagnostic_only": True,
@@ -501,7 +599,11 @@ def train_v3(
             "quality_only_balancing": True,
             "per_quality_inverse_frequency_sampling": True,
             "operator_verified_weight_multiplier": 2.0,
-            "v3_baseline_initialized_from_verified_report": bool(v3_source),
+            "v3_baseline_initialized_from_verified_report": bool(
+                initialize_from_v3_report is not None
+            ),
+            "v3_initialized_from_verified_epoch3": initialize_from_verified_epoch3,
+            "NG_escape_reviews_only_training_not_validation": bool(escape_sources),
             "selected_epoch_cannot_worsen_either_validation_error_against_start":
                 bool(v3_source),
         },
@@ -533,6 +635,8 @@ def train_v3(
         "verified_pinned_v2_baseline": baseline_test,
         "verified_previous_v3_baseline": baseline_v3_test,
         "operator_verified_training_replay": reviewed_training,
+        "operator_verified_ng_escape_training_replay": escaped_training,
+        "previous_v3_ng_escape_training_replay": initial_escapes,
         "previous_v3_operator_verified_training_replay": baseline_v3_reviewed,
         "initial_v3_candidate": v3_source,
         "baseline_v2_sha256": baseline_sha,
@@ -558,6 +662,9 @@ def train_v3(
             "all_quality_labels_operator_verified": coverage["all_data"]["fully_operator_verified"],
             "each_available_light_has_both_labels": coverage["test"]["each_available_light_has_both_labels"],
             "operator_verified_14_excluded_from_test": True,
+            "operator_verified_25_NG_escapes_excluded_from_validation_test": bool(
+                use_operator_ng_escape_reviews
+            ),
             "exploratory_epochs_have_no_test_based_selection": True,
             "exploratory_snapshots_incompatible_with_production_loader": True,
             "former_v3_test_no_longer_blind": True,
@@ -600,6 +707,8 @@ def main(argv=None) -> int:
     p.add_argument("--allow-verified-trial-pointer-readonly", action="store_true")
     p.add_argument("--skip-verified-pinned-cnn-comparison", action="store_true")
     p.add_argument("--initialize-from-v3-report", type=Path)
+    p.add_argument("--initialize-from-verified-epoch3", action="store_true")
+    p.add_argument("--use-operator-ng-escape-reviews", action="store_true")
     a = p.parse_args(argv)
     result = train_v3(
         a.root, a.manifest, epochs=a.epochs, seed=a.seed,
@@ -608,6 +717,8 @@ def main(argv=None) -> int:
         allow_verified_trial_pointer_readonly=a.allow_verified_trial_pointer_readonly,
         compare_verified_pinned_cnn=not a.skip_verified_pinned_cnn_comparison,
         initialize_from_v3_report=a.initialize_from_v3_report,
+        initialize_from_verified_epoch3=a.initialize_from_verified_epoch3,
+        use_operator_ng_escape_reviews=a.use_operator_ng_escape_reviews,
     )
     print(json.dumps({
         "selected_epoch": result["training"]["selected_epoch_using_validation_only"],
@@ -620,6 +731,10 @@ def main(argv=None) -> int:
         "previous_v3_14_correct_in_training_replay": (
             result["previous_v3_operator_verified_training_replay"]["metrics"]["correct"]
             if result["previous_v3_operator_verified_training_replay"] else None
+        ),
+        "NG_escapes_25_correct_in_training": (
+            result["operator_verified_ng_escape_training_replay"]["NG_correct"]
+            if result["operator_verified_ng_escape_training_replay"] else None
         ),
         "max_14_correct_in_any_epoch": result["human_learning_diagnosis"][
             "maximum_14_correct_over_epochs"],
