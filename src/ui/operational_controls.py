@@ -27,9 +27,9 @@ QLabel#operationStateBadge {
     letter-spacing: 1px;
 }
 QLabel#operationStateBadge[tone="ready"] {
-    color: #07120b;
-    background-color: #4ade80;
-    border: 1px solid #4ade80;
+    color: #f1f1f1;
+    background-color: #242424;
+    border: 1px solid #686868;
 }
 QLabel#operationStateBadge[tone="attention"] {
     color: #090909;
@@ -97,6 +97,14 @@ QPushButton#reinspectActionButton {
 QPushButton#reinspectActionButton:hover {
     color: #080808;
     background-color: #f5c518;
+    border-color: #ffdc60;
+}
+QPushButton#reinspectActionButton:pressed {
+    background-color: #ae8a14;
+    border: 2px solid #fff1ab;
+}
+QPushButton#reinspectActionButton:focus {
+    border: 2px solid #ffffff;
 }
 QPushButton#discardActionButton:hover {
     color: #f5c518;
@@ -158,6 +166,12 @@ QPushButton#cameraLightButton[activeLight="true"] {
     background-color: #f5c518;
     border: 2px solid #ffd84d;
 }
+QPushButton#cameraLightButton[activeLight="true"]:hover {
+    background-color: #ffe078;
+}
+QPushButton#cameraLightButton[activeLight="true"]:pressed {
+    background-color: #bc950e;
+}
 
 QPushButton#datasetDangerButton {
     color: #ff7777;
@@ -174,15 +188,27 @@ QPushButton#datasetDangerButton:pressed {
     border: 2px solid #ffb0b0;
 }
 
+/* Teclado e mouse usam foco/pressionado coerentes, sem assumir sucesso. */
+QPushButton#discardActionButton:focus,
+QPushButton#approveActionButton:focus,
+QPushButton#rejectActionButton:focus,
+QPushButton#cameraLightButton:focus,
+QPushButton#datasetDangerButton:focus {
+    border: 2px solid #ffffff;
+}
 QPushButton#captureActionButton:disabled,
 QPushButton#discardActionButton:disabled,
+QPushButton#reinspectActionButton:disabled,
 QPushButton#approveActionButton:disabled,
 QPushButton#rejectActionButton:disabled,
 QPushButton#cameraLightButton:disabled,
 QPushButton#datasetDangerButton:disabled {
     color: #565656;
     background-color: #0b0b0b;
-    border: 1px dashed #292929;
+    border: 1px solid #303030;
+}
+QPushButton#cameraLightButton[activeLight="true"]:disabled {
+    background-color: #131313; color: #656565; border-color: #303030;
 }
 """
 
@@ -239,16 +265,19 @@ class OperationalControlsPresenter:
             panel.btn_clear_dataset.setObjectName("datasetDangerButton")
 
         panel.btn_start.setToolTip(
-            "Inicia uma captura. Durante o processamento, os demais controles ficam bloqueados."
+            "Captura local (MSS). Ao iniciar, o sistema bloqueia julgamentos "
+            "até que a captura e a análise estejam disponíveis."
         )
         panel.btn_skip.setToolTip(
-            "Descarta a captura atual sem registrar uma decisão no dataset."
+            "Descarta a captura atual sem registrar OK/NG. Não equivale a reprovar a peça."
         )
         panel.btn_save_ok.setToolTip(
-            "Confirma que a peça está OK. Só fica disponível após a análise."
+            "Decisão humana 0/OK para a peça atual. Disponível somente "
+            "quando existe inspeção válida no Modo Teste."
         )
         panel.btn_save_ng.setToolTip(
-            "Confirma defeito NG. Só fica disponível após a análise."
+            "Decisão humana 1/NG para a peça atual. Disponível somente "
+            "quando existe inspeção válida no Modo Teste."
         )
         panel.btn_light_top.setToolTip(
             "Seleciona a iluminação TOP. Atalho: seta para a esquerda."
@@ -259,6 +288,11 @@ class OperationalControlsPresenter:
         panel.btn_light_mid.setToolTip(
             "Seleciona a iluminação MID. Atalho: seta para a direita."
         )
+        if hasattr(panel, "btn_reinspect"):
+            panel.btn_reinspect.setToolTip(
+                "Solicita nova análise de um evento XP, se ainda existir "
+                "captura elegível. Não altera automaticamente o rótulo anterior."
+            )
 
         panel.btn_skip.setEnabled(False)
         if hasattr(panel, "btn_reinspect"):
@@ -283,7 +317,7 @@ class OperationalControlsPresenter:
         layout.setHorizontalSpacing(9)
         layout.setVerticalSpacing(6)
 
-        badge = QLabel("PRONTO")
+        badge = QLabel("AGUARDANDO PEÇA")
         badge.setObjectName("operationStateBadge")
         badge.setProperty("tone", "ready")
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -292,7 +326,7 @@ class OperationalControlsPresenter:
             QSizePolicy.Policy.Fixed,
         )
 
-        hint = QLabel("Selecione a iluminação ou inicie uma nova captura.")
+        hint = QLabel("Aguardando captura local ou AOI; não há julgamento pendente.")
         hint.setObjectName("operationStateHint")
         hint.setWordWrap(True)
         hint.setMinimumWidth(0)
@@ -328,13 +362,13 @@ class OperationalControlsPresenter:
     def _connect_feedback(self) -> None:
         bindings = (
             (self.panel.btn_start, "Captura solicitada."),
-            (self.panel.btn_skip, "Captura atual descartada."),
-            (self.panel.btn_save_ok, "Decisão OK registrada."),
-            (self.panel.btn_save_ng, "Decisão NG registrada."),
+            (self.panel.btn_skip, "Descarte solicitado."),
+            (self.panel.btn_save_ok, "Julgamento OK solicitado; conferindo registro."),
+            (self.panel.btn_save_ng, "Julgamento NG solicitado; conferindo registro."),
         )
         if hasattr(self.panel, "btn_clear_dataset"):
             bindings += (
-                (self.panel.btn_clear_dataset, "Limpeza do dataset solicitada."),
+                (self.panel.btn_clear_dataset, "Ação de manutenção solicitada."),
             )
 
         for button, message in bindings:
@@ -528,7 +562,7 @@ class OperationalControlsPresenter:
         panel.lbl_operation_hint.setText(hint)
 
         count = available_action_count(state) + int(reinspect_enabled)
-        suffix = "AÇÃO DISPONÍVEL" if count == 1 else "AÇÕES DISPONÍVEIS"
+        suffix = "CONTROLE DISPONÍVEL" if count == 1 else "CONTROLES DISPONÍVEIS"
         panel.lbl_operation_actions.setText(f"{count} {suffix}")
 
         if (
