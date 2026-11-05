@@ -44,7 +44,8 @@ EXPERT_DEFINITIONS = (
     ("silk_expert.py", "XOR • TINTA E EPICENTRO", SilkDebuggerWidget),
     ("semantic_expert.py", "DNA • ASSINATURA SEMÂNTICA", SemanticDNAWidget),
     ("shift_expert.py", "SHIFT • DESLOCAMENTO", ShiftDebuggerWidget),
-    ("faltando_cnn_v2.py", "CNN FALTANDO v2 • REDE NEURAL", NeuralSpecialistWidget),
+    ("aoi_quality_cnn_v3.py", "CNN AOI V3 • REDE NEURAL", NeuralSpecialistWidget),
+    ("faltando_cnn_v2.py", "CNN FALTANDO v2 • REDE NEURAL (histórico)", NeuralSpecialistWidget),
     ("knn_expert.py", "KNN • MEMÓRIA HUMANA", VerifiedMemorySpecialistWidget),
 )
 
@@ -186,6 +187,8 @@ class _LightingExpertLane(QFrame):
         # Nesta área, mostre exclusivamente as seis imagens amarelo/preto.
         if self.visual_payload is not None and (
             "knn_expert.py" in active_engines
+            or "aoi_quality_cnn_v3.py" in active_engines
+            or detail.get("cnn_v3_primary") is True
             or "faltando_cnn_v2.py" in active_engines
             or detail.get("cnn_v2_active")
             or detail.get("recognition_route") in {"KNOWN_KNN", "NEW_CNN", "MULTILIGHT_MIXED"}
@@ -201,7 +204,7 @@ class _LightingExpertLane(QFrame):
         for engine_name, widget in self.frames.items():
             if engine_name not in active_engines:
                 continue
-            if engine_name in {"faltando_cnn_v2.py", "knn_expert.py"}:
+            if engine_name in {"aoi_quality_cnn_v3.py", "faltando_cnn_v2.py", "knn_expert.py"}:
                 widget.update_data(detail, analysis)
             else:
                 widget.update_data(detail)
