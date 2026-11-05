@@ -18,7 +18,9 @@ class SideArchivePresenceFeedback(QObject):
     finished = pyqtSignal(object, object, object)
 
     def __init__(self, panel, *, index=None):
-        super().__init__(panel)
+        # A consulta visual não depende de a fonte ser um QWidget.
+        # Regressões da captura MSS também usam controladores sem Qt.
+        super().__init__(panel if isinstance(panel, QObject) else None)
         self.panel = panel
         self._index = index if index is not None else ArchiveVisualPresenceIndex()
         self._requests = Queue(maxsize=1)
