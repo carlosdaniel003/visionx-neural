@@ -51,11 +51,16 @@ def archive_category_from_filename(path: Path) -> str:
 
 
 def archive_visual_scope(category: str) -> str:
-    """Mesmo contexto de categoria e iluminação; nunca cruza OK e NG."""
+    """Escopo exclusivamente pela LUZ; categoria é metadado legado.
+
+    O rótulo OK/NG permanece isolado por diretório/índice, nunca
+    inferido pelo nome ou pela categoria da captura.
+    """
     value = safe_archive_category(category)
-    if value.endswith(("_SIDE", "_TOP", "_MID")):
-        return value
-    return value + "_SIDE"
+    for light in ("SIDE", "TOP", "MID"):
+        if value == light or value.endswith("_" + light):
+            return light
+    return "SIDE"
 
 
 def archive_visual_descriptor(image: np.ndarray):
@@ -115,10 +120,12 @@ class ArchiveVisualIndex:
             )
 
     def register_existing(self, image: np.ndarray, path: Path) -> None:
-        scope = archive_category_from_filename(path)
+        named = archive_category_from_filename(path)
         descriptor = archive_visual_descriptor(image)
-        if scope and descriptor is not None:
-            self._by_scope.setdefault(scope, []).append(descriptor)
+        if named and descriptor is not None:
+            self._by_scope.setdefault(archive_visual_scope(named), []).append(
+                descriptor
+            )
 
     def contains_similar(self, image: np.ndarray, category: str) -> bool:
         descriptor = archive_visual_descriptor(image)

@@ -49,7 +49,8 @@ class ArchiveVisualPresenceIndex:
                     if archive_visual_descriptor(image) is None:
                         continue
                     self._indices[label].register_existing(image, path)
-                    scope = archive_category_from_filename(path)
+                    named = archive_category_from_filename(path)
+                    scope = archive_visual_scope(named) if named else ""
                     fingerprint = image_fingerprint(image)
                     if scope and fingerprint:
                         self._exact[label].setdefault(scope, {}).setdefault(
@@ -78,13 +79,12 @@ class ArchiveVisualPresenceIndex:
             "indexed_ok": 0, "indexed_ng": 0,
         }
         if (result["lighting"] not in {"SIDE", "TOP", "MID"}
-                or not str(category or "").strip()
                 or archive_visual_descriptor(frame) is None):
             return result
 
         if not self._refresh():
             return result
-        query = f"{category}_{result['lighting']}"
+        query = result["lighting"]
         scope = archive_visual_scope(query)
         fingerprint = image_fingerprint(frame)
         # A prova exata usa os pixels RGB (OpenCV BGR) da TELA
