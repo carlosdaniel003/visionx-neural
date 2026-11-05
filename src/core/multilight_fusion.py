@@ -482,12 +482,15 @@ def fuse_multilight(
         )
         detail["recognition_light_routes"] = routes
         detail["recognition_route"] = recognition_route
-        detail["cnn_v2_light_diagnostics"] = light_diagnostics
-        if any(
+        uses_v3 = any(
             item.get("engine") == "aoi_quality_cnn_v3"
             for item in light_diagnostics.values()
-        ):
+        )
+        if uses_v3:
+            detail.pop("cnn_v2_light_diagnostics", None)
             detail["cnn_v3_light_diagnostics"] = deepcopy(light_diagnostics)
+        else:
+            detail["cnn_v2_light_diagnostics"] = light_diagnostics
         # O trace e o detalhe têm a MESMA proveniência original, sem
         # inferir a rota da peça inteira apenas pela luz dominante.
         trace = detail.get("decision_trace")
@@ -496,7 +499,11 @@ def fuse_multilight(
             detail["decision_trace"] = trace
         trace["recognition_light_routes"] = deepcopy(routes)
         trace["recognition_route"] = recognition_route
-        trace["cnn_v2_light_diagnostics"] = deepcopy(light_diagnostics)
+        if uses_v3:
+            trace.pop("cnn_v2_light_diagnostics", None)
+            trace["cnn_v3_light_diagnostics"] = deepcopy(light_diagnostics)
+        else:
+            trace["cnn_v2_light_diagnostics"] = deepcopy(light_diagnostics)
         return attach_v3_multilight_evidence(
             gate_knn_c_multilight(fused, source), source,
         )
@@ -646,12 +653,15 @@ def fuse_multilight(
     light_routes, recognition_route, cnn_light_diagnostics = (
         _light_recognition_provenance(source)
     )
-    detail["cnn_v2_light_diagnostics"] = cnn_light_diagnostics
-    if any(
+    uses_v3 = any(
         item.get("engine") == "aoi_quality_cnn_v3"
         for item in cnn_light_diagnostics.values()
-    ):
+    )
+    if uses_v3:
+        detail.pop("cnn_v2_light_diagnostics", None)
         detail["cnn_v3_light_diagnostics"] = deepcopy(cnn_light_diagnostics)
+    else:
+        detail["cnn_v2_light_diagnostics"] = cnn_light_diagnostics
 
     # Preservar votos de diagnóstico da KNN C de CADA iluminação. Até aqui
     # o resultado final carregava apenas a luz dominante (MID), ocultando
@@ -682,8 +692,18 @@ def fuse_multilight(
     # Verifica TODAS as luzes e a identidade do checkpoint. A fusão
     # pode ter herdado metadados somente da luz dominante, insuficientes
     # para permitir decisão automática.
-    cnn_consensus = summarize_cnn_multilight(source, canonical_category)
-    detail.update(cnn_consensus)
+    if not uses_v3:
+        cnn_consensus = summarize_cnn_multilight(source, canonical_category)
+        detail.update(cnn_consensus)
+    else:
+        # Não publicar uma falsa "revisão V2" quando as inferências reais
+        # são V3. O contrato de consenso V2 é uma ferramenta legada.
+        for key in (
+            "cnn_v2_consensus", "cnn_v2_consensus_reason",
+            "cnn_v2_light_votes", "cnn_v2_supervised_auto_eligible",
+            "cnn_v2_model_sha256",
+        ):
+            detail.pop(key, None)
     detail.update(
         {
             "recognition_route": recognition_route,
@@ -722,7 +742,11 @@ def fuse_multilight(
         or trace.get("hard_missing_evidence", False)
         or detail.get("missing_hard_absence", False)
     )
-    trace["cnn_v2_light_diagnostics"] = deepcopy(cnn_light_diagnostics)
+    if uses_v3:
+        trace.pop("cnn_v2_light_diagnostics", None)
+        trace["cnn_v3_light_diagnostics"] = deepcopy(cnn_light_diagnostics)
+    else:
+        trace["cnn_v2_light_diagnostics"] = deepcopy(cnn_light_diagnostics)
     trace.update(
         {
             "schema": "visionx.multilight_decision.v1",
