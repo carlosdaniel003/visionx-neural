@@ -140,6 +140,10 @@ QComboBox#modeSelector {{
     min-width: 145px;
 }}
 QComboBox#modeSelector:hover {{ background-color: #352d08; }}
+QComboBox#modeSelector:focus {{ border: 2px solid #ffffff; }}
+QComboBox#modeSelector:disabled {{
+    color: #737373; background-color: #101010; border: 1px solid #303030;
+}}
 QComboBox#modeSelector::drop-down {{ border: none; width: 24px; }}
 QComboBox#modeSelector QAbstractItemView {{
     background-color: {SURFACE_RAISED};
@@ -165,12 +169,23 @@ QPushButton {{
     font-size: 12px;
     font-weight: 800;
 }}
+QPushButton:focus {{
+    border: 2px solid #ffffff;
+}}
+QPushButton:disabled {{
+    color: #666666;
+    background-color: #111111;
+    border: 1px solid #303030;
+}}
 QPushButton#primaryButton {{
     background-color: {ACCENT};
     color: #080808;
     border: 1px solid {ACCENT};
 }}
 QPushButton#primaryButton:hover {{ background-color: {ACCENT_HOVER}; border-color: {ACCENT_HOVER}; }}
+QPushButton#primaryButton:pressed {{
+    background-color: #bf9815; border: 2px solid #fff1aa;
+}}
 QPushButton#secondaryButton,
 QPushButton#lightButton {{
     background-color: {SURFACE_RAISED};
@@ -183,12 +198,19 @@ QPushButton#lightButton:hover {{
     border-color: {ACCENT};
     background-color: {SURFACE_HOVER};
 }}
+QPushButton#secondaryButton:pressed,
+QPushButton#lightButton:pressed {{
+    color: {TEXT}; background-color: #393219; border: 2px solid {ACCENT};
+}}
 QPushButton#outlineAccentButton {{
     background-color: {SURFACE_RAISED};
     color: {ACCENT};
     border: 1px solid {ACCENT};
 }}
 QPushButton#outlineAccentButton:hover {{ background-color: {ACCENT_SOFT}; }}
+QPushButton#outlineAccentButton:pressed {{
+    background-color: #51451f; border: 2px solid #ffe081;
+}}
 QPushButton#deleteDatasetButton {{
     background-color: {ACCENT_SOFT};
     color: {ACCENT};
@@ -197,6 +219,9 @@ QPushButton#deleteDatasetButton {{
 QPushButton#deleteDatasetButton:hover {{
     background-color: {ACCENT};
     color: #080808;
+}}
+QPushButton#deleteDatasetButton:pressed {{
+    background-color: #bd981a; border: 2px solid #fff1aa;
 }}
 QPushButton:disabled {{
     background-color: #0a0a0a;
