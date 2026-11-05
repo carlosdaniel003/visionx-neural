@@ -139,6 +139,8 @@ class TrainingPanelUITests(unittest.TestCase):
     def test_completed_audit_does_not_claim_generalization_or_new_training(self):
         ui = install_training_validation_panel(self.window, root=self.root)
         ui._last_finished = {
+            "complete": True,
+            "canceled": False,
             "models": {
                 "KNN_MEMORIA": {"target_98pct_per_label": True},
                 "CNN_FALTANDO_V2": {"target_98pct_per_label": True},
@@ -152,6 +154,19 @@ class TrainingPanelUITests(unittest.TestCase):
         self.assertIn("Não comprova", ui.status.text())
         self.assertFalse(ui.cancel_button.isEnabled())
         self.assertTrue(ui.cancel_button.isHidden())
+
+    def test_partial_or_unverified_report_never_claims_success(self):
+        ui = install_training_validation_panel(self.window, root=self.root)
+        ui._last_finished = {
+            "complete": False, "canceled": False,
+            "models": {
+                "KNN_MEMORIA": {"target_98pct_per_label": True},
+                "CNN_FALTANDO_V2": {"target_98pct_per_label": True},
+            },
+        }
+        ui._finished(0, None)
+        self.assertIn("incompleto", ui.status.text())
+        self.assertEqual(ui.status.property("state"), "attention")
 
     def test_shadow_result_is_clearly_experimental(self):
         ui = install_training_validation_panel(self.window, root=self.root)
