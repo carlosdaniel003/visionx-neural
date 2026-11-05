@@ -91,7 +91,7 @@ class ArchiveRenderedSourceTests(unittest.TestCase):
             self.assertIn(filename, memory_panel_text(decision)[1])
             self.assertIn("ARQUIVO REEXIBIDO", memory_feedback_state(decision)[0])
             self.assertTrue(decision["is_defect"])  # Nenhuma decisão fabricada.
-            self.assertEqual(decision_record(decision)["cnn_v3"]["ng_score_uncalibrated"], 1.0)
+            self.assertEqual(decision_record(decision, {"category": "FALTANDO"})["cnn_v3"]["ng_score_uncalibrated"], 1.0)
 
     def test_focal_change_cannot_reuse_archived_source(self):
         original = original_frame()
