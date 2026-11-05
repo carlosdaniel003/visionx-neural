@@ -463,12 +463,101 @@ class GeneralMultiLightFusionTests(unittest.TestCase):
         self.assertEqual(result["verdict"], "DEFEITO REAL")
         self.assertEqual(
             result["detail"]["fusion_rule"],
-            "adhesive_multilight_strong_auxiliary",
+            "multilight_strong_single",
         )
         self.assertEqual(
             result["detail"]["multilight_dominant_mode"],
             "TOP",
         )
+
+
+class V3RealEventReviewRegressionTests(unittest.TestCase):
+    """Reconstrói votos exatos dos dois logs XP (sem pressupor pixels)."""
+
+    @staticmethod
+    def _source(scores):
+        from copy import deepcopy
+        from tests.test_side_early_decision import _v3_side
+
+        source = {}
+        for light, score in zip(("SIDE", "TOP", "MID"), scores):
+            item = _v3_side(verdict="FALHA FALSA", score=score)
+            item["lighting_mode"] = light
+            detail = item["detail"]
+            detail["cnn_v3_lighting_mode"] = light
+            detail["aoi_v3_trial"]["light"] = light
+            if light != "SIDE":
+                detail.pop("knn_c", None)
+                item["production_review_required"] = False
+                detail["operator_review_required"] = False
+                detail["decision_trace"]["operator_review_required"] = False
+            source[light] = item
+        return source
+
+    def test_two_xp_events_keep_visual_false_failure_without_fabricating_50pct(self):
+        events = {
+            "d8a7bce586144c64aba5a30cbce87017": (
+                1.098383339837028e-08,
+                1.2068943622267625e-09,
+                8.523311407770962e-06,
+            ),
+            "baf1d69c170a433685d8cb429e665942": (
+                6.252404546103207e-06,
+                5.586629825415912e-09,
+                0.0001814561546780169,
+            ),
+        }
+        for event_id, scores in events.items():
+            for category in ("EMBORCADO", "MUITO ADESIVO", "Unknown", ""):
+                with self.subTest(event=event_id, category=category):
+                    inputs = self._source(scores)
+                    fused = fuse_multilight(inputs, category)
+                    self.assertEqual(fused["verdict"], "FALHA FALSA")
+                    self.assertFalse(fused["is_defect"])
+                    self.assertGreater(fused["confidence"], .99)
+                    self.assertLess(fused["detail"]["final_score"], .001)
+                    self.assertEqual(
+                        fused["detail"]["fusion_rule"],
+                        "multilight_v3_verified_all_ok_review_separate",
+                    )
+                    self.assertTrue(fused["production_review_required"])
+                    self.assertTrue(fused["detail"]["cnn_v3_all_ok_verified"])
+                    self.assertEqual(
+                        fused["detail"]["aoi_v3_multilight"]["epoch"], 5,
+                    )
+                    report = decision_record(fused, {"category": category})
+                    self.assertEqual(report["cnn_v3"]["epoch"], 5)
+                    self.assertEqual(report["verdict"], "FALHA FALSA")
+                    self.assertFalse(
+                        report["cnn_v3"]["automatic_ok_from_v3_authorized"],
+                    )
+
+    def test_v3_epoch5_side_ends_both_events_in_all_categories(self):
+        from tests.test_side_early_decision import _v3_side
+        from src.core.side_early_decision import build_side_early_decision
+        for score in (1.098383339837028e-08, 6.252404546103207e-06):
+            for category in ("EMBORCADO", "MUITO ADESIVO", "UNKNOWN", ""):
+                with self.subTest(score=score, category=category):
+                    analysis = _v3_side(score=score)
+                    analysis["detail"]["confirmed_visual_recall"] = {
+                        "schema": "visionx.human_visual_recall.v1",
+                        "status": "HUMAN_OK_VISUAL_CANDIDATE",
+                        "diagnostic_only": True,
+                        "auto_ok_authorized": False,
+                        "source": "PERSISTENT_HUMAN_LABELS",
+                    }
+                    final = build_side_early_decision(
+                        analysis, category, allow_supervised_v3=True,
+                    )
+                    self.assertIsNotNone(final)
+                    self.assertEqual(final["verdict"], "FALHA FALSA")
+                    self.assertEqual(
+                        final["detail"]["side_early_exit"]["skipped_lights"],
+                        ["TOP", "MID"],
+                    )
+                    self.assertFalse(
+                        final["detail"]["side_early_exit"]["production_auto_allowed"],
+                    )
 
 
 class AdhesiveProductionProvenanceTests(unittest.TestCase):
@@ -518,7 +607,7 @@ class AdhesiveProductionProvenanceTests(unittest.TestCase):
         source = self._source()
         fused = fuse_multilight(source, "MUITO ADESIVO")
         self.assertEqual(fused["detail"]["fusion_rule"],
-                         "adhesive_multilight_strong_auxiliary")
+                         "multilight_strong_single")
         self.assertEqual(fused["verdict"], "DEFEITO REAL")
         self.assertTrue(fused["multilight_final"])
         expected = {light: "NEW_EXPERTS" for light in ("SIDE", "TOP", "MID")}

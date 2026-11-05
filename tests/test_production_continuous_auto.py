@@ -84,7 +84,6 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
             lambda a: a["detail"]["recognition_light_routes"].pop("TOP"),
             lambda a: a["detail"]["recognition_light_routes"].update(MID="UNKNOWN"),
             lambda a: a["detail"].update(capture_error=True),
-            lambda a: a["detail"].update(category_unknown=True),
         )
         for mutation in variants:
             with self.subTest(mutation=str(mutation)):
@@ -95,6 +94,13 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
                 self.assertFalse(policy["operator_review_required"])
                 self.assertEqual(policy["proposed_decision"], "")
                 self.assertTrue(policy["operational_error"])
+
+    def test_unknown_category_does_not_block_complete_inspection(self):
+        analysis = uncertain_three_light()
+        analysis["detail"]["category_unknown"] = True
+        policy = production_decision_policy(analysis)
+        self.assertTrue(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "NG")
 
     def test_complete_physical_disagreement_is_binary_ng_not_manual(self):
         analysis = uncertain_three_light()
