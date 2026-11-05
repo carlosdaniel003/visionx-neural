@@ -52,11 +52,13 @@ def _is_novel_specialist(analysis: dict, category: str) -> bool:
     route = details.get("recognition_route")
     routes = details.get("recognition_light_routes", {})
     multilight = routes.values() if isinstance(routes, dict) else ()
-    # CNN V2 cobre FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO.
-    # NÃO treinar se a inspeção já foi reconhecida pela memória KNN.
+    # Rotas históricas V2 da CNN e especialistas de DESLOCADO aceitam
+    # apenas NOVOS eventos humanos. A operação real com V3 é bloqueada
+    # antes, pela identidade explícita do orquestrador.
+    novel_routes = {"NEW_CNN", "NEW_EXPERTS"}
     return bool(
         uses_faltando_v2(category)
-        and (route == "NEW_CNN" or "NEW_CNN" in multilight)
+        and (route in novel_routes or any(r in novel_routes for r in multilight))
     )
 
 def eligible_online_case(task: dict) -> bool:
