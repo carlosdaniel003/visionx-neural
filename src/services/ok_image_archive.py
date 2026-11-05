@@ -262,7 +262,7 @@ def install_ok_image_archive(control_panel_cls) -> None:
             updater = getattr(self, "update_network_status", None)
             if callable(updater):
                 updater(
-                        "OK não arquivado: a evidência de Copiar imagem do "
+                    "OK não arquivado: a evidência de Copiar imagem do "
                         "evento atual não está disponível. Nenhum recorte "
                         "alternativo foi usado."
                     )

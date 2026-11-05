@@ -504,6 +504,13 @@ def fuse_multilight(
             and _detail(source[mode]).get("hard_missing_evidence") is not True
             and _detail(source[mode]).get("memory_conflict") is not True
             and _detail(source[mode]).get("raw_memory_conflict") is not True
+            and _detail(source[mode]).get("missing_hard_absence") is not True
+            and float(_detail(source[mode]).get("physical_score", 0.0) or 0.0) == 0.0
+            and (
+                not isinstance(_detail(source[mode]).get("physical_missing_veto"), dict)
+                or _detail(source[mode])["physical_missing_veto"].get("status")
+                    not in {"SUSPECT_ABSENCE", "GEOMETRY_REVIEW"}
+            )
             for mode in LIGHTING_ORDER
         )
         and len({
@@ -758,7 +765,7 @@ def fuse_multilight(
             "multilight_dominant_local_engine": evidence[dominant_mode]["dominant_engine"],
             "cutoff": GENERIC_DECISION_CUTOFF,
             "final_score": detail["final_score"],
-            "confidence": dominant_analysis["confidence"],
+            "confidence": _clamp01(confidence),
             "verdict": verdict,
             "physical_score": strongest_physical,
             "physical_defect": bool(is_defect),

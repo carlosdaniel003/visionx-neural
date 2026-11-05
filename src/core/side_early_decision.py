@@ -28,11 +28,10 @@ def _uncorroborated_missing_ng_vs_two_knn_ok(analysis: dict, category: str) -> b
     """Do not finish trial SIDE when both KNN votes contradict CNN NG.
 
     KNN A/B review votes are weak diagnostic signals, NOT proof of OK.
-    In this narrow FALTANDO situation, acquire TOP/MID before finalizing.
+    Em qualquer categoria, capturar TOP/MID antes de confirmar NG incerto.
     Never changes the CNN verdict, label, production policy or XP command.
     """
-    if (canonical_memory_category(category) != "FALTANDO"
-            or analysis.get("is_defect") is not True
+    if (analysis.get("is_defect") is not True
             or analysis.get("hard_missing_evidence") is True):
         return False
     detail = analysis.get("detail")
@@ -63,8 +62,7 @@ def _ng_with_stronger_nearest_ok(analysis: dict, category: str) -> bool:
     This only prevents a premature 1/NG: similarity never authorizes 0/OK.
     It also preserves the immediate NG path for physical missing evidence.
     """
-    if (canonical_memory_category(category) != "FALTANDO"
-            or analysis.get("is_defect") is not True
+    if (analysis.get("is_defect") is not True
             or analysis.get("hard_missing_evidence") is True):
         return False
     detail = analysis.get("detail")
@@ -115,8 +113,7 @@ def _confirmed_human_ok_requires_other_lights(analysis: dict, category: str) -> 
     Only prevents premature rejection. Never authorizes 0/OK or changes
     the current CNN's NG label. Explicit physical missing evidence wins.
     """
-    if (not uses_faltando_v2(category)
-            or analysis.get("is_defect") is not True
+    if (analysis.get("is_defect") is not True
             or analysis.get("hard_missing_evidence") is True):
         return False
     detail = analysis.get("detail")

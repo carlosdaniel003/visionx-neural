@@ -20,3 +20,14 @@ A categoria lida por OCR pode permanecer nos logs históricos, mas
 não determina mais o motor nem a fusão. Os pesos CNN não foram
 modificados. Como a época 5 não passou em teste físico cego,
 a política XP mantém a trava de liberação de OK baseada só na V3.
+
+## Acervo sem categoria
+
+Novos arquivos OK/NG usam nomes neutros `AAAA-MM-DD_HHMM_AOI_SIDE.png`
+(ou TOP/MID), com leitura compatível de PNGs históricos. Capturas UNKNOWN
+ou sem OCR podem ser arquivadas se o frame do evento existir. O importador
+KNN valida PNG, pixels e pasta OK/NG sem rejeitar divergências de OCR.
+
+SIDE NG tem a mesma proteção contra contraprovas humanas OK aproximadas ou
+KNN A/B contraditórias, independentemente da categoria. A fusão V3 OK
+unânime só preserva FALHA FALSA na ausência de evidência física ou conflito.

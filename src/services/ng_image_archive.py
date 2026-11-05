@@ -262,9 +262,9 @@ def install_ng_image_archive(control_panel_cls) -> None:
             updater = getattr(self, "update_network_status", None)
             if callable(updater):
                 updater(
-                        "NG não arquivado: o frame XP do evento atual não está "
-                        "disponível. Nenhum recorte alternativo foi usado."
-                    )
+                    "NG não arquivado: o frame XP do evento atual não está "
+                    "disponível. Nenhum recorte alternativo foi usado."
+                )
 
         result = original_save_label(
             self,
