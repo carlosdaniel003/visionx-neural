@@ -65,6 +65,10 @@ def _begin_local_capture_debug(
             "image": image_summary(full_frame),
             "sample_crop": image_summary(sample),
             "test_crop": image_summary(test),
+            "crop_geometry": dict(
+                getattr(getattr(panel, "monitor", None),
+                        "last_crop_geometry", {}) or {}
+            ),
             "stable_required_frames": 1,
         },
         "cycle": {
