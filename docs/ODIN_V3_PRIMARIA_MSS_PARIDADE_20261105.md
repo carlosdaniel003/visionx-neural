@@ -198,3 +198,62 @@ como uma correção humana.
 **Critério de sucesso:** não confundir correção de texto, memória de
 arquivo, inferência do modelo e autorização de 0/XP. A melhoria
 de precisão real ainda depende de repetição e verificação local.
+
+
+## 05/11/2026 — Diagnóstico resolvido: divergência de geometria MSS
+
+O auditor somente leitura do PNG de arquivo
+`public/ok_archive/2026-10-02_1029_FALTANDO.png` retornou:
+
+- `original_model_vs_folder=AGREES`;
+- `verdict=FALHA FALSA`, CNN V3 `ng_score=0.0022295827511698008`;
+- `reference_shape=(459,521,3)`, `test_shape=(459,522,3)`;
+- checkpoint `fee6e062f98c8e7ddca39f4a16f8ebbfead1365b6510a23739e7cb0045c80fce`.
+
+O debug MSS anterior, com o mesmo checkpoint V3 e decisão NG=1.0,
+mostrou `sample_crop=(600,521,3)` e `test_crop=(459,522,3)`.
+O extrator antigo `ScreenMonitor._extract_photo` às vezes devolvia
+o **strip inteiro**, com altura limitada a 600 px, quando não achava
+borda cinza sustentada. A falta da borda NÃO prova que a foto
+real tenha 600 px. Isso pode acrescentar fundo externo ao gabarito,
+gerando outra entrada à CNN e quebrando identidade dos recortes KNN.
+
+### Correção estrutural (sem regra de classe / arquivo)
+
+- O novo módulo puro `src/services/aoi_paired_photo_geometry.py`
+  centraliza o alinhamento de duas fotos da mesma interface AOI.
+- `ScreenMonitor` registra limites geométricos verificáveis das
+  fotos extraídas em cada barra azul/vermelha.
+- Apenas uma borda inferior **cinza sustentada** é considerada
+  âncora confiável. Um limite calculado pela última linha não-cinza
+  ou pelo fim do strip não serve como prova.
+- Se uma das duas fotos não tiver borda e a sua irmã tiver, o
+  sistema reextrai somente a foto incerta a partir do alinhamento
+  relativo às duas barras da mesma interface (topo e base medidos).
+  Não utiliza nome de arquivo, rótulo OK/NG, limiar CNN, OCR da
+  categoria nem a altura fixa 459 px.
+- Quando nenhuma das duas fotos tem borda confiável, o sistema
+  **não inventa** uma correção; informa `BOTH_UNBOUNDED`.
+- O mesmo método é aplicado na captura MSS e em
+  `process_external_image`, que produz os pares de treino/auditoria.
+  Não há dois algoritmos divergentes.
+- O debug MSS preserva `transport.crop_geometry` com status e
+  dimensões antes/depois do alinhamento. A ferramenta de auditoria
+  V3 também inclui esse bloco.
+
+### Resultado e limite de comprovação
+
+A regressão sintética reproduz o gabarito 600px e teste 459px
+e verifica que o algoritmo devolve recortes de 459px **a partir
+da borda da foto irmã**. Isso demonstra correção de extração,
+não a predição final do screenshot real: a imagem MSS do evento
+ainda não foi submetida ao replay após essa mudança.
+
+Após `git pull origin central`, repetir a mesma imagem no MSS
+com XP desconectado, copiar debug e verificar
+`Alinhamento geométrico AOI: ALIGNED_FROM_SIBLING_BOUNDARY`
+quando houver a borda irmã válida. Comparar hashes/tamanhos com o
+auditor do PNG e confirmar `FALHA FALSA` no resultado real.
+Se o MSS estiver reescalado, o hash ainda pode mudar;
+`ARQUIVO REEXIBIDO` não é `PAR AOI EXATO`.
+Não promover auto-OK apenas com base nesse replay.
