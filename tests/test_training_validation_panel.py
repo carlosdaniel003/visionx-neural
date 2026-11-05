@@ -1,4 +1,4 @@
-"""Contrato visual do painel sem conexão ao XP nem execução real de AOI."""
+"""Regressões da auditoria do acervo: UX clara, responsiva e sem XP."""
 from __future__ import annotations
 
 import os
@@ -7,7 +7,9 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame, QLabel
+from PyQt6.QtWidgets import (
+    QApplication, QFrame, QLabel, QPushButton, QVBoxLayout, QWidget,
+)
 
 from src.ui.training_validation_panel import (
     format_model_line, install_training_validation_panel,
@@ -31,87 +33,75 @@ class TrainingPanelUITests(unittest.TestCase):
 
     def tearDown(self):
         self.window.close()
+        self.window.deleteLater()
 
-    def test_button_always_visible_even_without_operational_buttons(self):
+    def test_audit_is_above_debug_with_clear_label_and_semantics(self):
         ui = install_training_validation_panel(self.window, root=self.root)
         self.assertIs(ui, install_training_validation_panel(self.window, root=self.root))
-        self.assertIn("treinamento", self.window.btn_training.text().lower())
-        self.assertEqual(self.window.content_layout.indexOf(
-            self.window.archive_training_frame
-        ), 0)
-        self.assertEqual(self.window.content_layout.indexOf(
-            self.window.network_debug_frame
-        ), 1)
+        self.assertEqual(self.window.btn_training.text(), "Validar acervo OK/NG")
+        self.assertIn("NÃO treina", self.window.btn_training.toolTip())
+        self.assertIn("diagnóstico", ui.shadow_button.text())
+        self.assertEqual(
+            self.window.content_layout.indexOf(self.window.archive_training_frame), 0,
+        )
+        self.assertEqual(
+            self.window.content_layout.indexOf(self.window.network_debug_frame), 1,
+        )
         self.assertFalse(self.window.btn_cancel_training.isEnabled())
+        self.assertTrue(ui.cancel_button.isHidden())
         self.assertEqual(self.window.training_progress_bar.value(), 0)
-        ok_chip = self.window.archive_training_frame.findChild(
-            QLabel, "archiveTrainingLegendOK"
-        )
-        ng_chip = self.window.archive_training_frame.findChild(
-            QLabel, "archiveTrainingLegendNG"
-        )
-        self.assertIsNotNone(ok_chip)
-        self.assertIsNotNone(ng_chip)
-        self.assertIn("#4ade80", self.window.archive_training_frame.styleSheet())
-        self.assertIn("#ff7777", self.window.archive_training_frame.styleSheet())
+        self.assertEqual(ui.status.property("state"), "idle")
+        self.assertIn("não verificado", ui.status.text())
 
-    def test_correction_button_removed_similarity_test_available(self):
-        from PyQt6.QtWidgets import QPushButton
+    def test_unused_experimental_controls_removed_from_main_panel(self):
         ui = install_training_validation_panel(self.window, root=self.root)
-        buttons = self.window.archive_training_frame.findChildren(QPushButton)
-        labels = [button.text() for button in buttons]
-        self.assertNotIn("Corrigir julgamento", labels)
-        self.assertFalse(hasattr(ui, "correction_button"))
-        self.assertEqual(ui.similarity_button.text(), "Testar KNN por similaridade")
-        self.assertTrue(ui.similarity_button.isEnabled())
-        self.assertFalse(hasattr(ui, "open_correction_mode"))
+        labels = [
+            button.text()
+            for button in self.window.archive_training_frame.findChildren(QPushButton)
+        ]
+        self.assertEqual(len(labels), 3)
+        for unwanted in (
+            "Testar KNN por similaridade",
+            "Replay operacional por evento",
+            "Comparar geometria de bordas",
+            "Corrigir julgamento",
+        ):
+            self.assertFalse(any(unwanted in label for label in labels))
+        for attr in (
+            "geometry_experiment_box", "similarity_button",
+            "event_replay_button", "correction_button",
+        ):
+            self.assertFalse(hasattr(ui, attr))
+        self.assertFalse(hasattr(ui, "start_similarity"))
+        self.assertFalse(hasattr(ui, "start_event_replay"))
+        self.assertIn("CNN V3 permanece", self.window.archive_training_frame.findChildren(
+            QLabel, "archiveTrainingHint"
+        )[0].text())
 
-    def test_similarity_summary_shows_ng_missed_and_capture_groups(self):
+    def test_action_grid_reflows_for_narrow_and_wide_without_duplicating_buttons(self):
         ui = install_training_validation_panel(self.window, root=self.root)
-        ui._run_type = "similarity"
-        ui._handle({"event": "started", "images": 4, "total": 4})
-        ui._handle({
-            "event": "progress", "done": 2, "total": 4,
-            "path": "public/ng_archive/test_SIDE.png",
-        })
-        self.assertEqual(self.window.training_progress_bar.value(), 2)
-        ui._finish_similarity(0, {
-            "complete": True,
-            "canceled": False,
-            "json_path": "reports/x.json",
-            "txt_path": "reports/x.txt",
-            "results": {
-                "by_label": {
-                    "OK": {"total": 2, "correct": 2},
-                    "NG": {"total": 2, "correct": 1},
-                },
-                "NG_as_OK": 1,
-                "target_98pct_met": False,
-            },
-            "focus_detection": {"total": 4, "outer_detected": 4, "inner_detected": 3},
-            "by_capture_cohort": {
-                "side_only": {
-                    "capture_groups": 2,
-                    "results": {"correct": 1, "total": 2},
-                },
-                "three_lights": {
-                    "capture_groups": 1,
-                    "results": {"correct": 2, "total": 3},
-                },
-            },
-            "by_lighting": {
-                "SIDE": {"correct": 2, "total": 3},
-                "TOP": {"correct": 1, "total": 1},
-            },
-        })
-        self.assertIn("NG 1/2", ui.similarity_metric.text())
-        self.assertIn("NG→OK 1", ui.similarity_metric.text())
-        self.assertIn("Somente SIDE", ui.details.text())
-        self.assertIn("caixa menor 3/4", ui.details.text())
-        self.assertIn("SIDE + TOP + MID", ui.details.text())
-        self.assertIn("revisar erros", ui.status.text())
+        self.assertEqual(ui.action_bar._columns, 1)
+        self.assertEqual(ui.action_bar.grid.count(), 3)
+        ui.action_bar._reflow(3)
+        self.assertEqual(ui.action_bar._columns, 3)
+        self.assertEqual(ui.action_bar.grid.count(), 3)
+        for i, button in enumerate((
+            ui.start_button, ui.shadow_button, ui.cancel_button,
+        )):
+            index = ui.action_bar.grid.indexOf(button)
+            row, col, _rs, _cs = ui.action_bar.grid.getItemPosition(index)
+            self.assertEqual((row, col), (0, i))
+        ui.action_bar._reflow(1)
+        for i, button in enumerate((
+            ui.start_button, ui.shadow_button, ui.cancel_button,
+        )):
+            index = ui.action_bar.grid.indexOf(button)
+            row, col, _rs, _cs = ui.action_bar.grid.getItemPosition(index)
+            self.assertEqual((row, col), (i, 0))
+        self.assertIn("archiveTrainingStart:pressed", ui.panel.archive_training_frame.styleSheet())
+        self.assertIn("archiveTrainingKnnCnnShadow:focus", ui.panel.archive_training_frame.styleSheet())
 
-    def test_progress_includes_both_engines_and_can_show_counts(self):
+    def test_history_progress_and_both_labels_remain_visible(self):
         ui = install_training_validation_panel(self.window, root=self.root)
         ui._handle({"event": "started", "images": 212, "total": 414})
         ui._handle({"event": "progress", "done": 1, "total": 414,
@@ -120,130 +110,62 @@ class TrainingPanelUITests(unittest.TestCase):
         ui._handle({"event": "progress", "done": 2, "total": 414,
                     "model": "CNN_FALTANDO_V2", "path": "public/ng_archive/b.png",
                     "expected": "NG", "status": "ERRO_CLASSIFICACAO"})
-        self.assertEqual(self.window.training_progress_bar.maximum(), 414)
-        self.assertEqual(self.window.training_progress_bar.value(), 2)
+        self.assertEqual(ui.progress_bar.maximum(), 414)
+        self.assertEqual(ui.progress_bar.value(), 2)
         self.assertIn("OK 1/1", ui.knn_metric.text())
         self.assertIn("NG 0/1", ui.cnn_metric.text())
         self.assertIn("1 pendências/erros", ui.cnn_metric.text())
-        self.assertIn("#4ade80", ui.knn_metric.text())
-        self.assertIn("#ff7777", ui.cnn_metric.text())
         self.assertIn("b.png", ui.status.text())
-        self.assertIn("color:#ff7777", ui.status.text())
 
-    def test_path_escaping_and_reset_does_not_confuse_ng_color(self):
+    def test_html_safe_progress_and_model_summary(self):
         ui = install_training_validation_panel(self.window, root=self.root)
         ui._handle({"event": "started", "images": 1, "total": 2})
         ui._handle({"event": "progress", "done": 1, "total": 2,
-                    "model": "KNN_MEMORIA",
-                    "path": "public/ng_archive/<bad>.png",
-                    "expected": "NG", "status": "PASSOU"})
-        self.assertIn("NG 1/1", ui.knn_metric.text())
-        self.assertIn("&lt;bad&gt;.png", ui.status.text())
-        self.assertNotIn("<bad>", ui.status.text())
-        ui._by_label = ui._empty_label_counts()
-        ui._errors = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
-        self.assertIn("NG 0/0", ui._live_metric_html("KNN_MEMORIA"))
-
-    def test_visual_similarity_has_no_day_selector(self):
-        ui = install_training_validation_panel(self.window, root=self.root)
-        self.assertFalse(hasattr(ui, "similarity_protocol"))
-        self.assertFalse(ui.geometry_experiment_box.isChecked())
-        self.assertIn("somente acervo", ui.geometry_experiment_box.text())
-        self.assertIn("Testar KNN por similaridade", ui.similarity_button.text())
-        self.assertIn("epicentro menor", ui.similarity_button.toolTip())
-        self.assertIn("sem filtrar por datas", ui.similarity_button.toolTip())
-
-    def test_geometry_ab_is_optional_and_shows_a_and_b(self):
-        ui = install_training_validation_panel(self.window, root=self.root)
-        ui._finish_similarity(0, {
-            "complete": True, "canceled": False,
-            "results": {
-                "correct": 3, "total": 4, "NG_as_OK": 1,
-                "by_label": {"OK": {"total": 2, "correct": 2},
-                             "NG": {"total": 2, "correct": 1}},
-            },
-            "shadow_candidate": {
-                "by_label": {"OK": {"total": 2, "SUGERE_OK": 1},
-                             "NG": {"total": 2, "SUGERE_NG": 1}},
-                "correct_suggestions": 2, "suggestions": 2,
-                "conditional_precision": 1.0, "coverage": .5,
-                "reviews": 2, "target_97pct_met": True,
-                "NG_suggested_OK": 0, "OK_suggested_NG": 0,
-            },
-            "geometry_experiment": {
-                "results": {"correct": 4, "total": 4, "NG_as_OK": 0},
-                "shadow_candidate": {
-                    "correct_suggestions": 3, "suggestions": 3,
-                    "coverage": .75, "NG_suggested_OK": 0,
-                },
-                "consensus_candidate": {
-                    "correct_suggestions": 3, "suggestions": 3,
-                    "coverage": .75, "reviews": 1, "NG_suggested_OK": 0,
-                    "target_97pct_met": True,
-                },
-                "consensus_source_counts": {"A_E_B": 2, "B_COM_VOTO_A": 1,
-                                            "REVISAO": 1},
-            },
-            "by_lighting": {}, "by_capture_cohort": {},
-            "focus_detection": {"total": 4},
-        })
-        self.assertIn("GEOMETRIA A/B", ui.details.text())
-        self.assertIn("B geometria: 4/4", ui.details.text())
-        self.assertIn("cobertura 75.0%", ui.details.text())
-        self.assertIn("C concordância: 3/3", ui.details.text())
-        self.assertIn("B_COM_VOTO_A", ui.details.text())
-        self.assertIn("meta 97% True", ui.details.text())
-        self.assertIn("NÃO ATIVA", ui.details.text())
-
-    def test_shadow_candidate_in_similarity_report_is_visible(self):
-        ui = install_training_validation_panel(self.window, root=self.root)
-        ui._finish_similarity(0, {
-            "complete": True, "canceled": False,
-            "json_path": "reports/result.json",
-            "txt_path": "reports/result.txt",
-            "results": {
-                "by_label": {
-                    "OK": {"total": 3, "correct": 2},
-                    "NG": {"total": 2, "correct": 1},
-                }, "NG_as_OK": 1, "target_98pct_met": False,
-            },
-            "shadow_candidate": {
-                "by_label": {
-                    "OK": {"total": 3, "SUGERE_OK": 1},
-                    "NG": {"total": 2, "SUGERE_NG": 1},
-                },
-                "NG_suggested_OK": 0,
-                "OK_suggested_NG": 0,
-                "reviews": 3,
-                "correct_suggestions": 2,
-                "suggestions": 2,
-                "conditional_precision": 1.0,
-                "coverage": 0.4,
-                "target_97pct_met": True,
-            },
-        })
-        self.assertIn("OK 1/3", ui.shadow_candidate_metric.text())
-        self.assertIn("NG 1/2", ui.shadow_candidate_metric.text())
-        self.assertIn("NG→OK 0", ui.shadow_candidate_metric.text())
-        self.assertIn("Revisão 3", ui.shadow_candidate_metric.text())
-        self.assertIn("Precisão nas sugestões 100.00%", ui.shadow_candidate_metric.text())
-        self.assertIn("Cobertura 40.0%", ui.shadow_candidate_metric.text())
-        self.assertIn("meta diagnóstica de 97%", ui.status.text())
-
-    def test_summary_independently_reports_ok_and_ng(self):
-        text = format_model_line("CNN_FALTANDO_V2", {
+                    "model": "KNN_MEMORIA", "path": "public/ok_archive/<x>.png",
+                    "expected": "OK", "status": "PASSOU"})
+        self.assertIn("&lt;x&gt;.png", ui.status.text())
+        self.assertNotIn("<x>", ui.status.text())
+        formatted = format_model_line("CNN_FALTANDO_V2", {
             "by_label": {
                 "OK": {"passed": 190, "total": 195, "accuracy": .97436},
                 "NG": {"passed": 17, "total": 17, "accuracy": 1.0},
-            },
-            "incorrect": 5, "no_coverage": 0, "invalid": 0,
-            "out_of_scope": 10,
+            }, "incorrect": 5, "no_coverage": 0,
+            "invalid": 0, "out_of_scope": 10,
         })
-        self.assertIn("OK 190/195", text)
-        self.assertIn("NG 17/17", text)
-        self.assertIn("Fora da CNN 10", text)
-        self.assertIn('<span style="color:#4ade80', text)
-        self.assertIn('<span style="color:#ff7777', text)
+        self.assertIn("OK 190/195", formatted)
+        self.assertIn("NG 17/17", formatted)
+        self.assertIn("Fora da CNN 10", formatted)
+
+    def test_completed_audit_does_not_claim_generalization_or_new_training(self):
+        ui = install_training_validation_panel(self.window, root=self.root)
+        ui._last_finished = {
+            "models": {
+                "KNN_MEMORIA": {"target_98pct_per_label": True},
+                "CNN_FALTANDO_V2": {"target_98pct_per_label": True},
+            },
+            "json_path": "reports/check.json",
+            "txt_path": "reports/check.txt",
+        }
+        ui._finished(0, None)
+        self.assertEqual(ui.status.property("state"), "complete")
+        self.assertIn("histórica", ui.status.text())
+        self.assertIn("Não comprova", ui.status.text())
+        self.assertFalse(ui.cancel_button.isEnabled())
+        self.assertTrue(ui.cancel_button.isHidden())
+
+    def test_shadow_result_is_clearly_experimental(self):
+        ui = install_training_validation_panel(self.window, root=self.root)
+        ui._finish_shadow(0, {
+            "results": {
+                "cnn_isolated_baseline": {"ng_as_ok": 3, "ok_as_ng": 1},
+                "guarded_conflict_to_review": {"ng_as_ok": 2, "ok_as_ng": 1, "review": 4},
+            },
+            "cnn_eligible_pngs": 80,
+            "conflicts": {"total": 4},
+        })
+        self.assertEqual(ui.status.property("state"), "attention")
+        self.assertIn("experimental", ui.status.text().lower())
+        self.assertIn("NÃO autoriza produção", ui.details.text())
 
 
 if __name__ == "__main__":
