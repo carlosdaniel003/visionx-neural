@@ -28,7 +28,7 @@ class SideArchivePresenceFeedback(QObject):
         )
         self._thread.start()
 
-    def inspect(self, analysis: dict, image, category: str, event_id: str, *, frames=None) -> bool:
+    def inspect(self, analysis: dict, image, category: str, event_id: str, *, frames=None, candidate_paths=None) -> bool:
         if (not isinstance(analysis, dict)
                 or not isinstance(image, np.ndarray) or image.size == 0
                 or not str(event_id or "").strip()):
@@ -49,7 +49,10 @@ class SideArchivePresenceFeedback(QObject):
                 if not isinstance(frame, np.ndarray) or frame.size == 0:
                     return False
                 images[light] = frame.copy()
-        task = (analysis, images, str(category or ""), str(event_id))
+        task = (
+            analysis, images, str(category or ""), str(event_id),
+            tuple(candidate_paths or ()),
+        )
         try:
             self._requests.put_nowait(task)
         except Full:
@@ -72,7 +75,7 @@ class SideArchivePresenceFeedback(QObject):
         except (ImportError, AttributeError):
             pass
         while True:
-            analysis, frames, category, event_id = self._requests.get()
+            analysis, frames, category, event_id, candidates = self._requests.get()
             try:
                 by_light = {
                     light: self._index.inspect(frame, category, light)
@@ -84,6 +87,16 @@ class SideArchivePresenceFeedback(QObject):
                     light for light, entry in by_light.items()
                     if entry.get("status") == "EXACT_FRAME"
                 ]
+                # A câmera MSS pode fotografar um PNG de arquivo que
+                # foi reescalado em um visualizador. A consulta do hash
+                # continua primária; o alinhamento é diagnóstico distinto.
+                if candidates and not result["exact_frame_lights"]:
+                    from src.services.archive_rendered_source_match import (
+                        match_rendered_archive,
+                    )
+                    result["rendered_archive_match"] = match_rendered_archive(
+                        frames["SIDE"], category, list(candidates),
+                    )
             except Exception as exc:
                 result = {
                     "schema": SCHEMA, "status": "UNAVAILABLE", "label": "",
@@ -128,7 +141,11 @@ class SideArchivePresenceFeedback(QObject):
                     decision = dict(updated.get("decision") or {})
                     decision["archive_visual_presence"] = result
                     updated["decision"] = decision
-                    update_capture_debug_record(panel, updated)
+                    if update_capture_debug_record(panel, updated):
+                        from src.ui.network_xp_debug import (
+                            sync_network_debug_controls,
+                        )
+                        sync_network_debug_controls(panel)
             except (OSError, ValueError, TypeError) as exc:
                 print(f"Falha não fatal ao registrar comparação MSS: {exc}")
         # Atualiza apenas o painel de referências e os avisos vinculados;
@@ -172,11 +189,26 @@ def submit_local_mss_archive_presence(panel, analysis: dict, category: str) -> b
     somente do FRAME, jamais do par gabarito/teste.
     """
     event_id = str(getattr(panel, "local_capture_debug_event_id", "") or "")
-    monitor = getattr(panel, "monitor", None)
-    frame = getattr(monitor, "last_capture_frame", None)
+    # O evento MSS preserva uma cópia imutável do frame ANTES de
+    # desligar o monitor. Não depender do último frame mutável da thread.
+    from src.services.capture_evidence import (
+        capture_debug_record, capture_image_snapshot,
+    )
+    record = capture_debug_record(panel)
+    if record.get("event_id") != event_id or record.get("source") != "local_mss":
+        return False
+    frame = capture_image_snapshot(panel)
     if (not event_id or not isinstance(analysis, dict)
             or not isinstance(frame, np.ndarray) or frame.size == 0):
         return False
+    detail = analysis.get("detail")
+    knn = detail.get("knn_c") if isinstance(detail, dict) else None
+    candidates = []
+    if isinstance(knn, dict):
+        for key in ("neighbors_A", "neighbors_B"):
+            for entry in knn.get(key, ())[:5]:
+                if isinstance(entry, dict) and isinstance(entry.get("path"), str):
+                    candidates.append(entry["path"])
     controller = getattr(panel, "_side_archive_presence_feedback", None)
     if controller is None:
         controller = SideArchivePresenceFeedback(panel)
@@ -184,6 +216,7 @@ def submit_local_mss_archive_presence(panel, analysis: dict, category: str) -> b
     return controller.inspect(
         analysis, frame, category, event_id,
         frames={light: frame for light in ("SIDE", "TOP", "MID")},
+        candidate_paths=list(dict.fromkeys(candidates)),
     )
 
 
