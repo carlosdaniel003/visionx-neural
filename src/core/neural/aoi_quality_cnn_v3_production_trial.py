@@ -22,6 +22,11 @@ from src.core.neural.aoi_v3_trial_contract import (
     TRIAL_POINTER, POINTER_SCHEMA, SNAPSHOT_RELATIVE_PATH,
     SNAPSHOT_SHA256, SOURCE_MANIFEST_SHA256, INITIAL_V3_SHA256, LIGHTS,
 )
+from src.core.neural.aoi_v3_epoch5_contract import (
+    EPOCH as EPOCH5, EPOCH5_VOTE_SCHEMA, SNAPSHOT_PATH as EPOCH5_SNAPSHOT_PATH,
+    SNAPSHOT_SHA256 as EPOCH5_SNAPSHOT_SHA256,
+    epoch5_pointer_enabled, validate_epoch5_snapshot,
+)
 
 
 def validate_trial_snapshot(root: Path) -> tuple[dict, Path]:
@@ -104,7 +109,16 @@ class AOIQualityV3ProductionTrial:
         self._checkpoint_stat = None
 
     def enabled(self) -> bool:
-        return _verified_enabled_pointer(self.root)
+        # A promoção explícita da época 5 prevalece sobre o ponteiro legado
+        # de época 3, mas um ponteiro época 5 inválido NUNCA faz fallback.
+        return epoch5_pointer_enabled(self.root) or _verified_enabled_pointer(self.root)
+
+    def validate_active_snapshot(self) -> tuple[dict, Path]:
+        if epoch5_pointer_enabled(self.root):
+            return validate_epoch5_snapshot(self.root)
+        if _verified_enabled_pointer(self.root):
+            return validate_trial_snapshot(self.root)
+        raise ValueError("Nenhum checkpoint V3 está ativado")
 
     def predict(self, reference: np.ndarray, test: np.ndarray, light: str) -> dict | None:
         # Ausência de ponteiro = comportamento anterior sem alteração.
@@ -124,11 +138,16 @@ class AOIQualityV3ProductionTrial:
                     or min(image.shape[:2]) < 12
                 ):
                     raise ValueError("Par gabarito/teste inválido para CNN V3")
-            path = self.root / SNAPSHOT_RELATIVE_PATH
+            new_epoch5 = epoch5_pointer_enabled(self.root)
+            active_path = EPOCH5_SNAPSHOT_PATH if new_epoch5 else SNAPSHOT_RELATIVE_PATH
+            path = self.root / active_path
             stat = path.stat()
-            current_stat = (stat.st_mtime_ns, stat.st_size)
+            current_stat = (str(active_path), stat.st_mtime_ns, stat.st_size)
             if self._model is None or current_stat != self._checkpoint_stat:
-                checkpoint, _ = validate_trial_snapshot(self.root)
+                checkpoint, _ = (
+                    validate_epoch5_snapshot(self.root)
+                    if new_epoch5 else validate_trial_snapshot(self.root)
+                )
                 from src.core.neural.aoi_quality_cnn_v3 import AOIQualityCNNV3
                 model = AOIQualityCNNV3()
                 model.load_state_dict(
@@ -159,17 +178,22 @@ class AOIQualityV3ProductionTrial:
             if not math.isfinite(score):
                 raise ValueError("CNN V3 retornou score inválido")
             return {
-                "schema": POINTER_SCHEMA,
+                "schema": EPOCH5_VOTE_SCHEMA if new_epoch5 else POINTER_SCHEMA,
                 "status": "READY",
-                "epoch": 3,
+                "epoch": EPOCH5 if new_epoch5 else 3,
                 "light": mode,
-                "checkpoint_sha256": SNAPSHOT_SHA256,
+                "checkpoint_sha256": (
+                    EPOCH5_SNAPSHOT_SHA256 if new_epoch5 else SNAPSHOT_SHA256
+                ),
                 "ng_score_uncalibrated": score,
                 "predicted": "NG" if score >= .5 else "OK",
                 "ng_veto": score >= .5,
                 "automatic_ok_from_v3_authorized": False,
-                "training_replay_13_of_14": True,
-                "blind_test_of_epoch_3": False,
+                "training_replay_13_of_14": not new_epoch5,
+                "training_replay_24_ng_of_24": bool(new_epoch5),
+                "blind_test_of_selected_epoch": False,
+                "operator_override_validation_regression": bool(new_epoch5),
+                "blind_test_of_epoch_3": False if not new_epoch5 else None,
             }
 
 
