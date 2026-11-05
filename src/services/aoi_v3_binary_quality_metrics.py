@@ -94,9 +94,11 @@ def quality_coverage(rows: list[dict]) -> dict:
                 "HUMAN_INDIVIDUAL_PAIR",
                 "HUMAN_CONTACT_SHEET_NG",
                 "HUMAN_V3_IMAGE_SHA256",
+                "HUMAN_V3_NG_ESCAPE_SHA256",
             } for r in rows
         ),
         "human_verified_v3": provenance["HUMAN_V3_IMAGE_SHA256"],
+        "human_verified_v3_ng_escape": provenance["HUMAN_V3_NG_ESCAPE_SHA256"],
         "aoi_category_used_for_coverage": False,
     }
 
