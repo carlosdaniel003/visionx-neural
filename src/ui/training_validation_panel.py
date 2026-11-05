@@ -535,7 +535,7 @@ class ArchiveTrainingPanel(QObject):
             self.progress_bar.setRange(0, total)
             self.progress_bar.setValue(min(total, done))
             model = packet.get("model")
-            if model in self._count:
+            if model in self._by_label:
                 if packet.get("status") != "PASSOU":
                     self._errors[model] += 1
                 target = (self.knn_metric if model == "KNN_MEMORIA"
