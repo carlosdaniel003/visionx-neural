@@ -19,6 +19,11 @@ def memory_feedback_state(analysis: dict | None) -> tuple[str, str, str]:
     """Consulta binária por pares KNN verificados."""
     memory = memory_seen_state(analysis)
     if memory["status"] == "JA_VI":
+        if memory.get("archive_rendered_source_seen"):
+            return (
+                "JÁ VI • ARQUIVO REEXIBIDO",
+                memory_panel_text(analysis)[1], "known",
+            )
         if memory.get("auto_side_exact_seen"):
             return (
                 f"JÁ VI • DECISÃO AUTOMÁTICA {memory['auto_side_label']}",
