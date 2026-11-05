@@ -127,3 +127,74 @@ Para suspender a V3, parar o ODIN e usar o comando de desativação
 documentado em `AOI_V3_PRODUCTION_NG_VETO_TRIAL_20261104.md`.
 Após desativar, esta versão nova **não retorna automaticamente à V2**;
 os casos novos ficam bloqueados em revisão por falta de checkpoint.
+
+
+## 05/11/2026 — Correção de proveniência MSS e rótulos V3
+
+O evento MSS `8dba014902844f52be97ad1c69105d84` demonstrou
+**CNN V3 primária ativa** e score NG bruto de 1,0 sobre uma imagem
+reexibida pelo operador a partir do `ok_archive`. O KNN C apontou
+`2026-10-02_1029_FALTANDO.png` como vizinho B de 0,7449; esse
+valor NÃO demonstra igualdade dos pixels nem generalização da V3.
+
+Foram corrigidos problemas sistêmicos, sem cadastrar nomes de PNG como
+exceções e sem alterar limiar ou pesos:
+
+- A captura MSS agora consulta a memória com o **frame imutável
+  associado ao event_id**, antes de serializar o relatório. O JSON
+  passa a informar `PENDING`, `UNAVAILABLE` ou o resultado obtido,
+  sem permanecer silenciosamente vazio. A conclusão posterior do
+  worker atualiza o relatório do mesmo evento.
+- O mesmo acervo usado pelo XP continua comparando SHA de todos os
+  pixels do frame. Quando um PNG do acervo está **redimensionado e
+  reexibido** em uma janela, `archive_rendered_source_match` pode
+  registrar sua origem por correspondências ORB, alinhamento afim
+  robusto e fidelidade de pixels em tiles, usando candidatos KNN
+  efetivamente recuperados, não lista fixa de arquivos. Alteração
+  focal, origem fora das pastas, categoria incorreta e conflito de
+  rótulos impedem afirmação de correspondência.
+- Fonte visual reexibida recebe `JÁ VI • ARQUIVO REEXIBIDO`, com
+  caminho e rótulo da pasta; NÃO recebe falsamente
+  `EXACT_PAIR` de KNN nem `EXACT_FRAME` de pixels originais.
+- Painéis de especialistas, influência, KNN e rede neural recebem o
+  motor efetivamente utilizado. A seção legada `cnn_v2` deixa de
+  ser serializada nos eventos classificados apenas pela V3.
+  Sondas Grad-CAM V2 não são exibidas como explicação da V3.
+
+A identificação visual continua **diagnóstica**: não altera
+automática e silenciosamente um NG da V3 para OK porque o rótulo
+da pasta não equivale a inspeção física independente. Assim, o
+modelo ainda pode errar em um arquivo conhecido: reparar o
+classificador exige novo conjunto validado e treino dos pesos.
+
+### Identificar exatamente onde ocorre a divergência
+
+No computador onde estão o checkpoint e o PNG histórico:
+
+```powershell
+python -X utf8 -m src.scripts.audit_v3_archive_image --root . --archive "public/ok_archive/2026-10-02_1029_FALTANDO.png"
+```
+
+O auditor **somente lê** o PNG original e o checkpoint V3 já ativo,
+executando o extrator AOI e a CNN da estação. Reporta `original`,
+`original_model_vs_folder`, os dois hashes dos recortes e
+`v3_ng_score_uncalibrated`. Não treina, troca pesos nem
+rotula de novo a imagem.
+
+Opcional: exportar a imagem MSS copiada do ODIN para PNG e adicionar
+`--mss caminho/captura.png` para comparar extração, geometria
+e predição nas duas imagens. O auditor não trata o nome do arquivo
+como uma correção humana.
+
+- Se o original também retorna NG, o problema é **do modelo V3
+  nessa amostra**, não apenas do MSS. Treinar outro candidato e
+  demonstrar NG→OK/OK→NG em validação independente ainda será
+  necessário; esta alteração não declara o falso NG resolvido.
+- Se o original retorna OK, mas a captura MSS retorna NG, a
+  reexibição/extração introduziu mudança visual relevante.
+  Corrigir a normalização de entrada requer as duas imagens e
+  conferência da geometria capturada.
+
+**Critério de sucesso:** não confundir correção de texto, memória de
+arquivo, inferência do modelo e autorização de 0/XP. A melhoria
+de precisão real ainda depende de repetição e verificação local.
