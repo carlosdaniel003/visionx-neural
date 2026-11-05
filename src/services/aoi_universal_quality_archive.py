@@ -263,8 +263,8 @@ def universal_archive_events(
             continue
         seen[signature] = {"label": label, "index": len(recorded)}
         physical = (
-            ng_escape["physical_observation"] if ng_escape
-            else v3_review["physical_observation"] if v3_review
+            v3_review["physical_observation"] if v3_review
+            else ng_escape["physical_observation"] if ng_escape
             else operator.get("physical_type") if operator
             else review["visual_category"] if review else None
         )
