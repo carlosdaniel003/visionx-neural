@@ -9,6 +9,9 @@ import math
 from src.core.neural.aoi_v3_trial_contract import (
     LIGHTS, POINTER_SCHEMA, SNAPSHOT_SHA256,
 )
+from src.core.neural.aoi_v3_epoch5_contract import (
+    EPOCH as EPOCH5, EPOCH5_VOTE_SCHEMA, SNAPSHOT_SHA256 as EPOCH5_SHA256,
+)
 
 
 def _valid_vote(vote: dict, light: str) -> bool:
@@ -16,11 +19,13 @@ def _valid_vote(vote: dict, light: str) -> bool:
         return False
     score = vote.get("ng_score_uncalibrated")
     return (
-        vote.get("schema") == POINTER_SCHEMA
+        (vote.get("schema"), vote.get("epoch"), vote.get("checkpoint_sha256"))
+        in {
+            (POINTER_SCHEMA, 3, SNAPSHOT_SHA256),
+            (EPOCH5_VOTE_SCHEMA, EPOCH5, EPOCH5_SHA256),
+        }
         and vote.get("status") == "READY"
-        and vote.get("epoch") == 3
         and vote.get("light") == light
-        and vote.get("checkpoint_sha256") == SNAPSHOT_SHA256
         and vote.get("automatic_ok_from_v3_authorized") is False
         and isinstance(score, (int, float)) and not isinstance(score, bool)
         and math.isfinite(score) and 0. <= score <= 1.
@@ -54,10 +59,26 @@ def attach_v3_multilight_evidence(fused: dict, source: dict) -> dict:
             "automatic_ok_from_v3_authorized": False,
         }
         return fused
+    identities = {
+        (votes[light]["epoch"], votes[light]["checkpoint_sha256"])
+        for light in LIGHTS
+    }
+    if len(identities) != 1:
+        detail["aoi_v3_multilight"] = {
+            "status": "ERROR",
+            "reason": "MIXED_V3_EPOCHS",
+            "automatic_ok_from_v3_authorized": False,
+        }
+        return fused
+    epoch, digest = next(iter(identities))
     detail["aoi_v3_multilight"] = {
         "status": "READY",
-        "checkpoint_sha256": SNAPSHOT_SHA256,
-        "mode": "ng_veto_only",
+        "checkpoint_sha256": digest,
+        "epoch": epoch,
+        "mode": (
+            "v3_primary_epoch5_operator_override"
+            if epoch == EPOCH5 else "ng_veto_only"
+        ),
         "lights": {
             light: {
                 "predicted": votes[light]["predicted"],
@@ -66,7 +87,7 @@ def attach_v3_multilight_evidence(fused: dict, source: dict) -> dict:
         },
         "ng_veto": any(votes[light]["ng_veto"] for light in LIGHTS),
         "automatic_ok_from_v3_authorized": False,
-        "blind_test_of_epoch_3": False,
+        "blind_test_of_selected_epoch": False,
     }
     return fused
 
@@ -83,8 +104,11 @@ def active_v3_veto(analysis: dict) -> tuple[str, bool]:
         if (
             not isinstance(overall, dict)
             or overall.get("status") != "READY"
-            or overall.get("checkpoint_sha256") != SNAPSHOT_SHA256
-            or overall.get("mode") != "ng_veto_only"
+            or (overall.get("epoch", 3), overall.get("checkpoint_sha256"), overall.get("mode"))
+               not in {
+                   (3, SNAPSHOT_SHA256, "ng_veto_only"),
+                   (EPOCH5, EPOCH5_SHA256, "v3_primary_epoch5_operator_override"),
+               }
             or overall.get("automatic_ok_from_v3_authorized") is not False
             or not isinstance(overall.get("lights"), dict)
             or set(overall["lights"]) != set(LIGHTS)
