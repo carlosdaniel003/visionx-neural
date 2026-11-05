@@ -40,12 +40,12 @@ def _valid(image) -> bool:
 
 def _canonical_category(value) -> str:
     category = canonical_memory_category(value)
-    return "" if category in {"", "UNKNOWN", "UNKNOW", "DESCONHECIDO"} else category
+    return category or "AOI_UNCLASSIFIED"
 
 
 def _identity(category, reference, test) -> tuple[str, str, str] | None:
     cat = _canonical_category(category)
-    if not cat or not _valid(reference) or not _valid(test):
+    if not _valid(reference) or not _valid(test):
         return None
     return cat, image_fingerprint(reference), image_fingerprint(test)
 
@@ -79,7 +79,6 @@ def _side_raw_ok(analysis: dict | None) -> bool:
         and analysis.get("verdict") == "FALHA FALSA"
         and analysis.get("production_review_required") is not True
         and detail.get("capture_error") is not True
-        and detail.get("category_unknown") is not True
         and detail.get("missing_hard_absence") is not True
         and trace.get("hard_missing_evidence") is not True
         and veto.get("status") not in {
@@ -100,7 +99,6 @@ def _safety_evidence_ok(analysis: dict | None, label: str, reference, test) -> s
     veto = veto if isinstance(veto, dict) else {}
     if (
         detail.get("capture_error") is True
-        or detail.get("category_unknown") is True
         or detail.get("missing_hard_absence") is True
         or trace.get("hard_missing_evidence") is True
         or veto.get("status") in {
@@ -234,9 +232,9 @@ class ProductionAutoSideMemory:
                           original_side_defect, source_frame_sha256,
                           analyzed_lights, recorded_at_ns
                    FROM decisions
-                   WHERE category=? AND reference_sha256=? AND test_sha256=?
+                   WHERE reference_sha256=? AND test_sha256=?
                    ORDER BY id DESC""",
-                identity,
+                identity[1:],
             ).fetchall()
         if not rows:
             return None
@@ -261,16 +259,16 @@ def _human_or_archive_contradiction(
     records = (
         human_store if human_store is not None else PersistentArchiveKNN()
     ).records()
-    category, ref_hash, test_hash = identity
+    _category, ref_hash, test_hash = identity
     for record in records:
         key = record.get("identity", [])
         same_pair = (
-            len(key) == 4 and key == [category, "SIDE", ref_hash, test_hash]
+            len(key) == 4 and key[1:] == ["SIDE", ref_hash, test_hash]
         )
         for source in record.get("sources", []):
             if source.get("source_kind") == "OPERATOR_CONFIRMED" and (
                 same_pair
-                or (frame_hash and key[:2] == [category, "SIDE"]
+                or (frame_hash and len(key) == 4 and key[1] == "SIDE"
                     and source.get("source_frame_sha256") == frame_hash)
             ):
                 return True
@@ -388,7 +386,6 @@ def auto_side_display_provenance(analysis: dict | None) -> dict | None:
                 for field in ("reference_sha256", "test_sha256")
             )
             or _canonical_category(proof.get("category")) != proof.get("category")
-            or _canonical_category(detail.get("multilight_category")) != proof["category"]
             or analysis.get("lighting_mode") != "SIDE"
             or analysis.get("multilight_final") is not True
             or detail.get("multilight_final") is not True
@@ -400,8 +397,7 @@ def auto_side_display_provenance(analysis: dict | None) -> dict | None:
             )
             or analysis.get("production_review_required") is True
             or detail.get("capture_error") is True
-            or detail.get("category_unknown") is True
-            or detail.get("missing_hard_absence") is True
+                or detail.get("missing_hard_absence") is True
         ):
             return None
         if label == "OK" and (
@@ -452,10 +448,8 @@ def verify_auto_side_recall(
             or analysis.get("eligible_for_final_decision") is not True
             or d.get("multilight_final") is not True
             or d.get("eligible_for_final_decision") is not True
-            or _canonical_category(d.get("multilight_category")) != proof.get("category")
             or analysis.get("is_defect") is not (proof["label"] == "NG")
             or d.get("capture_error") is True
-            or d.get("category_unknown") is True
             or d.get("missing_hard_absence") is True
         ):
             return None

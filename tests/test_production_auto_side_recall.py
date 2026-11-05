@@ -163,15 +163,45 @@ class ProductionAutoSideRecallTests(unittest.TestCase):
         ):
             self.assertIsNone(self._build("OK"))
 
-    def test_changed_one_pixel_or_category_never_shortcuts(self):
+    def test_changed_one_pixel_blocks_but_category_does_not(self):
         self.assertTrue(self.store.record(self._task("NG")))
         sample = self._sample()
         sample["test_image"][0, 0, 0] += 1
         self.assertIsNone(self._build("NG", sample=sample))
-        self.assertIsNone(build_auto_side_recall(
-            self._side(), self._sample(), "DESLOCADO",
+        changed_category = build_auto_side_recall(
+            self._side(), self._sample(), "UNKNOWN",
             store=self.store, human_store=self.human,
-        ))
+        )
+        self.assertIsNotNone(changed_category)
+        self.assertEqual(changed_category["verdict"], "DEFEITO REAL")
+        self.assertEqual(
+            verify_auto_side_recall(
+                changed_category, store=self.store, human_store=self.human,
+            ), "NG",
+        )
+
+    def test_human_correction_from_other_category_blocks_auto_recall(self):
+        self.assertTrue(self.store.record(self._task("NG")))
+        self.human.rows = [{
+            "identity": [
+                "MUITOADESIVO", "SIDE",
+                image_fingerprint(self.reference),
+                image_fingerprint(self.test),
+            ],
+            "label": "OK",
+            "sources": [{"source_kind": "OPERATOR_CONFIRMED"}],
+        }]
+        self.assertIsNone(self._build("NG"))
+
+    def test_auto_labels_from_different_categories_conflict(self):
+        self.assertTrue(self.store.record(self._task("NG", event_id="cat-a")))
+        task = self._task("OK", event_id="cat-b")
+        task["aoi_info"]["category"] = "INVERTIDO"
+        self.assertTrue(self.store.record(task))
+        self.assertEqual(self.store.find((
+            "UNKNOWN", image_fingerprint(self.reference),
+            image_fingerprint(self.test),
+        ))["status"], "CONFLICT")
 
     def test_latest_human_same_pair_supersedes_auto_of_either_label(self):
         self.assertTrue(self.store.record(self._task("NG")))
