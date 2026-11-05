@@ -63,7 +63,7 @@ def _render_panel(panel, analysis: dict | None) -> None:
                 for light in ("SIDE", "TOP", "MID")
             )
         panel.lbl_decision_summary.setText(
-            f"CNN FALTANDO v2 • {neural['verdict']} • {main_score}"
+            f"{neural['cnn_model_name']} • {neural['verdict']} • {main_score}"
         )
         panel.lbl_decision_rule.setText(
             "Consenso CNN SIDE/TOP/MID • " +
