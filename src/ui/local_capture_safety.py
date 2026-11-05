@@ -432,6 +432,16 @@ def install_local_capture_safety(control_panel_cls) -> None:
             result = original_process_aoi_images(self, *args, **kwargs)
             if was_local:
                 _finalize_local_capture_debug(self, aoi_info)
+                # A consulta visual da tela inteira, já utilizada pelo XP,
+                # ocorre em worker: não retarda a classificação nem cria
+                # autorização 0/1 por simples rótulo do acervo.
+                from src.ui.archive_visual_presence_feedback import (
+                    submit_local_mss_archive_presence,
+                )
+                submit_local_mss_archive_presence(
+                    self, getattr(self, "current_analysis", None),
+                    str((aoi_info or {}).get("category", "")),
+                )
             return result
         except Exception as exc:
             self.local_capture_last_error = str(exc)
