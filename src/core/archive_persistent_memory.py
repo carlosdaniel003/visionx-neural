@@ -100,10 +100,10 @@ def _clean(value) -> str:
 
 
 def identity(category: str, lighting: str, ref_hash: str, test_hash: str) -> list[str]:
-    cat = canonical_memory_category(category)
+    # Categoria histórica é apenas proveniência; uma captura UNKNOWN também
+    # pode registrar rótulo humano, contanto que hashes/luz sejam válidos.
+    cat = canonical_memory_category(category) or "AOI_UNCLASSIFIED"
     mode = canonical_memory_lighting(lighting)
-    if not cat or cat in {"UNKNOWN", "UNKNOW", "DESCONHECIDO"}:
-        raise ValueError("Categoria desconhecida na memória")
     if mode not in {"SIDE", "TOP", "MID"}:
         raise ValueError("Iluminação inválida")
     if not _is_hex_hash(ref_hash) or not _is_hex_hash(test_hash):
@@ -480,7 +480,7 @@ class PersistentArchiveKNN:
 
         matches = [
             record for record in self.records()
-            if record["identity"] == target
+            if record["identity"][1:] == target[1:]
         ]
         confirmed = [
             (source["confirmed_at_ns"], record, source)
@@ -513,7 +513,7 @@ class PersistentArchiveKNN:
             "confirmed_at_ns": latest_ns,
             "source_event_id": winner[2].get("event_id", ""),
             "superseded_labels": old_labels,
-            "reason": "Último julgamento humano para mesmo par RGB/categoria/luz",
+            "reason": "Último julgamento humano para mesmo par RGB e iluminação",
         }
 
     def latest_confirmed_human_for_frame(
@@ -534,7 +534,7 @@ class PersistentArchiveKNN:
         found = [
             (source["confirmed_at_ns"], record, source)
             for record in self.records()
-            if record["identity"][:2] == cat[:2]
+            if record["identity"][1] == cat[1]
             for source in record["sources"]
             if source.get("source_kind") == "OPERATOR_CONFIRMED"
             and source.get("source_label") == record["label"]
@@ -558,10 +558,14 @@ class PersistentArchiveKNN:
             "reason": "Mesma tela RGB completa e confirmação humana recente",
         }
 
-    def lookup_identity(self, key: list[str]) -> dict:
-        """Lookup exato em snapshot persistido, para teste após sincronização."""
+    def lookup_identity(self, key: list[str], *, ignore_category: bool = False) -> dict:
+        """Lookup exato; categoria opcional só na consulta, nunca sem hashes."""
         key = identity(*key)
-        matches = [r for r in self.records() if r["identity"] == key]
+        matches = [
+            row for row in self.records()
+            if (row["identity"][1:] == key[1:] if ignore_category
+                else row["identity"] == key)
+        ]
         if not matches:
             return {"status": "NEW", "reason": "Par não consta da memória durável"}
         human_times = [
@@ -628,8 +632,7 @@ class PersistentArchiveKNN:
             return {"status": "NEW", "reason": str(exc)}
         matches = [
             record for record in self.records()
-            if record["identity"][0] == key[0]
-            and record["identity"][2:] == key[2:]
+            if record["identity"][2:] == key[2:]
         ]
         if not matches:
             return {"status": "NEW", "reason": "Nenhum par RGB exato nas três iluminações"}
@@ -669,7 +672,7 @@ class PersistentArchiveKNN:
         except ValueError as exc:
             return {"status": "NEW", "reason": str(exc)}
         # Falha de integridade dispara exceção; não converter em memória vazia.
-        return self.lookup_identity(key)
+        return self.lookup_identity(key, ignore_category=True)
 
 
 def _labels_by_key(rows):
