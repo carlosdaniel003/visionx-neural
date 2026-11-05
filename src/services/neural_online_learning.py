@@ -60,7 +60,25 @@ def _is_novel_specialist(analysis: dict, category: str) -> bool:
     )
 
 def eligible_online_case(task: dict) -> bool:
-    """Defesa contra pseudo-rótulos e treinamento da mesma imagem repetida."""
+    """Rótulos humanos ainda alimentam a KNN; V3 não treina pesos V2.
+
+    O treinamento incremental V3 não foi implementado/homologado; na
+    estação com o ponteiro V3 instalado não enfileirar jobs V2 legados.
+    """
+    from src.core.neural.aoi_v3_trial_contract import TRIAL_POINTER
+
+    analysis = task.get("analysis")
+    details = analysis.get("detail") if isinstance(analysis, dict) else {}
+    details = details if isinstance(details, dict) else {}
+    v3_pointer = Path(BASE_DIR) / TRIAL_POINTER
+    if (
+        details.get("cnn_v3_primary") is True
+        or "aoi_v3_multilight" in details
+        or "cnn_v3_light_diagnostics" in details
+        or v3_pointer.exists() or v3_pointer.is_symlink()
+    ):
+        return False
+
     category = canonical_memory_category(
         (task.get("aoi_info") or {}).get("category", "")
     )
