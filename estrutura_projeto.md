@@ -1,3 +1,23 @@
+## 05/11/2026 — Seleção operacional da CNN V3 época 5 (reversível)
+
+- `src/core/neural/aoi_v3_epoch5_contract.py`: identidade fixa do
+  relatório `training_report.json` e pesos da época 5 (ambos SHA), 24/24
+  no treino, 2 OK→NG na validação e nenhuma aprovação automática.
+- `src/scripts/activate_aoi_quality_v3_epoch5.py`: preflight local,
+  ativação/rollback pelo ponteiro isolado
+  `reports/aoi_quality_cnn_v3/production_v3_epoch5.json`.
+- `src/core/neural/aoi_quality_cnn_v3_production_trial.py`: um único
+  carregador V3 compartilhado em Teste, Sombra e Produção, priorizando
+  época 5 quando explicitamente ativada.
+- `src/core/neural/aoi_quality_cnn_v3_trial_consensus.py`: seleção
+  validada de epoch e hash; bloqueio de votos mistos SIDE/TOP/MID.
+- `src/core/neural/aoi_quality_cnn_v3_primary.py` e
+  `src/ui/production_confidence_gate.py`: época real no diagnóstico,
+  proteção contra OK V3 isolado e envio XP baseado em contrato.
+- `tests/test_aoi_v3_epoch5_activation.py`: hashes, preflight,
+  três iluminações, rollback, veto e falsificação de voto.
+- `docs/ODIN_AOI_V3_EPOCA5_IMPLANTACAO_20261105.md`: execução e limites.
+
 ## 05/11/2026 — 25 NG físicos da auditoria V3: fine-tuning experimental
 
 - `docs/aoi_v3_operator_ng_escape_review_20261105.json`: 25 revisões
