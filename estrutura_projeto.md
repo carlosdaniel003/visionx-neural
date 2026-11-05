@@ -1,3 +1,19 @@
+## 05/11/2026 — Auditoria repetida do acervo com época 5 e índice XP
+
+- `src/services/aoi_v3_archive_batch.py`: exigência da época 5 e
+  conferência do SHA em **cada inferência**, além de replay SHA exato.
+- `src/services/archive_visual_presence.py`: modo `exact_only=True`
+  para consulta SHA da mesma estrutura do XP sem varrer todos os
+  semelhantes no replay integral; interface XP mantém a busca normal.
+- `src/scripts/audit_v3_full_archive.py`: flags
+  `--require-epoch5 --verify-runtime-archive` e relatórios
+  JSON/CSV/TXT com identidade da época e conflitos.
+- `tests/test_aoi_v3_full_archive_batch.py`: testes de ativação
+  ausente, checkpoint errado, recuperação exata e conflitos OK/NG.
+- `docs/ODIN_V3_EPOCA5_REPLAY_INTEGRAL_ACERVO_20261105.md`:
+  execução e limites. Nenhum rótulo de pasta é promovido à verdade
+  física ou autorizado a comandar XP por este teste.
+
 ## 05/11/2026 — Seleção operacional da CNN V3 época 5 (reversível)
 
 - `src/core/neural/aoi_v3_epoch5_contract.py`: identidade fixa do
