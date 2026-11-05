@@ -108,6 +108,23 @@ class ScreenMonitor(QThread):
         # Apenas telemetria do recorte externo atual; nunca armazena pixels,
         # nomes de arquivos nem campos OCR.
         self._external_crop_io_profile = None
+        self._photo_capture_geometry = {}
+        self.last_crop_geometry = {}
+
+    def _co_register_photo_pair(self, frame, sample, test):
+        from src.services.aoi_paired_photo_geometry import (
+            reconcile_paired_photos,
+        )
+        photos, diagnostic = reconcile_paired_photos(
+            frame,
+            {"SAMPLE": sample, "TEST": test},
+            {
+                "SAMPLE": self._photo_capture_geometry.get("SAMPLE", {}),
+                "TEST": self._photo_capture_geometry.get("TEST", {}),
+            },
+        )
+        self.last_crop_geometry = diagnostic
+        return photos["SAMPLE"], photos["TEST"]
 
     def _write_debug_crop(self, path, image) -> None:
         if self._replay_no_debug or self._shadow_fast:
@@ -288,6 +305,14 @@ class ScreenMonitor(QThread):
         y1 = by + bh
         y2 = min(frame_h, y1 + max_height)
 
+        self._photo_capture_geometry[
+            "SAMPLE" if str(label).startswith("AZUL") else "TEST"
+        ] = {
+            "bar_bottom": int(y1),
+            "x1": int(x1),
+            "x2": int(x2),
+            "boundary_source": "UNBOUNDED",
+        }
         if y2 - y1 < 20 or x2 - x1 < 20:
             return np.array([])
 
@@ -342,6 +367,16 @@ class ScreenMonitor(QThread):
                               gm_rows)
                 return strip
 
+        else:
+            # Apenas uma fronteira extraída, não um fallback ao strip,
+            # pode servir de âncora para o outro painel da mesma AOI.
+            self._photo_capture_geometry[
+                "SAMPLE" if str(label).startswith("AZUL") else "TEST"
+            ].update(
+                boundary_source="DETECTED",
+                relative_top=int(top),
+                relative_bottom=int(bottom),
+            )
         top = max(0, top)
         bottom = min(strip_h, bottom)
         print(f"   [{label}] Resultado: top={top} bottom={bottom} "
@@ -581,6 +616,7 @@ class ScreenMonitor(QThread):
 
         # Perfilar CPU/crop e I/O de imagens de debug separadamente.
         # Não muda geração, nome nem sincronização dos PNGs existentes.
+        self._photo_capture_geometry = {}
         bars_finished_at = time.perf_counter()
         io_profile = {"debug_png_write_count": 0, "debug_png_write_ms": 0.0}
         self._external_crop_io_profile = io_profile
@@ -598,6 +634,11 @@ class ScreenMonitor(QThread):
         finally:
             self._external_crop_io_profile = None
 
+        # Uma borda inferior ausente em apenas um painel não autoriza
+        # passar o strip inteiro de até 600px para a CNN.
+        crop_sample, crop_ng = self._co_register_photo_pair(
+            frame_bgr, crop_sample, crop_ng,
+        )
         # Extrai info e Emite
         if crop_sample.size > 0 and crop_ng.size > 0:
             layout_finished_at = time.perf_counter()
@@ -627,6 +668,7 @@ class ScreenMonitor(QThread):
                 "extraction_ms": round(
                     (ocr_finished_at - extraction_started_at) * 1000, 2
                 ),
+                "crop_geometry": dict(self.last_crop_geometry),
             }
             self.layout_detected.emit(crop_sample, crop_ng, aoi_info)
             self.log_updated.emit(
@@ -688,6 +730,7 @@ class ScreenMonitor(QThread):
                                  red_bar[1] + red_bar[3])
                 max_photo_height = min(600, frame_h - bar_bottom - 50)
 
+                self._photo_capture_geometry = {}
                 print(f"🔍 Barras: Azul({blue_bar[0]},{blue_bar[1]} "
                       f"w={blue_bar[2]} h={blue_bar[3]}) | "
                       f"Verm({red_bar[0]},{red_bar[1]} "
@@ -697,6 +740,9 @@ class ScreenMonitor(QThread):
                     frame_bgr, blue_bar, max_photo_height, "AZUL")
                 crop_ng = self._extract_photo(
                     frame_bgr, red_bar, max_photo_height, "VERM")
+                crop_sample, crop_ng = self._co_register_photo_pair(
+                    frame_bgr, crop_sample, crop_ng,
+                )
 
                 if crop_sample.size > 0 and crop_ng.size > 0:
                     aoi_info = self._extract_text_info(
