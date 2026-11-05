@@ -13,6 +13,10 @@ on:
       - "src/ui/production_confidence_gate.py"
       - "src/ui/operational_controls.py"
       - "src/ui/operational_controls_model.py"
+      - "src/ui/operational_status_model.py"
+      - "src/ui/control_panel.py"
+      - "tests/test_operational_status_model.py"
+      - "tests/test_operational_controls_model.py"
       - "src/ui/test_mode_dataset_controls.py"
       - "src/ui/control_panel_ui.py"
       - "src/services/ng_image_archive.py"
@@ -66,6 +70,7 @@ jobs:
             src/ui/production_confidence_gate.py `
             src/ui/operational_controls.py `
             src/ui/operational_controls_model.py `
+            src/ui/operational_status_model.py `
             src/ui/test_mode_dataset_controls.py `
             src/ui/control_panel_ui.py `
             src/services/ng_image_archive.py `
@@ -82,6 +87,8 @@ jobs:
       - name: Run button and cycle tests
         run: |
           python -m unittest `
+            tests.test_operational_status_model `
+            tests.test_operational_controls_model `
             tests.test_operational_button_sequences `
             tests.test_local_capture_network_takeover `
             tests.test_qt_button_signal_adapter `
