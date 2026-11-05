@@ -25,6 +25,9 @@ def _summary_text(report: dict) -> str:
     lines = [
         "ODIN • CNN V3 / ACERVO COMPLETO • SOMENTE LEITURA",
         "=" * 75,
+        f"Época(s) V3 utilizadas: {report['classifier']['v3_checkpoint_epoch']}",
+        f"Checkpoint(s) SHA: {report['classifier']['v3_checkpoint_sha256']}",
+        f"Época 5 exigida: {report.get('required_epoch5', False)}",
         "Este relatório compara a rede com RÓTULOS DE PASTA PROVISÓRIOS.",
         "Não é avaliação cega nem prova de qualidade física de cada arquivo.",
         "",
@@ -49,9 +52,25 @@ def _summary_text(report: dict) -> str:
         "A própria imagem não conta como exemplo novo no leave-one-out.",
         "A assinatura visual NÃO valida um rótulo nem autoriza um comando 0/1.",
         "",
+    ]
+    exact_replay = report.get("runtime_archive_exact_replay")
+    if isinstance(exact_replay, dict):
+        lines.extend([
+            "REPLAY DOS PNGs ORIGINAIS NO ÍNDICE EXATO DO XP",
+            "-" * 75,
+            f"PNG consultados: {exact_replay['scanned']}",
+            f"Mesmo arquivo encontrado: {exact_replay['own_file_retrieved']}",
+            f"Exatos com rótulo único: {exact_replay['exact_unambiguous']}",
+            f"Conflitos OK/NG: {exact_replay['cross_label_conflicts']}",
+            f"Sem prova exata inequívoca: {exact_replay['not_exact_or_ambiguous']}",
+            "Esse replay inclui a PRÓPRIA fonte: não testa generalização.",
+            "Similaridade com outra fonte é medida no leave-one-out anterior.",
+            "",
+        ])
+    lines.extend([
         "POR CATEGORIA AOI / ILUMINAÇÃO",
         "-" * 75,
-    ]
+    ])
     for key, data in report["by_category_light"].items():
         lines.append(
             f"{key}: {data['evaluated']} avaliados | "
@@ -65,6 +84,7 @@ def _summary_text(report: dict) -> str:
                 f"{row['path']} | pasta={row['archive_label']} "
                 f"| V3={row['predicted']} | NG={row['v3_ng_score_uncalibrated']} "
                 f"| estado={row['status']} "
+                f"| epoch={row.get('v3_checkpoint_epoch', '-')}"
                 f"| geometria={row.get('extraction_geometry', {}).get('status', '-')}"
                 f"| erro={'; '.join(row['issues'])}"
             )
@@ -73,6 +93,21 @@ def _summary_text(report: dict) -> str:
         for r in report["cases"]
     ):
         lines.append("Nenhuma divergência contra os rótulos de pasta.")
+    if isinstance(exact_replay, dict):
+        lines.extend(["", "PROBLEMAS NO REPLAY EXATO DO ÍNDICE XP", "-" * 75])
+        missing = [
+            row for row in report["cases"]
+            if isinstance(row.get("runtime_archive_recall"), dict)
+            and not row["runtime_archive_recall"]["exact_label_unambiguous"]
+        ]
+        for row in missing:
+            lines.append(
+                f"{row['path']} | pasta={row['archive_label']} | "
+                f"índice={row['runtime_archive_recall']['status']} | "
+                f"rótulos={row['runtime_archive_recall']['index_exact_frame_labels']}"
+            )
+        if not missing:
+            lines.append("Todos os PNGs consultados tiveram correspondência exata inequívoca.")
     return "\n".join(lines) + "\n"
 
 
@@ -92,7 +127,8 @@ def _write_reports(report: dict, output_base: Path) -> Path:
         "predicted", "v3_ng_score_uncalibrated", "agrees_with_folder",
         "extraction_category", "reference_shape", "test_shape",
         "extraction_geometry", "source_file_sha256", "pixel_sha256",
-        "v3_checkpoint_sha256", "leave_one_out", "full_frame_exact",
+        "v3_checkpoint_epoch", "v3_checkpoint_sha256", "leave_one_out",
+        "full_frame_exact", "runtime_archive_recall",
         "issues",
     ]
     with (run / "full_archive_v3.csv").open("w", newline="", encoding="utf-8-sig") as f:
@@ -117,6 +153,14 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--root", type=Path, default=BASE_DIR)
     parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument(
+        "--require-epoch5", action="store_true",
+        help="Falha antes de iniciar se o checkpoint exato da época 5 não estiver ativo",
+    )
+    parser.add_argument(
+        "--verify-runtime-archive", action="store_true",
+        help="Consultar a identidade exata de cada PNG no mesmo índice SHA usado pelo XP",
+    )
     arguments = parser.parse_args(argv)
     root = arguments.root.resolve()
     output = (
@@ -142,7 +186,11 @@ def main(argv=None) -> int:
             flush=True,
         )
 
-    report = audit_full_archive(root, progress=progress)
+    report = audit_full_archive(
+        root, progress=progress,
+        require_epoch5=arguments.require_epoch5,
+        verify_runtime_archive=arguments.verify_runtime_archive,
+    )
     run_dir = _write_reports(report, output)
     print(_summary_text(report))
     print("Relatórios salvos em: " + str(run_dir))
