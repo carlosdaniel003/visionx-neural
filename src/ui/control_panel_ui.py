@@ -554,8 +554,8 @@ class ControlPanelUI:
         controls_layout.setSpacing(8)
         controls_layout.addWidget(
             self._section_heading(
-                "CONTROLES OPERACIONAIS",
-                "Ações primárias destacadas em amarelo; comandos auxiliares permanecem discretos.",
+                "CONTROLES DE INSPEÇÃO",
+                "Iluminação, julgamento e captura em grupos distintos. Comandos disponíveis conforme o estado real da peça.",
             )
         )
 
@@ -615,12 +615,19 @@ class ControlPanelUI:
         decision_group_layout.setContentsMargins(0, 0, 0, 0)
         decision_group_layout.setSpacing(8)
 
-        action_label = QLabel("CAPTURA E DECISÃO DO OPERADOR")
+        action_label = QLabel("JULGAMENTO DA PEÇA")
         action_label.setObjectName("fieldLabel")
         decision_group_layout.addWidget(action_label)
         self.action_grid = QGridLayout()
         self.action_grid.setHorizontalSpacing(8)
         self.action_grid.setVerticalSpacing(8)
+        decision_group_layout.addLayout(self.action_grid)
+
+        utility_label = QLabel("CAPTURA E AÇÕES AUXILIARES")
+        utility_label.setObjectName("fieldLabel")
+        self.utility_grid = QGridLayout()
+        self.utility_grid.setHorizontalSpacing(8)
+        self.utility_grid.setVerticalSpacing(8)
 
         window.btn_start = QPushButton("Capturar Local (MSS)")
         window.btn_skip = QPushButton("Descartar Imagem")
@@ -642,13 +649,16 @@ class ControlPanelUI:
         )
         window.btn_save_ok.setObjectName("outlineAccentButton")
         window.btn_save_ng.setObjectName("primaryButton")
-        self.action_buttons = [
-            window.btn_start,
-            window.btn_skip,
-            window.btn_reinspect,
+        self.primary_decision_buttons = [
             window.btn_save_ok,
             window.btn_save_ng,
         ]
+        self.utility_actions = [
+            window.btn_start,
+            window.btn_reinspect,
+            window.btn_skip,
+        ]
+        self.action_buttons = self.primary_decision_buttons + self.utility_actions
         for button in self.action_buttons:
             button.setMinimumWidth(0)
             button.setSizePolicy(
@@ -656,7 +666,10 @@ class ControlPanelUI:
                 QSizePolicy.Policy.Fixed,
             )
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-        decision_group_layout.addLayout(self.action_grid)
+        self._reflow_grid(self.action_grid, self.primary_decision_buttons, 2)
+        utility_label.setMinimumWidth(0)
+        decision_group_layout.addWidget(utility_label)
+        decision_group_layout.addLayout(self.utility_grid)
 
         self.control_groups = [
             window.lighting_controls_group,
@@ -1086,9 +1099,9 @@ class ControlPanelUI:
         self.status_layout.setHorizontalSpacing(10)
         self.status_layout.setVerticalSpacing(4)
 
-        window.lbl_status_network = QLabel("Ouvindo AOI (Porta 5001)")
-        window.lbl_status_brain = QLabel("Sistema Ocioso")
-        window.lbl_status_history = QLabel("Última Peça: Nenhuma")
+        window.lbl_status_network = QLabel("Conexão AOI: aguardando tráfego (porta 5001)")
+        window.lbl_status_brain = QLabel("IA: aguardando captura")
+        window.lbl_status_history = QLabel("Última decisão: nenhuma nesta sessão")
 
         self.status_widgets = [
             window.lbl_status_network,
@@ -1267,8 +1280,13 @@ class ControlPanelUI:
             )
             self._reflow_grid(
                 self.action_grid,
-                self.action_buttons,
-                profile.action_columns,
+                self.primary_decision_buttons,
+                2,
+            )
+            self._reflow_grid(
+                self.utility_grid,
+                self.utility_actions,
+                max(1, min(3, width // 360)),
             )
             self._layout_ng_archive(window, compact=compact)
             self._layout_ok_archive(window, compact=compact)
