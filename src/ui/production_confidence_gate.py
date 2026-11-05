@@ -846,6 +846,16 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     # PRESS_0 sozinha. Falha de integridade deve interromper o XP.
     from src.core.neural.aoi_quality_cnn_v3_trial_consensus import active_v3_veto
     v3_status, v3_ng_veto = active_v3_veto(analysis)
+    multilight_v3 = detail.get("aoi_v3_multilight")
+    single_v3 = detail.get("aoi_v3_trial")
+    active_v3_epoch = (
+        (multilight_v3.get("epoch") if isinstance(multilight_v3, dict) else None)
+        or (single_v3.get("epoch") if isinstance(single_v3, dict) else None)
+    )
+    v3_reason_prefix = (
+        "aoi_quality_v3_epoch5" if active_v3_epoch == 5
+        else "aoi_quality_v3_epoch3"
+    )
     if v3_status == "ERROR":
         return {
             **policy,
@@ -854,7 +864,7 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "operator_review_required": False,
             "proposed_decision": "",
             "operational_error": True,
-            "reason": "aoi_quality_v3_epoch3_integrity_or_lighting_fault",
+            "reason": v3_reason_prefix + "_integrity_or_lighting_fault",
             "unverified_physical_label": True,
         }
     if v3_status == "READY" and v3_ng_veto:
@@ -875,7 +885,7 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                 "auto_allowed": True,
                 "operator_review_required": False,
                 "proposed_decision": "NG",
-                "reason": "aoi_quality_v3_epoch3_ng_veto_trial_v1",
+                "reason": v3_reason_prefix + "_ng_veto_trial_v1",
                 "unverified_physical_label": True,
                 "source_verdict": policy.get("verdict", ""),
                 "source_reason": policy.get("reason", ""),
@@ -892,7 +902,7 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "operator_review_required": False,
             "proposed_decision": "",
             "operational_error": True,
-            "reason": "aoi_quality_v3_epoch3_capture_not_complete",
+            "reason": v3_reason_prefix + "_capture_not_complete",
             "unverified_physical_label": True,
         }
 
