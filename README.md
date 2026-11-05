@@ -1,3 +1,25 @@
+## 05/11/2026 — CNN V3 época 5: substituição operacional por autorização explícita
+
+O operador escolheu a **época 5** para substituir a época 3 em Teste,
+Sombra, MSS e Produção do VisionX AOI, apesar de **2 OK→NG em
+219 exemplos de validação**. A V3 5 acertou **24/24 pares NG
+revisados no TREINO** e 14/14 revisões antigas, mas não passou
+num teste cego independente. Isso não é homologação de precisão.
+
+A implantação usa um ponteiro local reversível, relatório e snapshot
+verificados por SHA; a época 3 permanece disponível para rollback.
+O código não retorna à V2 nem libera 0/OK somente pelo score V3.
+O arquivo `.pt` da época 5 está na estação e NÃO no GitHub:
+**após `git pull` é obrigatório executar**:
+
+```powershell
+python -X utf8 -m src.scripts.activate_aoi_quality_v3_epoch5 --root . --activate
+```
+
+[Procedimento, riscos, SHA e rollback](docs/ODIN_AOI_V3_EPOCA5_IMPLANTACAO_20261105.md).
+
+---
+
 ## 05/11/2026 — 25 NG confirmados para novo fine-tuning V3 offline
 
 Após auditar 1.111 PNGs, o operador confirmou **25 dos 26 NG→OK**
