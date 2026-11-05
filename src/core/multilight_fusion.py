@@ -505,7 +505,7 @@ def fuse_multilight(
             and _detail(source[mode]).get("memory_conflict") is not True
             and _detail(source[mode]).get("raw_memory_conflict") is not True
             and _detail(source[mode]).get("missing_hard_absence") is not True
-            and float(_detail(source[mode]).get("physical_score", 0.0) or 0.0) == 0.0
+            and _safe_float(_detail(source[mode]).get("physical_score"), default=1.0) == 0.0
             and (
                 not isinstance(_detail(source[mode]).get("physical_missing_veto"), dict)
                 or _detail(source[mode])["physical_missing_veto"].get("status")

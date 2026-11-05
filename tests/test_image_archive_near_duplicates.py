@@ -111,7 +111,7 @@ class ImageArchiveQueueVisualTests(unittest.TestCase):
                 worker.wait_until_idle()
                 self.assertEqual(len(list(folder.glob("*.png"))), 1)
 
-    def test_similar_pixels_with_different_category_or_lighting_are_preserved(self):
+    def test_similar_pixels_cross_category_dedup_but_distinct_light_preserved(self):
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
             queue = NGImageArchiveQueue(folder)
@@ -120,7 +120,7 @@ class ImageArchiveQueueVisualTests(unittest.TestCase):
                                           "FALTANDO_TOP")):
                 queue.submit(screenshot(i + 1), category, stamp)
             queue.wait_until_idle()
-            self.assertEqual(len(list(folder.glob("*.png"))), 3)
+            self.assertEqual(len(list(folder.glob("*.png"))), 2)
 
     def test_ng_and_ok_are_never_compared_across_independent_folders(self):
         with tempfile.TemporaryDirectory() as folder:

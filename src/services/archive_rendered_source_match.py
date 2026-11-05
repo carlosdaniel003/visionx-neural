@@ -123,7 +123,7 @@ def match_rendered_archive(
 ) -> dict:
     """Consulta fontes sugeridas pelo índice visual, relendo cada PNG.
 
-    A validade da origem depende de raiz, pasta, categoria e conteúdo
+    A validade da origem depende de raiz, pasta, luz e conteúdo
     atuais. Rótulos conflitantes nunca são reconciliados por score.
     """
     root = Path(root).resolve()
@@ -157,7 +157,8 @@ def match_rendered_archive(
              if path.parent == folder),
             "",
         )
-        if not label or archive_category_from_filename(path) not in requested_scopes:
+        category_from_path = archive_category_from_filename(path)
+        if not label or not category_from_path or archive_visual_scope(category_from_path) not in requested_scopes:
             continue
         raw = cv2.imread(str(path), cv2.IMREAD_COLOR)
         if raw is None:

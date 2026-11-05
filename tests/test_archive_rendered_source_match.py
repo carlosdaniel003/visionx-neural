@@ -104,7 +104,7 @@ class ArchiveRenderedSourceTests(unittest.TestCase):
             original_frame(4), displayed(original_frame(90)),
         ))
 
-    def test_wrong_category_and_source_path_rejected(self):
+    def test_category_is_not_part_of_visual_match_but_invalid_path_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             ok = root / "public" / "ok_archive"
@@ -117,7 +117,7 @@ class ArchiveRenderedSourceTests(unittest.TestCase):
             relative = "public/ok_archive/2026-10-02_1029_FALTANDO.png"
             self.assertEqual(
                 match_rendered_archive(screen, "INVERTIDO", [relative], root=root)["status"],
-                "NO_MATCH",
+                "RENDERED_ARCHIVE_SOURCE",
             )
             self.assertEqual(
                 match_rendered_archive(screen, "FALTANDO", ["../wrong.png"], root=root)["status"],

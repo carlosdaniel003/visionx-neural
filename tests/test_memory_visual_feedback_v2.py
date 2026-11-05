@@ -129,7 +129,6 @@ class MemoryFeedbackTests(unittest.TestCase):
             lambda a: a["detail"].update(multilight_final=False),
             lambda a: a.update(is_defect=False),
             lambda a: a["detail"].update(capture_error=True),
-            lambda a: a["detail"].update(multilight_category="DESLOCADO"),
         )
         for change in changes:
             with self.subTest(change=str(change)):
@@ -137,6 +136,13 @@ class MemoryFeedbackTests(unittest.TestCase):
                 change(a)
                 self.assertFalse(memory_seen_state(a)["auto_side_exact_seen"])
                 self.assertNotIn("DECISÃO AUTOMÁTICA", memory_panel_text(a)[0])
+
+    def test_auto_side_proof_remains_visible_when_only_category_changes(self):
+        from copy import deepcopy
+        from src.ui.neural_telemetry_model import memory_seen_state
+        analysis = deepcopy(auto_side_case("NG"))
+        analysis["detail"]["multilight_category"] = "UNKNOWN"
+        self.assertTrue(memory_seen_state(analysis)["auto_side_exact_seen"])
 
     def test_operator_known_pair_keeps_precedence_over_auto_marker(self):
         from src.ui.neural_telemetry_model import memory_seen_state

@@ -292,7 +292,7 @@ class SideEarlyDecisionTests(unittest.TestCase):
         self.assertIsNotNone(build_side_early_decision(physical, "FALTANDO"))
         other = deepcopy(analysis)
         other["detail"]["cnn_v2_aoi_category"] = "DESLOCADO"
-        self.assertIsNotNone(build_side_early_decision(other, "DESLOCADO"))
+        self.assertIsNone(build_side_early_decision(other, "DESLOCADO"))
 
     def test_persistent_human_ok_prevents_premature_side_ng(self):
         # Operador julgou A como OK no JSON; novo A muda um pixel/luz.
@@ -395,7 +395,7 @@ class SideEarlyDecisionTests(unittest.TestCase):
         self.assertIsNotNone(build_side_early_decision(sample, "FALTANDO"))
         sample["detail"]["hard_missing_evidence"] = False
         sample["detail"]["cnn_v2_aoi_category"] = "INVERTIDO"
-        self.assertIsNotNone(build_side_early_decision(sample, "INVERTIDO"))
+        self.assertIsNone(build_side_early_decision(sample, "INVERTIDO"))
 
     def test_trial_side_routes_all_supported_aoi_categories_without_changing_defect_label(self):
         from src.ui.production_confidence_gate import production_decision_policy
