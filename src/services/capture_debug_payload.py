@@ -269,7 +269,7 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
     }
     from src.core.corroborated_ng_verdict import corroborated_ng_verdict
 
-    return {
+    record = {
         "corroborated_ng_classification": corroborated_ng_verdict(analysis),
         "knn_visual": visual_summary,
         "physical_missing_veto": physical_summary,
@@ -416,6 +416,19 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
             "suppressed_by_hard_missing": hard_missing,
         },
     }
+    # A V3 realmente executada não deve aparecer como uma V2 "ativa"
+    # ou como um modelo V2 residual no JSON do operador.
+    v3_operational = bool(
+        detail.get("cnn_v3_primary") is True
+        or any(
+            isinstance(item, dict)
+            and item.get("engine") == "aoi_quality_cnn_v3"
+            for item in (detail.get("cnn_v3_light_diagnostics") or {}).values()
+        )
+    )
+    if v3_operational and detail.get("cnn_v2_active") is not True:
+        record.pop("cnn_v2", None)
+    return record
 
 
 __all__ = [
