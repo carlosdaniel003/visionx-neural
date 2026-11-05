@@ -17,10 +17,11 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from src.core.adhesive_multilight_fusion import fuse_adhesive_multilight
 from src.core.knn_c_multilight_gate import gate_knn_c_multilight
 from src.core.neural.faltando_multilight_consensus import summarize_cnn_multilight
-from src.core.neural.aoi_quality_cnn_v3_trial_consensus import attach_v3_multilight_evidence
+from src.core.neural.aoi_quality_cnn_v3_trial_consensus import (
+    _valid_vote, attach_v3_multilight_evidence,
+)
 from src.utils.text_normalizer import normalize_aoi_text
 
 
@@ -471,43 +472,7 @@ def fuse_multilight(
         return None
 
     canonical_category = _canonical_category(category)
-    if canonical_category == ADHESIVE_CATEGORY:
-        fused = fuse_adhesive_multilight(source)
-        if not isinstance(fused, dict):
-            return None
-        fused = _augment_adhesive_aliases(fused, canonical_category)
-        detail = fused["detail"]
-        routes, recognition_route, light_diagnostics = (
-            _light_recognition_provenance(source)
-        )
-        detail["recognition_light_routes"] = routes
-        detail["recognition_route"] = recognition_route
-        uses_v3 = any(
-            item.get("engine") == "aoi_quality_cnn_v3"
-            for item in light_diagnostics.values()
-        )
-        if uses_v3:
-            detail.pop("cnn_v2_light_diagnostics", None)
-            detail["cnn_v3_light_diagnostics"] = deepcopy(light_diagnostics)
-        else:
-            detail["cnn_v2_light_diagnostics"] = light_diagnostics
-        # O trace e o detalhe têm a MESMA proveniência original, sem
-        # inferir a rota da peça inteira apenas pela luz dominante.
-        trace = detail.get("decision_trace")
-        if not isinstance(trace, dict):
-            trace = {}
-            detail["decision_trace"] = trace
-        trace["recognition_light_routes"] = deepcopy(routes)
-        trace["recognition_route"] = recognition_route
-        if uses_v3:
-            trace.pop("cnn_v2_light_diagnostics", None)
-            trace["cnn_v3_light_diagnostics"] = deepcopy(light_diagnostics)
-        else:
-            trace["cnn_v2_light_diagnostics"] = deepcopy(light_diagnostics)
-        return attach_v3_multilight_evidence(
-            gate_knn_c_multilight(fused, source), source,
-        )
-
+    # Fusão V3 única: categoria AOI é metadado de auditoria, não regra.
     evidence = {
         mode: _lighting_evidence(mode, source[mode])
         for mode in LIGHTING_ORDER
@@ -527,6 +492,26 @@ def fuse_multilight(
         for mode in LIGHTING_ORDER
         if evidence[mode]["local_review_required"]
     ]
+    # Rótulo visual V3 válido e unânime não vira 0,5 só porque a KNN C
+    # sugere supervisão. A autorização de comando XP permanece independente.
+    v3_all_ok = bool(
+        not positive_modes
+        and all(
+            _valid_vote(_detail(source[mode]).get("aoi_v3_trial"), mode)
+            and _detail(source[mode])["aoi_v3_trial"]["predicted"] == "OK"
+            and _detail(source[mode]).get("cnn_v3_primary") is True
+            and source[mode].get("hard_missing_evidence") is not True
+            and _detail(source[mode]).get("hard_missing_evidence") is not True
+            and _detail(source[mode]).get("memory_conflict") is not True
+            and _detail(source[mode]).get("raw_memory_conflict") is not True
+            for mode in LIGHTING_ORDER
+        )
+        and len({
+            (_detail(source[mode])["aoi_v3_trial"]["epoch"],
+             _detail(source[mode])["aoi_v3_trial"]["checkpoint_sha256"])
+            for mode in LIGHTING_ORDER
+        }) == 1
+    )
     dominant_mode = _dominant_mode(evidence)
 
     physical_disagreement = _isolated_missing_disagreement(
@@ -561,6 +546,11 @@ def fuse_multilight(
         is_defect = False
         review_required = True
         rule = "multilight_single_positive_review"
+    elif review_modes and v3_all_ok:
+        verdict = "FALHA FALSA"
+        is_defect = False
+        review_required = True
+        rule = "multilight_v3_verified_all_ok_review_separate"
     elif review_modes:
         verdict = "REVISÃO OBRIGATÓRIA"
         is_defect = False
@@ -581,7 +571,13 @@ def fuse_multilight(
     confidences = [
         evidence[mode]["confidence"] for mode in LIGHTING_ORDER
     ]
-    if review_required:
+    if review_required and v3_all_ok and verdict == "FALHA FALSA":
+        confidence = min(confidences)
+        final_score = max(
+            _detail(source[mode])["aoi_v3_trial"]["ng_score_uncalibrated"]
+            for mode in LIGHTING_ORDER
+        )
+    elif review_required:
         confidence = 0.50
         final_score = 0.50
     elif verified_presence:
@@ -721,6 +717,7 @@ def fuse_multilight(
                 strong_positive_modes
             ),
             "multilight_review_modes": list(review_modes),
+            "cnn_v3_all_ok_verified": bool(v3_all_ok),
             "multilight_evidence": deepcopy(evidence),
             "multilight_memory_role": "per_lighting_audit",
             "multilight_physical_disagreement": bool(physical_disagreement),
