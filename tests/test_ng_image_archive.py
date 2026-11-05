@@ -62,7 +62,15 @@ class NGArchiveNamingTests(unittest.TestCase):
         stamp = datetime(2026, 9, 30, 13, 53, 27, 245000)
         self.assertEqual(
             build_ng_archive_filename("Deslocado", stamp),
-            "2026-09-30_1353_DESLOCADO.png",
+            "2026-09-30_1353_AOI_SIDE.png",
+        )
+        self.assertEqual(
+            build_ng_archive_filename("Unknown", stamp),
+            "2026-09-30_1353_AOI_SIDE.png",
+        )
+        self.assertEqual(
+            build_ng_archive_filename("Muito Adesivo_TOP", stamp),
+            "2026-09-30_1353_AOI_TOP.png",
         )
 
 
@@ -256,7 +264,7 @@ class NGArchiveQueueTests(unittest.TestCase):
             self.assertEqual(len(files), 1)
             self.assertEqual(
                 files[0].name,
-                "2026-09-30_1354_DESLOCADO.png",
+                "2026-09-30_1354_AOI_SIDE.png",
             )
             loaded = cv2.imread(str(files[0]), cv2.IMREAD_COLOR)
             self.assertIsNotNone(loaded)
@@ -317,11 +325,11 @@ class NGArchiveQueueTests(unittest.TestCase):
             self.assertEqual(len(files), 2)
             self.assertEqual(
                 files[0].name,
-                "2026-10-06_1834_MUITO_ADESIVO_TOP.png",
+                "2026-10-06_1834_AOI_TOP.png",
             )
             self.assertEqual(
                 files[1].name,
-                "2026-10-06_1834_MUITO_ADESIVO_TOP_2.png",
+                "2026-10-06_1834_AOI_TOP_2.png",
             )
 
 

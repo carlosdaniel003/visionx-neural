@@ -70,7 +70,7 @@ class OKArchiveNamingTests(unittest.TestCase):
         stamp = datetime(2026, 10, 2, 8, 11, 12, 345000)
         self.assertEqual(
             build_ok_archive_filename("Muito Adesivo", stamp),
-            "2026-10-02_0811_MUITO_ADESIVO.png",
+            "2026-10-02_0811_AOI_SIDE.png",
         )
 
 
@@ -319,7 +319,7 @@ class OKArchiveQueueTests(unittest.TestCase):
             self.assertEqual(len(files), 1)
             self.assertEqual(
                 files[0].name,
-                "2026-10-02_0816_FALTANDO.png",
+                "2026-10-02_0816_AOI_SIDE.png",
             )
 
     def test_different_images_same_minute_do_not_overwrite_each_other(self):
@@ -337,11 +337,11 @@ class OKArchiveQueueTests(unittest.TestCase):
             self.assertEqual(len(files), 2)
             self.assertEqual(
                 files[0].name,
-                "2026-10-06_1830_MUITO_ADESIVO_SIDE.png",
+                "2026-10-06_1830_AOI_SIDE.png",
             )
             self.assertEqual(
                 files[1].name,
-                "2026-10-06_1830_MUITO_ADESIVO_SIDE_2.png",
+                "2026-10-06_1830_AOI_SIDE_2.png",
             )
 
     def test_existing_legacy_named_png_blocks_same_image_after_restart(self):
@@ -402,7 +402,7 @@ class OKArchiveQueueTests(unittest.TestCase):
             self.assertEqual(len(files), 1)
             self.assertEqual(
                 files[0].name,
-                "2026-10-02_0815_DESLOCADO.png",
+                "2026-10-02_0815_AOI_SIDE.png",
             )
             loaded = cv2.imread(str(files[0]), cv2.IMREAD_COLOR)
             self.assertIsNotNone(loaded)

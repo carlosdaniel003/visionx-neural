@@ -19,12 +19,20 @@ def build_archive_filename(
     category: str,
     timestamp: datetime | None = None,
 ) -> str:
-    """Mantém um único formato de nome para evidências OK e NG."""
+    """Novo acervo neutro: nome identifica a LUZ, não a categoria AOI.
+
+    O carregador continua aceitando nomes históricos FALTANDO, ADESIVO,
+    EMBORCADO etc. O parâmetro category é mantido na API para preservar
+    compatibilidade com os produtores antigos, mas seu conteúdo só define
+    se a iluminação é TOP, MID ou SIDE.
+    """
     moment = timestamp or datetime.now()
-    return (
-        f"{moment:%Y-%m-%d}_{moment:%H%M}_"
-        f"{safe_archive_category(category)}.png"
-    )
+    normalized = safe_archive_category(category)
+    light = next((
+        mode for mode in ("SIDE", "TOP", "MID")
+        if normalized == mode or normalized.endswith("_" + mode)
+    ), "SIDE")
+    return f"{moment:%Y-%m-%d}_{moment:%H%M}_AOI_{light}.png"
 
 
 __all__ = ["build_archive_filename", "safe_archive_category"]
