@@ -325,7 +325,14 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
                         detail.get("aoi_v3_multilight"), dict
                     ) else "",
             "status": str(detail.get("cnn_v3_status", "") or ""),
-            "epoch": 3,
+            "epoch": (
+                detail.get("aoi_v3_multilight", {}).get("epoch")
+                if isinstance(detail.get("aoi_v3_multilight"), dict)
+                and detail["aoi_v3_multilight"].get("epoch") is not None
+                else detail.get("cnn_v3_checkpoint_epoch")
+                or (detail.get("aoi_v3_trial", {}).get("epoch")
+                    if isinstance(detail.get("aoi_v3_trial"), dict) else None)
+            ),
             "checkpoint_verified": detail.get("cnn_v3_checkpoint_verified") is True,
             "checkpoint_sha256": str(detail.get("cnn_v3_checkpoint_sha256", "") or ""),
             "ng_score_uncalibrated": json_safe(

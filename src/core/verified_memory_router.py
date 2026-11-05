@@ -943,7 +943,7 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
             return with_memory_timing(_review_result(match["reason"], mode))
 
         category = canonical_memory_category(info.get("category", ""))
-        if uses_faltando_v2(category):
+        if getattr(self, "_aoi_v3_primary_operational", False) or uses_faltando_v2(category):
             route = "NEW_CNN"
             # O FaltandoCNNLive é o wrapper anterior, não consulta KNN.
             requested_info = dict(info)

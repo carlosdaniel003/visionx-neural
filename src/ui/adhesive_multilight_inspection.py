@@ -74,9 +74,8 @@ def is_adhesive_category(aoi_info: dict | None) -> bool:
 
 
 def is_multilight_category(aoi_info: dict | None) -> bool:
-    """Toda categoria AOI canônica conhecida participa do ciclo multilight."""
-    category = str(category_from_aoi_info(aoi_info) or "").strip().upper()
-    return bool(category and category not in {"UNKNOWN", "SEM CATEGORIA"})
+    """Toda captura AOI, inclusive UNKNOWN, usa o mesmo fluxo multilight."""
+    return isinstance(aoi_info, dict)
 
 
 def _valid_image(value: Any) -> bool:
@@ -474,7 +473,7 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
         if fused is None:
             fused = build_side_early_decision(
                 analyses.get("SIDE"), category,
-                allow_supervised_v3=(mode == "Modo Teste"),
+                allow_supervised_v3=True,
             )
     else:
         fused = fuse_multilight(analyses, category)
@@ -823,13 +822,8 @@ def _store_view(
     payload["original_frame"] = (
         source_frame if _valid_image(source_frame) else np.array([])
     )
-    # Sondas visuais SOMENTE em categorias do escopo real FALTANDO v2.
-    # ADESIVO e categorias desconhecidas nunca executam a rede em paralelo.
-    from src.core.neural.faltando_category_scope import uses_faltando_v2
-    info = getattr(panel, "current_aoi_info", None)
-    payload["_cnn_explain_allowed"] = uses_faltando_v2(
-        info.get("category", "") if isinstance(info, dict) else ""
-    )
+    # V3 observa pares de pixels independentemente da categoria AOI.
+    payload["_cnn_explain_allowed"] = True
     panel.adhesive_multilight_views[normalized] = payload
 
     view = getattr(panel, "adhesive_multilight_view", None)
@@ -1011,10 +1005,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                 aux_started_at = time.perf_counter()
                 note_extraction(self, aux_mode, self.processor_monitor)
                 shadow = self.combo_mode.currentText() == "Modo Sombra"
-                from src.core.neural.faltando_category_scope import uses_faltando_v2
-                shadow_neural = shadow and uses_faltando_v2(
-                    category_from_aoi_info(self.current_aoi_info)
-                )
+                shadow_neural = shadow
                 # FALTANDO v2 usa imagens integrais+crop central interno;
                 # a geometria SSIM é supérflua em modo sombra.
                 frame_context = (
@@ -1374,7 +1365,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         if side_early is None:
             side_early = build_side_early_decision(
                 side_analysis, category,
-                allow_supervised_v3=(mode == "Modo Teste"),
+                allow_supervised_v3=True,
             )
         # Em Produção, a hipótese SIDE só para revisão humana não pode
         # encerrar a aquisição: a política binária exige TOP/MID ou uma

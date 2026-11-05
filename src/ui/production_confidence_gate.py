@@ -759,7 +759,6 @@ def _completed_continuous_inspection(analysis: dict, detail: dict) -> bool:
     """
     if (
         detail.get("capture_error") is True
-        or detail.get("category_unknown") is True
         or analysis.get("multilight_final") is not True
         or detail.get("multilight_final") is not True
     ):

@@ -517,7 +517,8 @@ def install_faltando_cnn_live(orchestrator_cls, *, predictor=None) -> None:
     ):
         info = aoi_info if isinstance(aoi_info, dict) else {}
         if (
-            not uses_faltando_v2(info.get("category", ""))
+            not (getattr(engine, "is_v3_primary", False)
+                 or uses_faltando_v2(info.get("category", "")))
             or info.get("_replay_without_memory", False)
             or type(self).__name__ == "PhysicalOnlyOrchestrator"
         ):

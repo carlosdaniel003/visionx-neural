@@ -292,13 +292,12 @@ def _eligible_trial_side_for_review(
 
 
 def _eligible_v3_side_for_review(analysis: dict | None, category: str) -> bool:
-    """SIDE V3 forte e KNN C A/B unânime: conclusão VISUAL de teste.
+    """SIDE V3 forte e KNN C A/B unânime: conclusão VISUAL universal.
 
     A concordância dos descritores não é certificação física; nunca
     autoriza 0/1 na Produção nem transforma similaridade em par exato.
     """
     if (not isinstance(analysis, dict)
-            or not uses_faltando_v2(category)
             or analysis.get("lighting_mode") != "SIDE"
             or analysis.get("production_review_required") is not True):
         return False
@@ -421,7 +420,7 @@ def build_side_early_decision(
         f"SIDE: encerramento antecipado com confiança reportada de "
         f"{confidence:.1%}; TOP e MID dispensadas. "
         + ("V3 época 5 corroborada pela KNN C A/B; classificação visual "
-           "supervisionada no Teste, sem autorização automática XP. "
+           "em qualquer modo, sem autorização automática XP. "
            if v3_review else
            "Checkpoint experimental: autorização XP depende do gate de Produção. "
            if trial_review else "")
@@ -460,7 +459,7 @@ def build_side_early_decision(
             "model_epoch": V3_EPOCH_5,
             "checkpoint_sha256": final_detail["cnn_v3_checkpoint_sha256"],
             "corroboration": "KNN_C_A_B_TOP5_UNANIMOUS",
-            "scope": "SUPERVISED_TEST_ONLY",
+            "scope": "ALL_MODES_VISUAL_ONLY",
         })
     return final
 
