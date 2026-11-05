@@ -1,3 +1,14 @@
+## 05/11/2026 — Replay offline de todo o acervo pela CNN V3
+
+- `src/services/aoi_v3_archive_batch.py`: inventário completo, extração real,
+  inferência V3 pinada, matrizes OK→NG e NG→OK e sondagem leave-one-out.
+- `src/scripts/audit_v3_full_archive.py`: CLI sem MSS/XP e relatórios JSON/CSV/TXT.
+- `tests/test_aoi_v3_full_archive_batch.py` e
+  `.github/workflows/aoi-v3-full-archive-audit-tests.yml`: cobertura,
+  conflitos, falhas de checkpoint, mutação de fonte e ambas as classes.
+- `docs/AOI_V3_AUDITORIA_INTEGRAL_ACERVO_20261105.md`: procedimento
+  e distinção entre fonte exata, vizinho e classificação física.
+
 ## 05/11/2026 — V3 primária nas rotas V2 e paridade MSS/XP
 
 - `src/core/neural/aoi_quality_cnn_v3_primary.py`: adaptador do
