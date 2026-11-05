@@ -315,7 +315,10 @@ def train_v3(
             source in escape_sources for source in row["sources"]
         )
     ]
-    if len(escape_train_rows) != len(escape_sources):
+    if {
+        src for row in escape_train_rows for src in row["sources"]
+        if src in escape_sources
+    } != escape_sources:
         raise ValueError("Os 25 NG revisados não ficaram isolados no treino")
     # Os 25 NG físicos são supervisão de treino, NÃO conjunto independente.
     def assess_escapes(model_to_check):
@@ -423,7 +426,8 @@ def train_v3(
             f"val_NG_falsos_OK={validation_scores['NG_false_OK']} "
             f"gate={'OK' if gate_passed else 'BLOQUEADO'} "
             f"melhor_epoca={best_epoch}"
-            + (f" NG_revistos_25={escape_reviewed['NG_correct']}/25"
+            + (f" NG_revistos={escape_reviewed['NG_correct']}/"
+               f"{escape_reviewed['NG_total']} pares únicos (25 fontes)"
                if escape_reviewed is not None else ""),
             flush=True,
         )
