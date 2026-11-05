@@ -1,3 +1,15 @@
+## 05/11/2026 — Auditoria integral da V3 no acervo original, sem MSS
+
+A ferramenta `python -X utf8 -m src.scripts.audit_v3_full_archive --root .`
+percorre **todos os PNGs OK/NG**, executa o extrator AOI e o checkpoint V3
+da estação uma única vez por fonte, separa falsos NG/OK por categoria
+e iluminação e apresenta recuperação visual leave-one-out sem autoacerto.
+Gera relatórios JSON/CSV/TXT em `reports/aoi_v3_full_archive_audit/`;
+não altera o modelo, a memória nem o XP.
+[Procedimento e limites](docs/AOI_V3_AUDITORIA_INTEGRAL_ACERVO_20261105.md).
+
+---
+
 ## 05/11/2026 — CNN AOI V3 principal + reconhecimento de acervo no MSS
 
 A V3 época 3 foi conectada como **classificador visual primário** nas categorias
