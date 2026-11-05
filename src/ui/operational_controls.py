@@ -371,6 +371,16 @@ class OperationalControlsPresenter:
                 (self.panel.btn_clear_dataset, "Ação de manutenção solicitada."),
             )
 
+        if hasattr(self.panel, "btn_reinspect"):
+            bindings += (
+                (self.panel.btn_reinspect,
+                 "Reanálise XP solicitada; aguardando nova captura."),
+            )
+        bindings += (
+            (self.panel.btn_light_top, "Solicitada iluminação TOP."),
+            (self.panel.btn_light_side, "Solicitada iluminação SIDE."),
+            (self.panel.btn_light_mid, "Solicitada iluminação MID."),
+        )
         for button, message in bindings:
             button.clicked.connect(
                 lambda _checked=False, text=message: self.note_action(text)
@@ -414,7 +424,7 @@ class OperationalControlsPresenter:
 
     def _apply_texts(self, state_name: str) -> None:
         start_text = {
-            "idle": "Capturar nova peça",
+            "idle": "Capturar local (MSS)",
             "processing": "Processando captura...",
             "review_test": "Nova captura (descarta a atual)",
             "review_shadow": "Forçar nova captura",
@@ -423,6 +433,8 @@ class OperationalControlsPresenter:
 
         self._set_text(self.panel.btn_start, start_text)
         self._set_text(self.panel.btn_skip, "Descartar captura")
+        if hasattr(self.panel, "btn_reinspect"):
+            self._set_text(self.panel.btn_reinspect, "Reanalisar evento XP")
         self._set_text(self.panel.btn_save_ok, "Aprovar como OK")
         self._set_text(self.panel.btn_save_ng, "Confirmar defeito NG")
         self._set_text(self.panel.btn_light_top, "Luz TOP  |  ←")
