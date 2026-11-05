@@ -488,9 +488,11 @@ def format_network_debug_report(record: dict | None) -> str:
     if isinstance(decision, dict) and decision:
         cnn = decision.get("cnn_v2", {})
         cnn = cnn if isinstance(cnn, dict) else {}
+        cnn_v3 = decision.get("cnn_v3", {})
+        cnn_v3 = cnn_v3 if isinstance(cnn_v3, dict) else {}
         route = decision.get("recognition", {})
         route = route if isinstance(route, dict) else {}
-        if cnn.get("active") or route.get("route") == "KNOWN_KNN":
+        if cnn.get("active") or cnn_v3.get("active") or route.get("route") == "KNOWN_KNN":
             unused_prefixes = (
                 "Missing ", "Dual-scale ", "Presença ", "Corpo presente:",
                 "Veto por corpo", "Fonte da presença:", "Caixa da presença:",
@@ -501,6 +503,35 @@ def format_network_debug_report(record: dict | None) -> str:
                 item for item in lines
                 if not item.startswith(unused_prefixes)
             ]
+        if cnn_v3.get("active"):
+            score_v3 = cnn_v3.get("ng_score_uncalibrated")
+            score_text_v3 = (
+                f"{score_v3:.6%}" if isinstance(score_v3, (int, float))
+                else "consulte os votos por iluminação"
+            )
+            lines.extend([
+                "", "REDE NEURAL CNN AOI V3 • CLASSIFICADOR PRINCIPAL",
+                "-" * 72,
+                f"Origem: {cnn_v3.get('role') or 'V3 verificada'}",
+                f"Roteamento: {route.get('route') or '-'}",
+                f"Status inferência: {cnn_v3.get('status') or 'ver luzes'}",
+                f"Época de treinamento: {cnn_v3.get('epoch')}",
+                f"Checkpoint SHA-256: {cnn_v3.get('checkpoint_sha256') or '-'}",
+                f"Score NG (não calibrado): {score_text_v3}",
+                "V3 é modelo visual experimental: sem teste cego independente.",
+                "Score OK da V3 isoladamente não autoriza liberação 0/OK.",
+            ])
+            multilight_v3 = cnn_v3.get("multilight")
+            multilight_v3 = multilight_v3 if isinstance(multilight_v3, dict) else {}
+            votes_v3 = multilight_v3.get("lights", {})
+            if isinstance(votes_v3, dict):
+                for light, entry in votes_v3.items():
+                    if not isinstance(entry, dict):
+                        continue
+                    lines.append(
+                        f"{light}: {entry.get('predicted', '-')} • "
+                        f"score NG {entry.get('ng_score_uncalibrated', 'N/D')}"
+                    )
         if cnn.get("active"):
             score = cnn.get("ng_score_uncalibrated")
             score_text = f"{score:.6%}" if isinstance(score, (int, float)) else "N/D"
@@ -941,11 +972,12 @@ def format_multilight_debug_report(panel) -> str:
                 f"Regra de fusão local: {detail.get('fusion_rule', '-')}",
                 f"Motor dominante local: {detail.get('dominant_engine', '-')}",
                 f"Rota memória local: {detail.get('recognition_route', '-')}",
-                f"CNN ativa: {detail.get('cnn_v2_active', False)}",
-                f"CNN inferência: {detail.get('cnn_v2_status', 'não executada')}",
-                f"CNN checkpoint verificado: {detail.get('cnn_v2_checkpoint_verified', '-')}",
-                f"CNN checkpoint SHA-256: {detail.get('cnn_v2_checkpoint_sha256', '-')}",
-                f"CNN score NG (não calibrado): {detail.get('cnn_v2_ng_score_uncalibrated', 'N/D')}",
+                f"CNN V3 principal: {detail.get('cnn_v3_primary', False)}",
+                f"CNN motor: {'V3' if detail.get('cnn_v3_primary') else 'V2' if detail.get('cnn_v2_active') else 'não executada'}",
+                f"CNN inferência: {detail.get('cnn_v3_status') if detail.get('cnn_v3_primary') else detail.get('cnn_v2_status', 'não executada')}",
+                f"CNN checkpoint verificado: {detail.get('cnn_v3_checkpoint_verified') if detail.get('cnn_v3_primary') else detail.get('cnn_v2_checkpoint_verified', '-')}",
+                f"CNN checkpoint SHA-256: {detail.get('cnn_v3_checkpoint_sha256') if detail.get('cnn_v3_primary') else detail.get('cnn_v2_checkpoint_sha256', '-')}",
+                f"CNN score NG (não calibrado): {detail.get('cnn_v3_ng_score_uncalibrated') if detail.get('cnn_v3_primary') else detail.get('cnn_v2_ng_score_uncalibrated', 'N/D')}",
                 f"CNN consulta memória persistente: {detail.get('cnn_v2_memory_lookup_ms', '-')} ms",
                 f"CNN rota completa (memória + inferência): {detail.get('cnn_v2_route_total_ms', '-')} ms",
                 f"Motivo local: {analysis.get('reason', '-')}",
