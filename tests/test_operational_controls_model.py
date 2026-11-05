@@ -70,7 +70,11 @@ class OperationalControlsModelTests(unittest.TestCase):
         )
 
         self.assertEqual(state.name, "production_auto")
-        self.assertEqual(available_action_count(state), 0)
+        # O descarte já era permitido; a interface não pode aprovar/NG manualmente.
+        self.assertEqual(available_action_count(state), 1)
+        self.assertTrue(state.discard_enabled)
+        self.assertFalse(state.approve_enabled)
+        self.assertFalse(state.reject_enabled)
 
     def test_dataset_clear_is_never_available_outside_test_mode(self):
         for mode in ("Modo Produção", "Modo Sombra"):
