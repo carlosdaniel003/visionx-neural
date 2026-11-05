@@ -90,8 +90,12 @@ sem ocultar a distinção entre quadro completo e par AOI.
 
 A memória humana KNN mantém suas correções persistentes.
 O treino incremental automático **V2** não recebe novos casos
-quando V3 está ativa; também é bloqueado pelo marcador
-`cnn_v3_primary`. Não há treinamento online V3 homologado
+do painel operando com V3: a fila recebe a identidade explícita
+`v3_primary_runtime` do orquestrador, inclusive em julgamentos
+`KNOWN_KNN`. O marcador de análise `cnn_v3_primary` também
+bloqueia o treino V2. A elegibilidade não depende de um ponteiro
+global de outra execução, preservando os testes e ferramentas
+históricas V2 isoladas. Não há treinamento online V3 homologado
 nesta alteração. O retreinamento de V3 continua offline, com
 validação explícita antes da troca de pesos.
 
