@@ -19,11 +19,18 @@ def _valid_vote(vote: dict, light: str) -> bool:
         return False
     score = vote.get("ng_score_uncalibrated")
     return (
-        (vote.get("schema"), vote.get("epoch"), vote.get("checkpoint_sha256"))
-        in {
-            (POINTER_SCHEMA, 3, SNAPSHOT_SHA256),
-            (EPOCH5_VOTE_SCHEMA, EPOCH5, EPOCH5_SHA256),
-        }
+        (
+            (
+                vote.get("schema") == POINTER_SCHEMA
+                and vote.get("epoch") == 3
+                and vote.get("checkpoint_sha256") == SNAPSHOT_SHA256
+            )
+            or (
+                vote.get("schema") == EPOCH5_VOTE_SCHEMA
+                and vote.get("epoch") == EPOCH5
+                and vote.get("checkpoint_sha256") == EPOCH5_SHA256
+            )
+        )
         and vote.get("status") == "READY"
         and vote.get("light") == light
         and vote.get("automatic_ok_from_v3_authorized") is False
@@ -104,11 +111,18 @@ def active_v3_veto(analysis: dict) -> tuple[str, bool]:
         if (
             not isinstance(overall, dict)
             or overall.get("status") != "READY"
-            or (overall.get("epoch", 3), overall.get("checkpoint_sha256"), overall.get("mode"))
-               not in {
-                   (3, SNAPSHOT_SHA256, "ng_veto_only"),
-                   (EPOCH5, EPOCH5_SHA256, "v3_primary_epoch5_operator_override"),
-               }
+            or not (
+                (
+                    overall.get("epoch", 3) == 3
+                    and overall.get("checkpoint_sha256") == SNAPSHOT_SHA256
+                    and overall.get("mode") == "ng_veto_only"
+                )
+                or (
+                    overall.get("epoch") == EPOCH5
+                    and overall.get("checkpoint_sha256") == EPOCH5_SHA256
+                    and overall.get("mode") == "v3_primary_epoch5_operator_override"
+                )
+            )
             or overall.get("automatic_ok_from_v3_authorized") is not False
             or not isinstance(overall.get("lights"), dict)
             or set(overall["lights"]) != set(LIGHTS)
