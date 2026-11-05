@@ -353,6 +353,62 @@ class ArchivePresenceFeedbackTests(unittest.TestCase):
             self.assertEqual(current["detail"]["side_archive_visual_presence"]["status"],
                              "NO_SIMILAR")
 
+    def test_local_mss_async_archive_result_updates_copied_debug(self):
+        from unittest.mock import patch
+        from src.services.capture_evidence import capture_debug_record
+
+        self._qt_app = QApplication.instance() or QApplication([])
+        class Panel(QWidget):
+            def __init__(self):
+                super().__init__()
+                self.current_analysis = None
+                self.local_capture_debug_event_id = "mss-event"
+                self.capture_debug_last_image_event_id = "mss-event"
+                self.capture_debug_last_record = {
+                    "event_id": "mss-event", "source": "local_mss",
+                    "decision": {"verdict": "DEFEITO REAL"},
+                }
+            def _update_reference_panel(self, analysis):
+                pass
+
+        panel = Panel()
+        self.addCleanup(panel.deleteLater)
+        with tempfile.TemporaryDirectory() as folder:
+            index = ArchiveVisualPresenceIndex(
+                ok_dir=Path(folder)/"ok", ng_dir=Path(folder)/"ng",
+            )
+            controller = SideArchivePresenceFeedback(panel, index=index)
+            item = analysis()
+            item["detail"]["side_archive_visual_presence"] = {
+                "status": "PENDING",
+            }
+            panel.current_analysis = item
+            result = {
+                "schema": "visionx.side_archive_visual_presence.v1",
+                "status": "EXACT_FRAME",
+                "label": "OK",
+                "diagnostic_only": True, "decision_authorized": False,
+                "by_light": {
+                    "SIDE": {"status": "EXACT_FRAME", "label": "OK"},
+                },
+            }
+            with patch(
+                "src.ui.network_xp_debug.sync_network_debug_controls",
+            ) as sync:
+                controller._deliver("mss-event", item, result)
+                sync.assert_called_once_with(panel)
+            recorded = capture_debug_record(panel)["decision"]
+            self.assertEqual(
+                recorded["archive_visual_presence"]["status"], "EXACT_FRAME",
+            )
+            self.assertEqual(recorded["verdict"], "DEFEITO REAL")
+            self.assertEqual(item["verdict"], "DEFEITO REAL")
+            controller._deliver("outdated", item, {"status": "NO_SIMILAR"})
+            self.assertEqual(
+                capture_debug_record(panel)["decision"]
+                ["archive_visual_presence"]["status"], "EXACT_FRAME",
+            )
+
     def test_side_source_requires_matching_event_and_never_uses_old_frame(self):
         panel = SimpleNamespace(
             adhesive_multilight_primary_event_id="piece-A",
