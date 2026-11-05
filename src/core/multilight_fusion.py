@@ -483,6 +483,11 @@ def fuse_multilight(
         detail["recognition_light_routes"] = routes
         detail["recognition_route"] = recognition_route
         detail["cnn_v2_light_diagnostics"] = light_diagnostics
+        if any(
+            item.get("engine") == "aoi_quality_cnn_v3"
+            for item in light_diagnostics.values()
+        ):
+            detail["cnn_v3_light_diagnostics"] = deepcopy(light_diagnostics)
         # O trace e o detalhe têm a MESMA proveniência original, sem
         # inferir a rota da peça inteira apenas pela luz dominante.
         trace = detail.get("decision_trace")
@@ -642,6 +647,11 @@ def fuse_multilight(
         _light_recognition_provenance(source)
     )
     detail["cnn_v2_light_diagnostics"] = cnn_light_diagnostics
+    if any(
+        item.get("engine") == "aoi_quality_cnn_v3"
+        for item in cnn_light_diagnostics.values()
+    ):
+        detail["cnn_v3_light_diagnostics"] = deepcopy(cnn_light_diagnostics)
 
     # Preservar votos de diagnóstico da KNN C de CADA iluminação. Até aqui
     # o resultado final carregava apenas a luz dominante (MID), ocultando
