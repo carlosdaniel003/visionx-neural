@@ -410,7 +410,7 @@ class KNNSpectrumWidget(QWidget):
             elif route in {"NEW_CNN", "NEW_EXPERTS"}:
                 accent, fill = "#f5c518", "#2a2418"
                 primary = "SEM PAR EXATO"
-                secondary = "CNN FALTANDO v2" if route == "NEW_CNN" else "OUTRO ESPECIALISTA"
+                secondary = ("CNN AOI V3" if info.get("cnn_model_name") == "CNN AOI V3" else "CNN FALTANDO v2") if route == "NEW_CNN" else "OUTRO ESPECIALISTA"
                 secondary += " • SEM MEMÓRIA EXATA"
             else:
                 accent, fill = "#8093a3", "#19232a"
