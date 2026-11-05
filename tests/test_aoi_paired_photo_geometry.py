@@ -92,6 +92,29 @@ class GeometryReconciliationTests(unittest.TestCase):
         self.assertEqual(result["TEST"].shape, (459, 522, 3))
         self.assertEqual(audit["corrected_panels"], ["TEST"])
 
+    def test_bars_from_different_rows_are_never_force_aligned(self):
+        frame = aoi_frame(missing_blue_gray_border=False)
+        pictures = {
+            "SAMPLE": frame[150:609, 101:622].copy(),
+            "TEST": frame[150:750, 781:1303].copy(),
+        }
+        after, audit = reconcile_paired_photos(
+            frame, pictures, {
+                "SAMPLE": {
+                    "boundary_source": "DETECTED",
+                    "bar_bottom": 150,
+                    "relative_top": 0, "relative_bottom": 459,
+                },
+                "TEST": {
+                    "boundary_source": "UNBOUNDED",
+                    "bar_bottom": 390,
+                    "x1": 781, "x2": 1303,
+                },
+            },
+        )
+        self.assertEqual(audit["status"], "ALIGNMENT_UNAVAILABLE")
+        self.assertEqual(after["TEST"].shape[0], 600)
+
     def test_no_valid_source_boundary_keeps_original_without_fabricating(self):
         frame = aoi_frame(missing_blue_gray_border=True)
         original = {
