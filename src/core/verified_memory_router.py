@@ -107,8 +107,8 @@ class VerifiedKNNMemory:
 
     @staticmethod
     def _visual_key(key: tuple) -> tuple:
-        """Categoria + luz + hashes de AMBAS as imagens; nunca similaridade."""
-        return key[0], key[1], key[5], key[6]
+        """Luz e hashes das DUAS imagens, sem filtro por categoria."""
+        return key[1], key[5], key[6]
 
     @staticmethod
     def _category_only_query(info: dict) -> bool:
@@ -370,7 +370,7 @@ class VerifiedKNNMemory:
         self, records: list[dict], identity: tuple,
         key: tuple, profile: dict,
     ) -> None:
-        """Reconstrói escopo categoria/luz e Parts quando ainda disponível.
+        """Reconstrói registros legados por luz e pixels.
 
         _entry() só autoriza registro com metadados históricos auditados;
         na captura sem Parts, todos os componentes da categoria/luz podem
@@ -379,7 +379,7 @@ class VerifiedKNNMemory:
         humana e hashes dos dois PNGs ainda passam por _entry().
         O warmup, por sua vez, continua montando o índice integral.
         """
-        scope = (key[0], key[1], key[3])
+        scope = (key[1],)
         started_at = time.perf_counter()
         with self._lock:
             if self._record_identity != identity or self._index is None:
@@ -409,9 +409,7 @@ class VerifiedKNNMemory:
                     if not isinstance(record, dict):
                         continue
                     if (record.get("mode") != "anomaly"
-                            or canonical_memory_category(record.get("category")) != scope[0]
-                            or canonical_memory_lighting(record.get("lighting_mode")) != scope[1]
-                            or (scope[2] and _clean(record.get("part")) != scope[2])):
+                            or canonical_memory_lighting(record.get("lighting_mode")) != scope[0]):
                         continue
                     eligible += 1
                     try:
@@ -507,10 +505,10 @@ class VerifiedKNNMemory:
                 if entry is None:
                     continue
                 key, detail = entry
-                scope = (key[0], key[1], key[3])
+                scope = (key[1],)
                 if (self._all_scopes_indexed
                         or scope in self._indexed_scopes
-                        or (key[0], key[1], "") in self._indexed_scopes):
+                        or (key[1],) in self._indexed_scopes):
                     self._index.setdefault(key, []).append(detail)
                     self._visual_index.setdefault(
                         self._visual_key(key), []
@@ -656,20 +654,18 @@ class VerifiedKNNMemory:
             reference_hash = image_fingerprint(reference)
             test_hash = image_fingerprint(test)
             key = self._key(info, reference_hash, test_hash)
-            category_only = self._category_only_query(info)
-            if key is None and category_only:
-                category = canonical_memory_category(info.get("category", ""))
+            if key is None:
+                # Capturas UNKNOWN ou sem OCR também são consultáveis.
+                category = canonical_memory_category(info.get("category", "")) or "AOI_UNCLASSIFIED"
                 light = canonical_memory_lighting(info.get("lighting_mode", ""))
-                if (category and category not in {"UNKNOWN", "UNKNOW", "DESCONHECIDO"}
-                        and light in {"SIDE", "TOP", "MID"}):
+                if light in {"SIDE", "TOP", "MID"}:
                     key = (category, light, "", "", "", reference_hash, test_hash)
         finally:
             profile["fingerprints_ms"] = round(
                 (time.perf_counter() - hashes_started_at) * 1000.0, 2
             )
         profile["legacy_lookup_mode"] = (
-            "exact_visual_category_light" if category_only and key is not None
-            else "legacy_metadata" if key is not None else "unavailable"
+            "exact_visual_light" if key is not None else "unavailable"
         )
         if key is None:
             # Uma chave incompleta nunca pode pular a auditoria de rótulos
@@ -680,7 +676,7 @@ class VerifiedKNNMemory:
                     "reason": "Metadados incompletos impedem auditoria cross-light",
                 }
             return durable if durable["status"] == "KNOWN" else {
-                "status": "NEW", "reason": "Categoria ou par AOI inválido"
+                "status": "NEW", "reason": "Par AOI inválido"
             }
         if knn is None:
             if durable.get("cross_light_verified"):
@@ -699,7 +695,6 @@ class VerifiedKNNMemory:
             self._ensure_lookup_scope(records, identity, key, profile)
             matched = list(
                 self._visual_index.get(self._visual_key(key), ())
-                if category_only else self._index.get(key, ())
             )
             profile["warmup"] = dict(self._warmup_status)
             cross_legacy = []
@@ -716,7 +711,7 @@ class VerifiedKNNMemory:
                     item
                     for light in ("SIDE", "TOP", "MID")
                     for item in self._visual_index.get(
-                        (key[0], light, key[5], key[6]), ()
+                        (light, key[5], key[6]), ()
                     )
                 ]
                 profile["cross_light_legacy_checked"] = True
@@ -764,8 +759,7 @@ class VerifiedKNNMemory:
             "matches": len(matched) + (durable.get("matches", 0)
                                        if durable["status"] == "KNOWN" else 0),
             "reason": (
-                "Par RGB exato auditado por categoria e iluminação, sem OCR legado"
-                if category_only else "Par visual exato com rótulo consistente"
+                "Par RGB exato auditado por iluminação sem categoria"
             ),
             "memory_source": "HUMAN_VERIFIED_PAIR",
         }
