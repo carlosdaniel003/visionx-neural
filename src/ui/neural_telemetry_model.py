@@ -250,6 +250,19 @@ def memory_seen_state(analysis: dict | None) -> dict:
     archive = detail.get("side_archive_visual_presence")
     archive = archive if isinstance(archive, dict) else {}
     archive_status = str(archive.get("status", "") or "")
+    rendered = _map(archive.get("rendered_archive_match"))
+    rendered_seen = bool(
+        rendered.get("schema") == "visionx.archive_rendered_source_match.v1"
+        and rendered.get("status") == "RENDERED_ARCHIVE_SOURCE"
+        and rendered.get("label") in {"OK", "NG"}
+        and rendered.get("diagnostic_only") is True
+        and rendered.get("decision_authorized") is False
+        and rendered.get("exact_aoi_pair") is False
+        and rendered.get("frame_pixel_identical") is False
+        and isinstance(rendered.get("path"), str)
+        and rendered.get("path")
+        and isinstance(rendered.get("evidence"), dict)
+    )
     # O worker consulta SIDE/TOP/MID separadamente, mas a SIDE pode nao
     # ter encontrado vizinho enquanto TOP ou MID recuperou uma captura.
     # A UI agrega apenas fontes diagnósticas com o contrato verificável.
@@ -304,6 +317,11 @@ def memory_seen_state(analysis: dict | None) -> dict:
         or len(similar_labels | {
             row["label"] for row in exact_frames.values()
         }) > 1
+        or rendered.get("status") == "CONFLICT"
+        or (rendered_seen and bool(
+            (similar_labels | {row["label"] for row in exact_frames.values()})
+            - {rendered["label"]}
+        ))
     )
     archive_matched = bool(similar_frames and not archive_conflict)
     archive_label = next(iter(similar_labels)) if archive_matched else ""
@@ -311,6 +329,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
         light for light in LIGHTS if light in similar_frames
     ] if archive_matched else []
     archive_exact_seen = bool(exact_frames) and not archive_conflict
+    archive_rendered_seen = rendered_seen and not archive_conflict
     exact_human = detail.get("operator_latest_exact_frame")
     exact_human = exact_human if isinstance(exact_human, dict) else {}
     exact_human_seen = bool(
@@ -376,7 +395,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
             )
         )
     status = (
-        "JA_VI" if known or archive_exact_seen or exact_human_seen else
+        "JA_VI" if known or archive_exact_seen or exact_human_seen or archive_rendered_seen else
         "ACERVO_AMBIGUO" if archive_conflict else
         "JA_VI" if auto_exact_seen else
         "VI_SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
@@ -388,7 +407,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
     return {
         "status": status,
         "label": (
-            "JÁ VI" if known or archive_exact_seen or exact_human_seen else
+            "JÁ VI" if known or archive_exact_seen or exact_human_seen or archive_rendered_seen else
             "ACERVO AMBÍGUO" if archive_conflict else
             "JÁ VI" if auto_exact_seen else
             "VI SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
@@ -405,6 +424,10 @@ def memory_seen_state(analysis: dict | None) -> dict:
         ) if human_visual_label else None,
         "human_visual_cross_light": human_visual.get("cross_light_candidate") is True,
         "archive_visual_seen": archive_matched or historical_ok,
+        "archive_rendered_source_seen": archive_rendered_seen,
+        "archive_rendered_source_label": rendered.get("label") if archive_rendered_seen else "",
+        "archive_rendered_source_path": rendered.get("path") if archive_rendered_seen else "",
+        "cnn_model_name": m["cnn_model_name"],
         "archive_label": "OK" if historical_ok else archive_label if archive_matched else "",
         "archive_visual_lights": ["TOP", "MID"] if historical_ok else archive_lights,
         "historical_ok_recall": historical_ok,
@@ -461,6 +484,16 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
                 f"em {lights}. Isso NÃO prova que os dois recortes AOI "
                 "tenham hashes iguais e não autoriza um comando 0/1. "
                 "A memória humana exata é uma consulta separada.",
+            )
+        if memory["archive_rendered_source_seen"] and not memory["exact_pair_seen"]:
+            label = memory["archive_rendered_source_label"]
+            path = memory["archive_rendered_source_path"]
+            return (
+                f"JÁ VI • ARQUIVO REEXIBIDO {label}",
+                f"Origem visual registrada: {path}. A imagem da captura foi "
+                "alinhada ao arquivo mesmo com redimensionamento da janela. "
+                "Não é igualdade dos pixels brutos nem do par AOI; o rótulo "
+                "da pasta não substitui uma classificação física verificada.",
             )
         if memory["auto_side_exact_seen"]:
             label = memory["auto_side_label"]
