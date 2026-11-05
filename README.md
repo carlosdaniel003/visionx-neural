@@ -1,3 +1,15 @@
+## 05/11/2026 — 25 NG confirmados para novo fine-tuning V3 offline
+
+Após auditar 1.111 PNGs, o operador confirmou **25 dos 26 NG→OK**
+como NG físico; o caso restante foi apagado e excluído.
+A nova revisão liga essas fontes por SHA e fornece treinamento experimental
+a partir da V3 época 3 verificada, sem atualizar o checkpoint ativo.
+Os 25 PNGs correspondem a 24 pares únicos; todos ficam em treino,
+enquanto a seleção da época exige não regredir OK→NG nem NG→OK
+na validação. Ver [procedimento offline](docs/AOI_V3_25_NG_CONFIRMADOS_FINE_TUNING_20261105.md).
+
+---
+
 ## 05/11/2026 — Auditoria integral da V3 no acervo original, sem MSS
 
 A ferramenta `python -X utf8 -m src.scripts.audit_v3_full_archive --root .`
