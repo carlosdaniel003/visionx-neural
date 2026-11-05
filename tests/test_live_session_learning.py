@@ -156,7 +156,7 @@ class LiveSessionLearningTests(unittest.TestCase):
             different_category["sample_image"],
             different_category["ng_image"],
             different_category["aoi_info"],
-        )["status"], "NEW")
+        )["status"], "KNOWN")
         different_light = labeled_task(light="TOP")
         self.assertEqual(self.store.lookup(
             different_light["sample_image"], different_light["ng_image"],

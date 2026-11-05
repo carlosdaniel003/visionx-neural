@@ -252,23 +252,24 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
         self.assertEqual(result["active_engines"], ["shift_expert.py"])
         self.assertTrue(system.specialist_calls[-1]["_replay_without_memory"])
 
-    def test_different_board_part_light_category_or_reference_is_new(self):
+    def test_metadata_does_not_override_exact_pixels_but_light_or_image_does(self):
         system = self.create_router()
         system.experts["knn"].signatures_ng.append(self.make_record("NG"))
-        variations = [
+        for altered in (
             dict(self.info, board="PCB-999"),
             dict(self.info, parts="R476"),
-            dict(self.info, lighting_mode="TOP"),
             dict(self.info, category="INVERTIDO"),
-        ]
-        for altered in variations:
+            dict(self.info, category="Unknown"),
+        ):
             result = self.inspect(system, info=altered)
-            self.assertNotEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+            self.assertEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
+        result = self.inspect(system, info=dict(self.info, lighting_mode="TOP"))
+        self.assertNotEqual(result["detail"]["recognition_route"], "KNOWN_KNN")
         alternate_reference = self.reference.copy()
         alternate_reference[35, 35] ^= 1
         outcome = self.inspect(system, ref=alternate_reference)
         self.assertNotEqual(outcome["detail"]["recognition_route"], "KNOWN_KNN")
-        self.assertEqual(len(system.specialist_calls), 5)
+        self.assertEqual(len(system.specialist_calls), 2)
 
     def test_two_opposite_verified_labels_for_same_pair_force_review(self):
         system = self.create_router()
@@ -304,7 +305,7 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
         result = self.inspect(system)
         self.assertEqual(result["detail"]["recognition_route"], "NEW_CNN")
 
-    def test_aoi_value_changed_requires_new_specialist_inspection(self):
+    def test_aoi_value_changed_does_not_change_exact_visual_identity(self):
         system = self.create_router()
         known = dict(self.info, value="0 <= 17 <= 35 FALTANDO")
         system.experts["knn"].signatures_ng.append(
@@ -316,7 +317,7 @@ class VerifiedMemoryRoutingTests(MemoryFirstFixture):
             system,
             info=dict(known, value="0 <= 18 <= 35 FALTANDO")
         )
-        self.assertEqual(changed["detail"]["recognition_route"], "NEW_CNN")
+        self.assertEqual(changed["detail"]["recognition_route"], "KNOWN_KNN")
 
     def test_changed_or_missing_source_images_do_not_authorize_known(self):
         system = self.create_router()
