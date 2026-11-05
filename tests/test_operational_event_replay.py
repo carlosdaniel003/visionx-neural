@@ -223,8 +223,9 @@ class WiringTests(unittest.TestCase):
         runner = Path(
             "src/services/startup_regression/operational_event_replay.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("Replay operacional por evento", ui)
-        self.assertIn("operational_event_replay_cli", ui)
+        self.assertNotIn("Replay operacional por evento", ui)
+        self.assertNotIn("operational_event_replay_cli", ui)
+        self.assertIn("def main(", cli)
         self.assertIn("event_id", runner)
         self.assertIn("build_side_early_decision(", runner)
         self.assertIn("fuse_multilight(", runner)
