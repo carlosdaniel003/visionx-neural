@@ -367,9 +367,13 @@ class ScreenMonitor(QThread):
                               gm_rows)
                 return strip
 
-        else:
-            # Apenas uma fronteira extraída, não um fallback ao strip,
-            # pode servir de âncora para o outro painel da mesma AOI.
+        # A última linha não-cinza, quando não existe borda sustentada,
+        # devolve o tamanho do strip (600 px nesta captura). Isso NÃO
+        # equivale ao fim geométrico da fotografia e não pode ser âncora.
+        remaining = strip_h - bottom
+        if (remaining >= 15
+                and bool(is_gray_row[bottom])
+                and float(np.mean(is_gray_row[bottom:])) >= .90):
             self._photo_capture_geometry[
                 "SAMPLE" if str(label).startswith("AZUL") else "TEST"
             ].update(
