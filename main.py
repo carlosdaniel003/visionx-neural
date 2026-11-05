@@ -25,6 +25,7 @@ from src.core.best_match_memory import install_best_match_memory
 from src.core.dual_scale_memory import install_dual_scale_memory
 from src.core.full_frame_memory import install_full_frame_memory
 from src.core.neural.faltando_live import install_faltando_cnn_live
+from src.core.neural.aoi_quality_cnn_v3_primary import AOIQualityV3Primary
 from src.core.neural.aoi_quality_cnn_v3_production_trial import (
     install_aoi_quality_v3_production_trial,
 )
@@ -192,17 +193,17 @@ def main():
     # Deve ser a última extensão do orquestrador: audita o resultado final de
     # todos os motores e garante a categoria correta no Laboratório de Textura.
     install_roi_input_contract(MoEOrchestrator, SSIMExpert, SilkExpert)
-    # A CNN de ausencia v2 cobre FALTANDO/EMBORCADO/INVERTIDO/DESLOCADO.
-    # Adesivo e categorias desconhecidas permanecem em seus especialistas.
-    install_faltando_cnn_live(MoEOrchestrator)
+    # A V3 assume a inferência principal onde a V2 atuava (inclusive MSS).
+    # Adesivo/especialistas e memória humana permanecem independentes.
+    # Não instanciar FaltandoCNNLive/V2 no pipeline normal.
+    install_faltando_cnn_live(MoEOrchestrator, predictor=AOIQualityV3Primary())
     # Consulta primeiro apenas memória humana KNN de par EXATO. Para casos
     # novos ignoram voto KNN aproximado e seguem CNN ou especialista.
     install_memory_first_router(MoEOrchestrator)
     # Casos NOVOS: estratégia C OK/NG em consulta visual A/B, sem XP automático.
     install_live_knn_strategy_c(MoEOrchestrator)
-    # CNN V3 época 3: somente depois da memória/KNN C, para nunca
-    # substituir a decisão humana KNOWN. O ensaio só fica ativo com
-    # ponteiro local SHA-verificado e não autoriza OK automático.
+    # O wrapper V3 legado é compatível com a nova rota primária e não
+    # duplica inferência se cnn_v3_primary já está presente.
     install_aoi_quality_v3_production_trial(MoEOrchestrator)
 
     # Ordem dos wrappers operacionais:
