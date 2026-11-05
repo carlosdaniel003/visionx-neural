@@ -989,7 +989,8 @@ def install_memory_first_router(orchestrator_cls, *, memory=None) -> None:
         if isinstance(trace, dict):
             trace["recognition_route"] = route
         if route == "NEW_CNN":
-            result["reason"] = "CASO NOVO • CNN FALTANDO v2. " + str(result.get("reason", ""))
+            model = "CNN AOI V3" if detail.get("cnn_v3_primary") is True else "CNN FALTANDO V2"
+            result["reason"] = "CASO NOVO • " + model + ". " + str(result.get("reason", ""))
         else:
             result["reason"] = "CASO NOVO • motores da categoria. " + str(result.get("reason", ""))
         return with_memory_timing(result)
