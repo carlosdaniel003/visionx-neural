@@ -1,3 +1,23 @@
+## 05/11/2026 — Repetir auditoria integral com V3 época 5 e índice XP
+
+O replay offline usa todos os PNGs originais de `ok_archive` e
+`ng_archive`, SEM MSS, com a nova opção que exige o SHA e a época 5
+e confere o índice SHA real usado pelo XP:
+
+```powershell
+python -X utf8 -m src.scripts.audit_v3_full_archive --root . --require-epoch5 --verify-runtime-archive
+```
+
+O relatório separa **CNN OK/NG**, identidade de frame exata no acervo
+(incluindo conflitos de pasta) e semelhança com **outra imagem**
+(leave-one-out). Diagnóstico exclusivamente offline: sem modificar
+pesos, memória, rótulos, Produção ou enviar 0/1. A execução real
+dos PNGs/checkpoint depende da estação do operador.
+
+[Procedimento e interpretação](docs/ODIN_V3_EPOCA5_REPLAY_INTEGRAL_ACERVO_20261105.md).
+
+---
+
 ## 05/11/2026 — CNN V3 época 5: substituição operacional por autorização explícita
 
 O operador escolheu a **época 5** para substituir a época 3 em Teste,
