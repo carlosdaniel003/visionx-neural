@@ -1,3 +1,31 @@
+## 05/11/2026 — V3 primária nas rotas V2 e paridade MSS/XP
+
+- `src/core/neural/aoi_quality_cnn_v3_primary.py`: adaptador do
+  checkpoint V3 época 3 para a inspeção visual OK/NG, sem executar V2
+  e sem liberar 0/OK por score experimental isolado.
+- `main.py`: instala `AOIQualityV3Primary` no slot antes usado pela V2,
+  respeitando KNN humana exata e especialistas de MUITO ADESIVO.
+- `src/ui/archive_visual_presence_feedback.py` e
+  `src/ui/local_capture_safety.py`: a captura MSS solicita o mesmo
+  scanner de frame do acervo usado pelo XP, nas três luzes.
+- `src/services/capture_debug_payload.py` e
+  `src/ui/network_xp_debug.py`: prova V3, hashes e diagnóstico de
+  frame completo registrado no debug, com painel e telemetria V3.
+- `src/ui/production_confidence_gate.py`: OK V3 experimental não
+  autoriza liberação automática 0/XP; checkpoint ausente ou
+  inconsistente bloqueia, inclusive em caminhos operacionais legados.
+- `src/services/neural_online_learning.py`: treinamento incremental
+  V2 não é iniciado se o runtime estiver usando V3. A memória humana
+  KNN permanece independente.
+- `tests/test_aoi_v3_primary_mss.py` e
+  `.github/workflows/aoi-v3-primary-mss-tests.yml`: regressões.
+
+[Procedimento e limites](docs/ODIN_V3_PRIMARIA_MSS_PARIDADE_20261105.md).
+O documento do ensaio `ng_veto_only` de 04/11 permanece como histórico
+de implantação anterior, não representa a primazia atual do classificador.
+
+---
+
 ## 04/11/2026 — V3 época 3: integração reversível de NG na Produção
 
 - `src/core/neural/aoi_v3_trial_contract.py`: contrato e SHA pinado do
