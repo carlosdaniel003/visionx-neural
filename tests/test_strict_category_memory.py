@@ -52,7 +52,7 @@ class StrictCategoryMemoryTests(unittest.TestCase):
         self.expert.signatures_ok = []
         self.expert.signatures_ng = []
 
-    def test_inverted_uses_only_inverted_jsons(self):
+    def test_inverted_can_use_visual_memory_from_all_categories(self):
         query = signature("INVERTIDO")
         self.expert.signatures_ng = [
             record("INVERTIDO", "NG", query),
@@ -69,14 +69,12 @@ class StrictCategoryMemoryTests(unittest.TestCase):
             anomaly_signature=query,
         )
         self.assertTrue(result["has_memory"])
-        self.assertEqual(result["best_match_label"], "NG")
-        self.assertEqual(result["vote_defect"], 1.0)
         self.assertEqual(result["memory_category"], "INVERTIDO")
-        self.assertEqual(result["memory_candidate_count"], 1)
+        self.assertEqual(result["memory_candidate_count"], 3)
         self.assertTrue(result["memory_filter_strict"])
-        self.assertEqual(result["memory_scope"], "categoria")
+        self.assertEqual(result["memory_scope"], "iluminacao")
 
-    def test_absent_category_memory_does_not_fallback_to_global(self):
+    def test_unknown_category_can_recall_visual_anomalies(self):
         query = signature("INVERTIDO")
         self.expert.signatures_ng = [
             record("MUITOADESIVO", "NG", query),
@@ -88,11 +86,9 @@ class StrictCategoryMemoryTests(unittest.TestCase):
             aoi_info={"category": "INVERTIDO"},
             anomaly_signature=query,
         )
-        self.assertFalse(result["has_memory"])
-        self.assertEqual(result["n_neighbors"], 0)
-        self.assertEqual(result["memory_candidate_count"], 0)
+        self.assertTrue(result["has_memory"])
+        self.assertEqual(result["memory_candidate_count"], 2)
         self.assertEqual(result["memory_category"], "INVERTIDO")
-        self.assertIn("Nenhum JSON", result["memory_reason"])
 
     def test_legacy_image_is_ignored_even_in_same_category(self):
         query = signature("FALTANDO")

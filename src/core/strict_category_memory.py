@@ -1,7 +1,6 @@
-"""Memória de anomalias estritamente isolada pela categoria da AOI.
+"""Memória de anomalias pela assinatura visual e iluminação.
 
-Não há fallback por componente, busca global ou imagem legada. Cada inspeção
-consulta somente JSONs da mesma categoria canônica.
+Categoria OCR é metadado histórico; não exclui exemplos visuais.
 """
 
 from __future__ import annotations
@@ -68,7 +67,7 @@ def install_strict_category_memory(knn_expert_cls) -> None:
             info.get("lighting_mode", "")
         )
 
-        if not target_category or not valid_anomaly_signature(anomaly_signature):
+        if not valid_anomaly_signature(anomaly_signature):
             result = self._empty_result(
                 query_anomaly_signature=(
                     anomaly_signature
@@ -78,16 +77,14 @@ def install_strict_category_memory(knn_expert_cls) -> None:
             )
             result.update(
                 {
-                    "memory_scope": "categoria",
+                    "memory_scope": "iluminacao",
                     "memory_category": target_category,
                     "memory_lighting": target_lighting,
                     "memory_candidate_count": 0,
                     "memory_filter_strict": True,
                     "memory_mode": "anomaly",
                     "memory_reason": (
-                        "Categoria ausente"
-                        if not target_category
-                        else "Assinatura de anomalia inválida"
+                        "Assinatura de anomalia inválida"
                     ),
                 }
             )
@@ -106,8 +103,6 @@ def install_strict_category_memory(knn_expert_cls) -> None:
             record
             for record in signatures_ok
             if record.get("mode") == "anomaly"
-            and canonical_memory_category(record.get("category", ""))
-            == target_category
             and canonical_memory_lighting(
                 record.get("lighting_mode", "")
             )
@@ -117,8 +112,6 @@ def install_strict_category_memory(knn_expert_cls) -> None:
             record
             for record in signatures_ng
             if record.get("mode") == "anomaly"
-            and canonical_memory_category(record.get("category", ""))
-            == target_category
             and canonical_memory_lighting(
                 record.get("lighting_mode", "")
             )
@@ -132,15 +125,14 @@ def install_strict_category_memory(knn_expert_cls) -> None:
             )
             result.update(
                 {
-                    "memory_scope": "categoria",
+                    "memory_scope": "iluminacao",
                     "memory_category": target_category,
                     "memory_lighting": target_lighting,
                     "memory_candidate_count": 0,
                     "memory_filter_strict": True,
                     "memory_mode": "anomaly",
                     "memory_reason": (
-                        f"Nenhum JSON de anomalia da categoria {target_category} "
-                        f"na iluminação {target_lighting}"
+                        f"Nenhum JSON de anomalia na iluminação {target_lighting}"
                     ),
                 }
             )
@@ -151,7 +143,7 @@ def install_strict_category_memory(knn_expert_cls) -> None:
             all_ok,
             all_ng,
             top_k,
-            "categoria",
+            "iluminacao",
         )
         result.update(
             {
@@ -160,8 +152,7 @@ def install_strict_category_memory(knn_expert_cls) -> None:
                 "memory_candidate_count": candidate_count,
                 "memory_filter_strict": True,
                 "memory_reason": (
-                    f"Consulta restrita a {candidate_count} JSON(s) de "
-                    f"{target_category} em {target_lighting}"
+                    f"Consulta visual a {candidate_count} JSON(s) em {target_lighting}"
                 ),
             }
         )
