@@ -532,6 +532,27 @@ def format_network_debug_report(record: dict | None) -> str:
                         f"{light}: {entry.get('predicted', '-')} • "
                         f"score NG {entry.get('ng_score_uncalibrated', 'N/D')}"
                     )
+        archive_presence = decision.get("archive_visual_presence")
+        if isinstance(archive_presence, dict) and archive_presence:
+            lines.extend([
+                "", "ACERVO VISUAL • FRAME COMPLETO OK/NG",
+                "-" * 72,
+                f"Consulta: {archive_presence.get('status', '-')}",
+                "FRAME EXATO = pixels idênticos na tela completa; "
+                "não equivale a PAR AOI EXATO.",
+                "Rótulos de pasta são diagnósticos, não confirmação física.",
+            ])
+            visual_lights = archive_presence.get("by_light", {})
+            if isinstance(visual_lights, dict):
+                for light in ("SIDE", "TOP", "MID"):
+                    row = visual_lights.get(light)
+                    if not isinstance(row, dict):
+                        continue
+                    lines.append(
+                        f"{light}: {row.get('status', '-')} • "
+                        f"arquivo {row.get('label') or '-'} • "
+                        f"SHA do frame {row.get('exact_frame_sha256') or '-'}"
+                    )
         if cnn.get("active"):
             score = cnn.get("ng_score_uncalibrated")
             score_text = f"{score:.6%}" if isinstance(score, (int, float)) else "N/D"
