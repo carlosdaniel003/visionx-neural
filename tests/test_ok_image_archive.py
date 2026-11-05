@@ -246,19 +246,14 @@ class OKArchiveDecisionTests(unittest.TestCase):
 
         self.assertEqual(len(panel.archived), 1)
 
-    def test_missing_category_never_creates_sem_categoria_archive(self):
+    def test_missing_category_still_archives_actual_evidence(self):
         panel = FakeOKPanel()
         panel.current_aoi_info = {}
 
         panel.save_label("OK", source="button")
 
-        self.assertEqual(panel.archived, [])
-        self.assertTrue(
-            any(
-                "Nenhum arquivo SEM_CATEGORIA foi criado" in message
-                for message in panel.status
-            )
-        )
+        self.assertEqual(len(panel.archived), 1)
+        self.assertEqual(panel.archived[0][1], "")
 
     def test_new_event_can_be_archived_after_previous_event(self):
         panel = FakeOKPanel()

@@ -229,7 +229,6 @@ def install_ng_image_archive(control_panel_cls) -> None:
             and current_cycle_source == "network"
             and has_live_analysis
             and current_event_id
-            and current_category
             and not duplicate_event
         )
 
@@ -262,13 +261,7 @@ def install_ng_image_archive(control_panel_cls) -> None:
         ):
             updater = getattr(self, "update_network_status", None)
             if callable(updater):
-                if not current_category:
-                    updater(
-                        "NG não arquivado: a captura ativa não possui categoria "
-                        "AOI. Nenhum arquivo SEM_CATEGORIA foi criado."
-                    )
-                else:
-                    updater(
+                updater(
                         "NG não arquivado: o frame XP do evento atual não está "
                         "disponível. Nenhum recorte alternativo foi usado."
                     )

@@ -25,14 +25,13 @@ from typing import Callable
 from src.config.settings import BASE_DIR
 from src.core.anomaly_signature import build_anomaly_signature
 from src.core.archive_persistent_memory import PersistentArchiveKNN, make_record
-from src.services.archive_aoi_category import resolve_archive_aoi_category
 from src.services.faltando_cross_category_audit import _archive_image
 from src.services.startup_regression.archive_inventory import (
-    _inspect_png, filename_hints,
+    _inspect_png,
 )
 
 LOG = logging.getLogger(__name__)
-REJECTED_ARCHIVE_SCHEMA = "visionx.knn_archive_rejections.v2"
+REJECTED_ARCHIVE_SCHEMA = "visionx.knn_archive_rejections.v3"
 
 
 class ArchiveCategoryMismatch(ValueError):
@@ -77,7 +76,7 @@ def _set_background_thread_mode(enable: bool) -> bool:
 
 def _extract_entry(root: Path, path: Path, label: str, *,
                    extractor, frame_loader) -> dict:
-    """Valida PNG, bytes e categoria; retorna um registro durável íntegro."""
+    """Valida PNG e pares RGB; categoria OCR não exclui capturas."""
     relative = path.relative_to(root).as_posix()
     item = _inspect_png(path, root, label)
     if item["status"] != "VALID_PNG":
@@ -87,12 +86,10 @@ def _extract_entry(root: Path, path: Path, label: str, *,
     reference, test, info = extractor(frame)
     if not isinstance(info, dict):
         raise ValueError("AOI não extraiu metadados")
-    try:
-        cat, normalized_value = resolve_archive_aoi_category(
-            info, filename_hints(path)["category_hint"],
-        )
-    except ValueError as exc:
-        raise ArchiveCategoryMismatch(str(exc)) from exc
+    # Classificação visual independente de OCR e nome histórico.
+    # O prefixo AOI é metadado neutro; rótulo vem exclusivamente
+    # da pasta de origem e os hashes das imagens seguem obrigatórios.
+    cat, normalized_value = "AOI", ""
     signature = build_anomaly_signature(
         reference, test, {}, {**info, "category": cat,
                               "value": normalized_value}
@@ -151,7 +148,7 @@ class KNNArchiveAutoMemory:
         # Rejeições determinísticas persistidas por tamanho+mtime; nunca
         # viram exemplos KNN. Evita refazer OCR no mesmo PNG após reiniciar.
         self._rejections_path = (
-            self.root / "data" / "knn_archive_memory" / "archive_rejections_v2.json"
+            self.root / "data" / "knn_archive_memory" / "archive_rejections_v3.json"
         )
         self._rejections = self._load_rejections()
         self._rejections_dirty = False

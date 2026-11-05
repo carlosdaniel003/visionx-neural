@@ -186,20 +186,15 @@ class NGArchiveDecisionTests(unittest.TestCase):
         self.assertTrue(np.array_equal(image, exact_xp_frame))
         self.assertEqual(category, "Muito Adesivo")
 
-    def test_missing_category_never_creates_sem_categoria_archive(self):
+    def test_missing_category_still_archives_actual_xp_evidence(self):
         panel = FakePanel()
         panel.set_ng_archive_enabled(True)
         panel.current_aoi_info = {}
 
         panel.save_label("NG", source="button")
 
-        self.assertEqual(panel.archived, [])
-        self.assertTrue(
-            any(
-                "Nenhum arquivo SEM_CATEGORIA foi criado" in message
-                for message in panel.status
-            )
-        )
+        self.assertEqual(len(panel.archived), 1)
+        self.assertEqual(panel.archived[0][1], "")
 
     def test_new_xp_event_can_be_archived_after_previous_event(self):
         panel = FakePanel()

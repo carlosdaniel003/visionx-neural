@@ -233,7 +233,6 @@ def install_ok_image_archive(control_panel_cls) -> None:
             and supported_capture
             and has_live_analysis
             and current_event_id
-            and current_category
             and not duplicate_event
         )
 
@@ -262,13 +261,7 @@ def install_ok_image_archive(control_panel_cls) -> None:
         ):
             updater = getattr(self, "update_network_status", None)
             if callable(updater):
-                if not current_category:
-                    updater(
-                        "OK não arquivado: a captura ativa não possui categoria "
-                        "AOI. Nenhum arquivo SEM_CATEGORIA foi criado."
-                    )
-                else:
-                    updater(
+                updater(
                         "OK não arquivado: a evidência de Copiar imagem do "
                         "evento atual não está disponível. Nenhum recorte "
                         "alternativo foi usado."
