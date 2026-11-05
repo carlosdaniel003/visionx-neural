@@ -204,6 +204,39 @@ class Epoch5ActivationTests(unittest.TestCase):
                 mixed["detail"]["aoi_v3_multilight"]["reason"], "MIXED_V3_EPOCHS"
             )
 
+    def test_epoch5_primary_ok_is_not_an_automatic_xp_release(self):
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        class FakeEpoch5:
+            def predict(self, reference, test, light):
+                return {
+                    "schema": epoch5.EPOCH5_VOTE_SCHEMA,
+                    "status": "READY", "epoch": 5, "light": light,
+                    "checkpoint_sha256": epoch5.SNAPSHOT_SHA256,
+                    "ng_score_uncalibrated": .01,
+                    "predicted": "OK", "ng_veto": False,
+                    "automatic_ok_from_v3_authorized": False,
+                }
+
+        image = np.full((80, 120, 3), 100, dtype=np.uint8)
+        analysis = AOIQualityV3Primary(engine=FakeEpoch5()).inspect(
+            image, image, "SIDE",
+        )
+        analysis["multilight_final"] = True
+        analysis["eligible_for_final_decision"] = True
+        analysis["detail"]["multilight_final"] = True
+        analysis["detail"]["eligible_for_final_decision"] = True
+        analysis["detail"]["production_continuous_auto"] = True
+        analysis["detail"]["production_binary_auto"] = True
+        analysis["detail"]["recognition_route"] = "NEW_CNN"
+        policy = production_decision_policy(analysis)
+        self.assertFalse(policy["auto_allowed"])
+        self.assertNotEqual(policy["proposed_decision"], "OK")
+        self.assertEqual(
+            policy["reason"],
+            "cnn_v3_primary_ok_requires_independent_confirmation",
+        )
+
     def test_malformed_votes_fail_closed(self):
         with self._patch_hashes():
             for bad in ([], {}, ["bad"], float("nan")):
