@@ -390,35 +390,39 @@ def _light_recognition_provenance(source: dict[str, dict]) -> tuple[dict, str, d
     for light in LIGHTING_ORDER:
         frame = source[light]
         local = _detail(frame)
+        v3 = local.get("cnn_v3_primary") is True
         active = bool(
-            local.get("cnn_v2_active")
+            v3 or local.get("cnn_v2_active")
             or "faltando_cnn_v2.py" in (frame.get("active_engines") or [])
         )
+        prefix = "cnn_v3" if v3 else "cnn_v2"
+        score = local.get(f"{prefix}_ng_score_uncalibrated")
         diagnostics[light] = {
             "route": routes[light],
             "engine": (
-                "faltando_cnn_v2" if active
-                else str(local.get("dominant_engine", "") or "")
+                "aoi_quality_cnn_v3" if v3 else
+                "faltando_cnn_v2" if active else
+                str(local.get("dominant_engine", "") or "")
             ),
             "cnn_active": active,
-            "cnn_status": str(local.get("cnn_v2_status", "") or ""),
+            "cnn_status": str(local.get(f"{prefix}_status", "") or ""),
             "checkpoint_verified": (
-                local.get("cnn_v2_checkpoint_verified") is True
+                local.get(f"{prefix}_checkpoint_verified") is True
                 if active else None
             ),
             "checkpoint_sha256": (
-                str(local.get("cnn_v2_checkpoint_sha256", "") or "")
+                str(local.get(f"{prefix}_checkpoint_sha256", "") or "")
                 if active else ""
             ),
             "ng_score_uncalibrated": (
-                float(local["cnn_v2_ng_score_uncalibrated"])
-                if active and isinstance(
-                    local.get("cnn_v2_ng_score_uncalibrated"), (float, int)
-                )
+                float(score) if active and isinstance(score, (float, int))
                 else None
             ),
             "verdict": str(frame.get("verdict", "") or ""),
-            "category": str(local.get("cnn_v2_aoi_category", "") or ""),
+            "category": str(
+                local.get("cnn_v2_aoi_category")
+                or local.get("multilight_category") or ""
+            ),
             "human_memory_label": str(
                 local.get("recognition_known_label", "") or ""
             ),
