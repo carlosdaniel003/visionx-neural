@@ -1,4 +1,4 @@
-"""Painel visual de "Treinamento" / validação histórica não mutante.
+"""Auditoria visual do acervo; não treina modelos nem altera a Produção.
 
 Executa validação em PROCESSO SEPARADO com prioridade baixa para não
 congelar a interface nem tocar nos motores ao vivo. Nenhuma chamada de
@@ -7,9 +7,7 @@ congelar a interface nem tocar nos motores ao vivo. Nenhuma chamada de
 from __future__ import annotations
 
 from html import escape
-from datetime import datetime
 import json
-import os
 from pathlib import Path
 import sys
 from uuid import uuid4
@@ -17,7 +15,7 @@ from uuid import uuid4
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Qt
 from PyQt6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar,
-    QPushButton, QSizePolicy, QVBoxLayout, QApplication, QMessageBox,
+    QPushButton, QSizePolicy, QVBoxLayout,
     QWidget,
 )
 
@@ -203,8 +201,6 @@ class ArchiveTrainingPanel(QObject):
         self._run_type = "exact"
         self._cancel_requested = False
         self._cancel_path: Path | None = None
-        self._count = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
-        self._passes = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
         self._errors = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
         self._by_label = self._empty_label_counts()
         self._build()
@@ -376,8 +372,6 @@ class ArchiveTrainingPanel(QObject):
         self._stderr = ""
         self._last_finished = None
         self._cancel_requested = False
-        self._count = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
-        self._passes = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
         self._errors = {"KNN_MEMORIA": 0, "CNN_FALTANDO_V2": 0}
         self._by_label = self._empty_label_counts()
         reports = self.root / "reports" / "startup_regression"
@@ -542,10 +536,7 @@ class ArchiveTrainingPanel(QObject):
             self.progress_bar.setValue(min(total, done))
             model = packet.get("model")
             if model in self._count:
-                self._count[model] += 1
-                if packet.get("status") == "PASSOU":
-                    self._passes[model] += 1
-                else:
+                if packet.get("status") != "PASSOU":
                     self._errors[model] += 1
                 target = (self.knn_metric if model == "KNN_MEMORIA"
                           else self.cnn_metric)
@@ -572,6 +563,7 @@ class ArchiveTrainingPanel(QObject):
         elif event == "finished":
             self._last_finished = packet
         elif event == "error":
+            self._tone("error")
             self.status.setText(
                 "Falha no diagnóstico: " + str(packet.get("message", ""))[:350]
             )
@@ -615,7 +607,7 @@ class ArchiveTrainingPanel(QObject):
             self.cancel_button.setVisible(False)
             self._tone("error")
             if not self._cancel_requested and self._last_finished is None:
-                self.status.setText("Não foi possível iniciar a validação.")
+                self.status.setText("Não foi possível iniciar a auditoria.")
 
     def _finished(self, code: int, _status):
         self._read_stdout()
@@ -645,7 +637,14 @@ class ArchiveTrainingPanel(QObject):
                 "TXT: " + str(result.get("txt_path") or "-")
             )
             if result.get("canceled") or self._cancel_requested:
+                self._tone("attention")
                 self.status.setText("Cancelado • relatório PARCIAL salvo.")
+            elif result.get("complete") is not True:
+                self._tone("attention")
+                self.status.setText(
+                    "Relatório incompleto • não é possível declarar "
+                    "a validação histórica concluída."
+                )
             else:
                 met = all(
                     (result.get("models", {}).get(model, {})
@@ -678,6 +677,7 @@ class ArchiveTrainingPanel(QObject):
 
     def _finish_shadow(self, code: int, packet: dict | None):
         if not isinstance(packet, dict):
+            self._tone("attention")
             self.status.setText(
                 "Comparador cancelado ou encerrado sem resultado validado. "
                 + self._stderr[-300:]
