@@ -1,3 +1,21 @@
+## 05/11/2026 — 25 NG físicos da auditoria V3: fine-tuning experimental
+
+- `docs/aoi_v3_operator_ng_escape_review_20261105.json`: 25 revisões
+  NG com SHA, caso deletado excluído, tipagem física de 4 imagens.
+- `src/services/aoi_v3_ng_escape_reviews.py`: origem, SHA e staging
+  dos PNGs revisados, validação estrita com opt-in offline.
+- `src/services/aoi_universal_quality_archive.py`: integração das
+  decisões humanas, preserva 25 fontes em 24 pares únicos e bloqueia
+  contradições ou fontes modificadas.
+- `src/scripts/train_aoi_quality_cnn_v3_offline.py`: opt-in para
+  inicializar a época 3 pinada, isolar 25 NG no treino e registrar
+  replay humano separado de validação/teste; gate contra regressão.
+- `tests/test_aoi_v3_ng_escape_reviews.py` e
+  `tests/test_aoi_v3_ng_escape_training.py`: importação, SHAs,
+  duplicatas, isolamento e treino real em fixture.
+- `docs/AOI_V3_25_NG_CONFIRMADOS_FINE_TUNING_20261105.md`:
+  instruções, riscos, limites e relatório esperado.
+
 ## 05/11/2026 — Replay offline de todo o acervo pela CNN V3
 
 - `src/services/aoi_v3_archive_batch.py`: inventário completo, extração real,
