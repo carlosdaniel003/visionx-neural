@@ -1,9 +1,9 @@
-"""CNN V3 na estação: intervenção NG somente, por autorização local explícita.
+"""Execução V3 AOI com seleção reversível entre época 3 e época 5.
 
-A época 3 é experimental: 13/14 humanos no próprio treino, 3 NG
-liberados na validação e teste independente NÃO medido nessa época.
-Consequentemente a V3 não concede PRESS_0, não substitui memória
-humana confirmada e não altera os pesos/ponteiros da CNN V2.
+A época 5 exige ponteiro local explícito com SHA do relatório e pesos.
+Os 24/24 NG revisados foram usados no TREINO; há 2 falsas rejeições
+na validação e nenhum teste cego da época 5. A V3 não concede PRESS_0
+isoladamente nem sobrescreve a memória humana ou a CNN V2 histórica.
 """
 from __future__ import annotations
 
@@ -194,6 +194,7 @@ class AOIQualityV3ProductionTrial:
                 "blind_test_of_selected_epoch": False,
                 "operator_override_validation_regression": bool(new_epoch5),
                 "blind_test_of_epoch_3": False if not new_epoch5 else None,
+                "blind_test_of_epoch_5": False if new_epoch5 else None,
             }
 
 
