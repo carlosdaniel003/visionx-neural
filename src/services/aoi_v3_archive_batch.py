@@ -44,7 +44,7 @@ def _read(path: Path) -> tuple[np.ndarray, str]:
 
 def _scope(item: dict) -> str:
     return (str(item.get("category_hint", "") or "").upper() + "_" +
-            str(item.get("lighting_mode", "") or "").upper())
+            str(item.get("lighting", item.get("lighting_mode", "")) or "").upper())
 
 
 def _coarse_vector(descriptor) -> np.ndarray | None:
