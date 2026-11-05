@@ -159,6 +159,121 @@ class FullArchiveV3Tests(unittest.TestCase):
             self.assertEqual(result["summary"]["evaluated"], 0)
             self.assertEqual(result["summary"]["failed_or_unavailable"], 1)
 
+    def test_epoch5_strict_rejects_inactive_and_wrong_checkpoint(self):
+        from src.core.neural.aoi_v3_epoch5_contract import SNAPSHOT_SHA256
+
+        class FakeEpoch5(FakeV3):
+            def __init__(self, epoch, sha):
+                super().__init__()
+                self.epoch, self.sha = epoch, sha
+
+            def inspect(self, reference, test, light):
+                vote = super().inspect(reference, test, light)
+                vote["detail"]["cnn_v3_checkpoint_epoch"] = self.epoch
+                vote["detail"]["cnn_v3_checkpoint_sha256"] = self.sha
+                return vote
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write(root, "OK", "2026-10-02_1029_FALTANDO.png", 18)
+            with patch(
+                "src.core.neural.aoi_v3_epoch5_contract.epoch5_pointer_enabled",
+                return_value=False,
+            ):
+                with self.assertRaisesRegex(ValueError, "não está ativada"):
+                    audit_full_archive(
+                        root, extractor=FakeExtractor(), predictor=FakeV3(),
+                        require_epoch5=True,
+                    )
+            with patch(
+                "src.core.neural.aoi_v3_epoch5_contract.epoch5_pointer_enabled",
+                return_value=True,
+            ), patch(
+                "src.core.neural.aoi_v3_epoch5_contract.validate_epoch5_snapshot",
+                return_value=({}, root / "fixture.pt"),
+            ):
+                correct = audit_full_archive(
+                    root, extractor=FakeExtractor(),
+                    predictor=FakeEpoch5(5, SNAPSHOT_SHA256),
+                    require_epoch5=True,
+                )
+                self.assertTrue(correct["all_files_evaluated"])
+                self.assertEqual(correct["classifier"]["v3_checkpoint_epoch"], [5])
+                self.assertEqual(
+                    correct["classifier"]["v3_checkpoint_sha256"],
+                    [SNAPSHOT_SHA256],
+                )
+                wrong = audit_full_archive(
+                    root, extractor=FakeExtractor(),
+                    predictor=FakeEpoch5(3, "a"*64),
+                    require_epoch5=True,
+                )
+                self.assertFalse(wrong["all_files_evaluated"])
+                self.assertEqual(wrong["summary"]["failed_or_unavailable"], 1)
+                self.assertIn("época 5", wrong["cases"][0]["issues"][0])
+
+    def test_exact_replay_uses_xp_index_and_reports_label_conflict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = np.random.default_rng(31).integers(
+                10, 240, (720, 1280, 3), dtype=np.uint8,
+            )
+            _write(root, "OK", "2026-10-02_1029_FALTANDO_SIDE.png", 31, image=image)
+            result = audit_full_archive(
+                root, extractor=FakeExtractor(), predictor=FakeV3(),
+                verify_runtime_archive=True,
+            )
+            recall = result["runtime_archive_exact_replay"]
+            self.assertEqual(recall["scanned"], 1)
+            self.assertEqual(recall["exact_unambiguous"], 1)
+            self.assertEqual(recall["own_file_retrieved"], 1)
+            self.assertEqual(recall["cross_label_conflicts"], 0)
+            self.assertTrue(result["cases"][0]["runtime_archive_recall"][
+                "exact_label_unambiguous"
+            ])
+            self.assertFalse(result["cases"][0]["runtime_archive_recall"][
+                "production_decision_authorized"
+            ])
+            self.assertIn("ÍNDICE EXATO DO XP", _summary_text(result))
+
+            # Mesmo PNG original no rótulo oposto: NO LABEL SHALL WIN.
+            _write(root, "NG", "2026-10-02_1030_FALTANDO_SIDE.png", 31, image=image)
+            conflict = audit_full_archive(
+                root, extractor=FakeExtractor(), predictor=FakeV3(),
+                verify_runtime_archive=True,
+            )
+            replay = conflict["runtime_archive_exact_replay"]
+            self.assertEqual(replay["scanned"], 2)
+            self.assertEqual(replay["own_file_retrieved"], 2)
+            self.assertEqual(replay["exact_unambiguous"], 0)
+            self.assertEqual(replay["cross_label_conflicts"], 2)
+            self.assertEqual(replay["not_exact_or_ambiguous"], 2)
+            self.assertTrue(all(
+                item["runtime_archive_recall"]["status"] == "EXACT_FRAME_CONFLICT"
+                for item in conflict["cases"]
+            ))
+
+    def test_exact_only_never_claims_super_similar_is_exact(self):
+        from src.services.archive_visual_presence import ArchiveVisualPresenceIndex
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = np.random.default_rng(41).integers(
+                10, 240, (720, 1280, 3), dtype=np.uint8,
+            )
+            _write(root, "OK", "2026-10-02_1029_FALTANDO_SIDE.png", 41, image=image)
+            index = ArchiveVisualPresenceIndex(
+                ok_dir=root / "public/ok_archive",
+                ng_dir=root / "public/ng_archive",
+            )
+            exact = index.inspect(image, "FALTANDO", "SIDE", exact_only=True)
+            self.assertEqual(exact["status"], "EXACT_FRAME")
+            almost = image.copy()
+            almost[100, 300, 0] ^= 1
+            checked = index.inspect(almost, "FALTANDO", "SIDE", exact_only=True)
+            self.assertEqual(checked["status"], "NO_EXACT_FRAME")
+            self.assertFalse(checked["decision_authorized"])
+            self.assertEqual(checked["exact_frame_labels"], [])
+
     def test_inventoried_png_changed_while_running_invalidates_result(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
