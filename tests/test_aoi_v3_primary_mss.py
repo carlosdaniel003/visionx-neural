@@ -169,20 +169,38 @@ class PrimaryRoutingTests(unittest.TestCase):
 class LocalMSSArchiveTests(unittest.TestCase):
     def test_mss_submits_original_full_frame_against_three_archive_lights(self):
         class Collector:
-            def inspect(self, analysis, image, category, event_id, *, frames):
-                self.args = (analysis, image, category, event_id, frames)
+            def inspect(self, analysis, image, category, event_id, *,
+                        frames, candidate_paths):
+                self.args = (
+                    analysis, image, category, event_id, frames, candidate_paths,
+                )
                 return True
 
         collector = Collector()
         original = np.full((840, 1165, 3), 55, dtype=np.uint8)
-        a = {"verdict": "DEFEITO REAL", "detail": {"recognition_route": "NEW_CNN"}}
+        a = {
+            "verdict": "DEFEITO REAL",
+            "detail": {
+                "recognition_route": "NEW_CNN",
+                "knn_c": {"neighbors_B": [{
+                    "path": "public/ok_archive/2026-10-02_1029_FALTANDO.png",
+                }]},
+            },
+        }
         panel = SimpleNamespace(
             local_capture_debug_event_id="mss-123",
-            monitor=SimpleNamespace(last_capture_frame=original),
+            capture_debug_last_record={
+                "event_id": "mss-123", "source": "local_mss",
+            },
+            capture_debug_last_image=original.copy(),
+            capture_debug_last_image_event_id="mss-123",
             _side_archive_presence_feedback=collector,
         )
         self.assertTrue(submit_local_mss_archive_presence(panel, a, "FALTANDO"))
-        analysis, image, cat, event, frames = collector.args
+        analysis, image, cat, event, frames, candidates = collector.args
+        self.assertEqual(candidates, [
+            "public/ok_archive/2026-10-02_1029_FALTANDO.png"
+        ])
         self.assertIs(analysis, a)
         self.assertEqual(cat, "FALTANDO")
         self.assertEqual(event, "mss-123")
