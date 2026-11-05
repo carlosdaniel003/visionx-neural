@@ -32,7 +32,7 @@ def operational_state(
         return OperationalState(
             name="processing",
             badge="PROCESSANDO",
-            hint="Aguarde a captura e a análise dos especialistas.",
+            hint="Captura ou análise em andamento. Nenhum resultado final disponível ainda.",
             tone="busy",
             capture_enabled=False,
             discard_enabled=False,
@@ -73,10 +73,10 @@ def operational_state(
     if is_locked and has_analysis and normalized_mode == "Modo Produção":
         return OperationalState(
             name="production_auto",
-            badge="APRESENTANDO ANÁLISE",
+            badge="RESULTADO RECEBIDO",
             hint=(
-                "O ODIN está exibindo o resultado antes de aplicar a política "
-                "automática ou solicitar o operador."
+                "A análise existe, mas o envio 0/1 depende da política "
+                "operacional, da integridade da captura e do estado do XP."
             ),
             tone="busy",
             capture_enabled=False,
@@ -87,10 +87,18 @@ def operational_state(
             dataset_clear_enabled=False,
         )
 
+    idle_hint = (
+        "Produção aguardando peça da AOI; nenhuma decisão automática autorizada "
+        "antes da análise."
+        if normalized_mode == "Modo Produção" else
+        "Modo Sombra aguardando peça; julgamento realizado no teclado XP."
+        if normalized_mode == "Modo Sombra" else
+        "Aguardando captura local ou AOI; não há julgamento pendente."
+    )
     return OperationalState(
         name="idle",
-        badge="PRONTO",
-        hint="Selecione a iluminação ou inicie uma nova captura.",
+        badge="AGUARDANDO PEÇA",
+        hint=idle_hint,
         tone="ready",
         capture_enabled=True,
         discard_enabled=False,
