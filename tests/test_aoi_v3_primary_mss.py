@@ -67,7 +67,7 @@ class PrimaryRoutingTests(unittest.TestCase):
                 debug = decision_record(result, {"category": "FALTANDO"})
                 self.assertTrue(debug["cnn_v3"]["active"])
                 self.assertEqual(debug["cnn_v3"]["role"], "PRIMARY")
-                self.assertFalse(debug["cnn_v2"]["active"])
+                self.assertNotIn("cnn_v2", debug)
 
     def test_missing_or_corrupt_v3_fails_closed_no_legacy_fallback(self):
         for value in (None, ValueError("checkpoint inválido")):
