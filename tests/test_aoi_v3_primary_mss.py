@@ -97,6 +97,32 @@ class PrimaryRoutingTests(unittest.TestCase):
             policy["reason"], "cnn_v3_primary_ok_requires_independent_confirmation",
         )
 
+    def test_legacy_production_mode_cannot_bypass_v3_gate(self):
+        result = AOIQualityV3Primary(engine=Engine(.03)).inspect(
+            self.image, self.image, "SIDE",
+        )
+        result["detail"]["production_continuous_auto"] = True
+        result["detail"]["production_binary_auto"] = False
+        result["detail"]["recognition_route"] = "NEW_CNN"
+        policy = production_decision_policy(result)
+        self.assertTrue(policy["operational_error"])
+        self.assertFalse(policy["auto_allowed"])
+        self.assertEqual(
+            policy["reason"], "cnn_v3_primary_requires_verified_binary_gate",
+        )
+
+    def test_ui_never_labels_v3_primary_as_v2(self):
+        from src.ui.neural_telemetry_model import cnn_panel_text, neural_summary
+        result = AOIQualityV3Primary(engine=Engine(.01)).inspect(
+            self.image, self.image, "SIDE",
+        )
+        result["detail"]["recognition_route"] = "NEW_CNN"
+        summary = neural_summary(result)
+        self.assertEqual(summary["cnn_model_name"], "CNN AOI V3")
+        self.assertEqual(summary["cnn_ng_score"], .01)
+        self.assertIn("CNN AOI V3", cnn_panel_text(result)["header"])
+        self.assertNotIn("v2", cnn_panel_text(result)["header"])
+
     def test_primary_ng_still_respects_final_capture(self):
         result = AOIQualityV3Primary(engine=Engine(.98)).inspect(
             self.image, self.image, "SIDE",
