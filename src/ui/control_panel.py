@@ -40,6 +40,9 @@ from src.core.inspection import detect_anomalies
 from src.services.network_receiver import NetworkReceiver
 from src.services.inspection_timing import note_extraction, note_steps
 from src.ui.control_panel_ui import ControlPanelUI
+from src.ui.operational_status_model import (
+    STATUS_COLORS, network_tone, inspection_tone, last_decision_status,
+)
 from src.utils.text_normalizer import normalize_aoi_text
 from src.core.moe_orchestrator import MoEOrchestrator
 from src.core.epicenter_extractor import EpicenterExtractor
@@ -315,37 +318,35 @@ class ControlPanel(QWidget):
         return True
 
     def update_network_status(self, message: str):
-        if hasattr(self.ui_builder, 'lbl_status_network'):
-            if "Erro" in message or "Falha" in message or "❌" in message:
-                self.ui_builder.lbl_status_network.setStyleSheet("color: #ff7b72; font-size: 11px; font-weight: bold; border: none;")
-            elif "ALERTA" in message or "⚡" in message:
-                self.ui_builder.lbl_status_network.setStyleSheet("color: #ffd33d; font-size: 11px; font-weight: bold; border: none;")
-            else:
-                self.ui_builder.lbl_status_network.setStyleSheet("color: #3fb950; font-size: 11px; font-weight: bold; border: none;")
-            self.ui_builder.lbl_status_network.setText(message)
+        if hasattr(self.ui_builder, "lbl_status_network"):
+            text = str(message or "")
+            # Porta em escuta e "aguardando" não equivalem a AOI conectada.
+            tone = network_tone(text)
+            color = STATUS_COLORS[tone]
+            self.ui_builder.lbl_status_network.setStyleSheet(
+                f"color: {color}; font-size: 11px; font-weight: bold; border: none;"
+            )
+            self.ui_builder.lbl_status_network.setText(text)
 
     def update_brain_status(self, message: str, is_active: bool = False):
-        if hasattr(self.ui_builder, 'lbl_status_brain'):
-            color = "#58a6ff" if is_active else "#8b949e"
-            self.ui_builder.lbl_status_brain.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: bold; border: none;")
-            self.ui_builder.lbl_status_brain.setText(message)
+        if hasattr(self.ui_builder, "lbl_status_brain"):
+            text = str(message or "")
+            color = STATUS_COLORS[
+                inspection_tone(text, is_active=is_active)
+            ]
+            self.ui_builder.lbl_status_brain.setStyleSheet(
+                f"color: {color}; font-size: 11px; font-weight: bold; border: none;"
+            )
+            self.ui_builder.lbl_status_brain.setText(text)
 
     def update_history_status(self, label: str, source: str):
-        if hasattr(self.ui_builder, 'lbl_status_history'):
-            color = "#ff7b72" if label == "NG" else "#3fb950"
-            normalized_source = str(source or "").strip().lower()
-            src_text = (
-                "Autônomo"
-                if normalized_source in {"auto", "production_auto"}
-                else (
-                    "Operador IA"
-                    if normalized_source == "button"
-                    else "Operador AOI"
-                )
+        if hasattr(self.ui_builder, "lbl_status_history"):
+            message, tone = last_decision_status(label, source)
+            self.ui_builder.lbl_status_history.setStyleSheet(
+                f"color: {STATUS_COLORS[tone]}; "
+                "font-size: 11px; font-weight: bold; border: none;"
             )
-            msg = f"💾 Última Peça: {label} ({src_text})"
-            self.ui_builder.lbl_status_history.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: bold; border: none;")
-            self.ui_builder.lbl_status_history.setText(msg)
+            self.ui_builder.lbl_status_history.setText(message)
 
     def _safe_maximize(self):
         if self.isMinimized():
