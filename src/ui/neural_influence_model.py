@@ -71,7 +71,7 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
                     else score
                 )
                 entry = row(
-                    f"cnn_{light.lower()}", f"CNN FALTANDO • {light}",
+                    f"cnn_{light.lower()}", f"{m['cnn_model_name']} • {light}",
                     strength, text=vote,
                     weight=0.0, selected=True,
                     value_format=f"{vote} • score NG {score*100:.4f}%" if score is not None
@@ -179,7 +179,7 @@ def neural_influence_rows(analysis: dict | None) -> list[dict]:
             else score
         )
         entry = row(
-            "cnn_faltando_v2", "CNN FALTANDO v2", strength,
+            "cnn_primary", m["cnn_model_name"], strength,
             text=verdict, weight=1.0, selected=True,
             value_format=f"{verdict} • NG {score*100:.4f}% • única CNN"
                 if score is not None else "CNN sem score disponível",
