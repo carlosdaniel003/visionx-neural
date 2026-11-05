@@ -317,6 +317,29 @@ def decision_record(analysis: Any, aoi_info: dict | None) -> dict:
         "hard_missing_contradicted_by_invariant_ok": (
             hard_missing_contradicted_by_invariant_ok
         ),
+        "cnn_v3": {
+            "active": detail.get("cnn_v3_primary") is True
+                      or isinstance(detail.get("aoi_v3_multilight"), dict),
+            "role": "PRIMARY" if detail.get("cnn_v3_primary") is True
+                    else "MULTILIGHT" if isinstance(
+                        detail.get("aoi_v3_multilight"), dict
+                    ) else "",
+            "status": str(detail.get("cnn_v3_status", "") or ""),
+            "epoch": 3,
+            "checkpoint_verified": detail.get("cnn_v3_checkpoint_verified") is True,
+            "checkpoint_sha256": str(detail.get("cnn_v3_checkpoint_sha256", "") or ""),
+            "ng_score_uncalibrated": json_safe(
+                detail.get("cnn_v3_ng_score_uncalibrated")
+            ),
+            "light": str(detail.get("cnn_v3_lighting_mode", "") or ""),
+            "vote": json_safe(detail.get("aoi_v3_trial", {})),
+            "multilight": json_safe(detail.get("aoi_v3_multilight", {})),
+            "automatic_ok_from_v3_authorized": False,
+            "blind_independent_validation": False,
+        },
+        "archive_visual_presence": json_safe(
+            detail.get("side_archive_visual_presence", {})
+        ),
         "cnn_v2": {
             "active": bool(
                 detail.get("cnn_v2_active")
