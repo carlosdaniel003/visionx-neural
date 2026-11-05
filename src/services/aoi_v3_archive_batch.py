@@ -211,6 +211,14 @@ def audit_full_archive(
     Funções injetáveis permitem testar a cobertura sem Torch ou máquina XP.
     """
     root = Path(root).resolve()
+    if predictor is None:
+        from src.core.neural.aoi_quality_cnn_v3_primary import AOIQualityV3Primary
+        predictor = AOIQualityV3Primary(root=root)
+    warmup = getattr(predictor, "warmup", None)
+    if callable(warmup):
+        checked = warmup()
+        if not isinstance(checked, dict) or checked.get("state") != "ready":
+            raise ValueError("Checkpoint CNN V3 indisponível: " + str(checked))
     if inventory is None:
         inventory = inventory_archives(root)
     if inventory.get("schema") != "visionx.archive_inventory.v1":
@@ -223,10 +231,6 @@ def audit_full_archive(
     if extractor is None:
         from src.services.faltando_neural_dataset import AOIPairExtractor
         extractor = AOIPairExtractor()
-    if predictor is None:
-        from src.core.neural.aoi_quality_cnn_v3_primary import AOIQualityV3Primary
-        predictor = AOIQualityV3Primary(root=root)
-
     rows = []
     signatures = {}
     initial_hashes = {}
