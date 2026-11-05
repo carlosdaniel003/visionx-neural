@@ -167,6 +167,7 @@ def match_rendered_archive(
             matches.append({
                 "path": str(path.relative_to(root)).replace("\\", "/"),
                 "label": label, **proof,
+                "source_pixel_sha256": image_fingerprint(raw),
             })
     base["matches"] = matches
     labels = {m["label"] for m in matches}
