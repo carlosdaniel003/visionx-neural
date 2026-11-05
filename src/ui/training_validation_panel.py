@@ -18,7 +18,7 @@ from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Qt
 from PyQt6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar,
     QPushButton, QSizePolicy, QVBoxLayout, QApplication, QMessageBox,
-    QCheckBox,
+    QWidget,
 )
 
 from src.config.settings import BASE_DIR
@@ -62,30 +62,57 @@ QPushButton#archiveTrainingStart {
   background-color: #f5c518; color: #111111; padding: 7px 16px;
 }
 QPushButton#archiveTrainingStart:hover {
-  background-color: #ffe070;
+  background-color: #ffe070; border-color: #fff1a3;
+}
+QPushButton#archiveTrainingStart:pressed {
+  background-color: #c9a00a; border: 2px solid #fff1a3;
+}
+QPushButton#archiveTrainingStart:focus {
+  border: 2px solid #ffffff;
 }
 QPushButton#archiveTrainingStart:disabled {
   background-color: #333333; color: #777777; border-color: #484848;
 }
-QPushButton#archiveTrainingSimilarity {
-  min-height: 38px; font-weight: 800; font-size: 12px;
-  border: 1px solid #a78623; border-radius: 7px;
-  background-color: #252113; color: #f5d067; padding: 7px 12px;
+QPushButton#archiveTrainingKnnCnnShadow {
+  min-height: 40px; font-size: 12px; font-weight: 800;
+  background-color: #202020; color: #f2d66f;
+  border: 1px solid #766522; border-radius: 7px;
+  padding: 8px 12px;
 }
-QPushButton#archiveTrainingSimilarity:hover {
-  background-color: #36301b;
+QPushButton#archiveTrainingKnnCnnShadow:hover {
+  background-color: #35301e; border-color: #f5c518; color: #ffe78a;
 }
-QPushButton#archiveTrainingSimilarity:disabled {
-  background-color: #222222; color: #777777; border-color: #444444;
+QPushButton#archiveTrainingKnnCnnShadow:pressed {
+  background-color: #55451c; border: 2px solid #ffe78a;
+}
+QPushButton#archiveTrainingKnnCnnShadow:focus {
+  border: 2px solid #ffffff;
+}
+QPushButton#archiveTrainingKnnCnnShadow:disabled {
+  background-color: #101010; color: #656565; border: 1px solid #303030;
 }
 QPushButton#archiveTrainingCancel {
   min-height: 38px; font-weight: 800; font-size: 12px;
   border: 1px solid #cc5858; border-radius: 7px;
   background-color: #301818; color: #ffd0d0; padding: 7px 16px;
 }
+QPushButton#archiveTrainingCancel:hover {
+  background-color: #572124; border-color: #ff9393;
+}
+QPushButton#archiveTrainingCancel:pressed {
+  background-color: #8b3333; border: 2px solid #ffd0d0;
+}
+QPushButton#archiveTrainingCancel:focus {
+  border: 2px solid #ffffff;
+}
 QPushButton#archiveTrainingCancel:disabled {
   background-color: #202020; color: #666666; border-color: #444444;
 }
+QLabel#archiveTrainingStatus[state="running"] { color: #f5d067; }
+QLabel#archiveTrainingStatus[state="complete"] { color: #d5e8d9; }
+QLabel#archiveTrainingStatus[state="attention"] { color: #ffc171; }
+QLabel#archiveTrainingStatus[state="error"] { color: #ff9292; }
+
 QProgressBar#archiveTrainingProgress {
   background-color: #242424; border: 1px solid #444444;
   color: #f5c518; border-radius: 6px; font-size: 11px;
@@ -95,6 +122,43 @@ QProgressBar#archiveTrainingProgress::chunk {
   background-color: #f5c518; border-radius: 5px;
 }
 """
+
+
+
+class _ResponsiveActionBar(QWidget):
+    """Agrupa ações de auditoria sem largura fixa em notebooks ou monitores."""
+
+    def __init__(self, buttons: tuple[QPushButton, ...], parent=None):
+        super().__init__(parent)
+        self._buttons = buttons
+        self._columns = 0
+        self.setMinimumWidth(0)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        self.grid = QGridLayout(self)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setHorizontalSpacing(8)
+        self.grid.setVerticalSpacing(7)
+        self._reflow(1)
+
+    def _reflow(self, columns: int) -> None:
+        if columns == self._columns:
+            return
+        for button in self._buttons:
+            self.grid.removeWidget(button)
+        for column in range(max(self._columns, columns)):
+            self.grid.setColumnStretch(column, 0)
+        self._columns = columns
+        for index, button in enumerate(self._buttons):
+            self.grid.addWidget(button, index // columns, index % columns)
+        for column in range(columns):
+            self.grid.setColumnStretch(column, 1)
+
+    def resizeEvent(self, event) -> None:
+        width = event.size().width()
+        self._reflow(1 if width < 590 else 2 if width < 1020 else 3)
+        super().resizeEvent(event)
 
 
 def format_model_line(name: str, info: dict) -> str:
@@ -181,64 +245,50 @@ class ArchiveTrainingPanel(QObject):
         container.setSpacing(7)
 
         title_row = QHBoxLayout()
-        title = QLabel("TREINAMENTO • VALIDAÇÃO DO ACERVO")
+        title = QLabel("AUDITORIA • MEMÓRIA E MODELOS")
         title.setObjectName("archiveTrainingTitle")
+        title.setWordWrap(True)
         title_row.addWidget(title, stretch=1)
-        self.start_button = QPushButton("Iniciar treinamento")
+        container.addLayout(title_row)
+
+        self.start_button = QPushButton("Validar acervo OK/NG")
         self.start_button.setObjectName("archiveTrainingStart")
-        self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_button = QPushButton("Cancelar")
-        self.cancel_button.setObjectName("archiveTrainingCancel")
-        self.cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_button.setEnabled(False)
-        self.similarity_button = QPushButton("Testar KNN por similaridade")
-        self.similarity_button.setObjectName("archiveTrainingSimilarity")
-        self.similarity_button.setToolTip(
-            "Compara pares AOI gabarito/captura por diferenças visuais, "
-            "usando caixa maior e epicentro menor sem filtrar por datas."
+        self.start_button.setToolTip(
+            "Reanalisa o histórico com os motores atuais; NÃO treina a CNN, "
+            "não reescreve a memória e não mede precisão em peças novas."
         )
-        self.shadow_button = QPushButton("Comparar KNN + CNN (experimental)")
+        self.shadow_button = QPushButton("Comparar CNN × KNN • diagnóstico")
         self.shadow_button.setObjectName("archiveTrainingKnnCnnShadow")
         self.shadow_button.setToolTip(
-            "Avalia a CNN e a KNN visual leave-one-out no mesmo inventário. "
-            "Conflitos viram revisão no candidato conservador. "
-            "Nunca modifica Produção ou comandos XP."
+            "Comparação experimental sobre o acervo; resultado somente "
+            "diagnóstico, sem alterar o julgamento ou comandos XP."
         )
-        self.event_replay_button = QPushButton("Replay operacional por evento")
-        self.event_replay_button.setObjectName("archiveOperationalEventReplay")
-        self.event_replay_button.setToolTip(
-            "Somente leitura: usa manifestos com event_id e SHA conferidos. "
-            "Não agrupa PNGs pelo minuto e não envia comandos ao XP."
+        self.cancel_button = QPushButton("Cancelar verificação")
+        self.cancel_button.setObjectName("archiveTrainingCancel")
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.setVisible(False)
+        self.cancel_button.setToolTip(
+            "Solicita o encerramento da verificação em andamento."
         )
-        container.addLayout(title_row)
-        action_row = QHBoxLayout()
-        action_row.setSpacing(8)
-        action_row.addWidget(self.start_button)
-        action_row.addWidget(self.similarity_button)
-        action_row.addWidget(self.event_replay_button)
-        action_row.addWidget(self.cancel_button)
-        container.addLayout(action_row)
-        # Linha própria para preservar responsividade em notebooks.
-        shadow_row = QHBoxLayout()
-        shadow_row.addWidget(self.shadow_button)
-        shadow_row.addStretch(1)
-        container.addLayout(shadow_row)
-        self.geometry_experiment_box = QCheckBox(
-            "Comparar geometria de bordas (experimental, somente acervo)"
-        )
-        self.geometry_experiment_box.setToolTip(
-            "Executa duas KNNs offline sobre as MESMAS imagens: "
-            "visual v3 intacta e candidato geométrico A/B. "
-            "Não habilita produção nem muda memória."
-        )
-        self.geometry_experiment_box.setChecked(False)
-        container.addWidget(self.geometry_experiment_box)
+
+        for button in (self.start_button, self.shadow_button, self.cancel_button):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            button.setMinimumWidth(0)
+            button.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            )
+        self.action_bar = _ResponsiveActionBar((
+            self.start_button, self.shadow_button, self.cancel_button,
+        ), frame)
+        container.addWidget(self.action_bar)
 
         hint = QLabel(
-            "Memória: correspondência exata KNN + CNN. Similaridade: KNN "
-            "por diferença entre gabarito e captura, com caixa maior e "
-            "epicentro menor. Usa somente acervo OK/NG, sem filtrar datas "
-            "e sem comandar o XP."
+            "Somente leitura do histórico. A validação consulta a KNN e a "
+            "CNN FALTANDO V2; a comparação experimental avalia outros "
+            "cenários sem mudar a Produção. Resultados do acervo não "
+            "comprovam precisão em peças inéditas. CNN V3 permanece "
+            "em ensaio separado."
         )
         hint.setObjectName("archiveTrainingHint")
         hint.setWordWrap(True)
@@ -255,8 +305,9 @@ class ArchiveTrainingPanel(QObject):
         legend.addStretch(1)
         container.addLayout(legend)
 
-        self.status = QLabel("Pronto para validar o histórico OK e NG.")
+        self.status = QLabel("Histórico ainda não verificado nesta sessão.")
         self.status.setObjectName("archiveTrainingStatus")
+        self.status.setProperty("state", "idle")
         self.status.setWordWrap(True)
         container.addWidget(self.status)
 
@@ -272,22 +323,13 @@ class ArchiveTrainingPanel(QObject):
         metrics.setVerticalSpacing(6)
         self.knn_metric = QLabel("KNN MEMÓRIA | ainda não avaliado")
         self.cnn_metric = QLabel("CNN FALTANDO V2 | ainda não avaliada")
-        self.similarity_metric = QLabel(
-            "KNN SIMILARIDADE | ainda não avaliada (somente diagnóstico)"
-        )
-        self.shadow_candidate_metric = QLabel(
-            "KNN CANDIDATO ACERVO | ainda não avaliado (revisão habilitada)"
-        )
-        for widget in (self.knn_metric, self.cnn_metric, self.similarity_metric,
-                       self.shadow_candidate_metric):
+        for widget in (self.knn_metric, self.cnn_metric):
             widget.setObjectName("archiveTrainingMetric")
             widget.setTextFormat(Qt.TextFormat.RichText)
             widget.setWordWrap(True)
             widget.setMinimumWidth(0)
         metrics.addWidget(self.knn_metric, 0, 0)
         metrics.addWidget(self.cnn_metric, 1, 0)
-        metrics.addWidget(self.similarity_metric, 2, 0)
-        metrics.addWidget(self.shadow_candidate_metric, 3, 0)
         container.addLayout(metrics)
 
         self.details = QLabel("Relatórios: reports/startup_regression/")
@@ -300,8 +342,6 @@ class ArchiveTrainingPanel(QObject):
 
         self.start_button.clicked.connect(self.start)
         self.cancel_button.clicked.connect(self.cancel)
-        self.similarity_button.clicked.connect(self.start_similarity)
-        self.event_replay_button.clicked.connect(self.start_event_replay)
         self.shadow_button.clicked.connect(self.start_shadow)
 
         layout = self.panel.content_layout
@@ -315,6 +355,14 @@ class ArchiveTrainingPanel(QObject):
         self.panel.btn_training = self.start_button
         self.panel.btn_cancel_training = self.cancel_button
         self.panel.training_progress_bar = self.progress_bar
+
+    def _tone(self, tone: str) -> None:
+        """Estado visual do diagnóstico, nunca estado de validação produtiva."""
+        self.status.setProperty("state", tone)
+        style = self.status.style()
+        style.unpolish(self.status)
+        style.polish(self.status)
+        self.status.update()
 
     def _active(self) -> bool:
         return (self.process is not None
@@ -339,12 +387,11 @@ class ArchiveTrainingPanel(QObject):
         )
         self._cancel_path.unlink(missing_ok=True)
         self.start_button.setEnabled(False)
-        self.similarity_button.setEnabled(False)
-        self.event_replay_button.setEnabled(False)
         self.shadow_button.setEnabled(False)
-        self.geometry_experiment_box.setEnabled(False)
         self.cancel_button.setEnabled(True)
-        self.status.setText("Inventariando imagens OK/NG...")
+        self.cancel_button.setVisible(True)
+        self._tone("running")
+        self.status.setText("Validando histórico OK/NG • sem treinamento ou alteração de pesos...")
         self.details.setText("Processo de diagnóstico isolado, prioridade baixa.")
         self.knn_metric.setText("KNN MEMÓRIA | aguardando avaliação")
         self.cnn_metric.setText("CNN FALTANDO V2 | aguardando avaliação")
@@ -386,12 +433,12 @@ class ArchiveTrainingPanel(QObject):
         reports.mkdir(parents=True, exist_ok=True)
         self._cancel_path = reports / ("knn_cnn_shadow_" + uuid4().hex + ".cancel")
         self._cancel_path.unlink(missing_ok=True)
-        for button in (self.start_button, self.similarity_button,
-                       self.event_replay_button, self.shadow_button):
+        for button in (self.start_button, self.shadow_button):
             button.setEnabled(False)
-        self.geometry_experiment_box.setEnabled(False)
         self.cancel_button.setEnabled(True)
-        self.status.setText("Comparador experimental: preparando inventário...")
+        self.cancel_button.setVisible(True)
+        self._tone("running")
+        self.status.setText("Comparando modelos no acervo • resultado somente diagnóstico...")
         self.details.setText(
             "CNN isolada + KNN visual leave-one-out; mesmo inventário, "
             "hashes conferidos. Conservador: conflito → revisão; "
@@ -445,187 +492,6 @@ class ArchiveTrainingPanel(QObject):
         elif event == "canceled":
             self.status.setText("Comparador cancelado; nenhum resultado aprovado.")
 
-    def start_event_replay(self):
-        """Replay de peças vinculadas; nunca usa a thread de captura ou o XP."""
-        if self._active():
-            return
-        self._run_type = "event_replay"
-        self._stdout = ""
-        self._stderr = ""
-        self._last_finished = None
-        self._cancel_requested = False
-        reports = self.root / "reports" / "startup_regression"
-        reports.mkdir(parents=True, exist_ok=True)
-        self._cancel_path = reports / (
-            "operational_event_replay_" + uuid4().hex + ".cancel"
-        )
-        self._cancel_path.unlink(missing_ok=True)
-        self.start_button.setEnabled(False)
-        self.similarity_button.setEnabled(False)
-        self.event_replay_button.setEnabled(False)
-        self.shadow_button.setEnabled(False)
-        self.geometry_experiment_box.setEnabled(False)
-        self.cancel_button.setEnabled(True)
-        self.status.setText("Conferindo eventos com manifesto e SHA...")
-        self.details.setText(
-            "Somente eventos com event_id verificado. "
-            "PNG sem manifesto aparece como SEM COBERTURA, não como acerto."
-        )
-        self.progress_bar.setRange(0, 0)
-        proc = QProcess(self)
-        self.process = proc
-        env = QProcessEnvironment.systemEnvironment()
-        for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
-            env.insert(key, "1")
-        env.insert("PYTHONUNBUFFERED", "1")
-        env.insert("PYTHONIOENCODING", "utf-8")
-        env.insert("PYTHONUTF8", "1")
-        proc.setProcessEnvironment(env)
-        proc.setWorkingDirectory(str(self.root))
-        proc.setProgram(sys.executable)
-        proc.setArguments([
-            "-u", "-m",
-            "src.services.startup_regression.operational_event_replay_cli",
-            "--root", str(self.root),
-            "--cancel-file", str(self._cancel_path),
-        ])
-        proc.readyReadStandardOutput.connect(self._read_stdout)
-        proc.readyReadStandardError.connect(self._read_stderr)
-        proc.finished.connect(self._finished)
-        proc.errorOccurred.connect(self._process_error)
-        proc.start()
-
-    def _handle_event_replay(self, packet: dict):
-        event = packet.get("event")
-        if event == "phase":
-            self.status.setText(str(packet.get("phase") or "Preparando"))
-        elif event == "started":
-            total = int(packet.get("total") or 0)
-            self.progress_bar.setRange(0, max(1, total))
-            self.progress_bar.setValue(0)
-            self.progress_bar.setFormat(f"%v/{total} eventos verificáveis")
-            self.status.setText(
-                f"{total} eventos vinculados • "
-                f"{packet.get('unlinked_pngs', 0)} PNGs sem event_id válido."
-            )
-        elif event == "progress":
-            done, total = int(packet.get("done", 0)), int(packet.get("total", 0))
-            self.progress_bar.setValue(min(done, max(1, total)))
-            self.status.setText(
-                f"{done}/{total} eventos • "
-                f"{packet.get('status', '')} • "
-                f"{packet.get('event_id', '')}"
-            )
-        elif event == "finished":
-            self._last_finished = packet
-        elif event == "error":
-            self.status.setText("Falha no replay por evento: "
-                                + str(packet.get("message", ""))[:350])
-
-    def start_similarity(self):
-        """Segundo teste: somente avaliação de vizinhos KNN, sem aprendizado."""
-        if self._active():
-            return
-        self._run_type = "similarity"
-        self._stdout = ""
-        self._stderr = ""
-        self._last_finished = None
-        self._cancel_requested = False
-        reports = self.root / "reports" / "startup_regression"
-        reports.mkdir(parents=True, exist_ok=True)
-        self._cancel_path = reports / (
-            "knn_similarity_" + uuid4().hex + ".cancel"
-        )
-        self._cancel_path.unlink(missing_ok=True)
-        self.start_button.setEnabled(False)
-        self.similarity_button.setEnabled(False)
-        self.event_replay_button.setEnabled(False)
-        self.shadow_button.setEnabled(False)
-        self.geometry_experiment_box.setEnabled(False)
-        self.cancel_button.setEnabled(True)
-        self.status.setText("KNN similaridade: inventariando OK e NG...")
-        self.similarity_metric.setText(
-            "KNN SIMILARIDADE | processando imagens, sem alterar memória"
-        )
-        self.shadow_candidate_metric.setText(
-            "KNN CANDIDATO ACERVO | avaliando sugestões e revisões"
-        )
-        self.details.setText(
-            "Comparação visual gabarito × captura: imagem global, região "
-            "maior e epicentro menor quando marcado pela AOI. "
-            "Sem seleção por data. Aguarde relatório por classe e luz."
-        )
-        self.progress_bar.setRange(0, 0)
-
-        proc = QProcess(self)
-        self.process = proc
-        env = QProcessEnvironment.systemEnvironment()
-        for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
-            env.insert(key, "1")
-        env.insert("PYTHONUNBUFFERED", "1")
-        env.insert("PYTHONIOENCODING", "utf-8")
-        env.insert("PYTHONUTF8", "1")
-        proc.setProcessEnvironment(env)
-        proc.setWorkingDirectory(str(self.root))
-        proc.setProgram(sys.executable)
-        proc.setArguments([
-            "-u", "-m",
-            "src.services.startup_regression.knn_visual_panel_worker",
-            "--root", str(self.root),
-            "--cancel-file", str(self._cancel_path),
-        ] + (
-            ["--geometry-experiment"]
-            if self.geometry_experiment_box.isChecked() else []
-        ))
-        proc.readyReadStandardOutput.connect(self._read_stdout)
-        proc.readyReadStandardError.connect(self._read_stderr)
-        proc.finished.connect(self._finished)
-        proc.errorOccurred.connect(self._process_error)
-        proc.start()
-
-    def _handle_similarity(self, packet: dict):
-        event = packet.get("event")
-        if event == "phase":
-            self.status.setText(str(packet.get("phase") or "Comparando KNN"))
-        elif event == "started":
-            total = max(1, int(packet.get("total") or 0))
-            self.progress_bar.setRange(0, total)
-            self.progress_bar.setValue(0)
-            self.progress_bar.setFormat(f"%p% • %v/{total} PNGs")
-        elif event == "progress":
-            done = int(packet.get("done") or 0)
-            total = max(1, int(packet.get("total") or 1))
-            self.progress_bar.setRange(0, total)
-            self.progress_bar.setValue(min(done, total))
-            if not self._cancel_requested:
-                self.status.setText(
-                    f"Extraindo assinaturas KNN: {done}/{total} • "
-                    + escape(Path(str(packet.get("path") or "")).name)
-                )
-        elif event == "finished":
-            self._last_finished = packet
-        elif event == "error":
-            self.status.setText(
-                "Falha na similaridade: "
-                + str(packet.get("message") or "")[:350]
-            )
-
-    @staticmethod
-    def _similarity_line(title: str, metrics: dict) -> str:
-        by = metrics.get("by_label", {})
-        def label_stat(label):
-            row = by.get(label) or {}
-            total = int(row.get("total") or 0)
-            correct = int(row.get("correct") or 0)
-            pct = f"{100 * correct / total:.1f}%" if total else "N/D"
-            return f"{label} {correct}/{total} ({pct})"
-        return (
-            f"<b>{escape(title)}</b> | "
-            f'<span style="color:#4ade80">{label_stat("OK")}</span> • '
-            f'<span style="color:#ff7777">{label_stat("NG")}</span> • '
-            f"NG→OK {int(metrics.get('NG_as_OK') or 0)}"
-        )
-
     def _read_stdout(self):
         if self.process is None:
             return
@@ -651,12 +517,6 @@ class ArchiveTrainingPanel(QObject):
         )[-3000:]
 
     def _handle(self, packet: dict):
-        if self._run_type == "similarity":
-            self._handle_similarity(packet)
-            return
-        if self._run_type == "event_replay":
-            self._handle_event_replay(packet)
-            return
         if self._run_type == "shadow":
             self._handle_shadow(packet)
             return
@@ -721,7 +581,8 @@ class ArchiveTrainingPanel(QObject):
             return
         self._cancel_requested = True
         self.cancel_button.setEnabled(False)
-        self.status.setText("Cancelamento solicitado • encerrando análise...")
+        self._tone("attention")
+        self.status.setText("Cancelamento solicitado • encerrando verificação...")
         if self._cancel_path is not None:
             try:
                 self._cancel_path.write_text("cancel\n", encoding="ascii")
@@ -749,11 +610,10 @@ class ArchiveTrainingPanel(QObject):
             return
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.start_button.setEnabled(True)
-            self.similarity_button.setEnabled(True)
-            self.event_replay_button.setEnabled(True)
             self.shadow_button.setEnabled(True)
-            self.geometry_experiment_box.setEnabled(True)
             self.cancel_button.setEnabled(False)
+            self.cancel_button.setVisible(False)
+            self._tone("error")
             if not self._cancel_requested and self._last_finished is None:
                 self.status.setText("Não foi possível iniciar a validação.")
 
@@ -761,30 +621,13 @@ class ArchiveTrainingPanel(QObject):
         self._read_stdout()
         self._read_stderr()
         self.start_button.setEnabled(True)
-        self.similarity_button.setEnabled(True)
-        self.event_replay_button.setEnabled(True)
         self.shadow_button.setEnabled(True)
-        self.geometry_experiment_box.setEnabled(True)
         self.cancel_button.setEnabled(False)
+        self.cancel_button.setVisible(False)
+        self._tone("attention" if self._cancel_requested or code else "complete")
         result = self._last_finished
         if self._run_type == "shadow":
             self._finish_shadow(code, result)
-            if self._cancel_path is not None:
-                self._cancel_path.unlink(missing_ok=True)
-            if self.process is not None:
-                self.process.deleteLater()
-            self.process = None
-            return
-        if self._run_type == "event_replay":
-            self._finish_event_replay(code, result)
-            if self._cancel_path is not None:
-                self._cancel_path.unlink(missing_ok=True)
-            if self.process is not None:
-                self.process.deleteLater()
-            self.process = None
-            return
-        if self._run_type == "similarity":
-            self._finish_similarity(code, result)
             if self._cancel_path is not None:
                 self._cancel_path.unlink(missing_ok=True)
             if self.process is not None:
@@ -810,9 +653,11 @@ class ArchiveTrainingPanel(QObject):
                     for model in ("KNN_MEMORIA", "CNN_FALTANDO_V2")
                 )
                 self.status.setText(
-                    "Validação completa • meta OK/NG >=98% atingida."
+                    "Acervo validado • meta histórica OK/NG ≥98% nos motores "
+                    "avaliados. Não comprova acerto em peças novas."
                     if met else
-                    "Validação completa • algumas imagens NÃO passaram."
+                    "Acervo verificado • há erros, casos não cobertos ou "
+                    "metas históricas não atingidas. Consulte o relatório."
                 )
         elif self._cancel_requested:
             self.status.setText(
@@ -857,187 +702,13 @@ class ArchiveTrainingPanel(QObject):
             ))
             + "\nPNG ≠ evento; comparador NÃO autoriza produção."
         )
+        self._tone("attention")
         self.status.setText(
-            f"Comparação experimental completa • "
+            f"Comparação experimental concluída • "
             f"{packet.get('cnn_eligible_pngs', 0)} imagens CNN elegíveis • "
             f"conflitos: {(packet.get('conflicts') or {}).get('total', 0)}. "
             "Nenhuma alteração em XP ou treinamento."
         )
-
-    def _finish_event_replay(self, code: int, packet: dict | None):
-        if not isinstance(packet, dict):
-            self.status.setText(
-                "Replay encerrado sem relatório"
-                + (f" (código {code}): " + self._stderr[-300:]
-                   if not self._cancel_requested else " (cancelado).")
-            )
-            return
-        metrics = packet.get("counts") or {}
-        coverage = packet.get("coverage") or {}
-        qualified = int(metrics.get("qualified_events", 0))
-        self.details.setText(
-            "JSON: " + str(packet.get("json_path") or "-") + "\n"
-            + "TXT: " + str(packet.get("txt_path") or "-")
-        )
-        png_report = packet.get("png_diagnostic")
-        if isinstance(png_report, dict):
-            self.details.setText(
-                self.details.text()
-                + "\\nDiagnóstico separado por PNG: "
-                + str(png_report.get("json_path") or "-")
-                + "\\nAtenção: PNG não é evento; não comparar a taxa aos 420/21."
-            )
-        if self._cancel_requested or packet.get("canceled"):
-            self.status.setText("Replay CANCELADO • resultado parcial.")
-        elif qualified == 0:
-            self.status.setText(
-                "SEM COBERTURA POR EVENTO: nenhum vínculo humano/event_id "
-                f"com PNG original verificável ({coverage.get('unlinked_png_count', 0)} "
-                "PNGs sem vínculo). "
-                + ("Diagnóstico CNN/KNN por PNG gerado separadamente."
-                   if isinstance(png_report, dict)
-                   else "Nenhuma métrica por peça calculada.")
-            )
-        else:
-            self.status.setText(
-                f"{metrics.get('replayed', 0)}/{qualified} eventos • "
-                f"NG→OK {metrics.get('ng_as_ok', 0)} • "
-                f"OK→NG {metrics.get('ok_as_ng', 0)} • "
-                f"revisão {metrics.get('review', 0)} • "
-                f"sem vínculo {coverage.get('unlinked_png_count', 0)} PNGs. "
-                "Apenas cobertura por manifesto; não certifica Produção."
-            )
-
-    def _finish_similarity(self, code: int, packet: dict | None) -> None:
-        if packet is not None:
-            metrics = packet.get("results") or {}
-            self.similarity_metric.setText(
-                self._similarity_line("KNN POR SIMILARIDADE", metrics)
-            )
-            candidate = packet.get("shadow_candidate") or {}
-            ok_c = (candidate.get("by_label") or {}).get("OK") or {}
-            ng_c = (candidate.get("by_label") or {}).get("NG") or {}
-            precise = candidate.get("conditional_precision")
-            precision_text = (
-                f"{100 * float(precise):.2f}%"
-                if precise is not None else "N/D"
-            )
-            coverage = candidate.get("coverage")
-            coverage_text = (
-                f"{100 * float(coverage):.1f}%"
-                if coverage is not None else "N/D"
-            )
-            self.shadow_candidate_metric.setText(
-                "<b>KNN CANDIDATO ACERVO • META 97%</b> | "
-                f'<span style="color:#4ade80">OK '
-                f'{ok_c.get("SUGERE_OK", 0)}/{ok_c.get("total", 0)}</span> • '
-                f'<span style="color:#ff7777">NG '
-                f'{ng_c.get("SUGERE_NG", 0)}/{ng_c.get("total", 0)}</span> • '
-                f'NG→OK {candidate.get("NG_suggested_OK", 0)} • '
-                f'OK→NG {candidate.get("OK_suggested_NG", 0)} • '
-                f'Revisão {candidate.get("reviews", 0)} • '
-                f'Precisão nas sugestões {precision_text} '
-                f'({candidate.get("correct_suggestions", 0)}/'
-                f'{candidate.get("suggestions", 0)}) • '
-                f'Cobertura {coverage_text}'
-            )
-            cohorts = packet.get("by_capture_cohort") or {}
-            lights = packet.get("by_lighting") or {}
-            lines = [
-                "Candidato: meta 97% APENAS ENTRE SUGESTÕES; "
-                "revisões ficam fora da precisão mas dentro da cobertura.",
-                "Critério: diferença visual gabarito/captura + epicentros",
-                "JSON: " + str(packet.get("json_path") or "-"),
-                "TXT: " + str(packet.get("txt_path") or "-"),
-                "Por grupo (apenas estimativa quando sem manifesto):",
-            ]
-            for key, label in (
-                ("side_only", "Somente SIDE"),
-                ("three_lights", "SIDE + TOP + MID"),
-                ("partial_other", "Outros conjuntos"),
-            ):
-                cohort = cohorts.get(key) or {}
-                m = cohort.get("results") or {}
-                lines.append(
-                    f"{label}: "
-                    f"{m.get('correct', 0)}/{m.get('total', 0)} "
-                    f"({cohort.get('capture_groups', 0)} grupos)"
-                )
-            focus = packet.get("focus_detection") or {}
-            lines.append(
-                "Epicentros AOI: caixa maior "
-                f"{focus.get('outer_detected', 0)}/"
-                f"{focus.get('total', 0)} • caixa menor "
-                f"{focus.get('inner_detected', 0)}/"
-                f"{focus.get('total', 0)}"
-            )
-            experiment = packet.get("geometry_experiment")
-            if experiment:
-                control = candidate
-                alt = experiment["shadow_candidate"]
-                base = metrics
-                new = experiment["results"]
-                consensus = experiment.get("consensus_candidate") or {}
-                sources = experiment.get("consensus_source_counts") or {}
-                lines.extend([
-                    "GEOMETRIA A/B/C (SOMENTE EXPERIMENTO, NÃO ATIVA):",
-                    f"A visual: {base.get('correct', 0)}/{base.get('total', 0)} "
-                    f"NG→OK {base.get('NG_as_OK', 0)} | conservadora "
-                    f"{control.get('correct_suggestions', 0)}/"
-                    f"{control.get('suggestions', 0)}",
-                    f"B geometria: {new.get('correct', 0)}/{new.get('total', 0)} "
-                    f"NG→OK {new.get('NG_as_OK', 0)} | conservadora "
-                    f"{alt.get('correct_suggestions', 0)}/"
-                    f"{alt.get('suggestions', 0)} | "
-                    f"cobertura {alt.get('coverage', 0) * 100:.1f}% | "
-                    f"NG→OK candidato {alt.get('NG_suggested_OK', 0)}",
-                    f"C concordância: "
-                    f"{consensus.get('correct_suggestions', 0)}/"
-                    f"{consensus.get('suggestions', 0)} | "
-                    f"cobertura {100*consensus.get('coverage', 0):.1f}% | "
-                    f"revisão {consensus.get('reviews', 0)} | "
-                    f"NG→OK {consensus.get('NG_suggested_OK', 0)} | "
-                    f"meta 97% {consensus.get('target_97pct_met', False)}",
-                    f"Fontes C: {sources}",
-                    "C exige pelo menos uma sugestão seletiva e votos "
-                    "A/B concordantes; discordância = revisão.",
-                    "A/B/C no mesmo acervo não comprova generalização.",
-                ])
-            lines.append(
-                "Por luz: " + " | ".join(
-                    f"{light}: {m.get('correct', 0)}/{m.get('total', 0)}"
-                    for light, m in sorted(lights.items())
-                )
-            )
-            lines.append(
-                "Grupos não verificados são pistas de nome, "
-                "não evidência física de um mesmo evento."
-            )
-            self.details.setText("\n".join(lines))
-            if packet.get("canceled") or self._cancel_requested:
-                self.status.setText(
-                    "Similaridade cancelada • relatório parcial salvo."
-                )
-            elif candidate.get("target_97pct_met"):
-                self.status.setText(
-                    "Candidato KNN atingiu meta diagnóstica de 97% "
-                    "ENTRE SUGESTÕES do acervo, com zero NG→OK observado. "
-                    "Não libera produção; confira a cobertura."
-                )
-            else:
-                self.status.setText(
-                    "Candidato KNN: meta diagnóstica de 97% não atingida "
-                    "ou sem cobertura; revisar erros, NG→OK e abstenções."
-                )
-        elif self._cancel_requested:
-            self.status.setText(
-                "Similaridade cancelada; relatório parcial pode não existir."
-            )
-        else:
-            self.status.setText(
-                f"Similaridade terminou com erro (código {code}). "
-                + self._stderr[-350:]
-            )
 
     def shutdown(self, *_args):
         if self.process is not None and self._active():
