@@ -617,7 +617,11 @@ class ControlPanel(QWidget):
             )
 
         detail = analysis.get("detail", {})
-        if detail.get("cnn_v2_active"):
+        if detail.get("cnn_v3_primary") is True:
+            raw = detail.get("cnn_v3_ng_score_uncalibrated")
+            score = f"{raw * 100:.4f}%" if isinstance(raw, (int, float)) else "N/D"
+            verdict_text = f"{verdict.upper()} • CNN V3 • NG {score} (não calibrado)"
+        elif detail.get("cnn_v2_active"):
             raw = detail.get("cnn_v2_ng_score_uncalibrated")
             score = f"{raw * 100:.4f}%" if isinstance(raw, (int, float)) else "N/D"
             verdict_text = f"{verdict.upper()} • SCORE CNN NG {score} (não calibrado)"
