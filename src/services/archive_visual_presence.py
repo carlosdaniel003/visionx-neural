@@ -63,8 +63,13 @@ class ArchiveVisualPresenceIndex:
                 return False
         return available
 
-    def inspect(self, frame: np.ndarray, category: str, light: str) -> dict:
-        """Apenas observação visual de mesma categoria/luz, independentemente de KNN."""
+    def inspect(self, frame: np.ndarray, category: str, light: str, *,
+                exact_only: bool = False) -> dict:
+        """Observação do acervo. exact_only evita O(N²) no replay de PNGs.
+
+        As capturas XP continuam com o comportamento original (similaridade).
+        O replay usa somente o índice SHA da mesma implementação.
+        """
         result = {
             "schema": SCHEMA, "status": "UNAVAILABLE", "label": "",
             "lighting": str(light or "").upper(),
@@ -98,7 +103,7 @@ class ArchiveVisualPresenceIndex:
             if verified_paths:
                 exact.append(label)
                 exact_paths[label] = sorted(str(p) for p in verified_paths)
-        matching = [
+        matching = [] if exact_only else [
             label for label in LABELS
             if self._indices[label].contains_similar(frame, query)
         ]
@@ -113,6 +118,8 @@ class ArchiveVisualPresenceIndex:
         elif len(exact) == 1:
             result["status"] = "EXACT_FRAME"
             result["label"] = exact[0]
+        elif exact_only:
+            result["status"] = "NO_EXACT_FRAME"
         elif len(matching) == 2:
             result["status"] = "AMBIGUOUS"
         elif len(matching) == 1:
