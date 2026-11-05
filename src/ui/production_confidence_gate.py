@@ -886,6 +886,30 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "unverified_physical_label": True,
         }
 
+    # Troca do classificador visual V2 -> V3: nenhum score V3 OK isolado
+    # autoriza liberar um produto na linha. A V3 época 3 ainda perdeu
+    # NG físicos no treino/validação; somente prova humana independente
+    # (KNOW_KNN/último voto confirmado) pode autorizar 0/OK.
+    # O veto NG da V3, conferido acima, permanece como saída 1/NG.
+    if detail.get("cnn_v3_primary") is True:
+        if v3_status != "READY":
+            return {
+                **policy, "verdict": "", "auto_allowed": False,
+                "operator_review_required": False, "proposed_decision": "",
+                "operational_error": True,
+                "reason": "cnn_v3_primary_without_verified_snapshot",
+                "unverified_physical_label": True,
+            }
+        return {
+            **policy,
+            "verdict": "FALHA FALSA",
+            "auto_allowed": False,
+            "operator_review_required": True,
+            "proposed_decision": "",
+            "reason": "cnn_v3_primary_ok_requires_independent_confirmation",
+            "unverified_physical_label": True,
+        }
+
     # Memória humana multilight contradiz uma CNN experimental que votou NG.
     # É um OK visual plausível, mas NÃO é par RGB exato; não permitir que
     # o fallback binário converta esta contraevidência em 1/NG automático.
