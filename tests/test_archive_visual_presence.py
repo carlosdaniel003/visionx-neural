@@ -186,6 +186,79 @@ class ArchivePresenceFeedbackTests(unittest.TestCase):
         self.assertEqual(a["verdict"], "DEFEITO REAL")
         self.assertTrue(a["is_defect"])
 
+    def test_top_mid_similar_archive_ok_is_not_lost_when_side_is_new(self):
+        a = analysis()
+        row = lambda light: {
+            "schema": "visionx.side_archive_visual_presence.v1",
+            "status": "SIMILAR", "label": "OK", "lighting": light,
+            "source": "PUBLIC_ARCHIVE_PNG",
+            "diagnostic_only": True, "decision_authorized": False,
+        }
+        a["detail"]["side_archive_visual_presence"] = {
+            "status": "NO_SIMILAR", "label": "",
+            "diagnostic_only": True, "decision_authorized": False,
+            "by_light": {
+                "SIDE": {"status": "NO_SIMILAR"},
+                "TOP": row("TOP"), "MID": row("MID"),
+            },
+        }
+        memory = memory_seen_state(a)
+        self.assertEqual(memory["status"], "VI_SEMELHANTE")
+        self.assertEqual(memory["archive_label"], "OK")
+        self.assertEqual(memory["archive_visual_lights"], ["TOP", "MID"])
+        self.assertIn("TOP, MID", memory_panel_text(a)[0])
+        self.assertIn("rótulo de arquivo", memory_panel_text(a)[1])
+        self.assertEqual(a["verdict"], "DEFEITO REAL")
+        self.assertNotIn("proposed_decision", a)
+
+    def test_top_mid_similar_archive_ng_and_ok_conflict_is_ambiguous(self):
+        a = analysis()
+        def row(label):
+            return {
+                "schema": "visionx.side_archive_visual_presence.v1",
+                "source": "PUBLIC_ARCHIVE_PNG",
+                "status": "SIMILAR", "label": label,
+                "diagnostic_only": True, "decision_authorized": False,
+            }
+        a["detail"]["side_archive_visual_presence"] = {
+            "status": "NO_SIMILAR", "label": "",
+            "diagnostic_only": True, "decision_authorized": False,
+            "by_light": {"TOP": row("NG"), "MID": row("OK")},
+        }
+        memory = memory_seen_state(a)
+        self.assertEqual(memory["status"], "ACERVO_AMBIGUO")
+        self.assertEqual(memory["archive_label"], "")
+        self.assertFalse(memory["archive_visual_seen"])
+        self.assertEqual(memory_feedback_state(a)[0], "ACERVO AMBÍGUO")
+        self.assertEqual(a["verdict"], "DEFEITO REAL")
+
+        # Mesmo uma tela EXATA da SIDE não deve esconder um vizinho
+        # contrário de TOP/MID (a memória humana exata é separada).
+        a["detail"]["side_archive_visual_presence"]["by_light"]["SIDE"] = {
+            **row("OK"), "status": "EXACT_FRAME",
+            "exact_frame_sha256": "a" * 64,
+            "exact_frame_labels": ["OK"],
+        }
+        self.assertEqual(memory_seen_state(a)["status"], "ACERVO_AMBIGUO")
+        a["detail"].update(
+            recognition_route="KNOWN_KNN", recognition_known_label="OK",
+        )
+        self.assertEqual(memory_seen_state(a)["status"], "JA_VI")
+
+    def test_unverified_multilight_archive_cannot_invent_seen(self):
+        a = analysis()
+        a["detail"]["side_archive_visual_presence"] = {
+            "status": "NO_SIMILAR",
+            "by_light": {
+                "TOP": {
+                    "status": "SIMILAR", "label": "OK",
+                    "diagnostic_only": True, "decision_authorized": False,
+                    "source": "UNVERIFIED",
+                },
+            },
+        }
+        self.assertEqual(memory_seen_state(a)["status"], "NUNCA_VI")
+
     def test_exact_full_screen_shows_seen_without_forging_exact_aoi_pair(self):
         a = analysis()
         a["detail"]["side_archive_visual_presence"] = {
