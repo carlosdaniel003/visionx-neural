@@ -5,6 +5,8 @@ on:
     branches: [central]
     paths:
       - "src/services/aoi_v3_archive_batch.py"
+      - "src/services/archive_visual_presence.py"
+      - "src/core/neural/aoi_v3_epoch5_contract.py"
       - "src/scripts/audit_v3_full_archive.py"
       - "tests/test_aoi_v3_full_archive_batch.py"
       - ".github/workflows/aoi-v3-full-archive-audit-tests.yml"
@@ -30,6 +32,6 @@ jobs:
       - name: Install Python packages
         run: python -m pip install "numpy>=1.26,<3" "opencv-python-headless>=4.8,<5" PyQt6 scipy scikit-image mss pytesseract
       - name: Compile full archive workflow
-        run: python -m py_compile src/services/aoi_v3_archive_batch.py src/scripts/audit_v3_full_archive.py tests/test_aoi_v3_full_archive_batch.py
+        run: python -m py_compile src/services/aoi_v3_archive_batch.py src/services/archive_visual_presence.py src/core/neural/aoi_v3_epoch5_contract.py src/scripts/audit_v3_full_archive.py tests/test_aoi_v3_full_archive_batch.py
       - name: Test exhaustive archive audit (synthetic fixtures)
         run: python -m unittest tests.test_aoi_v3_full_archive_batch tests.test_audit_v3_archive_image -v
