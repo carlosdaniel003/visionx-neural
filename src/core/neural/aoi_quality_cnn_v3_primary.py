@@ -62,6 +62,8 @@ class AOIQualityV3Primary:
     calibrada nem autorização para liberar uma peça na linha.
     """
 
+    is_v3_primary = True
+
     def __init__(self, *, engine=None, root=None):
         self.engine = engine if engine is not None else AOIQualityV3ProductionTrial(
             Path(root).resolve() if root is not None else Path(__file__).resolve().parents[3]
