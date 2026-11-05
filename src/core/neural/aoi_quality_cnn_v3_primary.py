@@ -77,7 +77,7 @@ class AOIQualityV3Primary:
             # também reconfere o SHA na primeira inferência.
             root = getattr(self.engine, "root", None)
             if root is not None:
-                validate_trial_snapshot(root)
+                self.engine.validate_active_snapshot()
             return {"state": "ready", "engine": ENGINE}
         except Exception as exc:
             return {"state": "error", "reason": type(exc).__name__ + ": " + str(exc)}
@@ -118,7 +118,7 @@ class AOIQualityV3Primary:
             "confidence": max(ng_score, 1.0 - ng_score),
             "verdict": verdict,
             "reason": (
-                f"CNN AOI V3 época 3 • {verdict}, luz {light}; "
+                f"CNN AOI V3 época {vote['epoch']} • {verdict}, luz {light}; "
                 f"score NG não calibrado={ng_score:.6f}. "
                 "Classificador visual principal; qualidade em peças novas "
                 "não validada. Nenhum OK automático autorizado apenas pela V3."
@@ -133,6 +133,7 @@ class AOIQualityV3Primary:
                 "cnn_v3_status": "INFERENCE_OK",
                 "cnn_v3_checkpoint_verified": True,
                 "cnn_v3_checkpoint_sha256": vote["checkpoint_sha256"],
+                "cnn_v3_checkpoint_epoch": vote["epoch"],
                 "cnn_v3_ng_score_uncalibrated": ng_score,
                 "cnn_v3_lighting_mode": light,
                 "cnn_v3_automatic_ok_authorized": False,
