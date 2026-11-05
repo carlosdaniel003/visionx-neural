@@ -136,9 +136,7 @@ class PrimaryRoutingTests(unittest.TestCase):
         self.assertTrue(p["operational_error"])
 
     def test_v3_runtime_does_not_queue_v2_retraining(self):
-        from unittest.mock import patch
         from src.services.neural_online_learning import eligible_online_case
-        from src.core.neural.aoi_v3_trial_contract import TRIAL_POINTER
 
         task = {
             "aoi_info": {"category": "FALTANDO"},
@@ -148,18 +146,17 @@ class PrimaryRoutingTests(unittest.TestCase):
             }},
             "source": "button", "label": "OK",
         }
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            with patch("src.services.neural_online_learning.BASE_DIR", root):
-                self.assertFalse(eligible_online_case(task))
-                # Mesmo com rota KNOWN_KNN (correção manual recente), a
-                # ativação V3 impede lançamento de um treinador V2.
-                task["analysis"] = {"detail": {"recognition_route": "KNOWN_KNN"}}
-                task["reinspection_of_judged_event"] = True
-                pointer = root / TRIAL_POINTER
-                pointer.parent.mkdir(parents=True, exist_ok=True)
-                pointer.write_text("ponteiro presente", encoding="utf-8")
-                self.assertFalse(eligible_online_case(task))
+        self.assertFalse(eligible_online_case(task))
+        # Mesmo com rota KNOWN_KNN (correção manual recente), o
+        # contexto da execução V3 impede lançamento de um treinador V2.
+        task["analysis"] = {"detail": {"recognition_route": "KNOWN_KNN"}}
+        task["reinspection_of_judged_event"] = True
+        task["v3_primary_runtime"] = True
+        self.assertFalse(eligible_online_case(task))
+        # A API de treinamento V2 isolado permanece testável sem que
+        # o ponteiro de outra instalação contamine a elegibilidade.
+        task.pop("v3_primary_runtime")
+        self.assertTrue(eligible_online_case(task))
 
     def test_main_installs_primary_instead_of_v2_predictor(self):
         main = (Path(__file__).resolve().parents[1] / "main.py").read_text(
