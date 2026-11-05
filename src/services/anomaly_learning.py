@@ -102,12 +102,17 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
 
     info = dict(getattr(panel, "current_aoi_info", {}) or {})
     analysis = getattr(panel, "current_analysis", None) or {}
-    # Capturas NOVAS confirmadas por humano alimentam a CNN inclusive
-    # quando o operador concorda com a IA (não só hard negatives).
+    v3_primary_runtime = (
+        getattr(getattr(panel, "orchestrator", None),
+                "_aoi_v3_primary_operational", False) is True
+    )
+    # Capturas e correções humanas permanecem na KNN, mas um runtime V3
+    # não pode enfileirar fine-tuning do antigo modelo V2.
     from src.services.neural_online_learning import eligible_online_case
     eligible = eligible_online_case({
         "aoi_info": info, "analysis": analysis,
         "source": source, "label": normalized,
+        "v3_primary_runtime": v3_primary_runtime,
     })
 
     # Sombra é aquisição supervisionada: TODO evento confirmado no XP
@@ -154,6 +159,7 @@ def _decision_task(panel, normalized: str, source: str, ai_decision: str) -> dic
         # ao event_id desta aquisição, nunca ao multilight anterior.
         event_id = active_id
     return {
+        "v3_primary_runtime": v3_primary_runtime,
         "reinspection_of_judged_event": intentional_reinspection,
         "source_frame": source_frame,
         "ng_image": _image_snapshot(getattr(panel, "current_ng", None)),
