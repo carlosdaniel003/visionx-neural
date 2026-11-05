@@ -25,7 +25,7 @@ class NeuralSpecialistWidget(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(5)
-        self.title = QLabel("CNN FALTANDO v2")
+        self.title = QLabel("CNN • aguardando análise")
         self.title.setStyleSheet("font-size:13px; font-weight:800; color:#f5c518;")
         layout.addWidget(self.title)
         self.lines = []
