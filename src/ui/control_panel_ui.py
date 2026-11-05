@@ -1255,6 +1255,14 @@ class ControlPanelUI:
         # QScrollArea e janela recebem Resize durante o próprio relayout.
         # Sem troca de breakpoint não há nada para reaplicar.
         if not force and profile.name == self._active_profile_name:
+            # No mesmo perfil, a largura do notebook ainda pode mudar
+            # o número de colunas dos controles auxiliares.
+            utility_columns = max(1, min(3, width // 360))
+            if utility_columns != getattr(self, "_utility_columns", 0):
+                self._reflow_grid(
+                    self.utility_grid, self.utility_actions, utility_columns,
+                )
+                self._utility_columns = utility_columns
             return
         profile_changed = force or profile.name != self._active_profile_name
         self._active_profile_name = profile.name
@@ -1288,6 +1296,7 @@ class ControlPanelUI:
                 self.utility_actions,
                 max(1, min(3, width // 360)),
             )
+            self._utility_columns = max(1, min(3, width // 360))
             self._layout_ng_archive(window, compact=compact)
             self._layout_ok_archive(window, compact=compact)
             self._layout_network_debug(
