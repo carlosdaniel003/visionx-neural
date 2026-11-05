@@ -1,3 +1,28 @@
+## 05/11/2026 — CNN AOI V3 principal + reconhecimento de acervo no MSS
+
+A V3 época 3 foi conectada como **classificador visual primário** nas categorias
+FALTANDO, EMBORCADO, INVERTIDO e DESLOCADO, inclusive em Teste/MSS,
+Sombra e Produção. A V2 **não executa mais inferência** nessas rotas
+do aplicativo; os arquivos e relatórios V2 continuam disponíveis apenas
+para auditoria histórica. MUITO ADESIVO mantém seu especialista próprio.
+
+O MSS usa agora o mesmo scanner visual do XP para localizar frames
+idênticos/semelhantes em `ok_archive` e `ng_archive`, nas três
+iluminações, com identificação separada de **frame completo exato**
+e **par gabarito/teste exato**. Labels da pasta são provisórios:
+o scanner não reclassifica automaticamente uma peça nem envia 0/1.
+Os relatórios e painéis identificam a CNN V3 efetivamente usada.
+
+**Segurança:** o checkpoint V3 ainda não passou em holdout físico independente
+e já classificou NG reais como OK. Por isso, **OK da V3 não autoriza
+automaticamente 0/OK no XP**, embora seja exibido como classe visual.
+A memória humana verificada mantém prioridade. Retreinamento online V2
+foi desligado para a operação V3; aprendizagem KNN humana permanece.
+
+[Integração, limitações e teste local](docs/ODIN_V3_PRIMARIA_MSS_PARIDADE_20261105.md).
+
+---
+
 ## 04/11/2026 — Integração controlada V3 época 3 na estação (veto NG)
 
 O operador autorizou incorporar a CNN V3 da época 3 ao fluxo
