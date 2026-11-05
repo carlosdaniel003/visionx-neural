@@ -69,14 +69,15 @@ class ArchiveVisualNearDuplicateTests(unittest.TestCase):
         self.assertEqual(archive_category_from_filename(
             Path("legacy.png")), "")
 
-    def test_index_requires_same_category_and_lighting(self):
+    def test_index_matches_all_categories_within_same_lighting(self):
         a, b = screenshot(1), screenshot(2)
         index = ArchiveVisualIndex()
         index.register(a, "FALTANDO_SIDE")
         self.assertTrue(index.contains_similar(b, "FALTANDO_SIDE"))
         self.assertTrue(index.contains_similar(b, "FALTANDO"))
         self.assertFalse(index.contains_similar(b, "FALTANDO_TOP"))
-        self.assertFalse(index.contains_similar(b, "INVERTIDO_SIDE"))
+        self.assertTrue(index.contains_similar(b, "INVERTIDO_SIDE"))
+        self.assertTrue(index.contains_similar(b, "UNKNOWN_SIDE"))
 
 
 class ImageArchiveQueueVisualTests(unittest.TestCase):

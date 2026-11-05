@@ -105,7 +105,7 @@ class ArchivePresenceBackendTests(unittest.TestCase):
         self.assertEqual(result["status"], "EXACT_FRAME")
         self.assertEqual(result["label"], "OK")
 
-    def test_exact_frame_scope_rejects_other_category_and_light(self):
+    def test_exact_frame_scope_ignores_category_but_respects_light(self):
         image = screen(19)
         save(self.ok, "2026-10-21_1441_FALTANDO_TOP.png", image)
         index = self.index()
@@ -113,8 +113,16 @@ class ArchivePresenceBackendTests(unittest.TestCase):
             index.inspect(image, "FALTANDO", "SIDE")["status"],
             "EXACT_FRAME",
         )
-        self.assertNotEqual(
+        self.assertEqual(
             index.inspect(image, "INVERTIDO", "TOP")["status"],
+            "EXACT_FRAME",
+        )
+        self.assertEqual(
+            index.inspect(image, "UNKNOWN", "TOP")["status"],
+            "EXACT_FRAME",
+        )
+        self.assertEqual(
+            index.inspect(image, "", "TOP")["status"],
             "EXACT_FRAME",
         )
         self.assertEqual(
@@ -131,11 +139,12 @@ class ArchivePresenceBackendTests(unittest.TestCase):
         self.assertEqual(outcome["label"], "")
         self.assertEqual(outcome["matched_labels"], ["OK", "NG"])
 
-    def test_other_category_and_light_do_not_count_as_same_archive_event(self):
+    def test_other_category_matches_in_same_light_only(self):
         save(self.ng, "2026-10-21_1559_INVERTIDO_SIDE.png", screen(1))
         save(self.ng, "2026-10-21_1600_FALTANDO_TOP.png", screen(1))
         result = self.index().inspect(screen(2), "FALTANDO", "SIDE")
-        self.assertEqual(result["status"], "NO_SIMILAR")
+        self.assertEqual(result["status"], "SIMILAR")
+        self.assertEqual(result["label"], "NG")
         self.assertEqual(result["indexed_ng"], 2)
 
     def test_focal_physical_change_remains_unseen(self):
