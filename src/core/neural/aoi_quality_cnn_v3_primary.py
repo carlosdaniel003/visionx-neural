@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.core.neural.aoi_quality_cnn_v3_production_trial import (
-    AOIQualityV3ProductionTrial, validate_trial_snapshot,
-)
+from src.core.neural.aoi_quality_cnn_v3_production_trial import AOIQualityV3ProductionTrial
 from src.core.neural.aoi_quality_cnn_v3_trial_consensus import _valid_vote
 
 
