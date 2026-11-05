@@ -212,19 +212,33 @@ def memory_seen_state(analysis: dict | None) -> dict:
     archive = detail.get("side_archive_visual_presence")
     archive = archive if isinstance(archive, dict) else {}
     archive_status = str(archive.get("status", "") or "")
-    archive_label = str(archive.get("label", "") or "")
-    archive_matched = bool(
-        archive_status == "SIMILAR"
-        and archive_label in {"OK", "NG"}
-        and archive.get("diagnostic_only") is True
-        and archive.get("decision_authorized") is False
-    )
+    # O worker consulta SIDE/TOP/MID separadamente, mas a SIDE pode nao
+    # ter encontrado vizinho enquanto TOP ou MID recuperou uma captura.
+    # A UI agrega apenas fontes diagnósticas com o contrato verificável.
+    by_light = archive.get("by_light")
+    multilight_archive = isinstance(by_light, dict)
+    if not multilight_archive:
+        by_light = {"SIDE": archive} if archive else {}
+    archive_rows = {
+        light: row for light, row in by_light.items()
+        if light in LIGHTS and isinstance(row, dict)
+        and row.get("diagnostic_only") is True
+        and row.get("decision_authorized") is False
+        and (
+            not multilight_archive or (
+                row.get("schema") == "visionx.side_archive_visual_presence.v1"
+                and row.get("source") == "PUBLIC_ARCHIVE_PNG"
+            )
+        )
+    }
+    similar_frames = {
+        light: row for light, row in archive_rows.items()
+        if row.get("status") == "SIMILAR" and row.get("label") in {"OK", "NG"}
+    }
+    similar_labels = {row["label"] for row in similar_frames.values()}
     # O arquivo PNG guarda a tela inteira, enquanto KNOWN_KNN
     # compara os recortes gabarito/teste. Identidade do frame é uma
     # prova de conteúdo distinta, nunca equivale a par AOI exato.
-    by_light = archive.get("by_light")
-    if not isinstance(by_light, dict):
-        by_light = {"SIDE": archive} if archive else {}
     exact_frames = {
         light: row for light, row in by_light.items()
         if light in LIGHTS
@@ -244,7 +258,21 @@ def memory_seen_state(analysis: dict | None) -> dict:
             for row in by_light.values() if isinstance(row, dict))
         or len({row["label"] for row in exact_frames.values()}) > 1
     )
-    archive_exact_seen = bool(exact_frames) and not exact_conflict
+    archive_conflict = bool(
+        exact_conflict
+        or any(row.get("status") == "AMBIGUOUS"
+               for row in archive_rows.values())
+        or len(similar_labels) > 1
+        or len(similar_labels | {
+            row["label"] for row in exact_frames.values()
+        }) > 1
+    )
+    archive_matched = bool(similar_frames and not archive_conflict)
+    archive_label = next(iter(similar_labels)) if archive_matched else ""
+    archive_lights = [
+        light for light in LIGHTS if light in similar_frames
+    ] if archive_matched else []
+    archive_exact_seen = bool(exact_frames) and not archive_conflict
     exact_human = detail.get("operator_latest_exact_frame")
     exact_human = exact_human if isinstance(exact_human, dict) else {}
     exact_human_seen = bool(
@@ -273,7 +301,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
         and not known
         and not archive_exact_seen
         and not exact_human_seen
-        and not exact_conflict
+        and not archive_conflict
     )
 
     similar_ng = bool(
@@ -311,7 +339,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
         )
     status = (
         "JA_VI" if known or archive_exact_seen or exact_human_seen else
-        "ACERVO_AMBIGUO" if exact_conflict else
+        "ACERVO_AMBIGUO" if archive_conflict else
         "JA_VI" if auto_exact_seen else
         "VI_SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
         "CONSULTANDO_ACERVO" if archive_status == "PENDING" else
@@ -323,7 +351,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
         "status": status,
         "label": (
             "JÁ VI" if known or archive_exact_seen or exact_human_seen else
-            "ACERVO AMBÍGUO" if exact_conflict else
+            "ACERVO AMBÍGUO" if archive_conflict else
             "JÁ VI" if auto_exact_seen else
             "VI SEMELHANTE" if similar_ng or archive_matched or historical_ok or human_visual_label else
             "CONSULTANDO ACERVO" if archive_status == "PENDING" else
@@ -340,7 +368,7 @@ def memory_seen_state(analysis: dict | None) -> dict:
         "human_visual_cross_light": human_visual.get("cross_light_candidate") is True,
         "archive_visual_seen": archive_matched or historical_ok,
         "archive_label": "OK" if historical_ok else archive_label if archive_matched else "",
-        "archive_visual_lights": ["TOP", "MID"] if historical_ok else ["SIDE"] if archive_matched else [],
+        "archive_visual_lights": ["TOP", "MID"] if historical_ok else archive_lights,
         "historical_ok_recall": historical_ok,
         "physical_veto_status": str(physical_veto.get("status", "") or "") if historical_ok else "",
         "archive_visual_status": archive_status,
@@ -460,9 +488,12 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
     if result == "VI_SEMELHANTE" and memory["archive_visual_seen"]:
         label = memory["archive_label"]
         return (
-            f"VI SEMELHANTE • ARQUIVO {label} • SIDE",
-            "Uma imagem visualmente semelhante à captura XP foi localizada "
-            f"em public/{'ng_archive' if label == 'NG' else 'ok_archive'}. "
+            f"VI SEMELHANTE • ARQUIVO {label} • "
+            + ", ".join(memory["archive_visual_lights"]),
+            "Uma captura XP visualmente semelhante foi localizada em "
+            f"public/{'ng_archive' if label == 'NG' else 'ok_archive'} "
+            + "na(s) iluminação(ões) "
+            + ", ".join(memory["archive_visual_lights"]) + ". "
             "É um rótulo de arquivo, não confirmação física ou par exato. "
             "Esta consulta não altera a CNN, o julgamento nem o comando XP.",
         )
@@ -475,7 +506,8 @@ def memory_panel_text(analysis: dict | None) -> tuple[str, str]:
     if result == "ACERVO_AMBIGUO":
         return (
             "ACERVO AMBÍGUO • OK E NG",
-            "Capturas visualmente semelhantes existem nos dois arquivos. "
+            "Capturas visualmente semelhantes ou exatas apontam para "
+            "OK e NG entre as iluminações, ou são ambíguas na mesma luz. "
             "Não atribuir classe confiável a partir desses rótulos. "
             "O julgamento da CNN permanece independente.",
         )
