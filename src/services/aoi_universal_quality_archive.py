@@ -243,11 +243,25 @@ def universal_archive_events(
         signature = (_digest(reference), _digest(test))
         prior = seen.get(signature)
         if prior is not None:
-            if prior != label:
+            if prior["label"] != label:
                 raise ValueError("Mesmo par visual consta simultaneamente OK e NG")
             duplicates += 1
+            # É o MESMO par extraído, não prova de evento físico multilight.
+            # Preservar os dois hashes/fonte humana sem duplicar um gradiente.
+            if ng_escape:
+                row_existing = recorded[prior["index"]]
+                row_existing["sources"].append(source)
+                row_existing.setdefault("exact_duplicate_reviewed_sources", []).append(
+                    source
+                )
+                row_existing["label_provenance"] = (
+                    "HUMAN_V3_NG_ESCAPE_SHA256"
+                    if row_existing["label_provenance"] ==
+                        "ARCHIVE_FOLDER_PROVISIONAL"
+                    else row_existing["label_provenance"]
+                )
             continue
-        seen[signature] = label
+        seen[signature] = {"label": label, "index": len(recorded)}
         physical = (
             ng_escape["physical_observation"] if ng_escape
             else v3_review["physical_observation"] if v3_review
@@ -298,8 +312,12 @@ def universal_archive_events(
         "v3_ng_escape_confirmed_sources": len(ng_escape_reviews),
         "v3_ng_escape_source_paths": sorted(ng_escape_reviews),
         "v3_ng_escape_sources_in_dataset": sum(
-            any(source in ng_escape_reviews for source in r["sources"])
-            for r in recorded
+            source in ng_escape_reviews
+            for row in recorded for source in row["sources"]
+        ),
+        "v3_ng_escape_unique_pairs_in_dataset": sum(
+            any(source in ng_escape_reviews for source in row["sources"])
+            for row in recorded
         ),
         "v3_aoi_category_used_as_quality_label": False,
         "v3_operator_source_candidate_sha256": (
