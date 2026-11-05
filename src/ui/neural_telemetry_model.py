@@ -23,40 +23,65 @@ def _route(detail: dict) -> str:
 
 
 def cnn_lighting_telemetry(analyses: dict) -> dict:
-    """Snapshot dos 3 especialistas. Ausente não equivale a 0%."""
+    """Snapshot auditável: V3 é rotulada V3, sem inventar estado V2."""
     out = {}
     for light in LIGHTS:
         frame = _map(_map(analyses).get(light))
         d = _map(frame.get("detail"))
-        cnn = bool(d.get("cnn_v2_active") or "faltando_cnn_v2.py" in (frame.get("active_engines") or []))
+        v3 = d.get("cnn_v3_primary") is True
+        prefix = "cnn_v3" if v3 else "cnn_v2"
+        cnn = bool(
+            v3 or d.get("cnn_v2_active")
+            or "faltando_cnn_v2.py" in (frame.get("active_engines") or [])
+        )
         out[light] = {
             "route": _route(d) or ("NEW_CNN" if cnn else ""),
-            "engine": "faltando_cnn_v2" if cnn else str(d.get("dominant_engine", "") or ""),
+            "engine": ("aoi_quality_cnn_v3" if v3 else
+                       "faltando_cnn_v2" if cnn else
+                       str(d.get("dominant_engine", "") or "")),
             "cnn_active": cnn,
-            "cnn_status": str(d.get("cnn_v2_status", "") or ""),
-            "checkpoint_verified": bool(d.get("cnn_v2_checkpoint_verified", False)) if cnn else None,
-            "checkpoint_sha256": str(d.get("cnn_v2_checkpoint_sha256", "") or "") if cnn else "",
-            "ng_score_uncalibrated": _finite_score(d.get("cnn_v2_ng_score_uncalibrated")) if cnn else None,
+            "cnn_status": str(d.get(f"{prefix}_status", "") or ""),
+            "checkpoint_verified": (
+                d.get(f"{prefix}_checkpoint_verified") is True if cnn else None
+            ),
+            "checkpoint_sha256": (
+                str(d.get(f"{prefix}_checkpoint_sha256", "") or "") if cnn else ""
+            ),
+            "ng_score_uncalibrated": (
+                _finite_score(d.get(f"{prefix}_ng_score_uncalibrated"))
+                if cnn else None
+            ),
             "verdict": str(frame.get("verdict", "") or ""),
-            "category": str(d.get("cnn_v2_aoi_category", "") or ""),
+            "category": str(
+                d.get("cnn_v2_aoi_category") or
+                d.get("multilight_category") or ""
+            ),
             "human_memory_label": str(d.get("recognition_known_label", "") or ""),
         }
     return out
-
 
 def neural_summary(analysis: dict | None) -> dict:
     frame = _map(analysis)
     d = _map(frame.get("detail"))
     trace = _map(d.get("decision_trace"))
     route = _route(d)
-    per_light = _map(d.get("cnn_v2_light_diagnostics"))
+    per_light = _map(
+        d.get("cnn_v3_light_diagnostics")
+        or d.get("cnn_v2_light_diagnostics")
+    )
+    v3 = bool(
+        d.get("cnn_v3_primary") is True
+        or any(_map(x).get("engine") == "aoi_quality_cnn_v3"
+               for x in per_light.values())
+    )
+    prefix = "cnn_v3" if v3 else "cnn_v2"
     has_cnn = bool(
-        d.get("cnn_v2_active")
+        v3 or d.get("cnn_v2_active")
         or "faltando_cnn_v2.py" in (frame.get("active_engines") or [])
         or route == "NEW_CNN"
         or any(_map(x).get("cnn_active") for x in per_light.values())
     )
-    local_ng = _finite_score(d.get("cnn_v2_ng_score_uncalibrated"))
+    local_ng = _finite_score(d.get(f"{prefix}_ng_score_uncalibrated"))
     if local_ng is None:
         local_ng = _finite_score(trace.get("cnn_ng_score_uncalibrated"))
     lights = per_light or {}
@@ -71,20 +96,33 @@ def neural_summary(analysis: dict | None) -> dict:
     return {
         "active": bool(frame),
         "cnn_active": has_cnn,
+        "cnn_model_name": "CNN AOI V3" if v3 else "CNN FALTANDO v2",
         "cnn_route": route,
         "cnn_ng_score": local_ng,
         "cnn_ok_score": (1.0 - local_ng) if local_ng is not None else None,
-        "cnn_status": str(d.get("cnn_v2_status", "") or ""),
-        "cnn_checkpoint_verified": d.get("cnn_v2_checkpoint_verified") is True,
-        "cnn_checkpoint_sha256": str(d.get("cnn_v2_checkpoint_sha256", "") or ""),
-        "cnn_best_epoch": d.get("cnn_v2_checkpoint_best_epoch"),
+        "cnn_status": str(d.get(f"{prefix}_status", "") or ""),
+        "cnn_checkpoint_verified": d.get(f"{prefix}_checkpoint_verified") is True,
+        "cnn_checkpoint_sha256": str(d.get(f"{prefix}_checkpoint_sha256", "") or ""),
+        "cnn_best_epoch": 3 if v3 else d.get("cnn_v2_checkpoint_best_epoch"),
         "cnn_category": str(d.get("cnn_v2_aoi_category") or d.get("multilight_category") or ""),
-        "cnn_lighting_mode": str(d.get("cnn_v2_lighting_mode") or frame.get("lighting_mode") or ""),
-        "cnn_votes": _map(d.get("cnn_v2_light_votes")),
+        "cnn_lighting_mode": str(d.get(f"{prefix}_lighting_mode") or frame.get("lighting_mode") or ""),
+        "cnn_votes": (
+            {light: _map(row).get("predicted", "") for light, row in
+             _map(_map(d.get("aoi_v3_multilight")).get("lights")).items()}
+            if v3 else _map(d.get("cnn_v2_light_votes"))
+        ),
         "cnn_per_light": lights,
-        "cnn_consensus": str(d.get("cnn_v2_consensus", "") or ""),
-        "cnn_consensus_reason": str(d.get("cnn_v2_consensus_reason", "") or ""),
-        "cnn_auto_eligible": d.get("cnn_v2_supervised_auto_eligible") is True,
+        "cnn_consensus": (
+            str(_map(d.get("aoi_v3_multilight")).get("status", "") or "")
+            if v3 else str(d.get("cnn_v2_consensus", "") or "")
+        ),
+        "cnn_consensus_reason": (
+            "V3 experimental; voto por iluminação, sem auto-OK isolado"
+            if v3 else str(d.get("cnn_v2_consensus_reason", "") or "")
+        ),
+        "cnn_auto_eligible": (
+            False if v3 else d.get("cnn_v2_supervised_auto_eligible") is True
+        ),
         "memory_route": route,
         "memory_known": memory_known,
         "memory_new_cnn": memory_new,
@@ -106,14 +144,14 @@ def percent(value, *, precision=2):
 def cnn_panel_text(analysis: dict | None) -> dict:
     m = neural_summary(analysis)
     if not m["cnn_active"]:
-        return {"header": "CNN FALTANDO v2 • não executada",
+        return {"header": "CNN • não executada",
                 "lines": ("O julgamento pertence a outro motor.",)}
     label = m["cnn_lighting_mode"] or "MULTILIGHT"
     sha = m["cnn_checkpoint_sha256"]
     ck = "VERIFICADO" if m["cnn_checkpoint_verified"] else "NÃO VERIFICADO"
     lines = [
         f"Categoria AOI: {m['cnn_category'] or 'não informada'}",
-        f"Motor: CNN FALTANDO v2 • {label}",
+        f"Motor: {m['cnn_model_name']} • {label}",
         f"Rota: {m['cnn_route'] or 'MULTILIGHT'}",
         f"Estado: {m['cnn_status'] or 'consulte as três luzes'}",
     ]
@@ -135,7 +173,7 @@ def cnn_panel_text(analysis: dict | None) -> dict:
         )
     lines.append(f"Checkpoint: {ck}" + (f" • SHA {sha[:12]}…" if sha else ""))
     lines.append("Score NG não calibrado: não representa probabilidade de defeito.")
-    return {"header": "CNN FALTANDO v2 • REDE NEURAL", "lines": tuple(lines)}
+    return {"header": m["cnn_model_name"] + " • REDE NEURAL", "lines": tuple(lines)}
 
 
 
