@@ -828,6 +828,16 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
     if not isinstance(detail, dict) or detail.get("production_continuous_auto") is not True:
         return policy
     if detail.get("production_binary_auto") is not True:
+        # Um voto V3 primário não pode contornar os gates da política
+        # binária por estar em um ciclo/versão operacional legado.
+        if detail.get("cnn_v3_primary") is True:
+            return {
+                **policy, "verdict": "", "auto_allowed": False,
+                "operator_review_required": False, "proposed_decision": "",
+                "operational_error": True,
+                "reason": "cnn_v3_primary_requires_verified_binary_gate",
+                "unverified_physical_label": True,
+            }
         return _legacy_continuous_policy(analysis, detail, policy)
 
     # Trial explícito da V3: a época 3 aprendeu 13/14 exemplos, mas
