@@ -7,6 +7,9 @@ on:
       - "src/core/neural/aoi_quality_cnn_v3.py"
       - "src/scripts/train_aoi_quality_cnn_v3_offline.py"
       - "src/core/neural/aoi_quality_cnn_v3_production_trial.py"
+      - "src/core/neural/aoi_v3_epoch5_contract.py"
+      - "src/scripts/activate_aoi_quality_v3_epoch5.py"
+      - "tests/test_aoi_v3_epoch5_activation.py"
       - "src/core/neural/aoi_quality_cnn_v3_trial_consensus.py"
       - "src/scripts/activate_aoi_quality_v3_production_trial.py"
       - "src/core/multilight_fusion.py"
@@ -35,6 +38,9 @@ on:
       - "src/core/neural/aoi_quality_cnn_v3.py"
       - "src/scripts/train_aoi_quality_cnn_v3_offline.py"
       - "src/core/neural/aoi_quality_cnn_v3_production_trial.py"
+      - "src/core/neural/aoi_v3_epoch5_contract.py"
+      - "src/scripts/activate_aoi_quality_v3_epoch5.py"
+      - "tests/test_aoi_v3_epoch5_activation.py"
       - "src/core/neural/aoi_quality_cnn_v3_trial_consensus.py"
       - "src/scripts/activate_aoi_quality_v3_production_trial.py"
       - "src/core/multilight_fusion.py"
@@ -76,7 +82,7 @@ jobs:
           python -m pip install numpy opencv-python-headless
       - name: Check syntax and training isolation
         run: |
-          python -m py_compile src/core/neural/aoi_quality_cnn_v3_production_trial.py src/core/neural/aoi_quality_cnn_v3_trial_consensus.py src/scripts/activate_aoi_quality_v3_production_trial.py src/core/multilight_fusion.py src/ui/production_confidence_gate.py main.py tests/test_aoi_quality_v3_production_trial.py src/core/neural/aoi_quality_cnn_v3.py src/scripts/train_aoi_quality_cnn_v3_offline.py src/services/aoi_v3_operator_image_reviews.py src/services/aoi_v3_ng_escape_reviews.py tests/test_aoi_v3_ng_escape_reviews.py tests/test_aoi_v3_ng_escape_training.py src/services/aoi_v3_binary_quality_metrics.py src/services/aoi_v3_verified_candidate.py src/services/aoi_v3_epoch_diagnostics.py src/services/odin_operator_validation_labels.py src/services/aoi_universal_quality_archive.py tests/test_aoi_quality_cnn_v3_offline.py tests/test_aoi_v3_epoch_diagnostics.py tests/test_aoi_universal_24_human_repair.py
+          python -m py_compile src/core/neural/aoi_quality_cnn_v3_production_trial.py src/core/neural/aoi_v3_epoch5_contract.py src/scripts/activate_aoi_quality_v3_epoch5.py tests/test_aoi_v3_epoch5_activation.py src/core/neural/aoi_quality_cnn_v3_trial_consensus.py src/scripts/activate_aoi_quality_v3_production_trial.py src/core/multilight_fusion.py src/ui/production_confidence_gate.py main.py tests/test_aoi_quality_v3_production_trial.py src/core/neural/aoi_quality_cnn_v3.py src/scripts/train_aoi_quality_cnn_v3_offline.py src/services/aoi_v3_operator_image_reviews.py src/services/aoi_v3_ng_escape_reviews.py tests/test_aoi_v3_ng_escape_reviews.py tests/test_aoi_v3_ng_escape_training.py src/services/aoi_v3_binary_quality_metrics.py src/services/aoi_v3_verified_candidate.py src/services/aoi_v3_epoch_diagnostics.py src/services/odin_operator_validation_labels.py src/services/aoi_universal_quality_archive.py tests/test_aoi_quality_cnn_v3_offline.py tests/test_aoi_v3_epoch_diagnostics.py tests/test_aoi_universal_24_human_repair.py
       - name: Run model, training and safety regressions
         run: |
-          python -m unittest tests.test_aoi_quality_v3_production_trial tests.test_aoi_v3_epoch_diagnostics tests.test_aoi_v3_image_only_reviews tests.test_aoi_v3_ng_escape_reviews tests.test_aoi_v3_ng_escape_training tests.test_aoi_quality_cnn_v3_offline tests.test_aoi_universal_24_human_repair tests.test_aoi_universal_quality_offline -v
+          python -m unittest tests.test_aoi_v3_epoch5_activation tests.test_aoi_quality_v3_production_trial tests.test_aoi_v3_epoch_diagnostics tests.test_aoi_v3_image_only_reviews tests.test_aoi_v3_ng_escape_reviews tests.test_aoi_v3_ng_escape_training tests.test_aoi_quality_cnn_v3_offline tests.test_aoi_universal_24_human_repair tests.test_aoi_universal_quality_offline -v
