@@ -25,6 +25,7 @@ from src.core.operator_confirmed_archive_labels import (
 from src.services.faltando_neural_qualification import QualificationStore
 from src.services.odin_operator_confirmed_labels import verified_operator_labels, EVIDENCE
 from src.services.aoi_v3_operator_image_reviews import load_v3_image_reviews
+from src.services.aoi_v3_ng_escape_reviews import load_v3_ng_escape_reviews
 from src.services.odin_operator_validation_labels import (
     EVIDENCE as VALIDATION_EVIDENCE, verified_validation_labels,
 )
@@ -85,6 +86,7 @@ def _load_review(root: Path) -> dict[str, dict]:
 def universal_archive_events(
     manifest_path: Path, *, allow_refreshed_validation_labels: bool = False,
     use_v3_image_quality_reviews: bool = False,
+    use_v3_ng_escape_reviews: bool = False,
 ) -> tuple[list[dict], dict]:
     """Importa pares AOI sem presumir vínculo multilight nem qualidade física.
 
@@ -105,6 +107,16 @@ def universal_archive_events(
     image_reviews = (
         load_v3_image_reviews(store) if use_v3_image_quality_reviews else {}
     )
+    if use_v3_ng_escape_reviews and not use_v3_image_quality_reviews:
+        raise ValueError("Revisão de escapes exige importar também as 14 correções V3")
+    ng_escape_reviews, ng_escape_review_sha256 = (
+        load_v3_ng_escape_reviews(store)
+        if use_v3_ng_escape_reviews else ({}, None)
+    )
+    for source, verified in ng_escape_reviews.items():
+        previous = image_reviews.get(source)
+        if previous and previous["quality_label"] != verified["quality_label"]:
+            raise ValueError("Revisões V3 conflitantes para " + source)
     confirmed_quality = (
         verified_operator_labels(store.root)
         if (store.root / EVIDENCE).is_file() else {}
@@ -171,6 +183,7 @@ def universal_archive_events(
     categories = Counter()
     for source, item in sorted(store.by_path.items()):
         v3_review = image_reviews.get(source)
+        ng_escape = ng_escape_reviews.get(source)
         if v3_review and v3_review["quality_label"] == "IGNORE":
             skipped += 1
             v3_ignored += 1
@@ -197,8 +210,11 @@ def universal_archive_events(
             continue
         label = (
             v3_review["quality_label"] if v3_review else
+            ng_escape["quality_label"] if ng_escape else
             operator["quality_label"] if operator else archive_label
         )
+        if ng_escape and operator and operator["quality_label"] != "NG":
+            raise ValueError("NG revisado contradiz decisão humana anterior: " + source)
         if operator and item["source_sha256"] != operator["source_sha256"]:
             raise ValueError("SHA da confirmação humana divergente: " + source)
         if v3_review and review and review["visual_category"] in (
@@ -213,7 +229,7 @@ def universal_archive_events(
         if individual and individual.get("pair_inspected") is True:
             reviewed = individual.get("reviewed_label")
             if reviewed in ("OK", "NG"):
-                if (operator or v3_review) and reviewed != label:
+                if (operator or v3_review or ng_escape) and reviewed != label:
                     raise ValueError("Qualificação individual contradiz operador: " + source)
                 label = reviewed
         category = item.get("category_hint")
@@ -233,12 +249,14 @@ def universal_archive_events(
             continue
         seen[signature] = label
         physical = (
-            v3_review["physical_observation"] if v3_review
+            ng_escape["physical_observation"] if ng_escape
+            else v3_review["physical_observation"] if v3_review
             else operator.get("physical_type") if operator
             else review["visual_category"] if review else None
         )
         provenance_label = (
             "HUMAN_V3_IMAGE_SHA256" if v3_review
+            else "HUMAN_V3_NG_ESCAPE_SHA256" if ng_escape
             else "HUMAN_CONFIRMED_SHA256" if operator
             else "HUMAN_INDIVIDUAL_PAIR" if individual and
                  individual.get("pair_inspected") is True and
@@ -275,6 +293,13 @@ def universal_archive_events(
         "human_ignored_sources": skipped,
         "v3_operator_image_quality_verified": v3_operator_quality,
         "v3_operator_image_quality_excluded": v3_ignored,
+        "v3_ng_escape_review_enabled": use_v3_ng_escape_reviews,
+        "v3_ng_escape_review_sha256": ng_escape_review_sha256,
+        "v3_ng_escape_confirmed_sources": len(ng_escape_reviews),
+        "v3_ng_escape_sources_in_dataset": sum(
+            any(source in ng_escape_reviews for source in r["sources"])
+            for r in recorded
+        ),
         "v3_aoi_category_used_as_quality_label": False,
         "v3_operator_source_candidate_sha256": (
             json.loads(
