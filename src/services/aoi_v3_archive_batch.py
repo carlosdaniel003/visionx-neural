@@ -205,12 +205,25 @@ def audit_full_archive(
     root: Path, *, extractor=None, predictor=None,
     progress: Callable[[int, int, dict], None] | None = None,
     inventory: dict | None = None,
+    require_epoch5: bool = False,
+    verify_runtime_archive: bool = False,
+    runtime_index=None,
 ) -> dict:
     """Reavalia todos os PNGs do inventário; não faz treino ou writes.
 
     Funções injetáveis permitem testar a cobertura sem Torch ou máquina XP.
     """
     root = Path(root).resolve()
+    expected_checkpoint = None
+    if require_epoch5:
+        from src.core.neural.aoi_v3_epoch5_contract import (
+            EPOCH as EPOCH5, SNAPSHOT_SHA256 as EPOCH5_SHA256,
+            epoch5_pointer_enabled, validate_epoch5_snapshot,
+        )
+        if not epoch5_pointer_enabled(root):
+            raise ValueError("V3 época 5 não está ativada; auditoria cancelada")
+        validate_epoch5_snapshot(root)
+        expected_checkpoint = (EPOCH5, EPOCH5_SHA256)
     if predictor is None:
         from src.core.neural.aoi_quality_cnn_v3_primary import AOIQualityV3Primary
         predictor = AOIQualityV3Primary(root=root)
@@ -231,6 +244,12 @@ def audit_full_archive(
     if extractor is None:
         from src.services.faltando_neural_dataset import AOIPairExtractor
         extractor = AOIPairExtractor()
+    if verify_runtime_archive and runtime_index is None:
+        from src.services.archive_visual_presence import ArchiveVisualPresenceIndex
+        runtime_index = ArchiveVisualPresenceIndex(
+            ok_dir=root / "public/ok_archive",
+            ng_dir=root / "public/ng_archive",
+        )
     rows = []
     signatures = {}
     initial_hashes = {}
@@ -269,6 +288,42 @@ def audit_full_archive(
             if item.get("status") != "VALID_PNG":
                 raise ValueError("PNG inválido no inventário")
             frame, file_hash = _read(source)
+            if verify_runtime_archive:
+                # Consulta o MESMO índice SHA usado pelo XP, mas desliga
+                # similaridade O(N²): o leave-one-out já cobre essa sonda.
+                archive = runtime_index.inspect(
+                    frame, category, light, exact_only=True,
+                )
+                if not isinstance(archive, dict):
+                    raise ValueError("Índice de acervo retornou dado inválido")
+                exact_labels = archive.get("exact_frame_labels", [])
+                if not isinstance(exact_labels, list):
+                    raise ValueError("Índice de acervo retornou rótulos inválidos")
+                exact_paths = archive.get("exact_frame_paths", {})
+                if not isinstance(exact_paths, dict):
+                    raise ValueError("Índice de acervo retornou caminhos inválidos")
+                own_paths = exact_paths.get(expected, [])
+                own_found = isinstance(own_paths, list) and any(
+                    Path(p).resolve() == source for p in own_paths
+                    if isinstance(p, str)
+                )
+                result["runtime_archive_recall"] = {
+                    "status": archive.get("status", "UNAVAILABLE"),
+                    "expected_folder_label": expected,
+                    "index_exact_frame_labels": exact_labels,
+                    "own_file_retrieved": bool(own_found),
+                    "exact_label_unambiguous": (
+                        archive.get("status") == "EXACT_FRAME"
+                        and exact_labels == [expected]
+                        and own_found
+                    ),
+                    "opposite_label_conflict": (
+                        any(label != expected for label in exact_labels)
+                    ),
+                    "diagnostic_only": True,
+                    "production_decision_authorized": False,
+                    "self_retrieval_not_generalization": True,
+                }
             if file_hash != item.get("file_sha256"):
                 raise ValueError("PNG alterado após o inventário inicial")
             fingerprint = image_fingerprint(frame)
@@ -314,11 +369,22 @@ def audit_full_archive(
                 raise ValueError(
                     "CNN V3 não retornou inferência e checkpoint verificados"
                 )
+            epoch = detail.get("cnn_v3_checkpoint_epoch")
+            digest = detail.get("cnn_v3_checkpoint_sha256")
+            if expected_checkpoint is not None and (
+                type(epoch) is not int
+                or (epoch, digest) != expected_checkpoint
+            ):
+                raise ValueError(
+                    "Inferência não usou a V3 época 5 exata; "
+                    f"recebidos epoch={epoch}, SHA={digest}"
+                )
             result.update(
                 status="EVALUATED",
                 predicted=predicted,
                 v3_ng_score_uncalibrated=float(score),
-                v3_checkpoint_sha256=detail.get("cnn_v3_checkpoint_sha256"),
+                v3_checkpoint_epoch=epoch,
+                v3_checkpoint_sha256=digest,
                 agrees_with_folder=predicted == expected,
             )
             desc = archive_visual_descriptor(frame)
@@ -352,11 +418,41 @@ def audit_full_archive(
         light_rows[result["lighting"]].append(result)
         group_rows[_scope(result)].append(result)
     stats = _metrics(rows)
+    runtime_recall = None
+    if verify_runtime_archive:
+        checked = [
+            row["runtime_archive_recall"]
+            for row in rows if "runtime_archive_recall" in row
+        ]
+        runtime_recall = {
+            "scanned": len(checked),
+            "exact_unambiguous": sum(
+                x["exact_label_unambiguous"] for x in checked
+            ),
+            "own_file_retrieved": sum(
+                x["own_file_retrieved"] for x in checked
+            ),
+            "cross_label_conflicts": sum(
+                x["opposite_label_conflict"] for x in checked
+            ),
+            "not_exact_or_ambiguous": sum(
+                not x["exact_label_unambiguous"] for x in checked
+            ),
+            "uses_same_index_as_operational_XP": True,
+            "exact_replay_includes_own_image": True,
+            "not_an_independent_test": True,
+            "no_automatic_label_authorization": True,
+        }
     return {
         "schema": SCHEMA,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "read_only": True,
         "production_decision_authorized": False,
+        "required_epoch5": require_epoch5,
+        "expected_checkpoint": (
+            {"epoch": expected_checkpoint[0], "sha256": expected_checkpoint[1]}
+            if expected_checkpoint else None
+        ),
         "archive_label_physically_verified": False,
         "blind_holdout": False,
         "folder_labels_are_provisional": True,
@@ -374,6 +470,10 @@ def audit_full_archive(
         },
         "classifier": {
             "name": "AOIQualityV3Primary",
+            "v3_checkpoint_epoch": sorted({
+                r.get("v3_checkpoint_epoch")
+                for r in rows if type(r.get("v3_checkpoint_epoch")) is int
+            }),
             "v3_checkpoint_sha256": sorted({
                 r.get("v3_checkpoint_sha256")
                 for r in rows if r.get("v3_checkpoint_sha256")
@@ -390,6 +490,7 @@ def audit_full_archive(
         "by_category_light": {key: _metrics(value)
                               for key, value in sorted(group_rows.items())},
         "leave_one_out_archive_probe": probes,
+        "runtime_archive_exact_replay": runtime_recall,
         "cases": rows,
     }
 
