@@ -30,10 +30,22 @@ class LowerPanelsResponsiveContractTests(unittest.TestCase):
         self.assertEqual(profile_for_width(1600).controls_columns, 2)
         self.assertEqual(profile_for_width(1920).controls_columns, 2)
 
-    def test_notebook_keeps_three_lighting_buttons_and_two_by_two_actions(self):
+    def test_primary_judgment_and_auxiliary_actions_have_separate_grids(self):
         compact = profile_for_width(1366)
         self.assertEqual(compact.light_columns, 3)
-        self.assertEqual(compact.action_columns, 2)
+        self.assertIn("JULGAMENTO DA PEÇA", self.ui_source)
+        self.assertIn("CAPTURA E AÇÕES AUXILIARES", self.ui_source)
+        self.assertIn("self.primary_decision_buttons", self.ui_source)
+        self.assertIn("self.utility_actions", self.ui_source)
+        self.assertIn("self._reflow_grid(self.action_grid, self.primary_decision_buttons, 2)",
+                      self.ui_source)
+        self.assertIn("self.utility_grid", self.ui_source)
+
+    def test_auxiliary_actions_reflow_with_width_inside_same_breakpoint(self):
+        self.assertIn("utility_columns = max(1, min(3, width // 360))", self.ui_source)
+        self.assertIn("utility_columns != getattr(self, \"_utility_columns\", 0)",
+                      self.ui_source)
+        self.assertIn("self._utility_columns = utility_columns", self.ui_source)
 
     def test_network_debug_actions_stack_only_in_compact_profile(self):
         self.assertIn("self.network_debug_action_buttons", self.ui_source)
