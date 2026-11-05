@@ -29,7 +29,7 @@ class LegacyWithoutOCRTests(MemoryFirstFixture):
         self.assertEqual(outcome["verdict"], "DEFEITO REAL")
         self.assertEqual(system.specialist_calls, [])
         timing = outcome["detail"]["verified_memory_timing"]
-        self.assertEqual(timing["legacy_lookup_mode"], "exact_visual_category_light")
+        self.assertEqual(timing["legacy_lookup_mode"], "exact_visual_light")
         self.assertEqual(timing["matched_count"], 1)
 
     def test_no_similar_pixels_are_falsely_treated_as_known(self):
@@ -40,17 +40,21 @@ class LegacyWithoutOCRTests(MemoryFirstFixture):
         outcome = self.inspect(system, info=self.category_only, tst=altered)
         self.assertEqual(outcome["detail"]["recognition_route"], "NEW_CNN")
 
-    def test_no_cross_category_or_light_recovery(self):
+    def test_cross_category_exact_pair_matches_but_other_light_does_not(self):
         system = self.create_router()
         system.experts["knn"].signatures_ng.append(self.make_record("NG"))
-        for info in (
-            dict(self.category_only, category="INVERTIDO"),
-            dict(self.category_only, lighting_mode="TOP"),
-        ):
-            self.assertEqual(
-                self.inspect(system, info=info)["detail"]["recognition_route"],
-                "NEW_CNN",
+        for category in ("INVERTIDO", "MUITO ADESIVO", "Unknown", ""):
+            outcome = self.inspect(
+                system, info=dict(self.category_only, category=category),
             )
+            self.assertEqual(
+                outcome["detail"]["recognition_route"], "KNOWN_KNN",
+            )
+        self.assertEqual(
+            self.inspect(
+                system, info=dict(self.category_only, lighting_mode="TOP"),
+            )["detail"]["recognition_route"], "NEW_CNN",
+        )
 
     def test_opposite_human_labels_same_visual_pair_force_review(self):
         system = self.create_router()
@@ -83,13 +87,13 @@ class LegacyWithoutOCRTests(MemoryFirstFixture):
             "NEW_CNN",
         )
 
-    def test_partial_old_metadata_does_not_enable_wildcard(self):
+    def test_partial_old_metadata_cannot_override_pixel_identity(self):
         system = self.create_router()
         system.experts["knn"].signatures_ng.append(self.make_record("NG"))
         incomplete = dict(self.category_only, board="PCB-123")
         self.assertEqual(
             self.inspect(system, info=incomplete)["detail"]["recognition_route"],
-            "NEW_CNN",
+            "KNOWN_KNN",
         )
 
     def test_known_persistent_record_stays_independent_of_old_ocr(self):

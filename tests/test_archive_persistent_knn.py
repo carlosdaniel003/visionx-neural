@@ -282,7 +282,10 @@ class DurableMemoryTests(unittest.TestCase):
         )
         self.assertEqual(self.store.lookup_exact_any_light(
             reference, test, {**side, "category": "DESLOCADO"},
-        )["status"], "NEW")
+        )["status"], "KNOWN")
+        self.assertEqual(self.store.lookup_exact_any_light(
+            reference, test, {**side, "category": "Unknown"},
+        )["status"], "KNOWN")
 
     def test_cross_light_label_conflict_never_auto_approves(self):
         same = images("OK")

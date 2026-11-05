@@ -599,7 +599,8 @@ class SideEarlyDecisionTests(unittest.TestCase):
     def test_v3_epoch5_test_mode_skips_top_mid_only_with_independent_knn_agreement(self):
         from src.ui.production_confidence_gate import production_decision_policy
 
-        for category in ("FALTANDO", "EMBORCADO", "INVERTIDO", "DESLOCADO"):
+        for category in ("FALTANDO", "EMBORCADO", "INVERTIDO", "DESLOCADO",
+                         "MUITO ADESIVO", "UNKNOWN", ""):
             for verdict in ("FALHA FALSA", "DEFEITO REAL"):
                 with self.subTest(category=category, verdict=verdict):
                     original = _v3_side(verdict=verdict)
@@ -615,7 +616,7 @@ class SideEarlyDecisionTests(unittest.TestCase):
                     self.assertEqual(final["detail"]["side_early_exit"]["skipped_lights"],
                                      ["TOP", "MID"])
                     self.assertEqual(final["detail"]["side_early_exit"]["scope"],
-                                     "SUPERVISED_TEST_ONLY")
+                                     "ALL_MODES_VISUAL_ONLY")
                     self.assertFalse(final["detail"]["side_early_exit"]["production_auto_allowed"])
                     self.assertTrue(final["production_review_required"])
                     self.assertTrue(final["detail"]["operator_review_required"])
@@ -663,7 +664,7 @@ class SideEarlyDecisionTests(unittest.TestCase):
                 self.assertIsNone(build_side_early_decision(
                     current, "EMBORCADO", allow_supervised_v3=True,
                 ))
-        self.assertIsNone(build_side_early_decision(
+        self.assertIsNotNone(build_side_early_decision(
             base, "MUITO ADESIVO", allow_supervised_v3=True,
         ))
         self.assertIsNone(build_side_early_decision(
