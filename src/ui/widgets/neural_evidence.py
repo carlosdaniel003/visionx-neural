@@ -337,12 +337,16 @@ class NeuralEvidencePanel(QFrame):
     def update_data(self, detail: dict, analysis: dict | None = None):
         self._last_analysis = analysis
         d = detail if isinstance(detail, dict) else {}
-        active = bool(d.get("cnn_v2_active"))
+        v3 = d.get("cnn_v3_primary") is True
+        active = bool(v3 or d.get("cnn_v2_active"))
         route = str(d.get("recognition_route", "") or "")
-        suffix = ("CNN FALTANDO v2" if active else
+        suffix = ("CNN AOI V3" if v3 else
+                  "CNN FALTANDO v2 (legado)" if active else
                   "KNN EXATO" if route == "KNOWN_KNN" else "AOI")
         self.heading.setText(f"PAINEL NEURAL EXPLICÁVEL • {suffix}")
         self.footer.setText(
+            "CNN V3 • mapas V2 não representam o motor ativo"
+            if v3 else
             "CNN operacional + sondas explicativas das ROIs"
             if active else
             "DECISÃO KNN • CNN em paralelo APENAS para mapas"
@@ -377,6 +381,15 @@ class NeuralEvidencePanel(QFrame):
         if not isinstance(payload, dict) or self._requested_epoch == self._epoch:
             return
         self._requested_epoch = self._epoch
+        analysis = self._last_analysis
+        detail = analysis.get("detail") if isinstance(analysis, dict) else {}
+        if isinstance(detail, dict) and detail.get("cnn_v3_primary") is True:
+            # Os mapas legados são calculados com pesos V2 e jamais
+            # podem ser apresentados como evidência da V3 ativa.
+            self._show_unavailable(
+                "CNN V3 em uso. Mapas explicativos V2 não aplicáveis."
+            )
+            return
         if payload.get("_cnn_explain_allowed") is False:
             self._show_unavailable(
                 "Categoria fora do escopo CNN FALTANDO v2 • sem sonda"
