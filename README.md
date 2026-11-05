@@ -1,3 +1,16 @@
+## 05/11/2026 — SIDE antecipada com V3 época 5 no Modo Teste
+
+A primeira iluminação pode finalizar **somente o diagnóstico visual de Teste**
+quando a V3 época 5 verificada tem score direcional >=97% e KNN C A/B
+concordam seletivamente, incluindo cinco vizinhos da mesma classe em cada
+descritor. O resultado permanece **supervisionado** e não autoriza 0/1 no XP.
+Em Produção/Sombra, a V3 experimental sem prova operacional independente
+continua para TOP/MID; rotas anteriores de memória/NG permanecem intactas.
+
+[Contrato, testes e limites](docs/ODIN_V3_SIDE_ANTECIPADA_TESTE_20261105.md).
+
+---
+
 ## 05/11/2026 — Repetir auditoria integral com V3 época 5 e índice XP
 
 O replay offline usa todos os PNGs originais de `ok_archive` e

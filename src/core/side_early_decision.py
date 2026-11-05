@@ -11,6 +11,8 @@ from copy import deepcopy
 from math import isfinite
 
 from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
+from src.core.neural.aoi_v3_epoch5_contract import EPOCH as V3_EPOCH_5
+from src.core.neural.aoi_quality_cnn_v3_trial_consensus import _valid_vote
 from src.core.neural.faltando_category_scope import uses_faltando_v2
 from src.core.strict_category_memory import canonical_memory_category
 
@@ -19,6 +21,7 @@ SIDE_EARLY_EXIT_THRESHOLD = 0.97
 SIDE_EARLY_EXIT_RULE = "side_confidence_early_exit_v1"
 SIDE_TRIAL_NG_REVIEW_RULE = "side_trial_ng_human_review_v1"
 SIDE_TRIAL_OK_REVIEW_RULE = "side_trial_ok_human_review_v1"
+SIDE_V3_SUPERVISED_RULE = "side_v3_epoch5_corroborated_test_review_v1"
 
 
 def _uncorroborated_missing_ng_vs_two_knn_ok(analysis: dict, category: str) -> bool:
@@ -288,7 +291,110 @@ def _eligible_trial_side_for_review(
     )
 
 
-def build_side_early_decision(analysis: dict | None, category: str) -> dict | None:
+def _eligible_v3_side_for_review(analysis: dict | None, category: str) -> bool:
+    """SIDE V3 forte e KNN C A/B unânime: conclusão VISUAL de teste.
+
+    A concordância dos descritores não é certificação física; nunca
+    autoriza 0/1 na Produção nem transforma similaridade em par exato.
+    """
+    if (not isinstance(analysis, dict)
+            or not uses_faltando_v2(category)
+            or analysis.get("lighting_mode") != "SIDE"
+            or analysis.get("production_review_required") is not True):
+        return False
+    detail = analysis.get("detail")
+    if not isinstance(detail, dict):
+        return False
+    trace = detail.get("decision_trace")
+    if not isinstance(trace, dict):
+        return False
+    verdict = analysis.get("verdict")
+    if verdict not in {"FALHA FALSA", "DEFEITO REAL"}:
+        return False
+    defect = verdict == "DEFEITO REAL"
+    if (analysis.get("is_defect") is not defect
+            or detail.get("recognition_route") != "NEW_CNN"
+            or detail.get("cnn_v3_primary") is not True
+            or detail.get("cnn_v3_status") != "INFERENCE_OK"
+            or detail.get("cnn_v3_checkpoint_verified") is not True
+            or detail.get("cnn_v3_lighting_mode") != "SIDE"
+            or detail.get("fusion_rule") != "cnn_v3_primary_direct"
+            or trace.get("fusion_rule") != "cnn_v3_primary_direct"
+            or detail.get("cnn_v2_active") is True
+            or detail.get("operator_review_required") is not True
+            or trace.get("operator_review_required") is not True
+            or detail.get("memory_conflict") is True
+            or detail.get("raw_memory_conflict") is True
+            or trace.get("memory_conflict") is True
+            or detail.get("hard_missing_evidence") is True
+            or analysis.get("hard_missing_evidence") is True):
+        return False
+
+    physical = detail.get("physical_missing_veto")
+    if isinstance(physical, dict) and physical.get("status") in {
+        "SUSPECT_ABSENCE", "UNAVAILABLE", "GEOMETRY_REVIEW",
+    }:
+        return False
+    vote = detail.get("aoi_v3_trial")
+    if (not _valid_vote(vote, "SIDE")
+            or vote.get("epoch") != V3_EPOCH_5
+            or detail.get("cnn_v3_checkpoint_epoch") != V3_EPOCH_5
+            or detail.get("cnn_v3_checkpoint_sha256") != vote["checkpoint_sha256"]
+            or vote.get("predicted") != ("NG" if defect else "OK")):
+        return False
+    try:
+        score = float(vote["ng_score_uncalibrated"])
+        local_score = float(detail["cnn_v3_ng_score_uncalibrated"])
+        confidence = float(analysis["confidence"])
+        physical_score = float(detail["physical_score"])
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
+    if (not all(isfinite(v) for v in (score, local_score, confidence, physical_score))
+            or abs(score - local_score) > 0.000001
+            or abs(confidence - (score if defect else 1.0 - score)) > 0.000001
+            or confidence < SIDE_EARLY_EXIT_THRESHOLD or confidence > 1.0
+            or physical_score != 0.0):
+        return False
+
+    knn = detail.get("knn_c")
+    label = "NG" if defect else "OK"
+    selected = "SUGERE_" + label
+    if (not isinstance(knn, dict)
+            or knn.get("schema") != "visionx.knn_c_live_review_gated.v1"
+            or knn.get("bank_status") != "READY"
+            or knn.get("diagnostic_only") is not True
+            or knn.get("auto_decision_authorized") is not False
+            or knn.get("requires_human_confirmation") is not True
+            or knn.get("conflicts_with_existing_verdict") is True
+            or knn.get("status") != selected
+            or knn.get("vote_A") != label or knn.get("vote_B") != label
+            or knn.get("suggestion_A") != selected
+            or knn.get("suggestion_B") != selected
+            or knn.get("pre_c_verdict") != verdict
+            or knn.get("pre_c_is_defect") is not defect
+            or knn.get("pre_c_review_required") is not False):
+        return False
+    # Evidência visual consistente, sem tratar os vizinhos como verdade
+    # física: os cinco primeiros de AMBOS os descritores concordam.
+    for descriptor in ("neighbors_A", "neighbors_B"):
+        neighbors = knn.get(descriptor)
+        if not isinstance(neighbors, list) or len(neighbors) < 5:
+            return False
+        for neighbor in neighbors[:5]:
+            if not isinstance(neighbor, dict) or neighbor.get("label") != label:
+                return False
+            try:
+                similarity = float(neighbor["similarity"])
+            except (KeyError, TypeError, ValueError, OverflowError):
+                return False
+            if not isfinite(similarity) or not 0.0 <= similarity <= 1.0:
+                return False
+    return True
+
+
+def build_side_early_decision(
+    analysis: dict | None, category: str, *, allow_supervised_v3: bool = False,
+) -> dict | None:
     """Finaliza a inspeção pela SIDE; separa classificação de comando XP."""
     if (isinstance(analysis, dict)
             and _confirmed_human_ok_requires_other_lights(analysis, category)):
@@ -298,8 +404,14 @@ def build_side_early_decision(analysis: dict | None, category: str) -> dict | No
     trial_review = (
         not automatic and _eligible_trial_side_for_review(analysis, category)
     )
-    if not automatic and not trial_review:
+    v3_review = (
+        allow_supervised_v3 is True
+        and not automatic and not trial_review
+        and _eligible_v3_side_for_review(analysis, category)
+    )
+    if not automatic and not trial_review and not v3_review:
         return None
+    review_only = trial_review or v3_review
 
     verdict = str(analysis["verdict"]).strip().upper()
     confidence = float(analysis["confidence"])
@@ -308,7 +420,10 @@ def build_side_early_decision(analysis: dict | None, category: str) -> dict | No
     final["reason"] = (
         f"SIDE: encerramento antecipado com confiança reportada de "
         f"{confidence:.1%}; TOP e MID dispensadas. "
-        + ("Checkpoint experimental: autorização XP depende do gate de Produção. "
+        + ("V3 época 5 corroborada pela KNN C A/B; classificação visual "
+           "supervisionada no Teste, sem autorização automática XP. "
+           if v3_review else
+           "Checkpoint experimental: autorização XP depende do gate de Produção. "
            if trial_review else "")
         + str(analysis.get("reason", "") or "")
     )
@@ -318,14 +433,15 @@ def build_side_early_decision(analysis: dict | None, category: str) -> dict | No
     final["eligible_for_final_decision"] = True
     # Preservar a revisão herdada como evidência do checkpoint experimental.
     # A autorização real 0/1 continua exclusiva da política de Produção.
-    final["production_review_required"] = trial_review
+    final["production_review_required"] = review_only
 
     final_detail["multilight_final"] = True
     final_detail["multilight_category"] = final["multilight_category"]
     final_detail["eligible_for_final_decision"] = True
-    final_detail["operator_review_required"] = trial_review
+    final_detail["operator_review_required"] = review_only
     final_detail["side_early_exit"] = {
         "rule": (
+            SIDE_V3_SUPERVISED_RULE if v3_review else
             (SIDE_TRIAL_NG_REVIEW_RULE if final["is_defect"]
              else SIDE_TRIAL_OK_REVIEW_RULE) if trial_review
             else SIDE_EARLY_EXIT_RULE
@@ -336,8 +452,16 @@ def build_side_early_decision(analysis: dict | None, category: str) -> dict | No
         "analyzed_lights": ["SIDE"],
         "skipped_lights": ["TOP", "MID"],
         "production_auto_allowed": automatic,
-        "operator_review_required": trial_review,
+        "operator_review_required": review_only,
     }
+    if v3_review:
+        final_detail["side_early_exit"].update({
+            "model": "aoi_quality_cnn_v3",
+            "model_epoch": V3_EPOCH_5,
+            "checkpoint_sha256": final_detail["cnn_v3_checkpoint_sha256"],
+            "corroboration": "KNN_C_A_B_TOP5_UNANIMOUS",
+            "scope": "SUPERVISED_TEST_ONLY",
+        })
     return final
 
 
@@ -435,6 +559,7 @@ __all__ = [
     "SIDE_EARLY_EXIT_RULE",
     "SIDE_TRIAL_NG_REVIEW_RULE",
     "SIDE_TRIAL_OK_REVIEW_RULE",
+    "SIDE_V3_SUPERVISED_RULE",
     "build_side_early_decision",
     "side_automatic_decision",
     "side_trial_automatic_decision",

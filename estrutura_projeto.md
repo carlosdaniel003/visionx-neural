@@ -1,3 +1,13 @@
+## 05/11/2026 — SIDE V3 época 5: classificação supervisionada no Teste
+
+- `src/core/side_early_decision.py`: novo contrato V3 por SHA/epoch, score
+  direcional >=97% e KNN C A/B unânime no top-5; não concede autorização XP.
+- `src/ui/adhesive_multilight_inspection.py`: opt-in da antecipação V3 apenas
+  em Modo Teste, tanto na pré-checagem quanto na finalização SIDE.
+- `tests/test_side_early_decision.py` e `tests/test_adhesive_multilight_inspection.py`:
+  cobertura de veredito OK/NG, divergência, adulteração e bloqueio de Produção.
+- `docs/ODIN_V3_SIDE_ANTECIPADA_TESTE_20261105.md`: orientação e limites.
+
 ## 05/11/2026 — Auditoria repetida do acervo com época 5 e índice XP
 
 - `src/services/aoi_v3_archive_batch.py`: exigência da época 5 e

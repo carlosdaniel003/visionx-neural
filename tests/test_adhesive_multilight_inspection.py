@@ -730,6 +730,35 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
         panel.adhesive_multilight_automation.start.assert_not_called()
         self.assertIn("side_early_exit", panel.current_analysis["detail"])
 
+    def test_v3_epoch5_corroborated_side_skips_aux_lights_only_in_test(self):
+        from tests.test_side_early_decision import _v3_side
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        for mode in ("Modo Teste", "Modo Produção", "Modo Sombra"):
+            with self.subTest(mode=mode):
+                source = _v3_side()
+                panel = self._run_capture(
+                    confidence=source["confidence"], verdict="FALHA FALSA",
+                    mode=mode, side_analysis=source, category="EMBORCADO",
+                )
+                panel.send_command_to_xp.assert_not_called()
+                if mode == "Modo Teste":
+                    self.assertFalse(panel.adhesive_multilight_active)
+                    panel.adhesive_multilight_automation.start.assert_not_called()
+                    self.assertEqual(panel.current_analysis["verdict"], "FALHA FALSA")
+                    self.assertEqual(
+                        panel.current_analysis["detail"]["side_early_exit"]["rule"],
+                        "side_v3_epoch5_corroborated_test_review_v1",
+                    )
+                    self.assertFalse(
+                        production_decision_policy(panel.current_analysis)["auto_allowed"]
+                    )
+                else:
+                    self.assertTrue(panel.adhesive_multilight_active)
+                    panel.adhesive_multilight_automation.start.assert_called_once()
+                    self.assertIsNone(panel.adhesive_multilight_final_analysis)
+                    self.assertNotIn("side_early_exit", panel.current_analysis["detail"])
+
     def test_just_below_threshold_keeps_three_light_capture(self):
         panel = self._run_capture(
             confidence=0.9699, verdict="FALHA FALSA", mode="Modo Teste"

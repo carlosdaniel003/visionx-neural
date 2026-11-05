@@ -1,12 +1,17 @@
 """Regressões do encerramento antecipado SIDE >= 97%."""
 
 import unittest
+from copy import deepcopy
 
+from src.core.neural.aoi_v3_epoch5_contract import (
+    EPOCH5_VOTE_SCHEMA, SNAPSHOT_SHA256 as V3_EPOCH5_SHA256,
+)
 from src.core.neural.faltando_checkpoint_contract import TRIAL_97P70_SHA256
 from src.core.side_early_decision import (
     SIDE_EARLY_EXIT_THRESHOLD,
     SIDE_TRIAL_NG_REVIEW_RULE,
     SIDE_TRIAL_OK_REVIEW_RULE,
+    SIDE_V3_SUPERVISED_RULE,
     build_side_early_decision,
     side_automatic_decision,
     side_trial_automatic_decision,
@@ -28,6 +33,70 @@ def _side(verdict="FALHA FALSA", confidence=0.97, **detail):
             **detail,
         },
     }
+
+
+def _v3_side(*, verdict="FALHA FALSA", score=None):
+    """SIDE V3 época 5 com KNN C concordante em dois descritores."""
+    defect = verdict == "DEFEITO REAL"
+    if score is None:
+        score = .9999 if defect else 4.6078973969798653e-10
+    label = "NG" if defect else "OK"
+    selected = "SUGERE_" + label
+    vote = {
+        "schema": EPOCH5_VOTE_SCHEMA,
+        "status": "READY",
+        "epoch": 5,
+        "light": "SIDE",
+        "checkpoint_sha256": V3_EPOCH5_SHA256,
+        "ng_score_uncalibrated": score,
+        "predicted": label,
+        "ng_veto": defect,
+        "automatic_ok_from_v3_authorized": False,
+    }
+    knn = {
+        "schema": "visionx.knn_c_live_review_gated.v1",
+        "bank_status": "READY",
+        "status": selected,
+        "diagnostic_only": True,
+        "auto_decision_authorized": False,
+        "requires_human_confirmation": True,
+        "conflicts_with_existing_verdict": False,
+        "vote_A": label, "vote_B": label,
+        "suggestion_A": selected, "suggestion_B": selected,
+        "pre_c_verdict": verdict,
+        "pre_c_is_defect": defect,
+        "pre_c_review_required": False,
+        "neighbors_A": [
+            {"label": label, "similarity": v}
+            for v in (.96348, .95507, .94240, .94151, .94133)
+        ],
+        "neighbors_B": [
+            {"label": label, "similarity": v}
+            for v in (.93968, .92795, .91188, .90846, .90620)
+        ],
+    }
+    side = _side(
+        verdict, max(score, 1.0-score),
+        recognition_route="NEW_CNN",
+        cnn_v3_primary=True,
+        cnn_v3_status="INFERENCE_OK",
+        cnn_v3_checkpoint_verified=True,
+        cnn_v3_checkpoint_epoch=5,
+        cnn_v3_checkpoint_sha256=V3_EPOCH5_SHA256,
+        cnn_v3_lighting_mode="SIDE",
+        cnn_v3_ng_score_uncalibrated=score,
+        fusion_rule="cnn_v3_primary_direct",
+        aoi_v3_trial=vote,
+        physical_score=0.0,
+        knn_c=knn,
+        operator_review_required=True,
+        decision_trace={
+            "operator_review_required": True,
+            "fusion_rule": "cnn_v3_primary_direct",
+        },
+    )
+    side["production_review_required"] = True
+    return side
 
 
 class SideEarlyDecisionTests(unittest.TestCase):
@@ -526,6 +595,80 @@ class SideEarlyDecisionTests(unittest.TestCase):
         self.assertIsNone(build_side_early_decision(_side("FALHA FALSA", 0.99, **base), "FALTANDO"))
         self.assertIsNone(build_side_early_decision(_side("DEFEITO REAL", 0.99, **(base | {"recognition_memory_verified": False})), "FALTANDO"))
 
+
+    def test_v3_epoch5_test_mode_skips_top_mid_only_with_independent_knn_agreement(self):
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        for category in ("FALTANDO", "EMBORCADO", "INVERTIDO", "DESLOCADO"):
+            for verdict in ("FALHA FALSA", "DEFEITO REAL"):
+                with self.subTest(category=category, verdict=verdict):
+                    original = _v3_side(verdict=verdict)
+                    self.assertIsNone(build_side_early_decision(original, category))
+                    final = build_side_early_decision(
+                        original, category, allow_supervised_v3=True,
+                    )
+                    self.assertIsNotNone(final)
+                    self.assertEqual(final["verdict"], verdict)
+                    self.assertEqual(final["detail"]["side_early_exit"]["rule"],
+                                     SIDE_V3_SUPERVISED_RULE)
+                    self.assertEqual(final["detail"]["side_early_exit"]["model_epoch"], 5)
+                    self.assertEqual(final["detail"]["side_early_exit"]["skipped_lights"],
+                                     ["TOP", "MID"])
+                    self.assertEqual(final["detail"]["side_early_exit"]["scope"],
+                                     "SUPERVISED_TEST_ONLY")
+                    self.assertFalse(final["detail"]["side_early_exit"]["production_auto_allowed"])
+                    self.assertTrue(final["production_review_required"])
+                    self.assertTrue(final["detail"]["operator_review_required"])
+                    self.assertIsNone(side_automatic_decision(final))
+                    self.assertIsNone(side_trial_automatic_decision(final))
+                    policy = production_decision_policy(final)
+                    self.assertFalse(policy["auto_allowed"])
+                    self.assertNotEqual(policy["proposed_decision"], "OK")
+                    self.assertNotIn("side_early_exit", original["detail"])
+
+    def test_v3_epoch5_does_not_skip_when_model_knn_or_provenance_disagree(self):
+        base = _v3_side()
+        changes = (
+            lambda a: a["detail"]["aoi_v3_trial"].update(epoch=3),
+            lambda a: a["detail"]["aoi_v3_trial"].update(checkpoint_sha256="0"*64),
+            lambda a: a["detail"]["aoi_v3_trial"].update(predicted="NG"),
+            lambda a: a["detail"]["aoi_v3_trial"].update(light="MID"),
+            lambda a: a["detail"]["aoi_v3_trial"].update(status="ERROR"),
+            lambda a: a["detail"].update(cnn_v3_checkpoint_verified=False),
+            lambda a: a["detail"].update(cnn_v3_checkpoint_epoch=3),
+            lambda a: a["detail"].update(cnn_v3_ng_score_uncalibrated=.5),
+            lambda a: a["detail"].update(cnn_v3_primary=False),
+            lambda a: a["detail"].update(cnn_v2_active=True),
+            lambda a: a.update(confidence=.96),
+            lambda a: a.update(lighting_mode="TOP"),
+            lambda a: a.update(production_review_required=False),
+            lambda a: a.update(is_defect=True),
+            lambda a: a["detail"].update(operator_review_required=False),
+            lambda a: a["detail"].update(memory_conflict=True),
+            lambda a: a["detail"].update(physical_score=.3),
+            lambda a: a["detail"].update(
+                physical_missing_veto={"status": "SUSPECT_ABSENCE"}),
+            lambda a: a["detail"]["knn_c"].update(status="REVISAO"),
+            lambda a: a["detail"]["knn_c"].update(bank_status="LOADING"),
+            lambda a: a["detail"]["knn_c"].update(vote_B="NG"),
+            lambda a: a["detail"]["knn_c"].update(suggestion_B="REVISAO"),
+            lambda a: a["detail"]["knn_c"].update(conflicts_with_existing_verdict=True),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][0].update(label="NG"),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"].pop(),
+        )
+        for change in changes:
+            current = deepcopy(base)
+            change(current)
+            with self.subTest(change=change):
+                self.assertIsNone(build_side_early_decision(
+                    current, "EMBORCADO", allow_supervised_v3=True,
+                ))
+        self.assertIsNone(build_side_early_decision(
+            base, "MUITO ADESIVO", allow_supervised_v3=True,
+        ))
+        self.assertIsNone(build_side_early_decision(
+            base, "EMBORCADO", allow_supervised_v3=False,
+        ))
 
 if __name__ == "__main__":
     unittest.main()

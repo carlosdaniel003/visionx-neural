@@ -445,9 +445,10 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
         getattr(panel, "current_aoi_info", None)
     )
     if side_only:
+        mode = getattr(getattr(panel, "combo_mode", None), "currentText",
+                       lambda: "")()
         fused = None
-        if getattr(getattr(panel, "combo_mode", None), "currentText",
-                   lambda: "")() == "Modo Produção":
+        if mode == "Modo Produção":
             from src.core.side_memory_first import build_side_memory_first
             from src.core.operator_exact_frame_recall import (
                 build_latest_operator_exact_side,
@@ -471,7 +472,10 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
                     analyses.get("SIDE"), side, category,
                 )
         if fused is None:
-            fused = build_side_early_decision(analyses.get("SIDE"), category)
+            fused = build_side_early_decision(
+                analyses.get("SIDE"), category,
+                allow_supervised_v3=(mode == "Modo Teste"),
+            )
     else:
         fused = fuse_multilight(analyses, category)
     if not isinstance(fused, dict):
@@ -1368,7 +1372,10 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
                     side_analysis, side_sample, category,
                 )
         if side_early is None:
-            side_early = build_side_early_decision(side_analysis, category)
+            side_early = build_side_early_decision(
+                side_analysis, category,
+                allow_supervised_v3=(mode == "Modo Teste"),
+            )
         # Em Produção, a hipótese SIDE só para revisão humana não pode
         # encerrar a aquisição: a política binária exige TOP/MID ou uma
         # rota SIDE independente com autorização XP validada.
