@@ -60,6 +60,10 @@ def audit_image(root: Path, archive_file: Path, *,
         detail = analysis.get("detail", {})
         return {
             "extraction_category": str(info.get("category", "") or ""),
+            "crop_geometry": dict(
+                getattr(getattr(extractor, "monitor", None),
+                        "last_crop_geometry", {}) or {}
+            ),
             "reference_shape": list(gab.shape),
             "test_shape": list(test.shape),
             "reference_pixel_sha256": image_fingerprint(gab),
