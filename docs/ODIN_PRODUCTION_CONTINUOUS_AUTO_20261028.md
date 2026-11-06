@@ -495,3 +495,14 @@ veto físico e consenso são executados novamente pelo gate XP.
 Somente em Produção armada a decisão binária segue para 0/OK
 após 1.000ms de apresentação e confirmação de envio XP.
 Pausa Espaço e envio único continuam obrigatórios.
+
+## 06/11/2026 — Auditoria dos 20 pontos de KNN na SIDE sem liberar XP por palpite
+
+O evento `c36a7a0f46644bdd98af691f2a9b6d41` teve SIDE
+NG pela V3 (0,99209) apesar de dois vizinhos KNN principais OK
+(0,82957 em A e 0,80109 em B). Esse valor KNN é similaridade
+dos mapas de divergência visual e não a fração de pixels coincidentes.
+A KNN C passou a estabilizar pequenos deslocamentos desses mapas
+(ganho máximo 0,04 por ROI) e registrar detalhamento por vizinho no
+JSON. A alteração não inverte votos físicos nem transforma imagem
+parecida em 0/OK: os contratos de produção e os vetos V3 são os mesmos.

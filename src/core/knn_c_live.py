@@ -31,7 +31,7 @@ from src.services.startup_regression.knn_archive_concordance_experiment import (
     select_concordance_candidate,
 )
 from src.services.startup_regression.knn_archive_focus_signature import (
-    build_focus_signature, valid_focus_signature,
+    build_focus_signature, compare_focus_signatures, valid_focus_signature,
 )
 from src.services.startup_regression.knn_archive_geometry_experiment import (
     build_geometry_signature,
@@ -351,6 +351,33 @@ class LiveKNNStrategyC:
                 visual_prediction=a["prediction"],
                 geometry_prediction=b["prediction"],
             )
+            # Explicação por vizinho, obtida dos descritores já em RAM.
+            # Evita reabrir PNGs, rodar OCR ou somar trabalho ao XP.
+            by_path = {row["source_path"]: row for row in pool}
+            def neighbors_with_evidence(rows):
+                explained = []
+                for neighbor in rows[:5]:
+                    item = {
+                        "path": neighbor.get("source_path", ""),
+                        "label": neighbor.get("label"),
+                        "similarity": neighbor.get("similarity"),
+                        "source_pixel_sha256": neighbor.get("source_pixel_sha256"),
+                    }
+                    original = by_path.get(item["path"])
+                    if original is not None:
+                        _, evidence = compare_focus_signatures(
+                            focus, original["focus_signature"],
+                        )
+                        item["focus_comparison"] = {
+                            "baseline_similarity": evidence["baseline_similarity"],
+                            "translation_gain": evidence["translation_gain"],
+                            "original_groups": evidence["original_groups"],
+                            "registered_groups": evidence["groups"],
+                            "translation_cells": evidence["translation_cells"],
+                        }
+                    explained.append(item)
+                return explained
+
             base.update({
                 "status": c["status"], "reason": c["reason"],
                 "source": c["source"], "vote_A": a["prediction"],
@@ -366,24 +393,8 @@ class LiveKNNStrategyC:
                 "weighted_ng_A": a.get("score_ng"),
                 "weighted_ng_B": b.get("score_ng"),
                 "reference_support": support,
-                "neighbors_A": [
-                    {
-                        "path": n.get("source_path", ""),
-                        "label": n.get("label"),
-                        "similarity": n.get("similarity"),
-                        "source_pixel_sha256": n.get("source_pixel_sha256"),
-                    }
-                    for n in a.get("neighbors", ())[:5]
-                ],
-                "neighbors_B": [
-                    {
-                        "path": n.get("source_path", ""),
-                        "label": n.get("label"),
-                        "similarity": n.get("similarity"),
-                        "source_pixel_sha256": n.get("source_pixel_sha256"),
-                    }
-                    for n in b.get("neighbors", ())[:5]
-                ],
+                "neighbors_A": neighbors_with_evidence(a.get("neighbors", ())),
+                "neighbors_B": neighbors_with_evidence(b.get("neighbors", ())),
                 "bank_status": "READY",
             })
         except Exception as exc:

@@ -1,3 +1,28 @@
+## 06/11/2026 — KNN C: recuperar pequenos deslocamentos nos mapas e explicar o score
+
+No evento DESLOCADO `c36a7a0f46644bdd98af691f2a9b6d41`, a
+SIDE encontrou os mesmos candidatos OK no topo A/B do acervo,
+mas reportou similaridades 82,96% / 80,11%, enquanto a CNN V3
+classificou NG 99,21%. Esses números são **pontuações de mapas de
+diferença gabarito/teste**, não porcentagem de pixels idênticos.
+
+O comparador da KNN C agora testa translação pequena (até uma
+célula de seu mapa 16×16) para evitar perda por desregistro. A
+recuperação por ROI é limitada a **até +0,04** na pontuação;
+ausência de ROI, mapas de baixa informação e anomalias diferentes
+não ganham pontos. A/B ainda empregam os mesmos mapas e pesos, sem
+alterar cache, rótulos, CNN, memória humana ou comando XP.
+
+Cada `knn_c.neighbors_A/B[].focus_comparison` expõe
+`baseline_similarity`, `translation_gain`, `original_groups`,
+`registered_groups` e `translation_cells` para localizar a
+perda real. Os testes verificam correspondência deslocada e
+rejeição de contraprovas. Não interpretar score próximo de 1
+como identidade humana confirmada nem promover automaticamente
+um NG a OK sem evidência validada.
+
+---
+
 ## 06/11/2026 — SIDE OK forte mesmo com KNN A parcialmente divergente
 
 Evento EMBORCADO observado: CNN V3 época 5 reportou OK quase absoluto

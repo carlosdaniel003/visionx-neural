@@ -1,3 +1,21 @@
+## 06/11/2026 — Similaridade do arquivo não equivale a igualdade da imagem
+
+A comparação KNN C A/B usa mapas de diferença LAB entre gabarito e
+teste, em regiões global/exterior/interior, não apenas o próprio
+componente. Assim, uma foto com componente visualmente parecido
+pode ficar com 0,80 de score por mudanças pequenas de alinhamento,
+textura/iluminação ou diferenças verdadeiras. Nem 0,80 significa
+"20% dos pixels errados" nem dois mapas parecidos provam peça OK.
+
+Para amortecer desregistro real, os mapas de 16×16 recebem uma
+busca limitada por translação de uma célula: aceita somente
+mapas informativos com energia comparável e score original ≥0,70;
+penaliza sobreposição perdida e limita o ganho por ROI a 0,04.
+Cada vizinho agora contém métricas originais/corrigidas por ROI,
+permitindo auditar qual parte está reduzindo sua pontuação.
+Nenhuma correspondência por data, nome, categoria ou pasta
+contorna os vetos físicos e a política 0/1 XP.
+
 ## 06/11/2026 — Nova rota SIDE OK: KNN A parcial, B seletiva e memória forte
 
 Uma KNN A com `suggestion_A=REVISAO` por um único NG distante

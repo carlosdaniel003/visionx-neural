@@ -1,3 +1,19 @@
+## 06/11/2026 — KNN C: registro visual controlado e telemetria de comparação
+
+- `src/services/startup_regression/knn_archive_focus_signature.py`:
+  preserva mapas existentes e adiciona comparação com translação
+  limitada a uma célula 16×16 por ROI (energia semelhante, score
+  original ≥0,70, ganho ≤0,04). Retorna as componentes antigas e
+  atuais, deslocamento e ganho, sem mudar a função geométrica.
+- `src/core/knn_c_live.py`: explica no JSON de cada vizinho
+  selecionado a diferença por mapa usando exclusivamente
+  assinaturas existentes na RAM, sem ler PNG/OCR em Produção.
+- `tests/test_knn_archive_focus_signature.py`,
+  `tests/test_knn_c_live.py`: tests de imagem deslocada, defeito
+  diferente, ROI ausente e telemetria pronta.
+- A KNN segue diagnóstica; não há alteração de gate XP, V3, memória
+  humana ou de treinamento.
+
 ## 06/11/2026 — SIDE V3 + KNN C A parcial e humano OK dominante
 
 - `src/core/side_early_decision.py`: contrato
