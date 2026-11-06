@@ -47,6 +47,60 @@ class ArchiveAOIEpicenterTests(unittest.TestCase):
         self.assertGreater(near, distant)
         self.assertIn("inner_map", detail["groups"])
 
+    def test_one_cell_registration_recovers_limited_score_without_hiding_defect(self):
+        from src.services.startup_regression.knn_archive_focus_signature import SCHEMA
+        first = np.zeros((16, 16), dtype=np.float32)
+        first[4:12, 5:10] = 1.0
+        first[2:4, 3:5] = .30
+        translated = np.zeros_like(first)
+        translated[4:12, 6:11] = 1.0
+        translated[2:4, 4:6] = .30
+        unrelated = np.zeros_like(first)
+        unrelated[4:12, 1:5] = 1.0
+
+        def signature(data):
+            return {
+                "schema": SCHEMA, "global_map": data.tolist(),
+                "outer_map": data.tolist(), "inner_map": data.tolist(),
+                "focus": {"outer_detected": True, "inner_detected": True},
+            }
+
+        original = signature(first)
+        aligned_score, explanation = compare_focus_signatures(
+            original, signature(translated),
+        )
+        self.assertGreater(aligned_score, explanation["baseline_similarity"])
+        self.assertLessEqual(aligned_score - explanation["baseline_similarity"], .040001)
+        self.assertLessEqual(aligned_score, 1.0)
+        self.assertEqual(
+            explanation["translation_cells"]["global_map"], [-1, 0],
+        )
+        negative_score, negative = compare_focus_signatures(
+            original, signature(unrelated),
+        )
+        self.assertLess(negative_score, .6)
+        self.assertEqual(negative["translation_gain"], 0.0)
+
+    def test_registration_cannot_invent_missing_roi_or_promote_weak_match(self):
+        from src.services.startup_regression.knn_archive_focus_signature import SCHEMA
+        data = np.zeros((16, 16), dtype=np.float32)
+        data[3:7, 3:7] = 1.0
+        other = np.zeros_like(data)
+        other[10:14, 10:14] = 1.0
+        reference = {
+            "schema": SCHEMA, "global_map": data.tolist(),
+            "outer_map": data.tolist(), "inner_map": data.tolist(),
+            "focus": {},
+        }
+        stored = {
+            "schema": SCHEMA, "global_map": other.tolist(),
+            "outer_map": other.tolist(), "inner_map": None, "focus": {},
+        }
+        score, explanation = compare_focus_signatures(reference, stored)
+        self.assertLess(score, .5)
+        self.assertEqual(explanation["groups"]["inner_map"], 0.0)
+        self.assertEqual(explanation["translation_gain"], 0.0)
+
     def test_no_green_roi_is_not_fabricated(self):
         signature = build_focus_signature(*_pair(markers=False))
         self.assertFalse(signature["focus"]["outer_detected"])
