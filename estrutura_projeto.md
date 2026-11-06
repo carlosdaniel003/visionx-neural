@@ -1,3 +1,17 @@
+## 06/11/2026 — Gate de Produção: memória humana SIDE válida versus V3
+
+- `src/ui/production_confidence_gate.py`: após validação do SHA/voto V3
+  e seu veto NG, aceita a autorização independente já provada por
+  `memory_first_side_decision()` (inclusive rótulo e prova física) antes
+  do bloqueio genérico `cnn_v3_primary`.
+- `tests/test_side_memory_first.py`: cobre OK automático, adulteração da
+  prova humana e veto NG V3.
+- `tests/test_production_autonomy_controller.py`: confirma 1.000 ms de
+  apresentação, emissão única 0/OK e prevenção de duplicata.
+- Não transforma classificação visual da V3 isolada em autorização XP;
+  captura incompleta e integridade inválida continuam bloqueadas.
+
+
 ## 06/11/2026 — Encerramento SIDE NG por consenso não seletivo sem match
 
 - `src/core/side_early_decision.py`: consenso direcional reutilizado
