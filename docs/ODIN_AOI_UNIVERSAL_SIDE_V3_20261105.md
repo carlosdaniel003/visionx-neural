@@ -205,3 +205,26 @@ automático por essa rota. A validação física independente de falsos NG
 continua necessária antes de qualquer liberação automática. Regressões
 cobrem NG, contraprovas OK, falsificação da origem, incompletude,
 limiar CNN, múltiplas categorias e todos os modos.
+
+## 06/11/2026 — resolução única da SIDE e memória humana exata
+
+A decisão antecipada da SIDE é selecionada **uma única vez por evento**
+e reaproveitada na finalização, sem reabrir a consulta à memória entre
+o veredito SIDE e o encerramento do ciclo. Teste, Sombra e Produção
+podem recuperar um frame XP completo pixel-idêntico já confirmado por
+humano. A prova é validada por categoria, iluminação e última decisão,
+e para OK exige a sonda física prevista em seu contrato; não há
+promoção de semelhança KNN a identidade exata.
+
+As rotas de memória aproximada com contraprova física e de replay
+automático preservam escopo de Produção. A CNN V3 época 5, os
+limiares KNN, a política XP 0/1 e a fusão de três iluminações **não**
+foram alterados. Se a SIDE não for reconhecida com prova adequada,
+o fluxo ainda captura TOP/MID — inclusive quando MID detecta NG
+apesar do voto SIDE OK.
+
+O índice de PNGs históricos da consulta visual faz a busca
+**diagnóstica** por iluminação e pode reconhecer o mesmo frame apesar
+de mudança de categoria OCR. Isto não prova julgamento humano,
+nem concede autorização XP. O teste de replay de arquivos legados
+agora expressa esse contrato preexistente.
