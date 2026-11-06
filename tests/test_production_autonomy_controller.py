@@ -480,6 +480,37 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         controller._emit_auto_decision(generation, "OK")
         self.assertEqual(len(panel.saved), 1)
 
+    def test_partial_knn_strong_side_ok_sends_zero_after_one_second(self):
+        from src.core.side_early_decision import build_side_early_decision
+        from tests.test_side_early_decision import (
+            _v3_partial_knn_strong_ok_side,
+        )
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = build_side_early_decision(
+            _v3_partial_knn_strong_ok_side(),
+            "EMBORCADO", allow_supervised_v3=True,
+        )
+        self.assertIsNotNone(analysis)
+        panel.current_analysis = analysis
+        self.assertTrue(controller.analysis_ready(analysis))
+        self.assertEqual(panel.visible_verdicts[-1], ("FALHA FALSA", "ok"))
+        self.assertEqual(controller._stage_remaining_ms, VERDICT_HOLD_MS)
+        self.assertEqual(panel.saved, [])
+        generation = controller.generation
+        controller._stage_timer.stop()
+        controller._finish_presentation(generation)
+        self.assertEqual(controller.state, "auto_decision_pending")
+        self.assertEqual(panel.saved, [])
+        controller._stage_timer.stop()
+        controller._emit_auto_decision(generation, "OK")
+        self.assertEqual(panel.saved, [("OK", "production_auto")])
+        self.assertEqual(panel.auto_records, ["OK"])
+        controller._emit_auto_decision(generation, "OK")
+        self.assertEqual(len(panel.saved), 1)
+        panel.close()
+
     def test_supervised_v3_side_auto_zero_after_one_second_only_once(self):
         from src.core.side_early_decision import build_side_early_decision
         from tests.test_side_early_decision import _v3_weak_c_human_ok_side
