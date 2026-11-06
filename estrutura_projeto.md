@@ -1,3 +1,17 @@
+## 06/11/2026 — SIDE V3 + KNN C A parcial e humano OK dominante
+
+- `src/core/side_early_decision.py`: contrato
+  `HUMAN_OK_KNN_C_A_B_SHARED_TOP1_STRONG` para casos onde
+  a KNN B é seletiva OK, a KNN A fica parcialmente em revisão
+  por um único NG distante na cauda do top-5, os dois descritores
+  compartilham fonte OK top-1 de alta similaridade e o registro
+  humano OK supera NG por margem combinada segura. Não altera
+  elegibilidade genérica nem treino.
+- `tests/test_side_early_decision.py`: fixture numérica representativa
+  de EMBORCADO e entradas conflitantes ou adulteradas.
+- `tests/test_production_autonomy_controller.py`: confirma retorno
+  0/OK após 1.000 ms e envio único em Produção.
+
 ## 06/11/2026 — Produção supervisionada: saída binária de SIDE V3 corroborada
 
 - `src/ui/production_confidence_gate.py`: quando o controlador armou
