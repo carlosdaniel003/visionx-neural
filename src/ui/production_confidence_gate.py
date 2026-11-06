@@ -902,6 +902,27 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "unverified_physical_label": True,
         }
 
+    # Evidência humana SIDE validada é independente da CNN V3. Quando o
+    # gate-base já revalidou a memória e a captura atual, um voto V3 OK
+    # experimental não deve anulá-la. O veto NG da V3 e falhas de SHA
+    # continuam tendo precedência acima deste ponto.
+    if (
+        detail.get("cnn_v3_primary") is True
+        and v3_status == "READY"
+        and policy.get("auto_allowed") is True
+        and policy.get("reason") in {
+            "side_operator_memory_first_97pct_auto_ok",
+            "side_operator_memory_first_97pct_auto_ng",
+        }
+    ):
+        from src.core.side_memory_first import memory_first_side_decision
+        independent_decision = memory_first_side_decision(analysis)
+        if (
+            independent_decision in {"OK", "NG"}
+            and policy.get("proposed_decision") == independent_decision
+        ):
+            return policy
+
     # Troca do classificador visual V2 -> V3: nenhum score V3 OK isolado
     # autoriza liberar um produto na linha. A V3 época 3 ainda perdeu
     # NG físicos no treino/validação; somente prova humana independente
