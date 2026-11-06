@@ -114,6 +114,15 @@ class KNNCLiveTests(unittest.TestCase):
                     self.assertIn(entry["label"], ("OK", "NG"))
                     self.assertIn("similarity", entry)
                     self.assertIn("path", entry)
+                    self.assertIn("focus_comparison", entry)
+                    comparison = entry["focus_comparison"]
+                    self.assertIn("baseline_similarity", comparison)
+                    self.assertIn("translation_gain", comparison)
+                    self.assertIn("original_groups", comparison)
+                    self.assertIn("registered_groups", comparison)
+                    self.assertIn("translation_cells", comparison)
+                    self.assertGreaterEqual(comparison["translation_gain"], 0.0)
+                    self.assertLessEqual(comparison["translation_gain"], .040001)
             self.assertFalse(result["auto_decision_authorized"])
 
     def test_unknown_light_has_no_reference_bank(self):
