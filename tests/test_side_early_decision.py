@@ -1184,13 +1184,18 @@ class SideEarlyDecisionTests(unittest.TestCase):
             lambda a: a["detail"]["knn_c"]["neighbors_A"].pop(),
             lambda a: a["detail"]["knn_c"]["neighbors_A"][1].update(similarity=.99),
             lambda a: a["detail"]["knn_c"]["neighbors_A"][1].update(
-                source_pixel_sha256="a"*64),
-            lambda a: a["detail"]["knn_c"]["neighbors_B"][2].update(
-                source_pixel_sha256="d"*64),
-            lambda a: a["detail"]["knn_c"]["neighbors_B"][3].update(
-                source_pixel_sha256="e"*64),
-            lambda a: a["detail"]["knn_c"]["neighbors_B"][4].update(
-                source_pixel_sha256="f"*64),
+                source_pixel_sha256="invalid"),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][1].update(
+                source_pixel_sha256=a["detail"]["knn_c"]["neighbors_A"][0][
+                    "source_pixel_sha256"
+                ]),
+            # Um único SHA diferente não invalida maioria: perder três sim.
+            lambda a: [
+                a["detail"]["knn_c"]["neighbors_B"][i].update(
+                    source_pixel_sha256=format(i + 101, "064x")
+                )
+                for i in (2, 3, 4)
+            ],
             lambda a: a["detail"]["knn_c"]["aligned_archive"].update(status="RECONCILED_OK"),
             lambda a: a["detail"]["knn_c"]["aligned_archive"].update(reason="INVALID"),
             lambda a: a["detail"].pop("confirmed_visual_recall"),
