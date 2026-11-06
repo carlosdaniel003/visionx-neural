@@ -923,6 +923,61 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
         ):
             return policy
 
+    # Em Produção supervisionada, uma SIDE V3 visualmente concluída e
+    # corroborada por KNN C/memória pode ter decisão binária automática.
+    # O contrato SIDE é reconstruído a partir das evidências originais,
+    # não somente do texto exibido, da confiança ou do marker salvo.
+    # Esta rota vale apenas para ciclos já armados por seu controlador.
+    if detail.get("cnn_v3_primary") is True and v3_status == "READY":
+        from src.core.side_early_decision import (
+            SIDE_V3_SUPERVISED_RULE,
+            SIDE_EARLY_EXIT_THRESHOLD,
+            _eligible_v3_side_for_review,
+        )
+        marker = detail.get("side_early_exit")
+        category = analysis.get("multilight_category")
+        if (
+            isinstance(marker, dict)
+            and marker.get("rule") == SIDE_V3_SUPERVISED_RULE
+            and analysis.get("lighting_mode") == "SIDE"
+            and analysis.get("multilight_final") is True
+            and analysis.get("eligible_for_final_decision") is True
+            and detail.get("multilight_final") is True
+            and detail.get("eligible_for_final_decision") is True
+            and detail.get("multilight_category") == category
+            and analysis.get("production_review_required") is False
+            and detail.get("operator_review_required") is False
+            and detail.get("capture_error") is not True
+            and marker.get("model") == "aoi_quality_cnn_v3"
+            and marker.get("model_epoch") == 5
+            and marker.get("checkpoint_sha256") == detail.get("cnn_v3_checkpoint_sha256")
+            and marker.get("threshold") == SIDE_EARLY_EXIT_THRESHOLD
+            and marker.get("verdict") == analysis.get("verdict")
+            and marker.get("reported_confidence") == analysis.get("confidence")
+            and marker.get("analyzed_lights") == ["SIDE"]
+            and marker.get("skipped_lights") == ["TOP", "MID"]
+            and marker.get("production_auto_allowed") is False
+            and marker.get("operator_review_required") is False
+            and marker.get("scope") == "ALL_MODES_VISUAL_ONLY"
+        ):
+            proven_route = _eligible_v3_side_for_review(analysis, category)
+            if proven_route is not None and proven_route == marker.get("corroboration"):
+                decision = "NG" if analysis.get("is_defect") is True else "OK"
+                if (
+                    analysis.get("verdict")
+                    == ("DEFEITO REAL" if decision == "NG" else "FALHA FALSA")
+                ):
+                    return {
+                        **policy,
+                        "verdict": analysis["verdict"],
+                        "auto_allowed": True,
+                        "operator_review_required": False,
+                        "proposed_decision": decision,
+                        "reason": "production_supervised_v3_side_visual_" + decision.lower(),
+                        "unverified_physical_label": True,
+                        "source_reason": policy.get("reason", ""),
+                    }
+
     # Troca do classificador visual V2 -> V3: nenhum score V3 OK isolado
     # autoriza liberar um produto na linha. A V3 época 3 ainda perdeu
     # NG físicos no treino/validação; somente prova humana independente

@@ -1,3 +1,22 @@
+## 06/11/2026 — SIDE V3 época 5 no Modo Produção supervisionado: 0/1 automático
+
+Quando a V3 termina a SIDE com o contrato de corroboração verificado
+`side_v3_epoch5_corroborated_test_review_v1`, a Produção armada
+pelo controlador envia automaticamente `0/OK` para `FALHA FALSA`
+ou `1/NG` para `DEFEITO REAL` após apresentar o veredito por
+1.000 ms. A evidência é revalidada antes da emissão; Espaço, mudança
+de evento, erro de captura, SHA inválido e falha de ACK mantêm as
+proteções existentes. Modo Teste e Sombra não enviam XP.
+
+O contrato exige CNN V3 época 5 com voto íntegro e corroboração
+KNN C/memória; não autoriza liberação a partir de qualquer score
+V3 isolado. Sem homologação física cega, julgamentos automáticos
+permanecem não verificados para treinamento.
+
+[Contrato de Produção](docs/ODIN_PRODUCTION_CONTINUOUS_AUTO_20261028.md).
+
+---
+
 ## 06/11/2026 — SIDE NG com consenso de vizinhos, mesmo sem match humano
 
 Quando a CNN V3 época 5 verifica NG >=97%, a KNN C vota NG em A/B,

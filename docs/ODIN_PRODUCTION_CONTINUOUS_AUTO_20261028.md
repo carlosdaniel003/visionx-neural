@@ -461,3 +461,24 @@ desse evento. SHA inválido, captura técnica incompleta e problemas
 de transporte continuam como parada operacional, sem transmitir
 comando conjectural. O tempo de apresentação de 1.000 ms e o atalho
 Espaço são mantidos.
+
+## 06/11/2026 — Produção supervisionada: SIDE V3 corroborada 0/1 sem confirmação por peça
+
+A rota de encerramento antecipado
+`side_v3_epoch5_corroborated_test_review_v1`, antes **visual apenas**,
+passa a habilitar comando XP após o ciclo ser armado pelo controlador
+do Modo Produção. A execução verifica novamente o voto íntegro da
+V3 época 5 (SHA e luz), a classe, o estado de captura, o marcador SIDE,
+o consenso A/B e a memória conforme
+`_eligible_v3_side_for_review()`. A decisão segue o veredito final:
+
+- `FALHA FALSA` => `0/OK`.
+- `DEFEITO REAL` => `1/NG`.
+
+O controlador existente exibe resultado por 1.000 ms, respeita Espaço
+e troca de peça, verifica a permissão de novo antes do envio, envia
+uma vez e exige confirmação de transporte XP. Captura incompleta,
+proveniência adulterada, ausência de consenso ou erro de checkpoint
+não recebem liberação automática por esta rota. A atualização não
+promove o score experimental da V3 isoladamente a prova física.
+As decisões automáticas não se tornam rótulos humanos de treinamento.

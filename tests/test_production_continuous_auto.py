@@ -76,6 +76,60 @@ class ContinuousAutoPolicyTests(unittest.TestCase):
         self.assertTrue(policy["operator_review_required"])
         self.assertEqual(policy["proposed_decision"], "")
 
+    def test_supervised_v3_side_human_knn_ok_autosends_binary_zero(self):
+        from src.core.side_early_decision import build_side_early_decision
+        from tests.test_side_early_decision import _v3_weak_c_human_ok_side
+
+        analysis = build_side_early_decision(
+            _v3_weak_c_human_ok_side(category="INVERTIDO"),
+            "INVERTIDO",
+            allow_supervised_v3=True,
+        )
+        self.assertIsNotNone(analysis)
+        analysis["detail"]["production_continuous_auto"] = True
+        analysis["detail"]["production_binary_auto"] = True
+        decision = production_decision_policy(analysis)
+        self.assertTrue(decision["auto_allowed"])
+        self.assertFalse(decision["operator_review_required"])
+        self.assertEqual(decision["proposed_decision"], "OK")
+        self.assertEqual(decision["verdict"], "FALHA FALSA")
+        self.assertEqual(
+            decision["reason"], "production_supervised_v3_side_visual_ok",
+        )
+        self.assertTrue(decision["unverified_physical_label"])
+
+    def test_supervised_v3_side_requires_intact_capture_and_corroboration(self):
+        from src.core.side_early_decision import build_side_early_decision
+        from tests.test_side_early_decision import _v3_weak_c_human_ok_side
+
+        source = build_side_early_decision(
+            _v3_weak_c_human_ok_side(category="INVERTIDO"),
+            "INVERTIDO", allow_supervised_v3=True,
+        )
+        self.assertIsNotNone(source)
+        source["detail"]["production_continuous_auto"] = True
+        source["detail"]["production_binary_auto"] = True
+        mutations = (
+            lambda a: a["detail"]["side_early_exit"].update(
+                corroboration="FORGED"),
+            lambda a: a["detail"]["knn_c"].update(vote_B="NG"),
+            lambda a: a["detail"]["aoi_v3_trial"].update(
+                checkpoint_sha256="0" * 64),
+            lambda a: a["detail"].update(capture_error=True),
+            lambda a: a.update(eligible_for_final_decision=False),
+            lambda a: a["detail"]["side_early_exit"].update(
+                analyzed_lights=["TOP"]),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(
+                status="NO_MATCH"),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=str(mutation)):
+                altered = deepcopy(source)
+                mutation(altered)
+                decision = production_decision_policy(altered)
+                self.assertFalse(decision["auto_allowed"])
+                self.assertNotEqual(decision["proposed_decision"], "OK")
+
     def test_incomplete_or_invalid_multilight_never_autosends(self):
         variants = (
             lambda a: a.update(multilight_final=False),
