@@ -125,11 +125,12 @@ def _v3_weak_c_human_ok_side(*, category="DESLOCADO"):
              "source_pixel_sha256": format(i + 1, "064x")}
             for i, score in enumerate(scores)
         ]
+    from src.core.strict_category_memory import canonical_memory_category
     detail["confirmed_visual_recall"] = {
         "schema": "visionx.human_visual_recall.v1",
         "status": "HUMAN_OK_VISUAL_CANDIDATE",
         "source": "PERSISTENT_HUMAN_LABELS",
-        "category": category,
+        "category": canonical_memory_category(category),
         "diagnostic_only": True,
         "auto_ok_authorized": False,
         "cross_light_candidate": False,
