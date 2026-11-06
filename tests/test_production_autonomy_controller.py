@@ -480,6 +480,59 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         controller._emit_auto_decision(generation, "OK")
         self.assertEqual(len(panel.saved), 1)
 
+    def test_supervised_v3_side_auto_zero_after_one_second_only_once(self):
+        from src.core.side_early_decision import build_side_early_decision
+        from tests.test_side_early_decision import _v3_weak_c_human_ok_side
+
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = build_side_early_decision(
+            _v3_weak_c_human_ok_side(category="INVERTIDO"),
+            "INVERTIDO", allow_supervised_v3=True,
+        )
+        self.assertIsNotNone(analysis)
+        panel.current_analysis = analysis
+        self.assertTrue(controller.analysis_ready(analysis))
+        self.assertEqual(controller._stage_remaining_ms, VERDICT_HOLD_MS)
+        self.assertEqual(panel.visible_verdicts[-1][0], "FALHA FALSA")
+        self.assertEqual(panel.saved, [])
+        gen = controller.generation
+        controller._stage_timer.stop()
+
+        controller._finish_presentation(gen)
+        self.assertEqual(controller.state, "auto_decision_pending")
+        self.assertEqual(panel.saved, [])
+        controller._stage_timer.stop()
+        controller._emit_auto_decision(gen, "OK")
+        self.assertEqual(panel.saved, [("OK", "production_auto")])
+        self.assertEqual(panel.auto_records, ["OK"])
+        controller._emit_auto_decision(gen, "OK")
+        self.assertEqual(len(panel.saved), 1)
+        panel.close()
+
+    def test_supervised_v3_side_pause_blocks_command_until_resumed(self):
+        from src.core.side_early_decision import build_side_early_decision
+        from tests.test_side_early_decision import _v3_weak_c_human_ok_side
+
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = build_side_early_decision(
+            _v3_weak_c_human_ok_side(category="INVERTIDO"),
+            "INVERTIDO", allow_supervised_v3=True,
+        )
+        self.assertIsNotNone(analysis)
+        panel.current_analysis = analysis
+        self.assertTrue(controller.analysis_ready(analysis))
+        gen = controller.generation
+        self.assertTrue(controller.toggle_pause())
+        controller._finish_presentation(gen)
+        controller._emit_auto_decision(gen, "OK")
+        self.assertEqual(panel.saved, [])
+        self.assertTrue(controller.paused)
+        panel.close()
+
     def test_v3_visual_ok_needs_review_not_false_capture_fault(self):
         from src.core.neural.aoi_v3_epoch5_contract import (
             EPOCH5_VOTE_SCHEMA, SNAPSHOT_SHA256,
