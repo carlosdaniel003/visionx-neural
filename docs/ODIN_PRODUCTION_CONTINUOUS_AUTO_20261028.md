@@ -425,3 +425,23 @@ aprendizado de rótulo na reanálise descartada ou no envio manual falho.
 replay de arquivo e assinatura visual aproximada não prova que a
 mesma peça física esteja parada. Validar com acionamento físico
 isolado antes de permitir um segundo 0/1 na máquina industrial.
+
+## 06/11/2026 — Memória humana SIDE validada prevalece sobre bloqueio genérico V3
+
+No Modo Produção binário, a CNN V3 época 5 continua sem autoridade
+para autorizar 0/OK isoladamente. Entretanto, quando a SIDE já terminou
+com memória humana corroborada, sonda física verificada e contrato
+`memory_first_side_decision()` revalidado, o gate não bloqueia o
+comando 0 apenas porque `cnn_v3_primary=True`.
+
+A prioridade é: integridade da V3, veto NG verificado da V3, depois
+a autorização independente de memória SIDE para OK/NG, preservando
+o restante das regras binárias existentes. Falha de SHA/proveniência,
+evidência adulterada ou resultado incompleto continuam bloqueando XP.
+Não se converte uma simples mensagem visual ou score V3 em permissão
+de hardware.
+
+O controlador já aguarda 1.000 ms após pintar o veredito, revalida
+o gate imediatamente antes de emitir 0/1, respeita a barra de espaço,
+a identidade da peça, o envio único e o ACK do XP. O ajuste não muda
+a duração, o agente Windows XP, os pesos CNN nem a memória.
