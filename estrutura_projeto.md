@@ -1,3 +1,21 @@
+## 06/11/2026 — Produção supervisionada: saída binária de SIDE V3 corroborada
+
+- `src/ui/production_confidence_gate.py`: quando o controlador armou
+  Produção binária, aceita a rota `SIDE_V3_SUPERVISED_RULE` para
+  emissão 0/OK ou 1/NG somente se o contrato visual original for
+  inteiramente revalidado por `_eligible_v3_side_for_review` e o
+  marcador de encerramento tiver iluminação, SHA, confiança e
+  corroboração consistentes. Veto NG V3 e falha de integridade são
+  processados antes da nova regra.
+- `src/ui/production_autonomy_controller.py`: espera 1.000 ms,
+  revalida no instante da emissão, respeita Espaço, confirma ACK e
+  impede duplicatas. Não é necessário alterar o controlador.
+- `tests/test_production_continuous_auto.py` e
+  `tests/test_production_autonomy_controller.py`: cobertura de
+  decisão OK automática, pausa e entradas adulteradas.
+- A autorização é específica para a rota V3 SIDE corroborada em
+  Produção. A V3 experimental isolada não é promovida a prova física.
+
 ## 06/11/2026 — Produção: recusa XP V3 não é falha de captura
 
 - `src/ui/production_autonomy_controller.py`: quando o diagnóstico
