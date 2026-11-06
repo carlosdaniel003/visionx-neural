@@ -291,16 +291,17 @@ def _eligible_trial_side_for_review(
     )
 
 
-def _nonselective_knn_ok_diagnostic(
-    knn: dict, human_recall: dict | None,
+def _nonselective_knn_direction_diagnostic(
+    knn: dict, human_recall: dict | None, *, label: str,
+    unanimous: bool = False,
 ) -> bool:
-    """Corroboração fraca: A/B votam OK, mas C não autoriza sugestão.
+    """Concordância visual fraca, sem mudar o status REVISAO da KNN C.
 
-    Distâncias baixas e vizinhos NG não viram 'par exato'. A KNN é
-    diagnóstica: confere-se apenas que A e B apontam na mesma direção,
-    as referências existem e nenhuma fonte humana indica NG mais próximo.
+    Reusa o contrato de evidência para OK e NG, sem interpretar
+    semelhança como identidade ou probabilidade. Um NG sem confirmação
+    humana qualificada exige consenso integral dos dois top-5.
     """
-    if not (
+    if label not in {"OK", "NG"} or not (
         knn.get("status") == "REVISAO"
         and knn.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
         and knn.get("suggestion_A") == "REVISAO"
@@ -310,13 +311,13 @@ def _nonselective_knn_ok_diagnostic(
         and knn.get("uses_aoi_category") is False
         and knn.get("requires_human_confirmation") is not True
         and knn.get("pre_c_review_required") is not True
-        and knn.get("vote_A") == "OK"
-        and knn.get("vote_B") == "OK"
+        and knn.get("vote_A") == label
+        and knn.get("vote_B") == label
     ):
         return False
 
-    # A memória não é prova favorável, mas um NG humano mais próximo
-    # proíbe o atalho. NO_MATCH é diferente de índice indisponível.
+    # NO_MATCH é uma consulta real sem match qualificado, não ausência
+    # da memória. A classe oposta humana não pode ser a mais semelhante.
     if not isinstance(human_recall, dict) or not (
         human_recall.get("schema") == "visionx.human_visual_recall.v1"
         and human_recall.get("status") == "NO_MATCH"
@@ -328,33 +329,94 @@ def _nonselective_knn_ok_diagnostic(
         return False
     ok_score = human_recall.get("best_ok_similarity")
     ng_score = human_recall.get("best_ng_similarity")
-    if (type(ok_score) not in (int, float)
-            or type(ng_score) not in (int, float)
-            or not (isfinite(ok_score) and isfinite(ng_score))
-            or not (0 <= ng_score <= ok_score <= 1)):
+    if (
+        type(ok_score) not in (int, float)
+        or type(ng_score) not in (int, float)
+        or not (isfinite(ok_score) and isfinite(ng_score))
+        or not (0 <= ok_score <= 1 and 0 <= ng_score <= 1)
+        or (ok_score < ng_score if label == "OK" else ng_score < ok_score)
+    ):
         return False
 
-    # Não exige unanimidade de top-5 nem limiar artificial de KNN;
-    # exige top-1 OK em A/B, ordenação e proveniência de todas as fontes.
+    # Fonte, ordenação e conteúdo de ambos os descritores são auditáveis.
+    # A rota NG não aceita votos diferentes no top-5; exige ainda que A/B
+    # referenciem ao menos uma maioria de fontes idênticas por SHA.
+    signatures = []
     for descriptor in ("neighbors_A", "neighbors_B"):
         rows = knn.get(descriptor)
         if not isinstance(rows, list) or len(rows) < 5:
             return False
         previous = 1.0
+        digests = set()
         for index, neighbor in enumerate(rows[:5]):
             if not isinstance(neighbor, dict) or neighbor.get("label") not in {"OK", "NG"}:
                 return False
             score = neighbor.get("similarity")
             digest = neighbor.get("source_pixel_sha256")
-            if (type(score) not in (float, int)
-                    or not isfinite(score) or not 0 <= score <= previous
-                    or not isinstance(digest, str) or len(digest) != 64
-                    or any(c not in "0123456789abcdef" for c in digest.lower())):
+            if (
+                type(score) not in (float, int)
+                or not isfinite(score) or not 0 <= score <= previous
+                or not isinstance(digest, str) or len(digest) != 64
+                or any(c not in "0123456789abcdef" for c in digest.lower())
+                or index == 0 and neighbor["label"] != label
+                or unanimous and neighbor["label"] != label
+                or unanimous and digest in digests
+            ):
                 return False
-            if index == 0 and neighbor["label"] != "OK":
-                return False
+            digests.add(digest)
             previous = score
-    return True
+        signatures.append(digests)
+    return not unanimous or len(signatures[0] & signatures[1]) >= 3
+
+
+def _nonselective_knn_ok_diagnostic(
+    knn: dict, human_recall: dict | None,
+) -> bool:
+    return _nonselective_knn_direction_diagnostic(
+        knn, human_recall, label="OK",
+    )
+
+
+def _nonselective_knn_ng_diagnostic(
+    knn: dict, human_recall: dict | None, *, category: str,
+) -> bool:
+    """SIDE NG sem match qualificado: exige KNN unânime e memória consultada.
+
+    Ausência de humano >=97% nunca é convertida em confirmação humana;
+    histórico de pasta é somente corroboração visual, não prova física.
+    """
+    if not isinstance(human_recall, dict):
+        return False
+    if human_recall.get("category") != canonical_memory_category(category):
+        return False
+    nearest = human_recall.get("best_ng_source")
+    if not (
+        isinstance(nearest, dict)
+        and nearest.get("label") == "NG"
+        and nearest.get("source") == "OPERATOR_CONFIRMED"
+        and nearest.get("lighting_mode") == "SIDE"
+    ):
+        return False
+    record_id = nearest.get("record_id")
+    if not (
+        isinstance(record_id, str) and len(record_id) == 64
+        and all(char in "0123456789abcdef" for char in record_id.lower())
+    ):
+        return False
+
+    alignment = knn.get("aligned_archive")
+    if not isinstance(alignment, dict) or not (
+        alignment.get("schema") == "visionx.knn_c_archive_alignment.v1"
+        and alignment.get("status") == "NO_MATCH"
+        and alignment.get("source") == "VERIFIED_ARCHIVE_JSON"
+        and alignment.get("reason") == "NO_CONFIRMED_HUMAN_CANDIDATE"
+        and alignment.get("diagnostic_only") is True
+        and alignment.get("auto_decision_authorized") is False
+    ):
+        return False
+    return _nonselective_knn_direction_diagnostic(
+        knn, human_recall, label="NG", unanimous=True,
+    )
 
 
 def _mixed_knn_verified_human_ok(
@@ -512,8 +574,9 @@ def _eligible_v3_side_for_review(
     """Veredito VISUAL SIDE V3 por evidências concordantes e verificáveis.
 
     A via usual exige V3 >=97%. Corroboração humana e KNN consistente
-    pode finalizar OK com CNN inferior ao limiar; para NG exige CNN forte,
-    memória humana NG, acervo NG reconciliado e top-3 NG em A/B.
+    pode finalizar OK com CNN inferior ao limiar. NG com CNN forte pode
+    usar memória NG+arquivo reconciliado ou evidência diagnóstica A/B
+    unânime com memória consultada sem match qualificado.
     Nenhum caminho permite comando XP apenas por essas evidências.
     """
     if (not isinstance(analysis, dict)
@@ -647,12 +710,20 @@ def _eligible_v3_side_for_review(
             knn, detail.get("confirmed_visual_recall"), category=category,
         )
     )
+    nonselective_ng = (
+        defect and not selective and not corroborated_human_ng
+        and _nonselective_knn_ng_diagnostic(
+            knn, detail.get("confirmed_visual_recall"), category=category,
+        )
+    )
     if (confidence < SIDE_EARLY_EXIT_THRESHOLD and not mixed_human_ok):
         return None
     if not (selective or corroborated_human_ok or nonselective_ok
-            or mixed_human_ok or corroborated_human_ng):
+            or mixed_human_ok or corroborated_human_ng or nonselective_ng):
         return None
 
+    if nonselective_ng:
+        return "CNN_V3_KNN_C_A_B_NG_NONSELECTIVE"
     if corroborated_human_ng:
         return "HUMAN_NG_KNN_C_A_B_ARCHIVE_RECONCILED"
     if mixed_human_ok:
@@ -723,7 +794,9 @@ def build_side_early_decision(
               " e memória humana OK (top-1 acima de NG em A/B)"
               if v3_corroboration == "HUMAN_OK_KNN_C_A_B_NEAREST_OK_MIXED" else
               " não seletiva (memória sem match)" if v3_corroboration
-              == "CNN_V3_KNN_C_A_B_OK_NONSELECTIVE" else "")
+              == "CNN_V3_KNN_C_A_B_OK_NONSELECTIVE" else
+              " NG não seletiva (top-5 A/B unânimes; sem humano qualificado)"
+              if v3_corroboration == "CNN_V3_KNN_C_A_B_NG_NONSELECTIVE" else "")
            + "; classificação visual em qualquer modo, sem autorização XP. "
            if v3_review else
            "Checkpoint experimental: autorização XP depende do gate de Produção. "

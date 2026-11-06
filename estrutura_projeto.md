@@ -1,3 +1,13 @@
+## 06/11/2026 — Encerramento SIDE NG por consenso não seletivo sem match
+
+- `src/core/side_early_decision.py`: consenso direcional reutilizado
+  para KNN C não seletiva OK/NG, com NG exigindo top-5 integral,
+  sobreposição SHA de fontes e memória persistente NO_MATCH, sem
+  modificar permissão de comando XP.
+- `tests/test_side_early_decision.py` e
+  `tests/test_adhesive_multilight_inspection.py`: regressões com
+  evidência concordante/contraditória e todos os modos.
+
 ## 06/11/2026 — Encerramento SIDE NG com memória/acervo corroborados
 
 - `src/core/confirmed_visual_recall.py`: validadores humanos OK e NG

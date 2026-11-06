@@ -828,6 +828,32 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                 if mode == "Modo Produção":
                     panel.notify_production_analysis_ready.assert_called_once()
 
+    def test_v3_ng_no_human_match_unanimous_knn_skips_lights_all_modes(self):
+        from tests.test_side_early_decision import (
+            _v3_nonselective_knn_ng_no_exact_human_side,
+        )
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        for mode in ("Modo Teste", "Modo Produção", "Modo Sombra"):
+            with self.subTest(mode=mode):
+                side = _v3_nonselective_knn_ng_no_exact_human_side()
+                panel = self._run_capture(
+                    confidence=side["confidence"], verdict="DEFEITO REAL",
+                    mode=mode, side_analysis=side, category="FALTANDO",
+                )
+                self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
+                self.assertFalse(panel.adhesive_multilight_active)
+                panel.adhesive_multilight_automation.start.assert_not_called()
+                panel.send_command_to_xp.assert_not_called()
+                self.assertEqual(panel.current_analysis["verdict"], "DEFEITO REAL")
+                self.assertEqual(
+                    panel.current_analysis["detail"]["side_early_exit"]["corroboration"],
+                    "CNN_V3_KNN_C_A_B_NG_NONSELECTIVE",
+                )
+                self.assertFalse(production_decision_policy(panel.current_analysis)["auto_allowed"])
+                if mode == "Modo Produção":
+                    panel.notify_production_analysis_ready.assert_called_once()
+
     def test_v3_ng_with_reconciled_human_archive_finishes_on_side_all_modes(self):
         from tests.test_side_early_decision import _v3_nonselective_human_ng_archive_side
         from src.ui.production_confidence_gate import production_decision_policy

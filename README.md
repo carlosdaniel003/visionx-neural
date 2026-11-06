@@ -1,3 +1,14 @@
+## 06/11/2026 — SIDE NG com consenso de vizinhos, mesmo sem match humano
+
+Quando a CNN V3 época 5 verifica NG >=97%, a KNN C vota NG em A/B,
+os dez vizinhos NG têm proveniência e acordo de referências, e a memória
+consultada não contradiz, a SIDE pode encerrar o diagnóstico visual sem
+TOP/MID, embora a KNN continue em REVISAO por distância insuficiente.
+Sem promover rótulos históricos a prova física ou autorizar `1/NG` no XP.
+[Contrato](docs/ODIN_AOI_UNIVERSAL_SIDE_V3_20261105.md).
+
+---
+
 ## 06/11/2026 — SIDE NG corroborada por memória humana e acervo
 
 A CNN V3 época 5 pode encerrar visualmente uma SIDE NG >=97% mesmo

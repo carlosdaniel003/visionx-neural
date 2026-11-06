@@ -172,3 +172,36 @@ e o gate XP **não envia 1/NG automaticamente apenas por essa rota**.
 Requer validação independente de falsos NG antes de autorização
 operacional. Os testes também garantem que memória OK concorrente,
 proveniência alterada e votos discordantes mantenham TOP/MID.
+
+## 06/11/2026 — SIDE NG sem match humano qualificado, top-5 A/B NG
+
+A V3 época 5 pode identificar NG com score direcional >=97% em uma
+SIDE inédita, enquanto a KNN C retorna `REVISAO` unicamente por
+distância insuficiente. A memória humana confirma que a consulta
+foi realizada, mas pode retornar `NO_MATCH` (sem assinatura >=97%).
+Isso difere da rota `HUMAN_NG_KNN_C_A_B_ARCHIVE_RECONCILED`, que
+continua exigindo uma âncora humana e de acervo qualificada.
+
+A rota visual `CNN_V3_KNN_C_A_B_NG_NONSELECTIVE` se aplica sem depender
+da categoria AOI nem de imagens nomeadas:
+- modelo V3 época 5 com voto e checkpoint SHA íntegros, SIDE NG >=97%;
+- KNN C READY, `REVISAO / SEM_SUGESTAO_CONFIAVEL`, `A/B=NG`,
+  apenas motivo de similaridade insuficiente;
+- cinco vizinhos NG em cada descritor A/B, ordenados, distintos por SHA,
+  com >=3 referências SHA idênticas entre ambos os top-5;
+- memória persistente consultada, `NO_MATCH` com NG humano mais
+  semelhante que OK (sem inventar confirmação de par, sem converter
+  proximidade em aprovação humana);
+- consulta ao arquivo persistente também `NO_MATCH`, sem prova
+  reconciliada oposta;
+- nenhum veto físico, inconsistência de captura, conflito ou revisão
+  operacional.
+
+A KNN mantém seu veredito diagnóstico `REVISAO`. O atalho é um resultado
+**visual** `DEFEITO REAL` para Teste/Sombra/Produção, encerrando apenas
+a aquisição (sem TOP/MID). Como os scores da V3 não são calibrados e
+os rótulos históricos são provisórios, não há autorização de `1/NG`
+automático por essa rota. A validação física independente de falsos NG
+continua necessária antes de qualquer liberação automática. Regressões
+cobrem NG, contraprovas OK, falsificação da origem, incompletude,
+limiar CNN, múltiplas categorias e todos os modos.

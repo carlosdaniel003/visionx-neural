@@ -288,6 +288,76 @@ def _v3_nonselective_human_ng_archive_side(category="FALTANDO"):
     return side
 
 
+def _v3_nonselective_knn_ng_no_exact_human_side(category="FALTANDO"):
+    """SIDE NG: CNN forte e 5/5 vizinhos NG em A/B, humano NO_MATCH.
+
+    A memória humana NG é próxima, mas não atinge a qualificação de 97%;
+    o arquivo alinhado não encontrou um registro humano reconciliável.
+    """
+    from src.core.strict_category_memory import canonical_memory_category
+
+    side = _v3_side(verdict="DEFEITO REAL", score=1.0)
+    detail = side["detail"]
+    knn = detail["knn_c"]
+    knn.pop("auto_decision_authorized")
+    for field in ("requires_human_confirmation", "pre_c_review_required",
+                  "pre_c_verdict", "pre_c_is_defect"):
+        knn.pop(field, None)
+    knn.update(
+        status="REVISAO",
+        production_approved=False,
+        reason="SEM_SUGESTAO_CONFIAVEL",
+        reason_A="SIMILARIDADE_VISUAL_INSUFICIENTE",
+        reason_B="SIMILARIDADE_VISUAL_INSUFICIENTE",
+        suggestion_A="REVISAO",
+        suggestion_B="REVISAO",
+        vote_A="NG", vote_B="NG",
+        weighted_ng_A=1.0, weighted_ng_B=1.0,
+        uses_aoi_category=False,
+        aligned_archive={
+            "schema": "visionx.knn_c_archive_alignment.v1",
+            "source": "VERIFIED_ARCHIVE_JSON",
+            "status": "NO_MATCH",
+            "reason": "NO_CONFIRMED_HUMAN_CANDIDATE",
+            "diagnostic_only": True,
+            "auto_decision_authorized": False,
+        },
+    )
+    # Mesmos cinco arquivos em cada descritor, em ordem diferente.
+    ref_ids = [11, 12, 13, 14, 15]
+    knn["neighbors_A"] = [
+        {"label": "NG", "similarity": value,
+         "source_pixel_sha256": format(ref_id, "064x")}
+        for ref_id, value in zip(
+            ref_ids, (.89448272, .89330749, .89326921, .8849194, .87241752)
+        )
+    ]
+    knn["neighbors_B"] = [
+        {"label": "NG", "similarity": value,
+         "source_pixel_sha256": format(ref_id, "064x")}
+        for ref_id, value in zip(
+            [15, 14, 11, 12, 13],
+            (.82663236, .82618392, .82031626, .81137901, .8113014),
+        )
+    ]
+    detail["confirmed_visual_recall"] = {
+        "schema": "visionx.human_visual_recall.v1",
+        "source": "PERSISTENT_HUMAN_LABELS",
+        "status": "NO_MATCH",
+        "diagnostic_only": True,
+        "auto_ok_authorized": False,
+        "cross_light_candidate": False,
+        "category": canonical_memory_category(category),
+        "best_ng_similarity": .95390625,
+        "best_ok_similarity": .93451713,
+        "best_ng_source": {
+            "label": "NG", "source": "OPERATOR_CONFIRMED",
+            "lighting_mode": "SIDE", "record_id": "a"*64,
+        },
+    }
+    return side
+
+
 class SideEarlyDecisionTests(unittest.TestCase):
     def test_threshold_is_inclusive_for_defect_and_false_failure(self):
         self.assertEqual(SIDE_EARLY_EXIT_THRESHOLD, 0.97)
@@ -1068,6 +1138,87 @@ class SideEarlyDecisionTests(unittest.TestCase):
         )
         self.assertIsNone(build_side_early_decision(
             ng, "DESLOCADO", allow_supervised_v3=True,
+        ))
+
+    def test_v3_no_human_match_but_unanimous_ng_knn_skips_lights(self):
+        from src.ui.production_confidence_gate import production_decision_policy
+        for category in (
+            "FALTANDO", "DESLOCADO", "INVERTIDO", "EMBORCADO",
+            "UNKNOWN", "MUITO ADESIVO",
+        ):
+            with self.subTest(category=category):
+                original = _v3_nonselective_knn_ng_no_exact_human_side(category)
+                result = build_side_early_decision(
+                    original, category, allow_supervised_v3=True,
+                )
+                self.assertIsNotNone(result)
+                self.assertEqual(result["verdict"], "DEFEITO REAL")
+                marker = result["detail"]["side_early_exit"]
+                self.assertEqual(marker["corroboration"],
+                                 "CNN_V3_KNN_C_A_B_NG_NONSELECTIVE")
+                self.assertEqual(marker["analyzed_lights"], ["SIDE"])
+                self.assertEqual(marker["skipped_lights"], ["TOP", "MID"])
+                self.assertFalse(marker["production_auto_allowed"])
+                self.assertFalse(result["production_review_required"])
+                self.assertEqual(result["detail"]["knn_c"]["status"], "REVISAO")
+                self.assertEqual(result["detail"]["confirmed_visual_recall"]["status"],
+                                 "NO_MATCH")
+                self.assertFalse(production_decision_policy(result)["auto_allowed"])
+                self.assertIsNone(side_automatic_decision(result))
+                self.assertIsNone(side_trial_automatic_decision(result))
+                self.assertIsNone(build_side_early_decision(
+                    original, category, allow_supervised_v3=False,
+                ))
+
+    def test_v3_nonselective_ng_requires_consensus_and_real_memory_lookup(self):
+        changes = (
+            lambda a: a["detail"]["knn_c"].update(vote_A="OK"),
+            lambda a: a["detail"]["knn_c"].update(vote_B="OK"),
+            lambda a: a["detail"]["knn_c"].update(status="SUGERE_NG"),
+            lambda a: a["detail"]["knn_c"].update(reason_B="VIZINHOS_VISUAIS_DIVERGENTES"),
+            lambda a: a["detail"]["knn_c"].update(bank_status="LOADING"),
+            lambda a: a["detail"]["knn_c"].update(production_approved=True),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][4].update(label="OK"),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"][0].update(label="OK"),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"][0].update(source_pixel_sha256="bad"),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"].pop(),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][1].update(similarity=.99),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][1].update(
+                source_pixel_sha256="a"*64),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"][2].update(
+                source_pixel_sha256="d"*64),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"][3].update(
+                source_pixel_sha256="e"*64),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"][4].update(
+                source_pixel_sha256="f"*64),
+            lambda a: a["detail"]["knn_c"]["aligned_archive"].update(status="RECONCILED_OK"),
+            lambda a: a["detail"]["knn_c"]["aligned_archive"].update(reason="INVALID"),
+            lambda a: a["detail"].pop("confirmed_visual_recall"),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(status="HUMAN_OK_VISUAL_CANDIDATE"),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(best_ok_similarity=.97),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(best_ng_similarity=.92),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(category="EMBORCADO"),
+            lambda a: a["detail"]["confirmed_visual_recall"]["best_ng_source"].update(source="AUTOMATIC"),
+            lambda a: a["detail"]["confirmed_visual_recall"]["best_ng_source"].update(lighting_mode="TOP"),
+            lambda a: a["detail"].update(memory_conflict=True),
+            lambda a: a["detail"].update(physical_missing_veto={"status": "UNAVAILABLE"}),
+            lambda a: a["detail"].update(capture_error=True),
+            lambda a: a.update(production_review_required=True),
+        )
+        for i, change in enumerate(changes):
+            with self.subTest(mutation=i):
+                source = _v3_nonselective_knn_ng_no_exact_human_side()
+                change(source)
+                self.assertIsNone(build_side_early_decision(
+                    source, "FALTANDO", allow_supervised_v3=True,
+                ))
+        # Sem score CNN direcional forte não existe atalho NG.
+        source = _v3_nonselective_knn_ng_no_exact_human_side()
+        source["confidence"] = .96
+        source["detail"]["cnn_v3_ng_score_uncalibrated"] = .96
+        source["detail"]["aoi_v3_trial"]["ng_score_uncalibrated"] = .96
+        self.assertIsNone(build_side_early_decision(
+            source, "FALTANDO", allow_supervised_v3=True,
         ))
 
     def test_v3_human_ng_reconciled_archive_skips_top_mid(self):
