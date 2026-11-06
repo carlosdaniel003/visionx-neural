@@ -23,6 +23,20 @@ def gate_knn_c_multilight(fused: dict | None, analyses: dict) -> dict | None:
         cand = detail.get("knn_c") if isinstance(detail, dict) else None
         if (isinstance(cand, dict)
                 and cand.get("status") in C_SELECTED):
+            # Um diagnóstico concordante (sem confirmação requerida)
+            # precisa concordar com o resultado LOCAL. Se mentir sobre
+            # sua direção, não vira conflito operacional por acidente.
+            if cand.get("requires_human_confirmation") is False:
+                own_label = (
+                    "NG" if raw.get("verdict") == "DEFEITO REAL"
+                    and raw.get("is_defect") is True else
+                    "OK" if raw.get("verdict") == "FALHA FALSA"
+                    and raw.get("is_defect") is False else ""
+                )
+                if (not own_label
+                        or cand.get("status") != "SUGERE_" + own_label
+                        or cand.get("conflicts_with_existing_verdict") is True):
+                    continue
             current[light] = {
                 "status": cand["status"],
                 "source": cand.get("source"),

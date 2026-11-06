@@ -65,6 +65,23 @@ class KNNCMultilightGateTests(unittest.TestCase):
         )
         self.assertFalse(result["detail"]["knn_c_multilight_review_gate"])
 
+    def test_matching_unconfirmed_c_is_diagnostic_only(self):
+        values = {
+            light: analysis(light, c=light == "SIDE", status="SUGERE_OK")
+            for light in ("SIDE", "TOP", "MID")
+        }
+        values["SIDE"]["detail"]["knn_c"].update(
+            requires_human_confirmation=False,
+            conflicts_with_existing_verdict=False,
+        )
+        result = fuse_multilight(values, "UNKNOWN")
+        self.assertEqual(result["verdict"], "FALHA FALSA")
+        self.assertFalse(result["production_review_required"])
+        self.assertEqual(
+            result["detail"]["knn_c_light_diagnostics"]["SIDE"]["status"],
+            "SUGERE_OK",
+        )
+
     def test_all_clear_without_c_is_unchanged(self):
         values = {x: analysis(x) for x in ("SIDE", "TOP", "MID")}
         final = fuse_multilight(values, "FALTANDO")
