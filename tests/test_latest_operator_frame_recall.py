@@ -85,6 +85,28 @@ class ExactFrameHumanMemoryTests(unittest.TestCase):
             self.assertEqual(match["status"], "KNOWN")
             self.assertEqual(match["label"], "OK")
 
+    def test_exact_human_frame_recall_respects_category_and_light(self):
+        samples = self.learned_ok()
+        side_frame = samples["SIDE"]["source_frame"]
+
+        self.assertEqual(
+            self.store.latest_confirmed_human_for_frame(
+                side_frame, "FALTANDO", "SIDE",
+            )["status"], "KNOWN",
+        )
+        # Uma tela idêntica não autoriza herdar confirmação de uma
+        # categoria/luz diferente; a prova XP verifica ambos os campos.
+        self.assertEqual(
+            self.store.latest_confirmed_human_for_frame(
+                side_frame, "EMBORCADO", "SIDE",
+            )["status"], "NEW",
+        )
+        self.assertEqual(
+            self.store.latest_confirmed_human_for_frame(
+                side_frame, "FALTANDO", "TOP",
+            )["status"], "NEW",
+        )
+
     def test_side_only_manual_ok_prevents_repeated_exact_side_ng(self):
         task, samples = capture("OK", event_id="side-human-correction")
         task["multilight_samples"] = [samples["SIDE"]]
