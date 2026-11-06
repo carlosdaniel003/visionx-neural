@@ -1,3 +1,24 @@
+## 06/11/2026 — Nova rota SIDE OK: KNN A parcial, B seletiva e memória forte
+
+Uma KNN A com `suggestion_A=REVISAO` por um único NG distante
+na cauda não obriga TOP/MID quando B é seletiva, ambos votam OK,
+o mesmo SHA de fonte OK ocupa o primeiro lugar em A/B com
+similaridade ≥99%, e a CNN V3 época 5 vota OK ≥99,5%.
+Quando a memória humana persistente fica `AMBIGUOUS` apenas
+porque a vantagem OK→NG está entre 3pp e 4pp, aceita essa
+evidência somente se OK ≥99,5%, NG inferior a 97%, ambos os
+registros tiverem proveniência humana válida e as vizinhanças
+KNN forem completas, ordenadas e sem repetição. A distância
+entre a principal referência OK de A e seu único NG
+permanece ≥4pp; o top-5 B deve ser integralmente OK.
+
+Rota: `HUMAN_OK_KNN_C_A_B_SHARED_TOP1_STRONG`.
+O fluxo é genérico por evidência (não por nome da categoria nem
+PNG). Sem evidência ou com conflito, a inspeção segue TOP/MID.
+Em Produção supervisionada, o gate anterior de 0/1 após 1s
+revalida a rota; isso não transforma a memória AMBIGUOUS
+genericamente em confirmação nem altera a CNN.
+
 ## Atualização operacional de 06/11/2026 — Produção supervisionada
 
 As restrições de autorização XP descritas abaixo referem-se à

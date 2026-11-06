@@ -1,3 +1,24 @@
+## 06/11/2026 — SIDE OK forte mesmo com KNN A parcialmente divergente
+
+Evento EMBORCADO observado: CNN V3 época 5 reportou OK quase absoluto
+na SIDE; KNN A/B tinham a mesma fonte OK no topo (>99% em ambos),
+mas A retornou REVISAO por um NG distante na quinta posição.
+A memória humana OPERATOR_CONFIRMED favoreceu OK (99,886927%)
+sobre NG (96,468608%), mas ficou AMBIGUOUS pelo limiar geral de 4pp.
+
+O novo contrato SIDE específico aceita conclusão visual OK sem TOP/MID
+quando, cumulativamente, o score V3 ≥99,5%, ambas fontes KNN top-1
+são OK, têm SHA idêntico e similaridade ≥99%, A traz apenas um NG
+na cauda com margem ≥4pp, B tem cinco OK, e a memória humana
+verificável tem OK ≥99,5% e vantagem ≥3pp. Mantém todos os
+gates de checkpoint, luz, captura, conflito e veto físico. Não muda
+os limiares gerais da KNN nem a memória humana. A política de
+Produção supervisionada revalida o contrato antes do comando 0/OK;
+Teste/Sombra só encerram a análise visual. Há regressões positivas
+e negativas sem tratamento por nome de arquivo.
+
+---
+
 ## 06/11/2026 — SIDE V3 época 5 no Modo Produção supervisionado: 0/1 automático
 
 Quando a V3 termina a SIDE com o contrato de corroboração verificado

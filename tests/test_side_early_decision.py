@@ -358,7 +358,120 @@ def _v3_nonselective_knn_ng_no_exact_human_side(category="FALTANDO"):
     return side
 
 
+
+def _v3_partial_knn_strong_ok_side(category="EMBORCADO"):
+    """Reproduz a estrutura SIDE do evento EMBORCADO, sem ID/PNG especial."""
+    from src.core.strict_category_memory import canonical_memory_category
+    side = _v3_side(score=5.347273179800993e-10)
+    knn = side["detail"]["knn_c"]
+    knn.update({
+        "status": "SUGERE_OK",
+        "reason": "B_SELETIVA_E_VOTOS_A_B_CONCORDAM",
+        "reason_A": "VIZINHOS_VISUAIS_DIVERGENTES",
+        "reason_B": "CINCO_OK_VISUALMENTE_CONCORDANTES",
+        "suggestion_A": "REVISAO",
+        "suggestion_B": "SUGERE_OK",
+        "requires_human_confirmation": False,
+        "uses_aoi_category": False,
+    })
+    for descriptor, scores in (
+        ("neighbors_A", (.99890301, .96938733, .96052764, .95643566, .94919009)),
+        ("neighbors_B", (.99466922, .93693534, .92740860, .92368609, .91413412)),
+    ):
+        knn[descriptor] = [
+            {
+                "label": "NG" if descriptor == "neighbors_A" and i == 4 else "OK",
+                "similarity": score,
+                "source_pixel_sha256": format(i + 1, "064x"),
+            }
+            for i, score in enumerate(scores)
+        ]
+    side["detail"]["confirmed_visual_recall"] = {
+        "schema": "visionx.human_visual_recall.v1",
+        "status": "AMBIGUOUS",
+        "source": "PERSISTENT_HUMAN_LABELS",
+        "category": canonical_memory_category(category),
+        "diagnostic_only": True,
+        "auto_ok_authorized": False,
+        "cross_light_candidate": False,
+        "best_ok_similarity": .99886927,
+        "best_ng_similarity": .96468608,
+        "best_ok_source": {
+            "label": "OK", "source": "OPERATOR_CONFIRMED",
+            "lighting_mode": "SIDE", "record_id": "a" * 64,
+        },
+        "best_ng_source": {
+            "label": "NG", "source": "OPERATOR_CONFIRMED",
+            "lighting_mode": "SIDE", "record_id": "b" * 64,
+        },
+    }
+    return side
+
+
 class SideEarlyDecisionTests(unittest.TestCase):
+    def test_ambiguous_memory_partial_knn_but_shared_very_strong_ok_ends_side(self):
+        from src.ui.production_confidence_gate import production_decision_policy
+        for category in ("EMBORCADO", "INVERTIDO", "DESLOCADO", "MUITO ADESIVO"):
+            with self.subTest(category=category):
+                original = _v3_partial_knn_strong_ok_side(category)
+                self.assertIsNone(build_side_early_decision(original, category))
+                final = build_side_early_decision(
+                    original, category, allow_supervised_v3=True,
+                )
+                self.assertIsNotNone(final)
+                self.assertEqual(final["verdict"], "FALHA FALSA")
+                self.assertTrue(final["multilight_final"])
+                marker = final["detail"]["side_early_exit"]
+                self.assertEqual(marker["skipped_lights"], ["TOP", "MID"])
+                self.assertEqual(marker["corroboration"],
+                                 "HUMAN_OK_KNN_C_A_B_SHARED_TOP1_STRONG")
+                self.assertFalse(original["detail"].get("side_early_exit"))
+                final["detail"]["production_continuous_auto"] = True
+                final["detail"]["production_binary_auto"] = True
+                policy = production_decision_policy(final)
+                self.assertTrue(policy["auto_allowed"])
+                self.assertEqual(policy["proposed_decision"], "OK")
+
+    def test_ambiguous_partial_knn_ok_fails_closed_on_disagreement_and_proof(self):
+        original = _v3_partial_knn_strong_ok_side()
+        mutations = (
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][0].update(
+                similarity=.981),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"][0].update(
+                source_pixel_sha256="f" * 64),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"][4].update(
+                label="NG"),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][3].update(
+                label="NG"),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][4].update(
+                similarity=.959),
+            lambda a: a["detail"]["knn_c"].update(vote_A="NG"),
+            lambda a: a["detail"]["knn_c"].update(
+                requires_human_confirmation=True),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(
+                best_ng_similarity=.982),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(
+                status="NO_MATCH"),
+            lambda a: a["detail"]["confirmed_visual_recall"][
+                "best_ok_source"].update(source="UNVERIFIED"),
+            lambda a: a["detail"].update(physical_score=.2),
+            lambda a: a["detail"].update(capture_error=True),
+            lambda a: a["detail"].update(memory_conflict=True),
+            lambda a: a["detail"]["aoi_v3_trial"].update(
+                checkpoint_sha256="0" * 64),
+            lambda a: a.update(confidence=.98),
+        )
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                analysis = deepcopy(original)
+                mutate(analysis)
+                self.assertIsNone(build_side_early_decision(
+                    analysis, "EMBORCADO", allow_supervised_v3=True,
+                ))
+        self.assertIsNone(build_side_early_decision(
+            original, "INVERTIDO", allow_supervised_v3=True,
+        ))
+
     def test_threshold_is_inclusive_for_defect_and_false_failure(self):
         self.assertEqual(SIDE_EARLY_EXIT_THRESHOLD, 0.97)
         for verdict, expected_ng in (
