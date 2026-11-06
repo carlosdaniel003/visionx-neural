@@ -1,3 +1,15 @@
+## Atualização operacional de 06/11/2026 — Produção supervisionada
+
+As restrições de autorização XP descritas abaixo referem-se à
+conclusão **visual** isolada da V3. A rota SIDE V3 época 5
+**corroborada** passou a poder emitir 0/OK ou 1/NG em Modo Produção
+binário supervisionado, com revalidação do mesmo contrato visual
+(`_eligible_v3_side_for_review`), apresentação de 1.000 ms,
+pausa Espaço e controle de evento/ACK. Esse direito não se estende
+a V3 isolada, captura incompleta, prova adulterada, nem Teste/Sombra.
+O modelo segue experimental, sem estimativa de precisão 100%
+comprovada em holdout físico cego.
+
 # ODIN AOI — V3 universal e prioridade SIDE (05/11/2026)
 
 A CNN V3, quando ativada por checkpoint SHA verificado, classifica todos
