@@ -480,6 +480,94 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         controller._emit_auto_decision(generation, "OK")
         self.assertEqual(len(panel.saved), 1)
 
+    def test_v3_visual_ok_needs_review_not_false_capture_fault(self):
+        from src.core.neural.aoi_v3_epoch5_contract import (
+            EPOCH5_VOTE_SCHEMA, SNAPSHOT_SHA256,
+        )
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = {
+            "verdict": "FALHA FALSA",
+            "is_defect": False,
+            "lighting_mode": "SIDE",
+            "multilight_final": True,
+            "eligible_for_final_decision": True,
+            "production_review_required": False,
+            "detail": {
+                "cnn_v3_primary": True,
+                "fusion_rule": "cnn_v3_primary_direct",
+                "multilight_final": True,
+                "eligible_for_final_decision": True,
+                "aoi_v3_trial": {
+                    "schema": EPOCH5_VOTE_SCHEMA,
+                    "status": "READY",
+                    "epoch": 5,
+                    "checkpoint_sha256": SNAPSHOT_SHA256,
+                    "light": "SIDE",
+                    "ng_score_uncalibrated": .000056,
+                    "predicted": "OK",
+                    "ng_veto": False,
+                    "automatic_ok_from_v3_authorized": False,
+                },
+            },
+        }
+        panel.current_analysis = analysis
+        self.assertTrue(controller.analysis_ready(analysis))
+        policy = production_decision_policy(analysis)
+        self.assertEqual(
+            policy["reason"],
+            "cnn_v3_primary_ok_requires_independent_confirmation",
+        )
+        controller._stage_timer.stop()
+        controller._finish_presentation(controller.generation)
+        self.assertEqual(controller.state, "operator_review")
+        self.assertTrue(panel.production_review_pending)
+        self.assertEqual(panel.interventions[-1], "FALHA FALSA")
+        self.assertEqual(panel.saved, [])
+        self.assertFalse(any(
+            "captura ou rota de julgamento incompleta" in message
+            for message, _ in panel.status
+        ))
+        panel.close()
+
+    def test_v3_invalid_snapshot_still_stops_without_xp_command(self):
+        from src.core.neural.aoi_v3_epoch5_contract import EPOCH5_VOTE_SCHEMA
+
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = {
+            "verdict": "FALHA FALSA",
+            "is_defect": False,
+            "lighting_mode": "SIDE",
+            "multilight_final": True,
+            "detail": {
+                "cnn_v3_primary": True,
+                "multilight_final": True,
+                "aoi_v3_trial": {
+                    "schema": EPOCH5_VOTE_SCHEMA,
+                    "status": "READY",
+                    "epoch": 5,
+                    "light": "SIDE",
+                    "checkpoint_sha256": "invalid-checkpoint",
+                    "ng_score_uncalibrated": .000056,
+                    "predicted": "OK",
+                    "ng_veto": False,
+                },
+            },
+        }
+        panel.current_analysis = analysis
+        self.assertTrue(controller.analysis_ready(analysis))
+        controller._stage_timer.stop()
+        controller._finish_presentation(controller.generation)
+        self.assertEqual(controller.state, "operational_fault")
+        self.assertFalse(panel.production_review_pending)
+        self.assertEqual(panel.saved, [])
+        panel.close()
+
     def test_side_97_decides_only_after_presentation_and_once_per_cycle(self):
         from src.core.side_early_decision import build_side_early_decision
 

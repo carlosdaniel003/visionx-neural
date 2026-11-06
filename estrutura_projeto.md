@@ -1,3 +1,17 @@
+## 06/11/2026 — Produção: recusa XP V3 não é falha de captura
+
+- `src/ui/production_autonomy_controller.py`: quando o diagnóstico
+  visual válido resulta em `FALHA FALSA` ou `DEFEITO REAL`, mas a
+  política XP exige confirmação independente, o controlador preserva
+  a peça em `operator_review` em vez de declarar
+  `operational_fault` com mensagem falsa de captura incompleta.
+- A CNN V3 época 5 não homologada permanece sem liberação 0/XP somente
+  por score; SHA inválido, captura interrompida ou falha de transmissão
+  ainda interrompem o ciclo.
+- `tests/test_production_autonomy_controller.py`: regressões para
+  `cnn_v3_primary_ok_requires_independent_confirmation` e SHA inválido.
+
+
 ## 06/11/2026 — Gate de Produção: memória humana SIDE válida versus V3
 
 - `src/ui/production_confidence_gate.py`: após validação do SHA/voto V3
