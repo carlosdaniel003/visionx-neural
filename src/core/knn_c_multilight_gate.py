@@ -1,7 +1,7 @@
-"""Não permitir que a fusão SIDE/TOP/MID perca a revisão da KNN C.
+"""Consolidar a KNN C tricolor separando diagnóstico de conflito real.
 
-É uma trava industrial de apresentação/XP; não recalcula o veredito
-físico, não transforma um NG em OK e não cria memória/treinamento.
+Um voto C concordante não requisita revisão operacional. Divergências
+contra o veredito visual preservam o bloqueio. Nunca autoriza XP sozinho.
 """
 from __future__ import annotations
 
@@ -22,15 +22,16 @@ def gate_knn_c_multilight(fused: dict | None, analyses: dict) -> dict | None:
         detail = raw.get("detail")
         cand = detail.get("knn_c") if isinstance(detail, dict) else None
         if (isinstance(cand, dict)
-                and cand.get("status") in C_SELECTED
-                and cand.get("requires_human_confirmation") is True):
+                and cand.get("status") in C_SELECTED):
             current[light] = {
                 "status": cand["status"],
                 "source": cand.get("source"),
                 "conflicts_with_existing_verdict": bool(
                     cand.get("conflicts_with_existing_verdict")
                 ),
-                "requires_human_confirmation": True,
+                "requires_human_confirmation": bool(
+                    cand.get("requires_human_confirmation")
+                ),
             }
     if not current:
         return fused
@@ -43,12 +44,23 @@ def gate_knn_c_multilight(fused: dict | None, analyses: dict) -> dict | None:
         trace = {}
         detail["decision_trace"] = trace
 
-    fused["production_review_required"] = True
-    detail["operator_review_required"] = True
-    trace["operator_review_required"] = True
-    trace["knn_c_multilight_review_gate"] = True
+    # Requer revisão apenas se a C contradiz o veredito FINAL ou
+    # se existe conflito explícito prévio. Concordância não é uma
+    # autorização XP e tampouco uma revisão obrigatória.
+    verdict = str(fused.get("verdict", "")).upper()
+    conflict = any(
+        item["conflicts_with_existing_verdict"]
+        or (item["status"] == "SUGERE_NG" and verdict == "FALHA FALSA")
+        or (item["status"] == "SUGERE_OK" and verdict == "DEFEITO REAL")
+        for item in current.values()
+    )
+    if conflict:
+        fused["production_review_required"] = True
+        detail["operator_review_required"] = True
+        trace["operator_review_required"] = True
+    trace["knn_c_multilight_review_gate"] = bool(conflict)
     detail["knn_c_light_diagnostics"] = deepcopy(current)
-    detail["knn_c_multilight_review_gate"] = True
+    detail["knn_c_multilight_review_gate"] = bool(conflict)
 
     # Liberação SUPERVISIONADA somente quando AS TRÊS LUZES tiveram
     # uma recomendação seletiva C idêntica, votos A/B de acordo e nenhum
@@ -97,7 +109,10 @@ def gate_knn_c_multilight(fused: dict | None, analyses: dict) -> dict | None:
                 or fused.get("is_defect") is not (label == "NG")
                 or (
                     label == "OK"
-                    and detail.get("fusion_rule") != "multilight_local_review"
+                    and detail.get("fusion_rule") not in {
+                        "multilight_local_review", "multilight_all_clear",
+                        "multilight_v3_verified_all_ok_review_separate",
+                    }
                 )
                 or (
                     label == "NG"
@@ -113,8 +128,8 @@ def gate_knn_c_multilight(fused: dict | None, analyses: dict) -> dict | None:
             "independent_reviews": False,
             "xp_auto_requires_session_arm": True,
         }
-        # Exibir classificação coerente com as três luzes, ainda com
-        # operator_review_required=True até armamento explícito no painel.
+        # O consenso fornece candidato para armamento independente, sem
+        # transformar o diagnóstico concordante em revisão obrigatória.
         if label == "OK":
             fused["verdict"] = "FALHA FALSA"
             fused["confidence"] = min(
@@ -128,8 +143,8 @@ def gate_knn_c_multilight(fused: dict | None, analyses: dict) -> dict | None:
             "com autorização supervisionada desta sessão."
         )
 
-    # A fusão pode ter declarado todas as luzes OK; um NG da C exige
-    # revisão, nunca deve produzir 0/OK automático.
+    # Uma contradição NG contra FALHA FALSA impede auto-OK.
+    # Nenhum diagnóstico concordante muda a classificação visual.
     if (str(fused.get("verdict", "")).upper() == "FALHA FALSA"
             and any(c["status"] == "SUGERE_NG" for c in current.values())):
         fused["verdict"] = "REVISÃO OBRIGATÓRIA"
@@ -140,7 +155,8 @@ def gate_knn_c_multilight(fused: dict | None, analyses: dict) -> dict | None:
         " | KNN C por iluminação: " +
         ", ".join(f"{light}:{current[light]['status']}" for light in LIGHTS
                   if light in current) +
-        "; confirmação humana obrigatória (XP bloqueado)."
+        ("; divergência requer revisão." if conflict
+         else "; corroboração diagnóstica sem autorização XP.")
     )
     return fused
 

@@ -463,26 +463,32 @@ def install_live_knn_strategy_c(orchestrator_cls, *, strategy=None):
         diagnosis["pre_c_review_required"] = original_review
         diagnosis["pre_c_verdict"] = str(result.get("verdict", "")).upper()
         diagnosis["pre_c_is_defect"] = result.get("is_defect")
-        diagnosis["requires_human_confirmation"] = True
         diagnosis["proposed_label"] = label
         current = str(result.get("verdict", "")).upper()
         conflict = (label == "NG" and current == "FALHA FALSA") or (
             label == "OK" and current == "DEFEITO REAL"
         )
         diagnosis["conflicts_with_existing_verdict"] = conflict
-        detail["operator_review_required"] = True
+        # A KNN C não tem autoridade para mudar a classificação CNN nem
+        # para autorizar XP. Só uma CONTRADIÇÃO vira revisão operacional.
+        # Uma corroboração concordante é diagnóstico, não pendência humana.
+        diagnosis["requires_human_confirmation"] = conflict
         trace = detail.get("decision_trace")
         if isinstance(trace, dict):
-            trace["operator_review_required"] = True
-            trace["knn_c_review_only"] = True
-        result["production_review_required"] = True
-        # Nunca converter um NG de CNN/física em OK nem liberar XP por C.
+            trace["knn_c_review_only"] = conflict
+        if conflict:
+            detail["operator_review_required"] = True
+            if isinstance(trace, dict):
+                trace["operator_review_required"] = True
+            result["production_review_required"] = True
+        # Uma sugestão NG contra CNN OK não constitui defeito físico.
         if conflict and label == "NG":
             result["verdict"] = "REVISÃO OBRIGATÓRIA"
             result["confidence"] = 0.5
         result["reason"] = (
-            f"KNN C sugere {label} ({diagnosis.get('source')}); "
-            "confirmação humana obrigatória. "
+            f"KNN C {'diverge e requer revisão' if conflict else 'corrobora'} "
+            f"{label} ({diagnosis.get('source')}); "
+            "diagnóstico sem autorização XP. "
             + str(result.get("reason", ""))
         )
         return result

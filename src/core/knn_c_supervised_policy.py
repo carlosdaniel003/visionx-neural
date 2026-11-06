@@ -16,7 +16,7 @@ def supervised_knn_c_decision(analysis: dict | None) -> str | None:
     if not (
         analysis.get("multilight_final") is True
         and analysis.get("eligible_for_final_decision") is True
-        and analysis.get("production_review_required") is True
+        and analysis.get("production_review_required") is not True
     ):
         return None
     detail = analysis.get("detail")
@@ -26,14 +26,14 @@ def supervised_knn_c_decision(analysis: dict | None) -> str | None:
         detail.get("knn_c_supervised_armed") is True
         and detail.get("multilight_final") is True
         and detail.get("eligible_for_final_decision") is True
-        and detail.get("knn_c_multilight_review_gate") is True
-        and detail.get("operator_review_required") is True
+        and detail.get("knn_c_multilight_review_gate") is False
+        and detail.get("operator_review_required") is not True
     ):
         return None
     trace = detail.get("decision_trace")
     if not isinstance(trace, dict) or not (
-        trace.get("knn_c_multilight_review_gate") is True
-        and trace.get("operator_review_required") is True
+        trace.get("knn_c_multilight_review_gate") is False
+        and trace.get("operator_review_required") is not True
     ):
         return None
     candidate = detail.get("knn_c_supervised_candidate")
@@ -61,7 +61,9 @@ def supervised_knn_c_decision(analysis: dict | None) -> str | None:
     if any(
         not isinstance(diagnostic[light], dict)
         or diagnostic[light].get("status") != "SUGERE_" + label
-        or diagnostic[light].get("requires_human_confirmation") is not True
+        or diagnostic[light].get("requires_human_confirmation") not in {
+            True, False,
+        }
         or diagnostic[light].get("conflicts_with_existing_verdict") is True
         for light in LIGHTS
     ):

@@ -592,14 +592,11 @@ def _base_production_decision_policy(analysis: dict | None) -> dict[str, Any]:
             "mode": "production",
             "confidence": confidence,
             "threshold": SIDE_EARLY_EXIT_THRESHOLD,
-            "verdict": (
-                "DEFEITO REAL" if verdict == "DEFEITO REAL"
-                else "REVISÃO OBRIGATÓRIA"
-            ),
+            "verdict": verdict,
             "auto_allowed": False,
             "operator_review_required": True,
             "proposed_decision": "NG" if verdict == "DEFEITO REAL" else "",
-            "reason": "side_early_exit_invalid_contract",
+            "reason": "side_early_exit_requires_independent_xp_proof",
             "operator_shortcuts": {"0": "OK", "1": "NG"},
         }
 

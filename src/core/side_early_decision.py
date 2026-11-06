@@ -166,7 +166,10 @@ def _eligible_side_analysis(analysis: dict | None) -> bool:
         or trace.get("operator_review_required") is True
         or detail.get("memory_conflict") is True
         or trace.get("memory_conflict") is True
+        or detail.get("cnn_v3_primary") is True
     ):
+        # V3 só pode encerrar SIDE pelo contrato verificado época 5+KNN C;
+        # nunca pelo atalho genérico baseado apenas em confiança.
         return False
 
     route = str(detail.get("recognition_route", "") or "").strip().upper()
@@ -296,7 +299,7 @@ def _eligible_v3_side_for_review(analysis: dict | None, category: str) -> bool:
     """
     if (not isinstance(analysis, dict)
             or analysis.get("lighting_mode") != "SIDE"
-            or analysis.get("production_review_required") is not True):
+            or analysis.get("production_review_required") is True):
         return False
     detail = analysis.get("detail")
     if not isinstance(detail, dict):
@@ -317,8 +320,8 @@ def _eligible_v3_side_for_review(analysis: dict | None, category: str) -> bool:
             or detail.get("fusion_rule") != "cnn_v3_primary_direct"
             or trace.get("fusion_rule") != "cnn_v3_primary_direct"
             or detail.get("cnn_v2_active") is True
-            or detail.get("operator_review_required") is not True
-            or trace.get("operator_review_required") is not True
+            or detail.get("operator_review_required") is True
+            or trace.get("operator_review_required") is True
             or detail.get("memory_conflict") is True
             or detail.get("raw_memory_conflict") is True
             or trace.get("memory_conflict") is True
@@ -360,7 +363,7 @@ def _eligible_v3_side_for_review(analysis: dict | None, category: str) -> bool:
             or knn.get("bank_status") != "READY"
             or knn.get("diagnostic_only") is not True
             or knn.get("auto_decision_authorized") is not False
-            or knn.get("requires_human_confirmation") is not True
+            or knn.get("requires_human_confirmation") is not False
             or knn.get("conflicts_with_existing_verdict") is True
             or knn.get("status") != selected
             or knn.get("vote_A") != label or knn.get("vote_B") != label
@@ -407,7 +410,7 @@ def build_side_early_decision(
     )
     if not automatic and not trial_review and not v3_review:
         return None
-    review_only = trial_review or v3_review
+    review_only = trial_review
 
     verdict = str(analysis["verdict"]).strip().upper()
     confidence = float(analysis["confidence"])
@@ -427,14 +430,18 @@ def build_side_early_decision(
     final["multilight_final"] = True
     final["multilight_category"] = str(category or "").strip().upper()
     final["eligible_for_final_decision"] = True
-    # Preservar a revisão herdada como evidência do checkpoint experimental.
-    # A autorização real 0/1 continua exclusiva da política de Produção.
+    # "Revisão obrigatória" reflete CONFLITO real do classificador, não
+    # falta de permissão XP. A V3 concordante é veredito visual definitivo
+    # neste ciclo, mas não concede aprovação 0/OK para Produção.
     final["production_review_required"] = review_only
 
     final_detail["multilight_final"] = True
     final_detail["multilight_category"] = final["multilight_category"]
     final_detail["eligible_for_final_decision"] = True
     final_detail["operator_review_required"] = review_only
+    trace = final_detail.get("decision_trace")
+    if isinstance(trace, dict):
+        trace["operator_review_required"] = review_only
     final_detail["side_early_exit"] = {
         "rule": (
             SIDE_V3_SUPERVISED_RULE if v3_review else
