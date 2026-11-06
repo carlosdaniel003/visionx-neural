@@ -445,3 +445,19 @@ O controlador já aguarda 1.000 ms após pintar o veredito, revalida
 o gate imediatamente antes de emitir 0/1, respeita a barra de espaço,
 a identidade da peça, o envio único e o ACK do XP. O ajuste não muda
 a duração, o agente Windows XP, os pesos CNN nem a memória.
+
+## 06/11/2026 — Diferenciar captura inválida de falta de autorização V3
+
+No evento XP `8543febfba2f463a816eb412a7399e63`, o diagnóstico
+encerrou SIDE com `FALHA FALSA` e imagem válida, mas a V3 época 5
+não homologada não possuía autorização independente para `0/XP`.
+A política retornou `cnn_v3_primary_ok_requires_independent_confirmation`
+e o controller apresentou incorretamente `captura ou rota incompleta`.
+
+Agora uma exigência explícita de confirmação humana para um veredito
+visual concluído é mantida como `operator_review`, sem falsear uma
+falha técnica. O comando XP permanece bloqueado até julgamento humano
+desse evento. SHA inválido, captura técnica incompleta e problemas
+de transporte continuam como parada operacional, sem transmitir
+comando conjectural. O tempo de apresentação de 1.000 ms e o atalho
+Espaço são mantidos.
