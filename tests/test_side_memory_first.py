@@ -132,6 +132,52 @@ class SideMemoryPriorityTests(unittest.TestCase):
         self.assertTrue(policy["unverified_physical_label"])
         self.assertEqual(policy["reason"], "side_operator_memory_first_97pct_auto_ok")
 
+    def test_v3_primary_respects_verified_side_memory_without_relaxing_veto(self):
+        from src.core.neural.aoi_v3_epoch5_contract import (
+            EPOCH5_VOTE_SCHEMA, SNAPSHOT_SHA256,
+        )
+        final = self.decide()
+        self.assertIsNotNone(final)
+        final["detail"].update(
+            cnn_v3_primary=True,
+            production_continuous_auto=True,
+            production_binary_auto=True,
+            aoi_v3_trial={
+                "schema": EPOCH5_VOTE_SCHEMA,
+                "status": "READY",
+                "epoch": 5,
+                "checkpoint_sha256": SNAPSHOT_SHA256,
+                "light": "SIDE",
+                "ng_score_uncalibrated": .000001,
+                "predicted": "OK",
+                "ng_veto": False,
+                "automatic_ok_from_v3_authorized": False,
+            },
+        )
+        policy = production_decision_policy(final)
+        self.assertTrue(policy["auto_allowed"])
+        self.assertEqual(policy["proposed_decision"], "OK")
+        self.assertEqual(policy["verdict"], "FALHA FALSA")
+        self.assertEqual(
+            policy["reason"], "side_operator_memory_first_97pct_auto_ok",
+        )
+
+        invalid = deepcopy(final)
+        invalid["detail"]["side_memory_first"]["physical_verified"] = False
+        blocked = production_decision_policy(invalid)
+        self.assertFalse(blocked["auto_allowed"])
+        self.assertEqual(blocked["proposed_decision"], "")
+
+        veto = deepcopy(final)
+        veto["detail"]["aoi_v3_trial"].update(
+            ng_score_uncalibrated=.999,
+            predicted="NG",
+            ng_veto=True,
+        )
+        rejected = production_decision_policy(veto)
+        self.assertTrue(rejected["auto_allowed"])
+        self.assertEqual(rejected["proposed_decision"], "NG")
+
     def _oct30_case(self):
         """Evento c0f029...: OK 99.02 x NG 95.94, PNG A/B OK comum."""
         data = case()
