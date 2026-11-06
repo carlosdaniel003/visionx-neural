@@ -534,7 +534,7 @@ class PersistentArchiveKNN:
         found = [
             (source["confirmed_at_ns"], record, source)
             for record in self.records()
-            if record["identity"][1] == cat[1]
+            if record["identity"][:2] == cat[:2]
             for source in record["sources"]
             if source.get("source_kind") == "OPERATOR_CONFIRMED"
             and source.get("source_label") == record["label"]
