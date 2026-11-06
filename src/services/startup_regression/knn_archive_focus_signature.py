@@ -138,28 +138,82 @@ def _similarity(a, b) -> float:
     return float(np.clip(.70 * cosine + .30 * (1.0 - mae), 0, 1))
 
 
+
+def _registered_map_similarity(a, b) -> tuple[float, float, tuple[int, int]]:
+    """Corrige desregistro de até uma célula, sem esconder anomalia diferente.
+
+    Continua usando os mesmos mapas 16x16 (inclusive os já persistidos no
+    cache). Nunca compara cores da tela ou transforma similaridade em rótulo.
+    O ganho é conservador: máximo de 0,04 sobre o score original por ROI.
+    """
+    left = np.asarray(a, dtype=np.float32)
+    right = np.asarray(b, dtype=np.float32)
+    baseline = _similarity(left, right)
+    if left.shape != (SIDE, SIDE) or right.shape != (SIDE, SIDE):
+        return baseline, baseline, (0, 0)
+    # Mapas quase uniformes ou de energia incompatível não têm
+    # informação suficiente para justificar deslocamento geométrico.
+    energy_a = float(np.mean(np.abs(left)))
+    energy_b = float(np.mean(np.abs(right)))
+    if (baseline < .70 or min(energy_a, energy_b) < .025
+            or max(energy_a, energy_b) / min(energy_a, energy_b) > 1.6):
+        return baseline, baseline, (0, 0)
+
+    best = baseline
+    shift = (0, 0)
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if not dx and not dy:
+                continue
+            h, w = SIDE - abs(dy), SIDE - abs(dx)
+            la = left[max(0, dy):max(0, dy) + h,
+                      max(0, dx):max(0, dx) + w]
+            rb = right[max(0, -dy):max(0, -dy) + h,
+                       max(0, -dx):max(0, -dx) + w]
+            # A penalização de sobreposição impede scores artificiais
+            # pela remoção das bordas em uma translação.
+            overlap = (h * w) / (SIDE * SIDE)
+            candidate = _similarity(la, rb) * overlap ** .5
+            if candidate > best:
+                best = candidate
+                shift = (dx, dy)
+    # Uma célula corresponde a 1/16 da ROI: melhora o registro mas não
+    # pode elevar artificialmente um vizinho fraco a correspondência exata.
+    adjusted = min(baseline + .04, baseline + max(0.0, best - baseline) * .5)
+    return float(adjusted), float(baseline), shift
+
+
 def compare_focus_signatures(query: dict, stored: dict) -> tuple[float, dict]:
     if query.get("schema") != SCHEMA or stored.get("schema") != SCHEMA:
         raise ValueError("Assinaturas de epicentro incompatíveis")
     weights = {"global_map": .15, "outer_map": .35, "inner_map": .50}
-    components, total, summed = {}, 0.0, 0.0
+    components, original_groups, shifts = {}, {}, {}
+    total, summed, original_sum = 0.0, 0.0, 0.0
     for part, weight in weights.items():
         left, right = query.get(part), stored.get(part)
         if left is None and right is None:
             continue
         if left is None or right is None:
-            # Ausência de ROI na consulta ou na memória: não declarar
-            # equivalência quase perfeita apenas pelo fundo.
-            score = .0
+            # Sem ROI real em qualquer lado, não inferir equivalência.
+            score = raw = 0.0
+            shift = (0, 0)
         else:
-            score = _similarity(left, right)
+            score, raw, shift = _registered_map_similarity(left, right)
         components[part] = round(float(score), 8)
+        original_groups[part] = round(float(raw), 8)
+        shifts[part] = list(shift)
         summed += weight * score
+        original_sum += weight * raw
         total += weight
     similarity = summed / total if total else 0.0
+    baseline = original_sum / total if total else 0.0
     return float(np.clip(similarity, 0, 1)), {
         "groups": components,
-        "method": "gabarito_vs_teste_global_outer_inner",
+        "original_groups": original_groups,
+        "translation_cells": shifts,
+        "baseline_similarity": round(float(baseline), 8),
+        "translation_gain": round(float(similarity - baseline), 8),
+        "method": "gabarito_vs_teste_global_outer_inner_registered_1cell",
         "query_focus": query.get("focus"),
         "neighbor_focus": stored.get("focus"),
     }
