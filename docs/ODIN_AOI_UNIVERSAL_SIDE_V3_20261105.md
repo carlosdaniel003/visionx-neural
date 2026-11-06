@@ -73,3 +73,36 @@ humana não é identidade exata e o score CNN não é probabilidade calibrada.
 Regressões em `tests/test_side_early_decision.py` e
 `tests/test_adhesive_multilight_inspection.py` verificam os três modos,
 categorias diferentes, bloqueios de NG e falhas de proveniência.
+
+## 06/11/2026 — KNN C não seletiva, A/B com vizinho NG no top-5
+
+A KNN C é observadora. A exigência anterior de cinco vizinhos
+unânimes podia forçar TOP/MID quando os votos A/B eram ambos OK, mas
+um vizinho NG distante aparecia entre os cinco. Para CNN V3 época 5
+com checkpoint validado, classificação **OK na SIDE >=97%**, sem veto
+físico, memória conflitante ou revisão operacional, existe uma rota
+visual adicional **não seletiva**:
+
+- KNN C READY, diagnóstico `REVISAO / SEM_SUGESTAO_CONFIAVEL`, votos
+  A e B OK, motivo de insuficiência de similaridade e sem divergência;
+- o vizinho mais próximo em **ambos** os descritores é OK, com todas as
+  cinco fontes de cada descritor presentes, ordenadas e com SHA válido;
+- memória humana pesquisada com `NO_MATCH`, sem NG humano mais próximo
+  que OK; não promove memória aproximada a reconhecimento exato;
+- sem provas físicas ou conflitos, o fluxo encerra a inspeção **visual**
+  como FALHA FALSA na SIDE e registra
+  `CNN_V3_KNN_C_A_B_OK_NONSELECTIVE` nos diagnósticos.
+
+Nenhum limiar de similaridade KNN foi reduzido, nem a recomendação
+`REVISAO` foi falsificada. O desempate usa a direção diagnóstica do
+modelo principal e o par de votos A/B, sem identidade do evento, categoria
+ou arquivo específico. Se o voto A/B divergir, o primeiro vizinho for
+NG, a memória humana for NG/ambígua ou faltar proveniência, TOP/MID
+continuam. **Não autoriza 0/OK automático ao XP**: essa rota é uma
+classificação visual e os escores de CNN não estão calibrados. Esta
+política pode perder defeitos só visíveis em TOP/MID; ainda requer
+replay e inspeção física independentes antes de autorizar produção.
+
+Testes para categorias variadas, três modos e contraprovas ficam em
+`tests/test_side_early_decision.py` e
+`tests/test_adhesive_multilight_inspection.py`.

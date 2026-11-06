@@ -291,6 +291,72 @@ def _eligible_trial_side_for_review(
     )
 
 
+def _nonselective_knn_ok_diagnostic(
+    knn: dict, human_recall: dict | None,
+) -> bool:
+    """Corroboração fraca: A/B votam OK, mas C não autoriza sugestão.
+
+    Distâncias baixas e vizinhos NG não viram 'par exato'. A KNN é
+    diagnóstica: confere-se apenas que A e B apontam na mesma direção,
+    as referências existem e nenhuma fonte humana indica NG mais próximo.
+    """
+    if not (
+        knn.get("status") == "REVISAO"
+        and knn.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+        and knn.get("suggestion_A") == "REVISAO"
+        and knn.get("suggestion_B") == "REVISAO"
+        and knn.get("reason_A") == "SIMILARIDADE_VISUAL_INSUFICIENTE"
+        and knn.get("reason_B") == "SIMILARIDADE_VISUAL_INSUFICIENTE"
+        and knn.get("uses_aoi_category") is False
+        and knn.get("requires_human_confirmation") is not True
+        and knn.get("pre_c_review_required") is not True
+        and knn.get("vote_A") == "OK"
+        and knn.get("vote_B") == "OK"
+    ):
+        return False
+
+    # A memória não é prova favorável, mas um NG humano mais próximo
+    # proíbe o atalho. NO_MATCH é diferente de índice indisponível.
+    if not isinstance(human_recall, dict) or not (
+        human_recall.get("schema") == "visionx.human_visual_recall.v1"
+        and human_recall.get("status") == "NO_MATCH"
+        and human_recall.get("source") == "PERSISTENT_HUMAN_LABELS"
+        and human_recall.get("diagnostic_only") is True
+        and human_recall.get("auto_ok_authorized") is False
+        and human_recall.get("cross_light_candidate") is False
+    ):
+        return False
+    ok_score = human_recall.get("best_ok_similarity")
+    ng_score = human_recall.get("best_ng_similarity")
+    if (type(ok_score) not in (int, float)
+            or type(ng_score) not in (int, float)
+            or not (isfinite(ok_score) and isfinite(ng_score))
+            or not (0 <= ng_score <= ok_score <= 1)):
+        return False
+
+    # Não exige unanimidade de top-5 nem limiar artificial de KNN;
+    # exige top-1 OK em A/B, ordenação e proveniência de todas as fontes.
+    for descriptor in ("neighbors_A", "neighbors_B"):
+        rows = knn.get(descriptor)
+        if not isinstance(rows, list) or len(rows) < 5:
+            return False
+        previous = 1.0
+        for index, neighbor in enumerate(rows[:5]):
+            if not isinstance(neighbor, dict) or neighbor.get("label") not in {"OK", "NG"}:
+                return False
+            score = neighbor.get("similarity")
+            digest = neighbor.get("source_pixel_sha256")
+            if (type(score) not in (float, int)
+                    or not isfinite(score) or not 0 <= score <= previous
+                    or not isinstance(digest, str) or len(digest) != 64
+                    or any(c not in "0123456789abcdef" for c in digest.lower())):
+                return False
+            if index == 0 and neighbor["label"] != "OK":
+                return False
+            previous = score
+    return True
+
+
 def _eligible_v3_side_for_review(
     analysis: dict | None, category: str,
 ) -> str | None:
@@ -407,11 +473,19 @@ def _eligible_v3_side_for_review(
             detail.get("confirmed_visual_recall"),
             lighting_mode="SIDE", category=category,
         )
-    if not selective and not corroborated_human_ok:
+    nonselective_ok = (
+        not defect and not selective and not corroborated_human_ok
+        and _nonselective_knn_ok_diagnostic(
+            knn, detail.get("confirmed_visual_recall"),
+        )
+    )
+    if not selective and not corroborated_human_ok and not nonselective_ok:
         return None
 
-    # Cada descritor precisa de 5 vizinhos concordantes. Na alternativa
-    # humana, as referências precisam conservar sua proveniência SHA.
+    if nonselective_ok:
+        return "CNN_V3_KNN_C_A_B_OK_NONSELECTIVE"
+
+    # As duas rotas já existentes mantêm unanimidade de cinco vizinhos.
     for descriptor in ("neighbors_A", "neighbors_B"):
         neighbors = knn.get(descriptor)
         if not isinstance(neighbors, list) or len(neighbors) < 5:
@@ -468,7 +542,9 @@ def build_side_early_decision(
         f"{confidence:.1%}; TOP e MID dispensadas. "
         + ("V3 época 5 corroborada por KNN C A/B"
            + (" e memória humana OK" if v3_corroboration
-              == "HUMAN_OK_KNN_C_A_B_TOP5_UNANIMOUS" else "")
+              == "HUMAN_OK_KNN_C_A_B_TOP5_UNANIMOUS" else
+              " não seletiva (memória sem match)" if v3_corroboration
+              == "CNN_V3_KNN_C_A_B_OK_NONSELECTIVE" else "")
            + "; classificação visual em qualquer modo, sem autorização XP. "
            if v3_review else
            "Checkpoint experimental: autorização XP depende do gate de Produção. "

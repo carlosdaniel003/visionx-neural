@@ -144,6 +144,44 @@ def _v3_weak_c_human_ok_side(*, category="DESLOCADO"):
     return side
 
 
+def _v3_nonselective_weak_knn_ok_side(category="DESLOCADO"):
+    """Regressão representativa: CNN SIDE OK, KNN A/B OK, mem. não conclusiva."""
+    from src.core.strict_category_memory import canonical_memory_category
+
+    side = _v3_weak_c_human_ok_side(category=category)
+    score = 3.0383958460333815e-08
+    side["confidence"] = 1.0 - score
+    detail = side["detail"]
+    detail["aoi_v3_trial"]["ng_score_uncalibrated"] = score
+    detail["cnn_v3_ng_score_uncalibrated"] = score
+    knn = detail["knn_c"]
+    knn["neighbors_A"] = [
+        {"label": label, "similarity": similarity,
+         "source_pixel_sha256": format(i + 1, "064x")}
+        for i, (label, similarity) in enumerate((
+            ("OK", .76915941), ("OK", .73626385), ("NG", .73365131),
+            ("OK", .71776635), ("NG", .71573585),
+        ))
+    ]
+    knn["neighbors_B"] = [
+        {"label": "OK", "similarity": similarity,
+         "source_pixel_sha256": format(i + 9, "064x")}
+        for i, similarity in enumerate(
+            (.81667228, .79612735, .78327747, .76647984, .76082523)
+        )
+    ]
+    knn.update(
+        vote_A="OK", vote_B="OK",
+        weighted_ng_A=.38398391, weighted_ng_B=0.0,
+    )
+    recall = detail["confirmed_visual_recall"]
+    recall.update(
+        status="NO_MATCH", category=canonical_memory_category(category),
+        best_ok_similarity=.91351401, best_ng_similarity=.90610706,
+    )
+    return side
+
+
 class SideEarlyDecisionTests(unittest.TestCase):
     def test_threshold_is_inclusive_for_defect_and_false_failure(self):
         self.assertEqual(SIDE_EARLY_EXIT_THRESHOLD, 0.97)
@@ -780,6 +818,75 @@ class SideEarlyDecisionTests(unittest.TestCase):
         )
         self.assertIsNone(build_side_early_decision(
             ng, "DESLOCADO", allow_supervised_v3=True,
+        ))
+
+    def test_v3_nonselective_knn_ok_with_nearest_ok_side_stops_all_modes(self):
+        from src.services.capture_debug_payload import decision_record
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        for category in ("DESLOCADO", "FALTANDO", "MUITO ADESIVO", "UNKNOWN", ""):
+            with self.subTest(category=category):
+                side = _v3_nonselective_weak_knn_ok_side(category)
+                final = build_side_early_decision(
+                    side, category, allow_supervised_v3=True,
+                )
+                self.assertIsNotNone(final)
+                self.assertEqual(final["verdict"], "FALHA FALSA")
+                self.assertEqual(final["detail"]["side_early_exit"]["skipped_lights"],
+                                 ["TOP", "MID"])
+                self.assertEqual(final["detail"]["side_early_exit"]["corroboration"],
+                                 "CNN_V3_KNN_C_A_B_OK_NONSELECTIVE")
+                self.assertEqual(final["detail"]["knn_c"]["status"], "REVISAO")
+                self.assertFalse(final["production_review_required"])
+                self.assertFalse(final["detail"]["operator_review_required"])
+                self.assertFalse(final["detail"]["decision_trace"]["operator_review_required"])
+                self.assertFalse(final["detail"]["side_early_exit"]["production_auto_allowed"])
+                self.assertIsNone(side_automatic_decision(final))
+                self.assertIsNone(side_trial_automatic_decision(final))
+                self.assertEqual(decision_record(final, {"category": category})["verdict"],
+                                 "FALHA FALSA")
+                policy = production_decision_policy(final)
+                self.assertFalse(policy["auto_allowed"])
+                self.assertEqual(policy["proposed_decision"], "")
+
+    def test_v3_nonselective_knn_requires_direction_and_provenance(self):
+        mutations = (
+            lambda a: a["detail"]["knn_c"].update(vote_A="NG"),
+            lambda a: a["detail"]["knn_c"].update(vote_B="NG"),
+            lambda a: a["detail"]["knn_c"].update(status="SUGERE_NG"),
+            lambda a: a["detail"]["knn_c"].update(bank_status="LOADING"),
+            lambda a: a["detail"]["knn_c"].update(reason="DISCORDANCIA_KNN_A_B"),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][0].update(label="NG"),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"][0].update(label="NG"),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][0].update(similarity=.1),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][0].update(source_pixel_sha256="missing"),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"].pop(),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(status="HUMAN_NG_VISUAL_CANDIDATE"),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(status="AMBIGUOUS"),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(best_ng_similarity=.95),
+            lambda a: a["detail"].pop("confirmed_visual_recall"),
+            lambda a: a["detail"].update(memory_conflict=True),
+            lambda a: a["detail"].update(physical_missing_veto={"status": "SUSPECT_ABSENCE"}),
+            lambda a: a["detail"].update(capture_error=True),
+            lambda a: a.update(confidence=.95),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation.__code__.co_consts):
+                original = _v3_nonselective_weak_knn_ok_side()
+                mutation(original)
+                self.assertIsNone(build_side_early_decision(
+                    original, "DESLOCADO", allow_supervised_v3=True,
+                ))
+
+        original = _v3_nonselective_weak_knn_ok_side()
+        self.assertIsNone(build_side_early_decision(
+            original, "DESLOCADO", allow_supervised_v3=False,
+        ))
+        # CNN NG não ganha atalho por mera votação diagnóstica KNN.
+        side_ng = _v3_side(verdict="DEFEITO REAL")
+        side_ng["detail"]["knn_c"] = _v3_nonselective_weak_knn_ok_side()["detail"]["knn_c"]
+        self.assertIsNone(build_side_early_decision(
+            side_ng, "DESLOCADO", allow_supervised_v3=True,
         ))
 
     def test_v3_epoch5_does_not_skip_when_model_knn_or_provenance_disagree(self):
