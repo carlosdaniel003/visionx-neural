@@ -419,6 +419,108 @@ def _nonselective_knn_ng_diagnostic(
     )
 
 
+
+def _strong_partial_knn_human_ok(
+    knn: dict, visual: dict | None, *, category: str,
+    confidence: float,
+) -> bool:
+    """SIDE OK: a mesma referência forte A/B supera um NG distante em A.
+
+    Não altera a margem geral da memória de 4pp; esta rota exige
+    corroboracao extra da V3, KNN, fonte de pixels e humano confirmado.
+    """
+    if not isinstance(visual, dict) or not isfinite(confidence) or confidence < .995:
+        return False
+
+    from src.core.confirmed_visual_recall import SCHEMA as HUMAN_SCHEMA
+    if not (
+        visual.get("schema") == HUMAN_SCHEMA
+        and visual.get("status") == "AMBIGUOUS"
+        and visual.get("source") == "PERSISTENT_HUMAN_LABELS"
+        and visual.get("category") == canonical_memory_category(category)
+        and visual.get("diagnostic_only") is True
+        and visual.get("auto_ok_authorized") is False
+        and visual.get("cross_light_candidate") is False
+        and knn.get("status") == "SUGERE_OK"
+        and knn.get("reason") == "B_SELETIVA_E_VOTOS_A_B_CONCORDAM"
+        and knn.get("reason_A") == "VIZINHOS_VISUAIS_DIVERGENTES"
+        and knn.get("reason_B") == "CINCO_OK_VISUALMENTE_CONCORDANTES"
+        and knn.get("suggestion_A") == "REVISAO"
+        and knn.get("suggestion_B") == "SUGERE_OK"
+        and knn.get("vote_A") == "OK"
+        and knn.get("vote_B") == "OK"
+        and knn.get("requires_human_confirmation") is False
+        and knn.get("pre_c_review_required") is False
+        and knn.get("pre_c_is_defect") is False
+        and knn.get("pre_c_verdict") == "FALHA FALSA"
+        and knn.get("uses_aoi_category") is False
+    ):
+        return False
+    ok = visual.get("best_ok_similarity")
+    ng = visual.get("best_ng_similarity")
+    if not (
+        type(ok) in (float, int) and type(ng) in (float, int)
+        and isfinite(ok) and isfinite(ng)
+        and .995 <= ok <= 1.0 and 0 <= ng < .97
+        and ok - ng >= .03
+    ):
+        return False
+    for field, label in (("best_ok_source", "OK"), ("best_ng_source", "NG")):
+        source = visual.get(field)
+        if not isinstance(source, dict) or not (
+            source.get("label") == label
+            and source.get("source") == "OPERATOR_CONFIRMED"
+            and source.get("lighting_mode") == "SIDE"
+        ):
+            return False
+        identifier = source.get("record_id")
+        if not (
+            isinstance(identifier, str) and len(identifier) == 64
+            and all(c in "0123456789abcdef" for c in identifier.lower())
+        ):
+            return False
+
+    shared_sha = None
+    for descriptor in ("neighbors_A", "neighbors_B"):
+        neighbors = knn.get(descriptor)
+        if not isinstance(neighbors, list) or len(neighbors) < 5:
+            return False
+        previous = 1.0
+        seen = set()
+        ng_scores = []
+        for i, neighbor in enumerate(neighbors[:5]):
+            if not isinstance(neighbor, dict):
+                return False
+            similarity = neighbor.get("similarity")
+            digest = neighbor.get("source_pixel_sha256")
+            if not (
+                neighbor.get("label") in {"OK", "NG"}
+                and type(similarity) in (int, float) and isfinite(similarity)
+                and 0 <= similarity <= previous
+                and isinstance(digest, str) and len(digest) == 64
+                and all(c in "0123456789abcdef" for c in digest.lower())
+                and digest not in seen
+            ):
+                return False
+            if i == 0:
+                if neighbor["label"] != "OK" or similarity < .99:
+                    return False
+                if shared_sha is None:
+                    shared_sha = digest
+                elif digest != shared_sha:
+                    return False
+            elif neighbor["label"] == "NG":
+                if descriptor == "neighbors_B" or i < 3:
+                    return False
+                ng_scores.append(similarity)
+            previous = similarity
+            seen.add(digest)
+        if descriptor == "neighbors_A":
+            if len(ng_scores) != 1 or neighbors[0]["similarity"] - max(ng_scores) < .04:
+                return False
+    return True
+
+
 def _mixed_knn_verified_human_ok(
     knn: dict, visual: dict | None, *, category: str,
 ) -> bool:
@@ -695,6 +797,16 @@ def _eligible_v3_side_for_review(
             knn, detail.get("confirmed_visual_recall"),
         )
     )
+    # A seletividade parcial em A não implica NG: exigir humano OK
+    # dominante e a mesma referência OK muito próxima nos dois eixos.
+    partial_human_ok = (
+        not defect and not selective and not corroborated_human_ok
+        and not nonselective_ok
+        and _strong_partial_knn_human_ok(
+            knn, detail.get("confirmed_visual_recall"),
+            category=category, confidence=confidence,
+        )
+    )
     # A exceção ao limiar do *score CNN* é estrutural e requer três
     # sinais alinhados: CNN OK, KNN A/B com OK mais próximo que NG,
     # e um registro humano OPERATOR_CONFIRMED robustamente recuperado.
@@ -719,13 +831,16 @@ def _eligible_v3_side_for_review(
     if (confidence < SIDE_EARLY_EXIT_THRESHOLD and not mixed_human_ok):
         return None
     if not (selective or corroborated_human_ok or nonselective_ok
-            or mixed_human_ok or corroborated_human_ng or nonselective_ng):
+            or partial_human_ok or mixed_human_ok
+            or corroborated_human_ng or nonselective_ng):
         return None
 
     if nonselective_ng:
         return "CNN_V3_KNN_C_A_B_NG_NONSELECTIVE"
     if corroborated_human_ng:
         return "HUMAN_NG_KNN_C_A_B_ARCHIVE_RECONCILED"
+    if partial_human_ok:
+        return "HUMAN_OK_KNN_C_A_B_SHARED_TOP1_STRONG"
     if mixed_human_ok:
         return "HUMAN_OK_KNN_C_A_B_NEAREST_OK_MIXED"
     if nonselective_ok:
@@ -793,6 +908,8 @@ def build_side_early_decision(
               if v3_corroboration == "HUMAN_NG_KNN_C_A_B_ARCHIVE_RECONCILED" else
               " e memória humana OK (top-1 acima de NG em A/B)"
               if v3_corroboration == "HUMAN_OK_KNN_C_A_B_NEAREST_OK_MIXED" else
+              " e memória humana OK + referência OK compartilhada forte em A/B"
+              if v3_corroboration == "HUMAN_OK_KNN_C_A_B_SHARED_TOP1_STRONG" else
               " não seletiva (memória sem match)" if v3_corroboration
               == "CNN_V3_KNN_C_A_B_OK_NONSELECTIVE" else
               " NG não seletiva (top-5 A/B unânimes; sem humano qualificado)"
