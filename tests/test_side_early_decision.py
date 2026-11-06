@@ -182,6 +182,46 @@ def _v3_nonselective_weak_knn_ok_side(category="DESLOCADO"):
     return side
 
 
+def _v3_mixed_knn_verified_human_ok_side(category="DESLOCADO"):
+    """CNN OK moderada; memória humana qualificada e top-1 A/B OK."""
+    from src.core.strict_category_memory import canonical_memory_category
+    side = _v3_weak_c_human_ok_side(category=category)
+    score = .06340668350458145
+    side["confidence"] = 1.0 - score
+    detail = side["detail"]
+    detail["aoi_v3_trial"]["ng_score_uncalibrated"] = score
+    detail["cnn_v3_ng_score_uncalibrated"] = score
+    visual = detail["confirmed_visual_recall"]
+    visual.update(
+        category=canonical_memory_category(category),
+        best_ok_similarity=.99130311, best_ng_similarity=.93202257,
+    )
+    knn = detail["knn_c"]
+    knn.update(
+        reason="SEM_SUGESTAO_CONFIAVEL",
+        reason_A="VIZINHOS_VISUAIS_DIVERGENTES",
+        reason_B="VIZINHOS_VISUAIS_DIVERGENTES",
+        vote_A="OK", vote_B="OK",
+    )
+    knn["neighbors_A"] = [
+        {"label": label, "similarity": similarity,
+         "source_pixel_sha256": format(i + 11, "064x")}
+        for i, (label, similarity) in enumerate((
+            ("OK", .97158911), ("NG", .77254799), ("OK", .76119784),
+            ("NG", .75769264), ("OK", .75763565),
+        ))
+    ]
+    knn["neighbors_B"] = [
+        {"label": label, "similarity": similarity,
+         "source_pixel_sha256": format(i + 21, "064x")}
+        for i, (label, similarity) in enumerate((
+            ("OK", .93626132), ("NG", .72389501), ("OK", .70821909),
+            ("OK", .70809284), ("NG", .70636353),
+        ))
+    ]
+    return side
+
+
 class SideEarlyDecisionTests(unittest.TestCase):
     def test_threshold_is_inclusive_for_defect_and_false_failure(self):
         self.assertEqual(SIDE_EARLY_EXIT_THRESHOLD, 0.97)
@@ -887,6 +927,81 @@ class SideEarlyDecisionTests(unittest.TestCase):
         side_ng["detail"]["knn_c"] = _v3_nonselective_weak_knn_ok_side()["detail"]["knn_c"]
         self.assertIsNone(build_side_early_decision(
             side_ng, "DESLOCADO", allow_supervised_v3=True,
+        ))
+
+    def test_verified_human_ok_with_mixed_knn_finishes_side_below_cnn_threshold(self):
+        from src.services.capture_debug_payload import decision_record
+        from src.ui.production_confidence_gate import production_decision_policy
+        for category in ("FALTANDO", "DESLOCADO", "INVERTIDO", "EMBORCADO"):
+            with self.subTest(category=category):
+                source = _v3_mixed_knn_verified_human_ok_side(category)
+                self.assertLess(source["confidence"], SIDE_EARLY_EXIT_THRESHOLD)
+                final = build_side_early_decision(
+                    source, category, allow_supervised_v3=True,
+                )
+                self.assertIsNotNone(final)
+                self.assertEqual(final["verdict"], "FALHA FALSA")
+                self.assertFalse(final["detail"]["side_early_exit"]["cnn_97pct_threshold_met"])
+                self.assertEqual(
+                    final["detail"]["side_early_exit"]["corroboration"],
+                    "HUMAN_OK_KNN_C_A_B_NEAREST_OK_MIXED",
+                )
+                self.assertEqual(
+                    final["detail"]["side_early_exit"]["skipped_lights"],
+                    ["TOP", "MID"],
+                )
+                self.assertEqual(final["detail"]["knn_c"]["status"], "REVISAO")
+                self.assertFalse(final["production_review_required"])
+                self.assertFalse(final["detail"]["operator_review_required"])
+                self.assertIsNone(side_automatic_decision(final))
+                self.assertIsNone(side_trial_automatic_decision(final))
+                self.assertEqual(decision_record(final, {"category": category})["verdict"],
+                                 "FALHA FALSA")
+                policy = production_decision_policy(final)
+                self.assertFalse(policy["auto_allowed"])
+                self.assertEqual(policy["proposed_decision"], "")
+                self.assertIsNone(build_side_early_decision(
+                    source, category, allow_supervised_v3=False,
+                ))
+
+    def test_verified_human_ok_mixed_knn_never_skips_on_conflict_or_weak_proof(self):
+        mutations = (
+            lambda a: a["detail"].pop("confirmed_visual_recall"),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(status="NO_MATCH"),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(best_ok_similarity=.969),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(best_ng_similarity=.96),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(category="INVERTIDO"),
+            lambda a: a["detail"]["confirmed_visual_recall"]["best_ok_source"].update(source="AUTOMATIC"),
+            lambda a: a["detail"]["confirmed_visual_recall"]["best_ok_source"].update(record_id="invalid"),
+            lambda a: a["detail"]["confirmed_visual_recall"]["best_ok_source"].update(lighting_mode="TOP"),
+            lambda a: a["detail"]["knn_c"].update(vote_B="NG"),
+            lambda a: a["detail"]["knn_c"].update(bank_status="LOADING"),
+            lambda a: a["detail"]["knn_c"].update(status="SUGERE_NG"),
+            lambda a: a["detail"]["knn_c"].update(reason_B="SIMILARIDADE_VISUAL_INSUFICIENTE"),
+            lambda a: a["detail"]["knn_c"].update(requires_human_confirmation=True),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][0].update(label="NG"),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][1].update(similarity=.968),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][1].update(similarity=.98),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"][0].update(source_pixel_sha256="fake"),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"].pop(),
+            lambda a: a["detail"].update(physical_missing_veto={"status": "SUSPECT_ABSENCE"}),
+            lambda a: a["detail"].update(memory_conflict=True),
+            lambda a: a["detail"].update(capture_error=True),
+            lambda a: a.update(confidence=.42),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate.__code__.co_consts):
+                original = _v3_mixed_knn_verified_human_ok_side()
+                mutate(original)
+                self.assertIsNone(build_side_early_decision(
+                    original, "DESLOCADO", allow_supervised_v3=True,
+                ))
+        ng = _v3_side(verdict="DEFEITO REAL")
+        ng["detail"]["confirmed_visual_recall"] = (
+            _v3_mixed_knn_verified_human_ok_side()["detail"]["confirmed_visual_recall"]
+        )
+        self.assertIsNone(build_side_early_decision(
+            ng, "DESLOCADO", allow_supervised_v3=True,
         ))
 
     def test_v3_epoch5_does_not_skip_when_model_knn_or_provenance_disagree(self):

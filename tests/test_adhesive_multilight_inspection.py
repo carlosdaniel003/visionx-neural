@@ -805,6 +805,29 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                 if mode == "Modo Produção":
                     panel.notify_production_analysis_ready.assert_called_once()
 
+    def test_v3_verified_human_ok_mixed_knn_finishes_side_below_97_all_modes(self):
+        from tests.test_side_early_decision import _v3_mixed_knn_verified_human_ok_side
+        from src.ui.production_confidence_gate import production_decision_policy
+        for mode in ("Modo Teste", "Modo Produção", "Modo Sombra"):
+            with self.subTest(mode=mode):
+                source = _v3_mixed_knn_verified_human_ok_side()
+                panel = self._run_capture(
+                    confidence=source["confidence"], verdict="FALHA FALSA",
+                    mode=mode, side_analysis=source, category="DESLOCADO",
+                )
+                self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
+                self.assertFalse(panel.adhesive_multilight_active)
+                panel.adhesive_multilight_automation.start.assert_not_called()
+                panel.send_command_to_xp.assert_not_called()
+                self.assertEqual(panel.current_analysis["verdict"], "FALHA FALSA")
+                self.assertEqual(
+                    panel.current_analysis["detail"]["side_early_exit"]["corroboration"],
+                    "HUMAN_OK_KNN_C_A_B_NEAREST_OK_MIXED",
+                )
+                self.assertFalse(production_decision_policy(panel.current_analysis)["auto_allowed"])
+                if mode == "Modo Produção":
+                    panel.notify_production_analysis_ready.assert_called_once()
+
     def test_just_below_threshold_keeps_three_light_capture(self):
         panel = self._run_capture(
             confidence=0.9699, verdict="FALHA FALSA", mode="Modo Teste"

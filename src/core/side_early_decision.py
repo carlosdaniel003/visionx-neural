@@ -357,14 +357,74 @@ def _nonselective_knn_ok_diagnostic(
     return True
 
 
+def _mixed_knn_verified_human_ok(
+    knn: dict, visual: dict | None, *, category: str,
+) -> bool:
+    """Corrobora OK humano na SIDE apesar de vizinhos KNN mistos.
+
+    Não altera a classe atribuída pela KNN nem interpreta proximidade
+    como identidade exata. Exige vantagem OK contra NG em A/B e
+    memória humana confirmada na mesma iluminação.
+    """
+    from src.core.confirmed_visual_recall import (
+        MIN_OPPOSITE_MARGIN, qualified_human_ok_visual_candidate,
+    )
+    if not qualified_human_ok_visual_candidate(
+        visual, lighting_mode="SIDE", category=category,
+    ):
+        return False
+    if not (
+        knn.get("status") == "REVISAO"
+        and knn.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+        and knn.get("reason_A") == "VIZINHOS_VISUAIS_DIVERGENTES"
+        and knn.get("reason_B") == "VIZINHOS_VISUAIS_DIVERGENTES"
+        and knn.get("suggestion_A") == "REVISAO"
+        and knn.get("suggestion_B") == "REVISAO"
+        and knn.get("vote_A") == "OK"
+        and knn.get("vote_B") == "OK"
+        and knn.get("uses_aoi_category") is False
+        and knn.get("requires_human_confirmation") is not True
+        and knn.get("pre_c_review_required") is not True
+    ):
+        return False
+    for descriptor in ("neighbors_A", "neighbors_B"):
+        rows = knn.get(descriptor)
+        if not isinstance(rows, list) or len(rows) < 5:
+            return False
+        previous = 1.0
+        max_ng = None
+        for index, neighbor in enumerate(rows[:5]):
+            if not isinstance(neighbor, dict) or neighbor.get("label") not in {"OK", "NG"}:
+                return False
+            score = neighbor.get("similarity")
+            digest = neighbor.get("source_pixel_sha256")
+            if (
+                type(score) not in (float, int)
+                or not isfinite(score) or not 0 <= score <= previous
+                or not isinstance(digest, str) or len(digest) != 64
+                or any(char not in "0123456789abcdef" for char in digest.lower())
+            ):
+                return False
+            if index == 0 and neighbor["label"] != "OK":
+                return False
+            if neighbor["label"] == "NG":
+                max_ng = score if max_ng is None else max(max_ng, score)
+            previous = score
+        # A divergência da KNN só é tolerada se os NG no top-5 forem
+        # efetivamente mais distantes do que o OK top-1 em AMBOS os eixos.
+        if max_ng is None or rows[0]["similarity"] - max_ng < MIN_OPPOSITE_MARGIN:
+            return False
+    return True
+
+
 def _eligible_v3_side_for_review(
     analysis: dict | None, category: str,
 ) -> str | None:
-    """SIDE V3 forte e corroboração humana/KNN: conclusão VISUAL universal.
+    """Veredito VISUAL SIDE V3 por evidências concordantes e verificáveis.
 
-    Voto KNN seletivo continua válido. Quando KNN C é inconclusiva por
-    distância, só uma memória humana OK qualificada e cinco vizinhos OK
-    nos descritores A/B permitem dispensar TOP/MID. XP não é autorizado.
+    A via usual exige V3 >=97%. A alternativa de memória humana OK
+    comprovada exige concordância da V3 e KNN A/B com vantagem sobre NG,
+    sem reduzir o limiar global ou autorizar comando XP.
     """
     if (not isinstance(analysis, dict)
             or analysis.get("lighting_mode") != "SIDE"
@@ -423,7 +483,7 @@ def _eligible_v3_side_for_review(
     if (not all(isfinite(v) for v in (score, local_score, confidence, physical_score))
             or abs(score - local_score) > 0.000001
             or abs(confidence - (score if defect else 1.0 - score)) > 0.000001
-            or confidence < SIDE_EARLY_EXIT_THRESHOLD or confidence > 1.0
+            or confidence < 0.0 or confidence > 1.0
             or physical_score != 0.0):
         return None
 
@@ -479,9 +539,22 @@ def _eligible_v3_side_for_review(
             knn, detail.get("confirmed_visual_recall"),
         )
     )
-    if not selective and not corroborated_human_ok and not nonselective_ok:
+    # A exceção ao limiar do *score CNN* é estrutural e requer três
+    # sinais alinhados: CNN OK, KNN A/B com OK mais próximo que NG,
+    # e um registro humano OPERATOR_CONFIRMED robustamente recuperado.
+    mixed_human_ok = (
+        not defect and not selective and not corroborated_human_ok
+        and _mixed_knn_verified_human_ok(
+            knn, detail.get("confirmed_visual_recall"), category=category,
+        )
+    )
+    if (confidence < SIDE_EARLY_EXIT_THRESHOLD and not mixed_human_ok):
+        return None
+    if not (selective or corroborated_human_ok or nonselective_ok or mixed_human_ok):
         return None
 
+    if mixed_human_ok:
+        return "HUMAN_OK_KNN_C_A_B_NEAREST_OK_MIXED"
     if nonselective_ok:
         return "CNN_V3_KNN_C_A_B_OK_NONSELECTIVE"
 
@@ -543,6 +616,8 @@ def build_side_early_decision(
         + ("V3 época 5 corroborada por KNN C A/B"
            + (" e memória humana OK" if v3_corroboration
               == "HUMAN_OK_KNN_C_A_B_TOP5_UNANIMOUS" else
+              " e memória humana OK (top-1 acima de NG em A/B)"
+              if v3_corroboration == "HUMAN_OK_KNN_C_A_B_NEAREST_OK_MIXED" else
               " não seletiva (memória sem match)" if v3_corroboration
               == "CNN_V3_KNN_C_A_B_OK_NONSELECTIVE" else "")
            + "; classificação visual em qualquer modo, sem autorização XP. "
@@ -588,6 +663,7 @@ def build_side_early_decision(
             "model_epoch": V3_EPOCH_5,
             "checkpoint_sha256": final_detail["cnn_v3_checkpoint_sha256"],
             "corroboration": v3_corroboration,
+            "cnn_97pct_threshold_met": confidence >= SIDE_EARLY_EXIT_THRESHOLD,
             "scope": "ALL_MODES_VISUAL_ONLY",
         })
     return final

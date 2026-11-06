@@ -106,3 +106,35 @@ replay e inspeção física independentes antes de autorizar produção.
 Testes para categorias variadas, três modos e contraprovas ficam em
 `tests/test_side_early_decision.py` e
 `tests/test_adhesive_multilight_inspection.py`.
+
+## 06/11/2026 — SIDE com memória humana OK qualificada e KNN C mista
+
+Uma SIDE pode receber voto OK da V3 época 5 com confiança direcional
+**abaixo de 97%**, enquanto a memória persistente confirma uma
+correspondência *visual aproximada* a um OK humano qualificado
+(`HUMAN_OK_VISUAL_CANDIDATE`) e os votos KNN A/B apontam OK.
+O top-5 de A/B pode conter NG distantes e a KNN sinaliza
+`REVISAO / SEM_SUGESTAO_CONFIAVEL / VIZINHOS_VISUAIS_DIVERGENTES`.
+
+Há uma alternativa **estritamente visual** à confiança CNN >=97%:
+exige checkpoint V3 época 5 verificado, decisão CNN OK, memória humana
+qualificada (OK >=97%, vantagem >=4 pontos sobre NG, origem
+`OPERATOR_CONFIRMED` na SIDE e categoria correspondente), KNN C READY
+com ambos os votos OK, vizinho top-1 OK em A/B superior ao NG mais
+próximo por pelo menos a margem já definida de 4 pontos, e cinco
+fontes ordenadas, identificadas por SHA em cada descritor.
+Não se altera o limiar de 97% da rota usual, nem os limiares KNN,
+nem a saída original `REVISAO` da estratégia C.
+
+Se qualquer fonte for inválida, houver KNN NG concorrente próxima,
+memória humana ambígua ou NG, veto físico ou score CNN contraditório,
+a aquisição continua para TOP/MID. A marca
+`HUMAN_OK_KNN_C_A_B_NEAREST_OK_MIXED` explica por que o atalho foi
+usado apesar do score CNN inferior a 97%; o campo
+`cnn_97pct_threshold_met` torna a decisão auditável.
+
+Esta conclusão **não autoriza 0/OK automático ao XP** nem prova
+identidade RGB exata. A classificação da CNN, os atributos de
+similaridade e os julgamentos humanos continuam distintos.
+A liberação automática requer validação física independente com
+eventos NG difíceis e casos OK, inclusive NG somente visíveis em TOP/MID.
