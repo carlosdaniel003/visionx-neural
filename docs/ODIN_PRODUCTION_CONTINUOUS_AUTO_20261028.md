@@ -482,3 +482,16 @@ proveniência adulterada, ausência de consenso ou erro de checkpoint
 não recebem liberação automática por esta rota. A atualização não
 promove o score experimental da V3 isoladamente a prova física.
 As decisões automáticas não se tornam rótulos humanos de treinamento.
+
+## 06/11/2026 — SIDE OK forte com KNN A parcialmente divergente
+
+A conclusão V3 SIDE corroborada agora admite a rota
+`HUMAN_OK_KNN_C_A_B_SHARED_TOP1_STRONG`: CNN OK forte,
+KNN B seletiva, mesmo SHA OK top-1 ≥99% em A/B, um único
+NG distante no top-5 A e memória humana persistente OK
+dominante apesar da classificação AMBIGUOUS. Os validadores
+originais do score, checkpoint, captura, categoria, proveniência,
+veto físico e consenso são executados novamente pelo gate XP.
+Somente em Produção armada a decisão binária segue para 0/OK
+após 1.000ms de apresentação e confirmação de envio XP.
+Pausa Espaço e envio único continuam obrigatórios.
