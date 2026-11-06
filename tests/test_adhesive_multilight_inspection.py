@@ -828,6 +828,30 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
                 if mode == "Modo Produção":
                     panel.notify_production_analysis_ready.assert_called_once()
 
+    def test_v3_ng_with_reconciled_human_archive_finishes_on_side_all_modes(self):
+        from tests.test_side_early_decision import _v3_nonselective_human_ng_archive_side
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        for mode in ("Modo Teste", "Modo Produção", "Modo Sombra"):
+            with self.subTest(mode=mode):
+                side = _v3_nonselective_human_ng_archive_side()
+                panel = self._run_capture(
+                    confidence=side["confidence"], verdict="DEFEITO REAL",
+                    mode=mode, side_analysis=side, category="FALTANDO",
+                )
+                self.assertEqual(set(panel.adhesive_multilight_analyses), {"SIDE"})
+                self.assertFalse(panel.adhesive_multilight_active)
+                panel.adhesive_multilight_automation.start.assert_not_called()
+                panel.send_command_to_xp.assert_not_called()
+                self.assertEqual(panel.current_analysis["verdict"], "DEFEITO REAL")
+                self.assertEqual(
+                    panel.current_analysis["detail"]["side_early_exit"]["corroboration"],
+                    "HUMAN_NG_KNN_C_A_B_ARCHIVE_RECONCILED",
+                )
+                self.assertFalse(production_decision_policy(panel.current_analysis)["auto_allowed"])
+                if mode == "Modo Produção":
+                    panel.notify_production_analysis_ready.assert_called_once()
+
     def test_just_below_threshold_keeps_three_light_capture(self):
         panel = self._run_capture(
             confidence=0.9699, verdict="FALHA FALSA", mode="Modo Teste"

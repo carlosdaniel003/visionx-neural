@@ -1,3 +1,13 @@
+## 06/11/2026 — SIDE NG corroborada por memória humana e acervo
+
+A CNN V3 época 5 pode encerrar visualmente uma SIDE NG >=97% mesmo
+com KNN C diagnóstica REVISAO, quando a memória humana NG confirmada,
+o acervo verificado reconciliado e os vizinhos A/B NG concordam.
+Sem TOP/MID para essa rota visual, sem autorização automática de
+1/NG ao XP. [Contrato e regressões](docs/ODIN_AOI_UNIVERSAL_SIDE_V3_20261105.md).
+
+---
+
 ## 05/11/2026 — SIDE antecipada com V3 época 5 no Modo Teste
 
 A primeira iluminação pode finalizar **somente o diagnóstico visual de Teste**

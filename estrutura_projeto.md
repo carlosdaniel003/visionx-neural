@@ -1,3 +1,15 @@
+## 06/11/2026 — Encerramento SIDE NG com memória/acervo corroborados
+
+- `src/core/confirmed_visual_recall.py`: validadores humanos OK e NG
+  compartilham o mesmo contrato de assinatura e proveniência.
+- `src/core/side_early_decision.py`: rota visual NG V3 >=97% com
+  KNN C não seletiva A/B NG, top-3 NG, fonte humana confirmada e
+  `RECONCILED_NG` verificável; sem comando XP automático.
+- `tests/test_side_early_decision.py`,
+  `tests/test_confirmed_visual_recall.py`,
+  `tests/test_adhesive_multilight_inspection.py`: regressões de NG/OK,
+  falsificações e três modos do ODIN.
+
 ## 05/11/2026 — SIDE V3 época 5: classificação supervisionada no Teste
 
 - `src/core/side_early_decision.py`: novo contrato V3 por SHA/epoch, score

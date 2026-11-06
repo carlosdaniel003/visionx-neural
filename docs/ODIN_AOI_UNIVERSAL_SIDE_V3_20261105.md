@@ -138,3 +138,37 @@ identidade RGB exata. A classificação da CNN, os atributos de
 similaridade e os julgamentos humanos continuam distintos.
 A liberação automática requer validação física independente com
 eventos NG difíceis e casos OK, inclusive NG somente visíveis em TOP/MID.
+
+## 06/11/2026 — SIDE NG corroborada por KNN C não seletiva e humano/acervo
+
+Mesmo quando a V3 época 5 verificada marca DEFEITO REAL na SIDE com
+score NG >=97%, a KNN C pode retornar `REVISAO` por
+`SIMILARIDADE_VISUAL_INSUFICIENTE` nos descritores A/B. Os votos
+A/B podem continuar NG; o top-5 de B pode conter OK em posições
+distantes, sem contradição real.
+
+A rota visual `HUMAN_NG_KNN_C_A_B_ARCHIVE_RECONCILED` encerra SIDE
+somente quando TODAS as evidências coincidem:
+- voto CNN V3 época 5 NG validado por SHA, confiança direcional >=97%;
+- memória persistente `HUMAN_NG_VISUAL_CANDIDATE` da mesma SIDE,
+  `OPERATOR_CONFIRMED`, similaridade NG >=97%, margem >=4pp contra OK;
+- KNN C READY não seletiva por distância, ambos os votos A/B NG, com
+  top-3 NG em cada descritor e top-5 ordenado com SHA íntegro;
+- `RECONCILED_NG` no arquivo persistente com correspondência do
+  record_id ao operador NG, mesma categoria/luz, similaridade
+  arquivo NG >=97%, margem >=4pp contra OK e proveniência verificável;
+- sem conflito de memória, revisão operacional, veto de captura/físico
+  ou desacordo entre CNN e KNN.
+
+Uma referência OK distante na cauda do top-5 não impede a corroboração.
+A KNN C mantém o status diagnóstico original `REVISAO` e a
+comparação por assinatura **não** vira correspondência RGB exata.
+Nenhum limiar KNN é reduzido, nenhum arquivo/evento é tratado por nome
+e nenhuma regra é condicionada à categoria.
+
+A conclusão `DEFEITO REAL` dispensa TOP/MID em Teste, Sombra e
+Produção como classificação visual, mas `production_auto_allowed=false`
+e o gate XP **não envia 1/NG automaticamente apenas por essa rota**.
+Requer validação independente de falsos NG antes de autorização
+operacional. Os testes também garantem que memória OK concorrente,
+proveniência alterada e votos discordantes mantenham TOP/MID.

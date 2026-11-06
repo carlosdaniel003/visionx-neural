@@ -25,15 +25,15 @@ MIN_VISUAL_SCORE = 0.97
 MIN_OPPOSITE_MARGIN = 0.04
 
 
-def qualified_human_ok_visual_candidate(
-    visual: dict | None, *, lighting_mode: str, category: str,
+def qualified_human_visual_candidate(
+    visual: dict | None, *, label: str, lighting_mode: str, category: str,
 ) -> bool:
-    """Corroboração humana aproximada, jamais prova de par ou comando XP."""
-    if not isinstance(visual, dict):
+    """Corroboração aproximada e auditável; nunca identidade ou comando XP."""
+    if label not in {"OK", "NG"} or not isinstance(visual, dict):
         return False
     if not (
         visual.get("schema") == SCHEMA
-        and visual.get("status") == "HUMAN_OK_VISUAL_CANDIDATE"
+        and visual.get("status") == f"HUMAN_{label}_VISUAL_CANDIDATE"
         and visual.get("source") == "PERSISTENT_HUMAN_LABELS"
         and visual.get("category") == canonical_memory_category(category)
         and visual.get("diagnostic_only") is True
@@ -41,16 +41,19 @@ def qualified_human_ok_visual_candidate(
         and visual.get("cross_light_candidate") is not True
     ):
         return False
-    ok = visual.get("best_ok_similarity")
-    ng = visual.get("best_ng_similarity")
-    if (type(ok) not in (float, int) or type(ng) not in (float, int)
-            or not (0.0 <= ok <= 1.0 and 0.0 <= ng <= 1.0)
-            or ok < MIN_VISUAL_SCORE
-            or ok - ng < MIN_OPPOSITE_MARGIN):
+    candidate = visual.get(f"best_{label.lower()}_similarity")
+    opposite = visual.get(f"best_{'NG' if label == 'OK' else 'OK'}".lower() + "_similarity")
+    if (
+        type(candidate) not in (float, int)
+        or type(opposite) not in (float, int)
+        or not (0.0 <= candidate <= 1.0 and 0.0 <= opposite <= 1.0)
+        or candidate < MIN_VISUAL_SCORE
+        or candidate - opposite < MIN_OPPOSITE_MARGIN
+    ):
         return False
-    source = visual.get("best_ok_source")
+    source = visual.get(f"best_{label.lower()}_source")
     if not isinstance(source, dict) or not (
-        source.get("label") == "OK"
+        source.get("label") == label
         and source.get("source") == "OPERATOR_CONFIRMED"
         and source.get("lighting_mode") == lighting_mode
     ):
@@ -60,6 +63,22 @@ def qualified_human_ok_visual_candidate(
         isinstance(record_id, str)
         and len(record_id) == 64
         and all(char in "0123456789abcdef" for char in record_id.lower())
+    )
+
+
+def qualified_human_ok_visual_candidate(
+    visual: dict | None, *, lighting_mode: str, category: str,
+) -> bool:
+    return qualified_human_visual_candidate(
+        visual, label="OK", lighting_mode=lighting_mode, category=category,
+    )
+
+
+def qualified_human_ng_visual_candidate(
+    visual: dict | None, *, lighting_mode: str, category: str,
+) -> bool:
+    return qualified_human_visual_candidate(
+        visual, label="NG", lighting_mode=lighting_mode, category=category,
     )
 
 
@@ -223,4 +242,7 @@ class ConfirmedVisualRecall:
                     "reason": type(exc).__name__}
 
 
-__all__ = ["ConfirmedVisualRecall", "SCHEMA", "qualified_human_ok_visual_candidate"]
+__all__ = [
+    "ConfirmedVisualRecall", "SCHEMA", "qualified_human_visual_candidate",
+    "qualified_human_ok_visual_candidate", "qualified_human_ng_visual_candidate",
+]

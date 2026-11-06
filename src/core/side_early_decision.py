@@ -417,14 +417,104 @@ def _mixed_knn_verified_human_ok(
     return True
 
 
+def _nonselective_knn_ng_with_confirmed_archive(
+    knn: dict, visual: dict | None, *, category: str,
+) -> bool:
+    """Corrobora NG com memória humana, acervo alinhado e KNN A/B.
+
+    A KNN pode continuar REVISAO por baixa similaridade: isso não é
+    divergência de classe. A confirmação humana deve apontar o MESMO
+    registro identificado no arquivo verificado, com margem sobre OK.
+    """
+    from src.core.confirmed_visual_recall import (
+        MIN_OPPOSITE_MARGIN, MIN_VISUAL_SCORE,
+        qualified_human_ng_visual_candidate,
+    )
+    if not qualified_human_ng_visual_candidate(
+        visual, lighting_mode="SIDE", category=category,
+    ):
+        return False
+    if not (
+        knn.get("status") == "REVISAO"
+        and knn.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+        and knn.get("reason_A") == "SIMILARIDADE_VISUAL_INSUFICIENTE"
+        and knn.get("reason_B") == "SIMILARIDADE_VISUAL_INSUFICIENTE"
+        and knn.get("suggestion_A") == "REVISAO"
+        and knn.get("suggestion_B") == "REVISAO"
+        and knn.get("vote_A") == "NG"
+        and knn.get("vote_B") == "NG"
+        and knn.get("uses_aoi_category") is False
+        and knn.get("requires_human_confirmation") is not True
+        and knn.get("pre_c_review_required") is not True
+    ):
+        return False
+    alignment = knn.get("aligned_archive")
+    source = alignment.get("archive_source") if isinstance(alignment, dict) else None
+    human_source = visual.get("best_ng_source")
+    if not (isinstance(source, dict) and isinstance(human_source, dict)
+            and alignment.get("schema") == "visionx.knn_c_archive_alignment.v1"
+            and alignment.get("status") == "RECONCILED_NG"
+            and alignment.get("reason") == "HUMAN_AND_ARCHIVE_ALIGNED"
+            and alignment.get("source") == "VERIFIED_ARCHIVE_JSON"
+            and alignment.get("source_relation") == "SHARED_ANOMALY_SIGNATURE_NOT_RGB_EXACT"
+            and alignment.get("diagnostic_only") is True
+            and alignment.get("auto_decision_authorized") is False
+            and alignment.get("label") == "NG"
+            and alignment.get("category") == canonical_memory_category(category)
+            and source.get("label") == "NG"
+            and source.get("lighting_mode") == "SIDE"
+            and source.get("record_id") == human_source.get("record_id")
+            and alignment.get("human_record_id") == human_source.get("record_id")):
+        return False
+    digest = source.get("source_sha256")
+    if (not isinstance(digest, str) or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest.lower())):
+        return False
+    try:
+        archive_score = float(alignment["archive_similarity"])
+        against_ok = float(alignment["best_opposite_archive_similarity"])
+        human_archive = float(alignment["human_archive_similarity"])
+    except (KeyError, ValueError, TypeError, OverflowError):
+        return False
+    if (not all(isfinite(value) for value in (archive_score, against_ok, human_archive))
+            or not (0 <= against_ok <= archive_score <= 1)
+            or not (MIN_VISUAL_SCORE <= archive_score and
+                    MIN_VISUAL_SCORE <= human_archive <= 1)
+            or archive_score - against_ok < MIN_OPPOSITE_MARGIN):
+        return False
+
+    # TOP-3 NG nos dois descritores, com fonte SHA e ordenação do top-5.
+    # Vizinhos OK mais distantes podem aparecer na cauda do top-5:
+    # isso não transforma os votos A/B NG em oposição real.
+    for descriptor in ("neighbors_A", "neighbors_B"):
+        rows = knn.get(descriptor)
+        if not isinstance(rows, list) or len(rows) < 5:
+            return False
+        previous = 1.0
+        for index, neighbor in enumerate(rows[:5]):
+            if not isinstance(neighbor, dict) or neighbor.get("label") not in {"OK", "NG"}:
+                return False
+            similarity = neighbor.get("similarity")
+            source_sha = neighbor.get("source_pixel_sha256")
+            if (type(similarity) not in (float, int)
+                    or not isfinite(similarity) or not 0 <= similarity <= previous
+                    or not isinstance(source_sha, str) or len(source_sha) != 64
+                    or any(char not in "0123456789abcdef" for char in source_sha.lower())
+                    or index < 3 and neighbor["label"] != "NG"):
+                return False
+            previous = similarity
+    return True
+
+
 def _eligible_v3_side_for_review(
     analysis: dict | None, category: str,
 ) -> str | None:
     """Veredito VISUAL SIDE V3 por evidências concordantes e verificáveis.
 
-    A via usual exige V3 >=97%. A alternativa de memória humana OK
-    comprovada exige concordância da V3 e KNN A/B com vantagem sobre NG,
-    sem reduzir o limiar global ou autorizar comando XP.
+    A via usual exige V3 >=97%. Corroboração humana e KNN consistente
+    pode finalizar OK com CNN inferior ao limiar; para NG exige CNN forte,
+    memória humana NG, acervo NG reconciliado e top-3 NG em A/B.
+    Nenhum caminho permite comando XP apenas por essas evidências.
     """
     if (not isinstance(analysis, dict)
             or analysis.get("lighting_mode") != "SIDE"
@@ -494,7 +584,10 @@ def _eligible_v3_side_for_review(
             or knn.get("schema") != "visionx.knn_c_live_review_gated.v1"
             or knn.get("bank_status") != "READY"
             or knn.get("diagnostic_only") is not True
-            or knn.get("auto_decision_authorized") is not False
+            or (knn.get("auto_decision_authorized") is not False
+                and knn.get("production_approved") is not False)
+            or knn.get("auto_decision_authorized") is True
+            or knn.get("production_approved") is True
             or knn.get("conflicts_with_existing_verdict") is True
             or knn.get("vote_A") != label or knn.get("vote_B") != label):
         return None
@@ -548,11 +641,20 @@ def _eligible_v3_side_for_review(
             knn, detail.get("confirmed_visual_recall"), category=category,
         )
     )
+    corroborated_human_ng = (
+        defect and not selective
+        and _nonselective_knn_ng_with_confirmed_archive(
+            knn, detail.get("confirmed_visual_recall"), category=category,
+        )
+    )
     if (confidence < SIDE_EARLY_EXIT_THRESHOLD and not mixed_human_ok):
         return None
-    if not (selective or corroborated_human_ok or nonselective_ok or mixed_human_ok):
+    if not (selective or corroborated_human_ok or nonselective_ok
+            or mixed_human_ok or corroborated_human_ng):
         return None
 
+    if corroborated_human_ng:
+        return "HUMAN_NG_KNN_C_A_B_ARCHIVE_RECONCILED"
     if mixed_human_ok:
         return "HUMAN_OK_KNN_C_A_B_NEAREST_OK_MIXED"
     if nonselective_ok:
@@ -616,6 +718,8 @@ def build_side_early_decision(
         + ("V3 época 5 corroborada por KNN C A/B"
            + (" e memória humana OK" if v3_corroboration
               == "HUMAN_OK_KNN_C_A_B_TOP5_UNANIMOUS" else
+              " e memória humana NG (acervo reconciliado, top-3 NG em A/B)"
+              if v3_corroboration == "HUMAN_NG_KNN_C_A_B_ARCHIVE_RECONCILED" else
               " e memória humana OK (top-1 acima de NG em A/B)"
               if v3_corroboration == "HUMAN_OK_KNN_C_A_B_NEAREST_OK_MIXED" else
               " não seletiva (memória sem match)" if v3_corroboration

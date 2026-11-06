@@ -18,7 +18,10 @@ from src.core.anomaly_signature import (
 from src.core.archive_persistent_memory import (
     PersistentArchiveKNN, make_operator_record, make_record,
 )
-from src.core.confirmed_visual_recall import ConfirmedVisualRecall
+from src.core.confirmed_visual_recall import (
+    ConfirmedVisualRecall, qualified_human_ok_visual_candidate,
+    qualified_human_ng_visual_candidate,
+)
 from src.core.verified_memory_router import (
     VerifiedKNNMemory, install_memory_first_router,
 )
@@ -71,6 +74,31 @@ class ConfirmedVisualRecallTests(unittest.TestCase):
         self.assertEqual(out["best_ok_source"]["lighting_mode"], "TOP")
         self.assertGreaterEqual(out["best_ok_similarity"], .975)
         self.assertFalse(out["auto_ok_authorized"])
+
+    def test_qualified_human_ng_requires_same_light_and_operator_source(self):
+        from copy import deepcopy
+        self.store.add([operator("NG", "SIDE")])
+        candidate = self.lookup()
+        self.assertEqual(candidate["status"], "HUMAN_NG_VISUAL_CANDIDATE")
+        self.assertTrue(qualified_human_ng_visual_candidate(
+            candidate, category="FALTANDO", lighting_mode="SIDE",
+        ))
+        self.assertFalse(qualified_human_ok_visual_candidate(
+            candidate, category="FALTANDO", lighting_mode="SIDE",
+        ))
+        for edit in (
+            lambda v: v.update(status="HUMAN_OK_VISUAL_CANDIDATE"),
+            lambda v: v.update(best_ng_similarity=.96),
+            lambda v: v.update(best_ok_similarity=.99),
+            lambda v: v["best_ng_source"].update(lighting_mode="TOP"),
+            lambda v: v["best_ng_source"].update(source="AUTOMATIC"),
+            lambda v: v["best_ng_source"].update(record_id="invalid"),
+        ):
+            altered = deepcopy(candidate)
+            edit(altered)
+            self.assertFalse(qualified_human_ng_visual_candidate(
+                altered, category="FALTANDO", lighting_mode="SIDE",
+            ))
 
     def test_only_archive_png_is_not_accepted_as_human_confirmation(self):
         ref, tst = pair()
