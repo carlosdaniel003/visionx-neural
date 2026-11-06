@@ -441,6 +441,45 @@ class ProductionAutonomyControllerTests(unittest.TestCase):
         self.assertFalse(panel.session_visible)
         self.assertEqual(controller.state, "idle")
 
+    def test_v3_side_verified_memory_emits_zero_after_one_second(self):
+        from src.core.neural.aoi_v3_epoch5_contract import (
+            EPOCH5_VOTE_SCHEMA, SNAPSHOT_SHA256,
+        )
+        from tests.test_side_memory_first import SideMemoryPriorityTests
+
+        panel = _Panel()
+        controller = ProductionAutonomyController(panel)
+        panel.combo_mode.setCurrentText("Modo Produção")
+        analysis = SideMemoryPriorityTests().decide()
+        self.assertIsNotNone(analysis)
+        analysis["detail"].update(
+            cnn_v3_primary=True,
+            aoi_v3_trial={
+                "schema": EPOCH5_VOTE_SCHEMA, "status": "READY",
+                "epoch": 5, "checkpoint_sha256": SNAPSHOT_SHA256,
+                "light": "SIDE", "ng_score_uncalibrated": .000001,
+                "predicted": "OK", "ng_veto": False,
+                "automatic_ok_from_v3_authorized": False,
+            },
+        )
+        panel.current_analysis = analysis
+        self.assertTrue(controller.analysis_ready(analysis))
+        self.assertEqual(controller._stage_remaining_ms, VERDICT_HOLD_MS)
+        self.assertEqual(panel.saved, [])
+        controller._stage_timer.stop()
+
+        generation = controller.generation
+        controller._finish_presentation(generation)
+        self.assertEqual(controller.state, "auto_decision_pending")
+        self.assertEqual(panel.saved, [])
+        controller._stage_timer.stop()
+
+        controller._emit_auto_decision(generation, "OK")
+        self.assertEqual(panel.saved, [("OK", "production_auto")])
+        self.assertEqual(panel.auto_records, ["OK"])
+        controller._emit_auto_decision(generation, "OK")
+        self.assertEqual(len(panel.saved), 1)
+
     def test_side_97_decides_only_after_presentation_and_once_per_cycle(self):
         from src.core.side_early_decision import build_side_early_decision
 
