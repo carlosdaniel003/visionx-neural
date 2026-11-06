@@ -25,6 +25,44 @@ MIN_VISUAL_SCORE = 0.97
 MIN_OPPOSITE_MARGIN = 0.04
 
 
+def qualified_human_ok_visual_candidate(
+    visual: dict | None, *, lighting_mode: str, category: str,
+) -> bool:
+    """Corroboração humana aproximada, jamais prova de par ou comando XP."""
+    if not isinstance(visual, dict):
+        return False
+    if not (
+        visual.get("schema") == SCHEMA
+        and visual.get("status") == "HUMAN_OK_VISUAL_CANDIDATE"
+        and visual.get("source") == "PERSISTENT_HUMAN_LABELS"
+        and visual.get("category") == canonical_memory_category(category)
+        and visual.get("diagnostic_only") is True
+        and visual.get("auto_ok_authorized") is False
+        and visual.get("cross_light_candidate") is not True
+    ):
+        return False
+    ok = visual.get("best_ok_similarity")
+    ng = visual.get("best_ng_similarity")
+    if (type(ok) not in (float, int) or type(ng) not in (float, int)
+            or not (0.0 <= ok <= 1.0 and 0.0 <= ng <= 1.0)
+            or ok < MIN_VISUAL_SCORE
+            or ok - ng < MIN_OPPOSITE_MARGIN):
+        return False
+    source = visual.get("best_ok_source")
+    if not isinstance(source, dict) or not (
+        source.get("label") == "OK"
+        and source.get("source") == "OPERATOR_CONFIRMED"
+        and source.get("lighting_mode") == lighting_mode
+    ):
+        return False
+    record_id = source.get("record_id")
+    return bool(
+        isinstance(record_id, str)
+        and len(record_id) == 64
+        and all(char in "0123456789abcdef" for char in record_id.lower())
+    )
+
+
 class ConfirmedVisualRecall:
     """Busca vetorizada, somente leitura, de assinaturas humanas em RAM."""
 
@@ -185,4 +223,4 @@ class ConfirmedVisualRecall:
                     "reason": type(exc).__name__}
 
 
-__all__ = ["ConfirmedVisualRecall", "SCHEMA"]
+__all__ = ["ConfirmedVisualRecall", "SCHEMA", "qualified_human_ok_visual_candidate"]

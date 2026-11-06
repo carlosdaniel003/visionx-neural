@@ -99,6 +99,50 @@ def _v3_side(*, verdict="FALHA FALSA", score=None):
     return side
 
 
+def _v3_weak_c_human_ok_side(*, category="DESLOCADO"):
+    """SIDE forte, KNN A/B OK não seletiva e memória humana qualificada."""
+    side = _v3_side(score=0.0001229936460731551)
+    detail = side["detail"]
+    knn = detail["knn_c"]
+    knn.update({
+        "status": "REVISAO",
+        "reason": "SEM_SUGESTAO_CONFIAVEL",
+        "reason_A": "SIMILARIDADE_VISUAL_INSUFICIENTE",
+        "reason_B": "SIMILARIDADE_VISUAL_INSUFICIENTE",
+        "suggestion_A": "REVISAO",
+        "suggestion_B": "REVISAO",
+        "uses_aoi_category": False,
+    })
+    for key in ("requires_human_confirmation", "pre_c_review_required",
+                "pre_c_verdict", "pre_c_is_defect"):
+        knn.pop(key, None)
+    for key, scores in (
+        ("neighbors_A", (.7888, .7619, .7534, .7523, .7478)),
+        ("neighbors_B", (.8126, .7939, .7756, .7716, .7703)),
+    ):
+        knn[key] = [
+            {"label": "OK", "similarity": score,
+             "source_pixel_sha256": format(i + 1, "064x")}
+            for i, score in enumerate(scores)
+        ]
+    detail["confirmed_visual_recall"] = {
+        "schema": "visionx.human_visual_recall.v1",
+        "status": "HUMAN_OK_VISUAL_CANDIDATE",
+        "source": "PERSISTENT_HUMAN_LABELS",
+        "category": category,
+        "diagnostic_only": True,
+        "auto_ok_authorized": False,
+        "cross_light_candidate": False,
+        "best_ok_similarity": .97504864,
+        "best_ng_similarity": .89559973,
+        "best_ok_source": {
+            "label": "OK", "source": "OPERATOR_CONFIRMED",
+            "lighting_mode": "SIDE", "record_id": "a" * 64,
+        },
+    }
+    return side
+
+
 class SideEarlyDecisionTests(unittest.TestCase):
     def test_threshold_is_inclusive_for_defect_and_false_failure(self):
         self.assertEqual(SIDE_EARLY_EXIT_THRESHOLD, 0.97)
@@ -660,6 +704,82 @@ class SideEarlyDecisionTests(unittest.TestCase):
                 self.assertEqual(xp["verdict"], "FALHA FALSA")
                 self.assertFalse(xp["auto_allowed"])
                 self.assertEqual(xp["proposed_decision"], "")
+
+    def test_v3_nonselective_knn_and_confirmed_human_ok_finish_on_side(self):
+        from src.services.capture_debug_payload import decision_record
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        for category in ("FALTANDO", "EMBORCADO", "INVERTIDO", "DESLOCADO",
+                         "MUITO ADESIVO"):
+            with self.subTest(category=category):
+                original = _v3_weak_c_human_ok_side(category=category)
+                final = build_side_early_decision(
+                    original, category, allow_supervised_v3=True,
+                )
+                self.assertIsNotNone(final)
+                self.assertEqual(final["verdict"], "FALHA FALSA")
+                self.assertEqual(final["detail"]["side_early_exit"]["skipped_lights"],
+                                 ["TOP", "MID"])
+                self.assertEqual(final["detail"]["side_early_exit"]["corroboration"],
+                                 "HUMAN_OK_KNN_C_A_B_TOP5_UNANIMOUS")
+                self.assertEqual(final["detail"]["knn_c"]["status"], "REVISAO")
+                self.assertFalse(final["production_review_required"])
+                self.assertFalse(final["detail"]["operator_review_required"])
+                self.assertIsNone(side_automatic_decision(final))
+                self.assertIsNone(side_trial_automatic_decision(final))
+                debug = decision_record(final, {"category": category})
+                self.assertEqual(debug["verdict"], "FALHA FALSA")
+                self.assertFalse(debug["operator_review_required"])
+                self.assertEqual(debug["cnn_v3"]["epoch"], 5)
+                xp = production_decision_policy(final)
+                self.assertFalse(xp["auto_allowed"])
+                self.assertEqual(xp["proposed_decision"], "")
+                self.assertEqual(xp["verdict"], "FALHA FALSA")
+
+    def test_v3_weak_knn_does_not_override_uncertain_human_or_conflict(self):
+        mutations = (
+            lambda a: a["detail"].pop("confirmed_visual_recall"),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(status="AMBIGUOUS"),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(best_ok_similarity=.969),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(best_ng_similarity=.95),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(category="FALTANDO"),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(cross_light_candidate=True),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(source="ARCHIVE"),
+            lambda a: a["detail"]["confirmed_visual_recall"].update(auto_ok_authorized=True),
+            lambda a: a["detail"]["confirmed_visual_recall"]["best_ok_source"].update(source="AUTOMATIC"),
+            lambda a: a["detail"]["confirmed_visual_recall"]["best_ok_source"].update(record_id="invalid"),
+            lambda a: a["detail"]["confirmed_visual_recall"]["best_ok_source"].update(lighting_mode="TOP"),
+            lambda a: a["detail"]["knn_c"].update(bank_status="LOADING"),
+            lambda a: a["detail"]["knn_c"].update(reason_A="ASSINATURA_INSUFICIENTE"),
+            lambda a: a["detail"]["knn_c"].update(vote_B="NG"),
+            lambda a: a["detail"]["knn_c"].update(requires_human_confirmation=True),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"][0].update(label="NG"),
+            lambda a: a["detail"]["knn_c"]["neighbors_B"][0].update(source_pixel_sha256="bad"),
+            lambda a: a["detail"]["knn_c"]["neighbors_A"].pop(),
+            lambda a: a["detail"].update(memory_conflict=True),
+            lambda a: a["detail"].update(capture_error=True),
+            lambda a: a["detail"].update(physical_missing_veto={"status": "NG_CORROBORATED"}),
+            lambda a: a.update(confidence=.965),
+        )
+        for mutate in mutations:
+            trial = _v3_weak_c_human_ok_side()
+            mutate(trial)
+            with self.subTest(mutation=mutate.__code__.co_consts):
+                self.assertIsNone(build_side_early_decision(
+                    trial, "DESLOCADO", allow_supervised_v3=True,
+                ))
+        uncertain = _v3_weak_c_human_ok_side()
+        self.assertIsNone(build_side_early_decision(
+            uncertain, "DESLOCADO", allow_supervised_v3=False,
+        ))
+        # Um candidato humano OK contra CNN NG obriga outras luzes.
+        ng = _v3_side(verdict="DEFEITO REAL")
+        ng["detail"]["confirmed_visual_recall"] = (
+            _v3_weak_c_human_ok_side()["detail"]["confirmed_visual_recall"]
+        )
+        self.assertIsNone(build_side_early_decision(
+            ng, "DESLOCADO", allow_supervised_v3=True,
+        ))
 
     def test_v3_epoch5_does_not_skip_when_model_knn_or_provenance_disagree(self):
         base = _v3_side()

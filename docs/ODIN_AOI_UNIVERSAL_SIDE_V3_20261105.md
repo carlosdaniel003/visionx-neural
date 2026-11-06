@@ -47,3 +47,29 @@ e `decision_trace.operator_review_required` são `false`. A política XP,
 **independente do veredito visual**, continua sem transmitir `0/OK` apenas
 com CNN V3 e KNN C. Regressões cobrem Teste, Sombra, Produção e categoria
 UNKNOWN, além de divergências e tentativa de bypass do gate.
+
+## 06/11/2026 — SIDE OK com KNN C não seletiva e memória humana
+
+A KNN C pode retornar `REVISAO / SEM_SUGESTAO_CONFIAVEL` porque
+as distâncias A/B não atingiram os critérios próprios de sugestão, mesmo
+quando seus cinco vizinhos por descritor pertencem a OK. A CNN V3 época 5
+pode apresentar confiança OK >=97% e a memória persistente humana recuperar
+`HUMAN_OK_VISUAL_CANDIDATE` da SIDE, com assinatura >=97%, vantagem >=4pp
+sobre NG, rótulo `OPERATOR_CONFIRMED` e proveniência verificável.
+
+O encerramento visual SIDE agora aceita essa **corroboração conjunta**,
+independentemente da categoria física, sem reclassificar a KNN C de
+`REVISAO` para `SUGERE_OK`. Mantém o contrato original de epoch/SHA,
+confiança direcional, ausência de veto físico/conflito e cinco vizinhos
+OK com SHA de fonte em ambos descritores. O marcador distingue
+`HUMAN_OK_KNN_C_A_B_TOP5_UNANIMOUS` da via seletiva antiga.
+
+Se faltar memória humana qualificada, a KNN divergir, a CNN for NG,
+a fonte estiver inconsistente ou o veto físico existir, TOP/MID são
+coletadas normalmente. O atalho só reduz a aquisição e apresenta
+`FALHA FALSA`, **sem conceder comando 0/OK ao XP**. A similaridade
+humana não é identidade exata e o score CNN não é probabilidade calibrada.
+
+Regressões em `tests/test_side_early_decision.py` e
+`tests/test_adhesive_multilight_inspection.py` verificam os três modos,
+categorias diferentes, bloqueios de NG e falhas de proveniência.

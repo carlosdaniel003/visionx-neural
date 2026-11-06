@@ -291,25 +291,28 @@ def _eligible_trial_side_for_review(
     )
 
 
-def _eligible_v3_side_for_review(analysis: dict | None, category: str) -> bool:
-    """SIDE V3 forte e KNN C A/B unânime: conclusão VISUAL universal.
+def _eligible_v3_side_for_review(
+    analysis: dict | None, category: str,
+) -> str | None:
+    """SIDE V3 forte e corroboração humana/KNN: conclusão VISUAL universal.
 
-    A concordância dos descritores não é certificação física; nunca
-    autoriza 0/1 na Produção nem transforma similaridade em par exato.
+    Voto KNN seletivo continua válido. Quando KNN C é inconclusiva por
+    distância, só uma memória humana OK qualificada e cinco vizinhos OK
+    nos descritores A/B permitem dispensar TOP/MID. XP não é autorizado.
     """
     if (not isinstance(analysis, dict)
             or analysis.get("lighting_mode") != "SIDE"
             or analysis.get("production_review_required") is True):
-        return False
+        return None
     detail = analysis.get("detail")
     if not isinstance(detail, dict):
-        return False
+        return None
     trace = detail.get("decision_trace")
     if not isinstance(trace, dict):
-        return False
+        return None
     verdict = analysis.get("verdict")
     if verdict not in {"FALHA FALSA", "DEFEITO REAL"}:
-        return False
+        return None
     defect = verdict == "DEFEITO REAL"
     if (analysis.get("is_defect") is not defect
             or detail.get("recognition_route") != "NEW_CNN"
@@ -327,33 +330,36 @@ def _eligible_v3_side_for_review(analysis: dict | None, category: str) -> bool:
             or trace.get("memory_conflict") is True
             or detail.get("hard_missing_evidence") is True
             or analysis.get("hard_missing_evidence") is True):
-        return False
+        return None
 
     physical = detail.get("physical_missing_veto")
     if isinstance(physical, dict) and physical.get("status") in {
-        "SUSPECT_ABSENCE", "UNAVAILABLE", "GEOMETRY_REVIEW",
+        "SUSPECT_ABSENCE", "UNAVAILABLE", "GEOMETRY_REVIEW", "NG_CORROBORATED",
     }:
-        return False
+        return None
+    if (detail.get("capture_error") is True
+            or detail.get("multilight_physical_disagreement") is True):
+        return None
     vote = detail.get("aoi_v3_trial")
     if (not _valid_vote(vote, "SIDE")
             or vote.get("epoch") != V3_EPOCH_5
             or detail.get("cnn_v3_checkpoint_epoch") != V3_EPOCH_5
             or detail.get("cnn_v3_checkpoint_sha256") != vote["checkpoint_sha256"]
             or vote.get("predicted") != ("NG" if defect else "OK")):
-        return False
+        return None
     try:
         score = float(vote["ng_score_uncalibrated"])
         local_score = float(detail["cnn_v3_ng_score_uncalibrated"])
         confidence = float(analysis["confidence"])
         physical_score = float(detail["physical_score"])
     except (KeyError, TypeError, ValueError, OverflowError):
-        return False
+        return None
     if (not all(isfinite(v) for v in (score, local_score, confidence, physical_score))
             or abs(score - local_score) > 0.000001
             or abs(confidence - (score if defect else 1.0 - score)) > 0.000001
             or confidence < SIDE_EARLY_EXIT_THRESHOLD or confidence > 1.0
             or physical_score != 0.0):
-        return False
+        return None
 
     knn = detail.get("knn_c")
     label = "NG" if defect else "OK"
@@ -363,32 +369,72 @@ def _eligible_v3_side_for_review(analysis: dict | None, category: str) -> bool:
             or knn.get("bank_status") != "READY"
             or knn.get("diagnostic_only") is not True
             or knn.get("auto_decision_authorized") is not False
-            or knn.get("requires_human_confirmation") is not False
             or knn.get("conflicts_with_existing_verdict") is True
-            or knn.get("status") != selected
-            or knn.get("vote_A") != label or knn.get("vote_B") != label
-            or knn.get("suggestion_A") != selected
-            or knn.get("suggestion_B") != selected
-            or knn.get("pre_c_verdict") != verdict
-            or knn.get("pre_c_is_defect") is not defect
-            or knn.get("pre_c_review_required") is not False):
-        return False
-    # Evidência visual consistente, sem tratar os vizinhos como verdade
-    # física: os cinco primeiros de AMBOS os descritores concordam.
+            or knn.get("vote_A") != label or knn.get("vote_B") != label):
+        return None
+
+    # A rota antiga de KNN seletiva continua independente da memória.
+    selective = bool(
+        knn.get("status") == selected
+        and knn.get("requires_human_confirmation") is False
+        and knn.get("suggestion_A") == selected
+        and knn.get("suggestion_B") == selected
+        and knn.get("pre_c_verdict") == verdict
+        and knn.get("pre_c_is_defect") is defect
+        and knn.get("pre_c_review_required") is False
+    )
+
+    # Sem sugestão seletiva, só o OK tem alternativa: o registro humano
+    # confirmado precisa corroborar a CNN, com distância da classe NG.
+    # Os rótulos de PNG continuam sendo apenas diagnósticos.
+    corroborated_human_ok = False
+    if (
+        not defect
+        and knn.get("status") == "REVISAO"
+        and knn.get("reason") == "SEM_SUGESTAO_CONFIAVEL"
+        and knn.get("suggestion_A") == "REVISAO"
+        and knn.get("suggestion_B") == "REVISAO"
+        and knn.get("reason_A") == "SIMILARIDADE_VISUAL_INSUFICIENTE"
+        and knn.get("reason_B") == "SIMILARIDADE_VISUAL_INSUFICIENTE"
+        and knn.get("uses_aoi_category") is False
+        and knn.get("requires_human_confirmation") is not True
+        and knn.get("pre_c_review_required") is not True
+    ):
+        from src.core.confirmed_visual_recall import (
+            qualified_human_ok_visual_candidate,
+        )
+        corroborated_human_ok = qualified_human_ok_visual_candidate(
+            detail.get("confirmed_visual_recall"),
+            lighting_mode="SIDE", category=category,
+        )
+    if not selective and not corroborated_human_ok:
+        return None
+
+    # Cada descritor precisa de 5 vizinhos concordantes. Na alternativa
+    # humana, as referências precisam conservar sua proveniência SHA.
     for descriptor in ("neighbors_A", "neighbors_B"):
         neighbors = knn.get(descriptor)
         if not isinstance(neighbors, list) or len(neighbors) < 5:
-            return False
+            return None
         for neighbor in neighbors[:5]:
             if not isinstance(neighbor, dict) or neighbor.get("label") != label:
-                return False
+                return None
             try:
                 similarity = float(neighbor["similarity"])
             except (KeyError, TypeError, ValueError, OverflowError):
-                return False
+                return None
             if not isfinite(similarity) or not 0.0 <= similarity <= 1.0:
-                return False
-    return True
+                return None
+            if corroborated_human_ok:
+                digest = neighbor.get("source_pixel_sha256")
+                if (not isinstance(digest, str) or len(digest) != 64
+                        or any(c not in "0123456789abcdef" for c in digest.lower())):
+                    return None
+    return (
+        "KNN_C_A_B_TOP5_UNANIMOUS"
+        if selective else "HUMAN_OK_KNN_C_A_B_TOP5_UNANIMOUS"
+    )
+
 
 
 def build_side_early_decision(
@@ -403,11 +449,12 @@ def build_side_early_decision(
     trial_review = (
         not automatic and _eligible_trial_side_for_review(analysis, category)
     )
-    v3_review = (
-        allow_supervised_v3 is True
-        and not automatic and not trial_review
-        and _eligible_v3_side_for_review(analysis, category)
+    v3_corroboration = (
+        _eligible_v3_side_for_review(analysis, category)
+        if allow_supervised_v3 is True and not automatic and not trial_review
+        else None
     )
+    v3_review = bool(v3_corroboration)
     if not automatic and not trial_review and not v3_review:
         return None
     review_only = trial_review
@@ -419,8 +466,10 @@ def build_side_early_decision(
     final["reason"] = (
         f"SIDE: encerramento antecipado com confiança reportada de "
         f"{confidence:.1%}; TOP e MID dispensadas. "
-        + ("V3 época 5 corroborada pela KNN C A/B; classificação visual "
-           "em qualquer modo, sem autorização automática XP. "
+        + ("V3 época 5 corroborada por KNN C A/B"
+           + (" e memória humana OK" if v3_corroboration
+              == "HUMAN_OK_KNN_C_A_B_TOP5_UNANIMOUS" else "")
+           + "; classificação visual em qualquer modo, sem autorização XP. "
            if v3_review else
            "Checkpoint experimental: autorização XP depende do gate de Produção. "
            if trial_review else "")
@@ -462,7 +511,7 @@ def build_side_early_decision(
             "model": "aoi_quality_cnn_v3",
             "model_epoch": V3_EPOCH_5,
             "checkpoint_sha256": final_detail["cnn_v3_checkpoint_sha256"],
-            "corroboration": "KNN_C_A_B_TOP5_UNANIMOUS",
+            "corroboration": v3_corroboration,
             "scope": "ALL_MODES_VISUAL_ONLY",
         })
     return final
