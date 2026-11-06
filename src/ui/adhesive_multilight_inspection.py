@@ -437,7 +437,51 @@ def _sync_multilight_debug_controls(panel) -> None:
         print(f"Falha não fatal ao sincronizar debug multilight: {exc}")
 
 
-def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | None:
+def _resolve_side_completion(panel, category: str, mode: str) -> dict | None:
+    """Resolve uma única vez a identidade SIDE antes de solicitar TOP/MID.
+
+    A memória humana de FRAME exato serve a todos os modos; a memória
+    aproximada e o replay automático com autorização XP mantêm seu escopo
+    de Produção. A CNN V3 nunca transforma score isolado em identidade.
+    """
+    analyses = getattr(panel, "adhesive_multilight_analyses", {})
+    side_analysis = analyses.get("SIDE") if isinstance(analyses, dict) else None
+    samples = getattr(panel, "adhesive_multilight_learning_samples", {})
+    side_sample = samples.get("SIDE") if isinstance(samples, dict) else None
+
+    # O par AOI pode variar com OCR/crop, mas um frame XP confirmado
+    # por humano é reconhecível pela mesma prova em todos os modos.
+    if isinstance(side_sample, dict):
+        from src.core.operator_exact_frame_recall import (
+            build_latest_operator_exact_side,
+        )
+        exact = build_latest_operator_exact_side(
+            side_analysis, side_sample, category,
+        )
+        if isinstance(exact, dict):
+            return exact
+
+    if mode == "Modo Produção" and isinstance(side_sample, dict):
+        from src.core.side_memory_first import build_side_memory_first
+        memory = build_side_memory_first(
+            side_analysis, category,
+            side_sample.get("sample_image"), side_sample.get("test_image"),
+        )
+        if isinstance(memory, dict):
+            return memory
+        from src.core.production_auto_side_recall import build_auto_side_recall
+        replay = build_auto_side_recall(side_analysis, side_sample, category)
+        if isinstance(replay, dict):
+            return replay
+
+    return build_side_early_decision(
+        side_analysis, category, allow_supervised_v3=True,
+    )
+
+
+def _finalize_multilight_decision(
+    panel, *, side_only: bool = False, prepared_side: dict | None = None,
+) -> dict | None:
     """Publica a SIDE antecipada ou o consenso SIDE/TOP/MID."""
     analyses = getattr(panel, "adhesive_multilight_analyses", {})
     category = category_from_aoi_info(
@@ -446,35 +490,12 @@ def _finalize_multilight_decision(panel, *, side_only: bool = False) -> dict | N
     if side_only:
         mode = getattr(getattr(panel, "combo_mode", None), "currentText",
                        lambda: "")()
-        fused = None
-        if mode == "Modo Produção":
-            from src.core.side_memory_first import build_side_memory_first
-            from src.core.operator_exact_frame_recall import (
-                build_latest_operator_exact_side,
-            )
-            sample = getattr(panel, "adhesive_multilight_learning_samples", {})
-            side = sample.get("SIDE") if isinstance(sample, dict) else None
-            if isinstance(side, dict):
-                fused = build_latest_operator_exact_side(
-                    analyses.get("SIDE"), side, category,
-                )
-            if isinstance(side, dict) and fused is None:
-                fused = build_side_memory_first(
-                    analyses.get("SIDE"), category,
-                    side.get("sample_image"), side.get("test_image"),
-                )
-            if isinstance(side, dict) and fused is None:
-                from src.core.production_auto_side_recall import (
-                    build_auto_side_recall,
-                )
-                fused = build_auto_side_recall(
-                    analyses.get("SIDE"), side, category,
-                )
-        if fused is None:
-            fused = build_side_early_decision(
-                analyses.get("SIDE"), category,
-                allow_supervised_v3=True,
-            )
+        # A seleção já ocorreu no frame SIDE; não reconsultar memória
+        # ou KNN no mesmo evento com um snapshot possivelmente diferente.
+        fused = (
+            prepared_side if isinstance(prepared_side, dict)
+            else _resolve_side_completion(panel, category, mode)
+        )
     else:
         fused = fuse_multilight(analyses, category)
     if not isinstance(fused, dict):
@@ -1338,35 +1359,7 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         mode = self.combo_mode.currentText()
         side_analysis = self.adhesive_multilight_analyses["SIDE"]
         test_knn_trigger = test_mode_side_knn_disagreement(side_analysis, mode)
-        side_early = None
-        if mode == "Modo Produção":
-            from src.core.side_memory_first import build_side_memory_first
-            from src.core.operator_exact_frame_recall import (
-                build_latest_operator_exact_side,
-            )
-            side_sample = self.adhesive_multilight_learning_samples.get("SIDE")
-            if isinstance(side_sample, dict):
-                side_early = build_latest_operator_exact_side(
-                    side_analysis, side_sample, category,
-                )
-            if isinstance(side_sample, dict) and side_early is None:
-                side_early = build_side_memory_first(
-                    side_analysis, category,
-                    side_sample.get("sample_image"),
-                    side_sample.get("test_image"),
-                )
-            if isinstance(side_sample, dict) and side_early is None:
-                from src.core.production_auto_side_recall import (
-                    build_auto_side_recall,
-                )
-                side_early = build_auto_side_recall(
-                    side_analysis, side_sample, category,
-                )
-        if side_early is None:
-            side_early = build_side_early_decision(
-                side_analysis, category,
-                allow_supervised_v3=True,
-            )
+        side_early = _resolve_side_completion(self, category, mode)
         # Em Produção, a hipótese SIDE só para revisão humana não pode
         # encerrar a aquisição: a política binária exige TOP/MID ou uma
         # rota SIDE independente com autorização XP validada.
@@ -1383,7 +1376,10 @@ def install_adhesive_multilight_inspection(control_panel_cls) -> None:
         # antigas de revisão manual permanecem como fallback.
         if side_early is not None and test_knn_trigger is None:
             finalize = getattr(self, "finalize_multilight_decision", None)
-            final = finalize(side_only=True) if callable(finalize) else None
+            final = (
+                finalize(side_only=True, prepared_side=side_early)
+                if callable(finalize) else None
+            )
             if isinstance(final, dict):
                 self.adhesive_multilight_active = False
                 _set_receiver_auxiliary_mode(self, False)

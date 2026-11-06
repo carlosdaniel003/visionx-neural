@@ -314,11 +314,15 @@ class FullArchiveV3Tests(unittest.TestCase):
                 other_category = (
                     "FALTANDO" if category != "FALTANDO" else "INVERTIDO"
                 )
-                self.assertEqual(
-                    index.inspect(
-                        image, other_category, "SIDE", exact_only=True,
-                    )["status"], "NO_EXACT_FRAME",
+                # O índice visual é universal por iluminação. Uma tela
+                # pixel-idêntica continua sendo reconhecida mesmo quando
+                # o OCR atribui outra categoria; a pasta não prova OK/NG.
+                different_ocr = index.inspect(
+                    image, other_category, "SIDE", exact_only=True,
                 )
+                self.assertEqual(different_ocr["status"], "EXACT_FRAME")
+                self.assertEqual(different_ocr["exact_frame_labels"], ["NG"])
+                self.assertFalse(different_ocr["decision_authorized"])
             altered = samples[0][2].copy()
             altered[0, 0, 0] ^= 1
             self.assertEqual(

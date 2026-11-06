@@ -399,6 +399,71 @@ class SideEarlyExitCaptureIntegrationTests(unittest.TestCase):
         self.assertTrue(result)
         return panel
 
+    def test_side_early_evidence_is_evaluated_once_per_event(self):
+        # Antes, a seleção era repetida na finalização, podendo consultar
+        # outro snapshot da memória durante o mesmo ciclo de captura.
+        original = multilight_module.build_side_early_decision
+        for mode in ("Modo Teste", "Modo Sombra", "Modo Produção"):
+            with self.subTest(mode=mode):
+                with patch.object(
+                    multilight_module, "build_side_early_decision",
+                    wraps=original,
+                ) as evaluate:
+                    panel = self._run_capture(
+                        confidence=.99, verdict="FALHA FALSA", mode=mode,
+                    )
+                evaluate.assert_called_once()
+                self.assertFalse(panel.adhesive_multilight_active)
+                panel.adhesive_multilight_automation.start.assert_not_called()
+                panel.send_command_to_xp.assert_not_called()
+
+    def test_human_exact_side_recognition_is_available_all_modes(self):
+        # A mesma tela XP humana pode ser reconhecida antes de TOP/MID
+        # em Teste/Sombra, sem criar permissão XP a partir da CNN.
+        from src.core.operator_exact_frame_recall import SIDE_RULE
+
+        def fake_exact(side, sample, category):
+            self.assertIsInstance(sample, dict)
+            final = deepcopy(side)
+            final.update({
+                "lighting_mode": "SIDE",
+                "verdict": "FALHA FALSA",
+                "is_defect": False,
+                "multilight_final": True,
+                "eligible_for_final_decision": True,
+                "multilight_category": category,
+                "production_review_required": False,
+            })
+            final["detail"]["fusion_rule"] = SIDE_RULE
+            final["detail"]["multilight_final"] = True
+            final["detail"]["eligible_for_final_decision"] = True
+            return final
+
+        for mode in ("Modo Teste", "Modo Sombra", "Modo Produção"):
+            with self.subTest(mode=mode):
+                with (
+                    patch(
+                        "src.core.operator_exact_frame_recall."
+                        "build_latest_operator_exact_side",
+                        side_effect=fake_exact,
+                    ) as exact,
+                    patch.object(
+                        multilight_module, "build_side_early_decision",
+                        side_effect=AssertionError("Não reavaliar SIDE"),
+                    ),
+                ):
+                    panel = self._run_capture(
+                        confidence=.50, verdict="DEFEITO REAL", mode=mode,
+                    )
+                exact.assert_called_once()
+                self.assertFalse(panel.adhesive_multilight_active)
+                self.assertEqual(panel.current_analysis["verdict"], "FALHA FALSA")
+                self.assertEqual(
+                    panel.current_analysis["detail"]["fusion_rule"], SIDE_RULE,
+                )
+                panel.adhesive_multilight_automation.start.assert_not_called()
+                panel.send_command_to_xp.assert_not_called()
+
     def test_97_percent_side_skips_top_mid_in_test_shadow_and_production(self):
         from src.ui.production_confidence_gate import production_decision_policy
 
