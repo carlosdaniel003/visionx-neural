@@ -222,14 +222,27 @@ class KNNCLiveTests(unittest.TestCase):
         self.assertTrue(res["is_defect"])
         self.assertTrue(res["production_review_required"])
 
-    def test_agreement_requires_manual_confirmation_not_xp(self):
-        res, _ = self.call("FALHA FALSA", proposed="SUGERE_OK")
-        self.assertEqual(res["verdict"], "FALHA FALSA")
-        self.assertTrue(res["production_review_required"])
-        self.assertEqual(res["detail"]["knn_c"]["proposed_label"], "OK")
-        policy = production_decision_policy(res)
-        self.assertFalse(policy["auto_allowed"])
-        self.assertTrue(policy["operator_review_required"])
+    def test_agreement_is_diagnostic_not_mandatory_review_or_xp_command(self):
+        for verdict, proposed, label in (
+            ("FALHA FALSA", "SUGERE_OK", "OK"),
+            ("DEFEITO REAL", "SUGERE_NG", "NG"),
+        ):
+            with self.subTest(verdict=verdict):
+                res, _ = self.call(verdict, proposed=proposed)
+                self.assertEqual(res["verdict"], verdict)
+                self.assertFalse(res.get("production_review_required", False))
+                self.assertFalse(res["detail"].get("operator_review_required", False))
+                self.assertFalse(
+                    res["detail"]["decision_trace"].get("operator_review_required", False)
+                )
+                self.assertEqual(res["detail"]["knn_c"]["proposed_label"], label)
+                self.assertFalse(
+                    res["detail"]["knn_c"]["requires_human_confirmation"]
+                )
+                self.assertFalse(res["detail"]["knn_c"]["auto_decision_authorized"])
+                policy = production_decision_policy(res)
+                self.assertFalse(policy["auto_allowed"])
+                self.assertNotEqual(policy.get("proposed_decision"), "OK")
 
     def test_review_does_not_force_a_verdict(self):
         res, _ = self.call("FALHA FALSA", proposed="REVISAO")

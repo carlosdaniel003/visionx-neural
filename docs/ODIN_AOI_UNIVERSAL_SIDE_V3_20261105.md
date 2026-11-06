@@ -31,3 +31,19 @@ KNN valida PNG, pixels e pasta OK/NG sem rejeitar divergências de OCR.
 SIDE NG tem a mesma proteção contra contraprovas humanas OK aproximadas ou
 KNN A/B contraditórias, independentemente da categoria. A fusão V3 OK
 unânime só preserva FALHA FALSA na ausência de evidência física ou conflito.
+
+## 06/11/2026 — revisão diagnóstica não é revisão obrigatória
+
+A estratégia C atua como observador. Quando CNN e KNN C A/B concordam,
+nenhuma das duas ganha autoridade XP por isso; a concordância não cria
+`operator_review_required`. Somente contradições reais entre o resultado
+visual e a KNN C (ou vetos independentes) exigem investigação.
+
+O atalho SIDE V3 época 5 exige o mesmo contrato SHA, scores e concordância
+A/B com cinco vizinhos da mesma classe; não usa o nome da categoria nem
+IDs específicos. Quando o veredito é FALHA FALSA e não há conflito, os
+campos visual `production_review_required`, `operator_review_required`
+e `decision_trace.operator_review_required` são `false`. A política XP,
+**independente do veredito visual**, continua sem transmitir `0/OK` apenas
+com CNN V3 e KNN C. Regressões cobrem Teste, Sombra, Produção e categoria
+UNKNOWN, além de divergências e tentativa de bypass do gate.

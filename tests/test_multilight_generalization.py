@@ -486,7 +486,13 @@ class V3RealEventReviewRegressionTests(unittest.TestCase):
             detail = item["detail"]
             detail["cnn_v3_lighting_mode"] = light
             detail["aoi_v3_trial"]["light"] = light
-            if light != "SIDE":
+            if light == "SIDE":
+                # Regressão histórica: revisão introduzida somente pela C
+                # e indevidamente propagada ao estado final.
+                item["production_review_required"] = True
+                detail["operator_review_required"] = True
+                detail["decision_trace"]["operator_review_required"] = True
+            else:
                 detail.pop("knn_c", None)
                 item["production_review_required"] = False
                 detail["operator_review_required"] = False

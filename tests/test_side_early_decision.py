@@ -59,7 +59,7 @@ def _v3_side(*, verdict="FALHA FALSA", score=None):
         "status": selected,
         "diagnostic_only": True,
         "auto_decision_authorized": False,
-        "requires_human_confirmation": True,
+        "requires_human_confirmation": False,
         "conflicts_with_existing_verdict": False,
         "vote_A": label, "vote_B": label,
         "suggestion_A": selected, "suggestion_B": selected,
@@ -89,13 +89,13 @@ def _v3_side(*, verdict="FALHA FALSA", score=None):
         aoi_v3_trial=vote,
         physical_score=0.0,
         knn_c=knn,
-        operator_review_required=True,
+        operator_review_required=False,
         decision_trace={
-            "operator_review_required": True,
+            "operator_review_required": False,
             "fusion_rule": "cnn_v3_primary_direct",
         },
     )
-    side["production_review_required"] = True
+    side["production_review_required"] = False
     return side
 
 
@@ -596,7 +596,7 @@ class SideEarlyDecisionTests(unittest.TestCase):
         self.assertIsNone(build_side_early_decision(_side("DEFEITO REAL", 0.99, **(base | {"recognition_memory_verified": False})), "FALTANDO"))
 
 
-    def test_v3_epoch5_test_mode_skips_top_mid_only_with_independent_knn_agreement(self):
+    def test_v3_epoch5_skips_top_mid_with_agreement_without_review_flag(self):
         from src.ui.production_confidence_gate import production_decision_policy
 
         for category in ("FALTANDO", "EMBORCADO", "INVERTIDO", "DESLOCADO",
@@ -618,14 +618,48 @@ class SideEarlyDecisionTests(unittest.TestCase):
                     self.assertEqual(final["detail"]["side_early_exit"]["scope"],
                                      "ALL_MODES_VISUAL_ONLY")
                     self.assertFalse(final["detail"]["side_early_exit"]["production_auto_allowed"])
-                    self.assertTrue(final["production_review_required"])
-                    self.assertTrue(final["detail"]["operator_review_required"])
+                    self.assertFalse(final["production_review_required"])
+                    self.assertFalse(final["detail"]["operator_review_required"])
+                    self.assertFalse(final["detail"]["decision_trace"]["operator_review_required"])
+                    self.assertFalse(
+                        final["detail"]["side_early_exit"]["operator_review_required"]
+                    )
                     self.assertIsNone(side_automatic_decision(final))
                     self.assertIsNone(side_trial_automatic_decision(final))
                     policy = production_decision_policy(final)
                     self.assertFalse(policy["auto_allowed"])
+                    self.assertEqual(policy["verdict"], verdict)
                     self.assertNotEqual(policy["proposed_decision"], "OK")
                     self.assertNotIn("side_early_exit", original["detail"])
+
+    def test_side_cnn_knn_agreement_does_not_become_mandatory_review(self):
+        from src.services.capture_debug_payload import decision_record
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        for category in ("FALTANDO", "EMBORCADO", "MUITO ADESIVO", "UNKNOWN", ""):
+            with self.subTest(category=category):
+                # Score representativo de uma SIDE V3 verificada; a regra
+                # é universal e NÃO depende do ID ou do nome do evento.
+                side = _v3_side(score=8.93527057899135e-11)
+                completed = build_side_early_decision(
+                    side, category, allow_supervised_v3=True,
+                )
+                self.assertIsNotNone(completed)
+                snapshot = decision_record(completed, {"category": category})
+                self.assertEqual(snapshot["verdict"], "FALHA FALSA")
+                self.assertFalse(snapshot["operator_review_required"])
+                self.assertFalse(snapshot["memory"]["operator_review_required"])
+                self.assertEqual(
+                    snapshot["knn_c"]["status"], "SUGERE_OK",
+                )
+                self.assertEqual(snapshot["cnn_v3"]["epoch"], 5)
+                self.assertFalse(
+                    completed["detail"]["side_early_exit"]["production_auto_allowed"]
+                )
+                xp = production_decision_policy(completed)
+                self.assertEqual(xp["verdict"], "FALHA FALSA")
+                self.assertFalse(xp["auto_allowed"])
+                self.assertEqual(xp["proposed_decision"], "")
 
     def test_v3_epoch5_does_not_skip_when_model_knn_or_provenance_disagree(self):
         base = _v3_side()
@@ -642,9 +676,12 @@ class SideEarlyDecisionTests(unittest.TestCase):
             lambda a: a["detail"].update(cnn_v2_active=True),
             lambda a: a.update(confidence=.96),
             lambda a: a.update(lighting_mode="TOP"),
-            lambda a: a.update(production_review_required=False),
+            lambda a: a.update(production_review_required=True),
             lambda a: a.update(is_defect=True),
-            lambda a: a["detail"].update(operator_review_required=False),
+            lambda a: a["detail"].update(operator_review_required=True),
+            lambda a: a["detail"]["decision_trace"].update(operator_review_required=True),
+            lambda a: a["detail"]["knn_c"].update(pre_c_review_required=True),
+            lambda a: a["detail"]["knn_c"].update(requires_human_confirmation=True),
             lambda a: a["detail"].update(memory_conflict=True),
             lambda a: a["detail"].update(physical_score=.3),
             lambda a: a["detail"].update(

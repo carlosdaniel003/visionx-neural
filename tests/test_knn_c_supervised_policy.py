@@ -11,22 +11,22 @@ LIGHTS = ("SIDE", "TOP", "MID")
 
 
 def light_analysis(light, label, *, status=None, conflict=False,
-                   independent_review=False, route="NEW_EXPERTS", bank="READY"):
+                   independent_review=False, route="NEW_CNN", bank="READY"):
     selected = status or "SUGERE_" + label
     ng = label == "NG"
     raw = {
         "is_defect": ng,
         "verdict": "DEFEITO REAL" if ng else "FALHA FALSA",
         "confidence": .97,
-        "production_review_required": True,
+        "production_review_required": independent_review,
         "detail": {
             "recognition_route": route,
             "final_score": .93 if ng else .08,
             "physical_score": .90 if ng else .07,
             "fusion_rule": "local",
             "dominant_engine": "ssim",
-            "operator_review_required": True,
-            "decision_trace": {"operator_review_required": True},
+            "operator_review_required": independent_review,
+            "decision_trace": {"operator_review_required": independent_review},
         },
     }
     raw["detail"]["knn_c"] = {
@@ -61,6 +61,8 @@ class KNNCSupervisedXPTests(unittest.TestCase):
                 self.assertEqual(
                     result["detail"]["knn_c_supervised_candidate"]["label"], label
                 )
+                self.assertFalse(result["production_review_required"])
+                self.assertFalse(result["detail"]["operator_review_required"])
                 self.assertIsNone(supervised_knn_c_decision(result))
                 self.assertFalse(production_decision_policy(result)["auto_allowed"])
                 result["detail"]["knn_c_supervised_armed"] = True
@@ -115,7 +117,7 @@ class KNNCSupervisedXPTests(unittest.TestCase):
         result = aggregate("OK", arm=True)
         for key, value in (
             ("multilight_final", False),
-            ("production_review_required", False),
+            ("production_review_required", True),
         ):
             modified = dict(result)
             modified[key] = value

@@ -49,6 +49,22 @@ class KNNCMultilightGateTests(unittest.TestCase):
         self.assertFalse(policy["auto_allowed"])
         self.assertTrue(policy["operator_review_required"])
 
+    def test_knn_c_agreement_is_not_review_even_with_diagnostic_consent(self):
+        values = {
+            light: analysis(light, c=light == "SIDE", status="SUGERE_OK")
+            for light in ("SIDE", "TOP", "MID")
+        }
+        result = fuse_multilight(values, "UNKNOWN")
+        self.assertEqual(result["verdict"], "FALHA FALSA")
+        self.assertFalse(result["production_review_required"])
+        self.assertFalse(result["detail"]["operator_review_required"])
+        self.assertFalse(result["detail"]["decision_trace"]["operator_review_required"])
+        self.assertEqual(
+            result["detail"]["knn_c_light_diagnostics"]["SIDE"]["status"],
+            "SUGERE_OK",
+        )
+        self.assertFalse(result["detail"]["knn_c_multilight_review_gate"])
+
     def test_all_clear_without_c_is_unchanged(self):
         values = {x: analysis(x) for x in ("SIDE", "TOP", "MID")}
         final = fuse_multilight(values, "FALTANDO")
