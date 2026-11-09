@@ -1,3 +1,23 @@
+## 09/11/2026 — Produção: decisão automática após V3 all-clear nas três luzes
+
+O evento FALTANDO `ac3fa0e828d1489eb21e325b948d88c8` teve
+SIDE/TOP/MID OK, score físico zero, V3 época 5 íntegra e votos
+KNN A/B OK nas três luzes, mas a UI exigia tecla 0/1 por causa
+de `cnn_v3_primary_ok_requires_independent_confirmation`.
+
+O novo contrato `production_supervised_v3_multilight_all_clear_ok_v1`
+revalida a captura completa `multilight_all_clear`, votos/checkpoint
+V3 época 5 de todas as luzes, score direcional <1% NG em cada,
+evidência física zero, ausência de NG/revisão/conflito, coerência
+do score final e KNN A/B apontando a mesma referência OK por luz.
+Em Modo Produção binário armado, espera o segundo de apresentação
+e envia 0/OK automaticamente, sem solicitar 0/1 por peça nesta rota.
+Espaço, geração/peça, ACK e prevenção de duplicação permanecem.
+Não libera toda V3 isolada: rotas sem provas ainda podem bloquear
+a saída; resultados automáticos continuam não verificados para treino.
+
+---
+
 ## 06/11/2026 — KNN C: recuperar pequenos deslocamentos nos mapas e explicar o score
 
 No evento DESLOCADO `c36a7a0f46644bdd98af691f2a9b6d41`, a

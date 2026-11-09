@@ -1,3 +1,25 @@
+## 09/11/2026 — Produção: all-clear multilight V3 sem revisão por peça
+
+- `src/core/production_multilight_all_clear.py`: verificação pura
+  da trinca V3 época 5 (SIDE/TOP/MID), hash e scores coerentes
+  nas três luzes, físico 0, ausência de conflitos, top-1 KNN A/B
+  OK com mesma fonte SHA por luz. Não aciona XP.
+- `src/ui/production_confidence_gate.py`: nova autorização
+  `production_supervised_v3_multilight_all_clear_ok_v1` antes do
+  bloqueio genérico V3, somente sob `production_binary_auto`
+  e `production_continuous_auto`.
+- `src/ui/production_autonomy_controller.py`: nenhuma mudança;
+  continua com espera de 1000ms, espaço, revalidação no envio,
+  envio único e confirmação de transporte.
+- `tests/test_production_multilight_all_clear.py`: fixture
+  FALTANDO multilight 09/11 com mutações adversárias, pausa,
+  etapa de renderização e envio único simulado.
+- `.github/workflows/aoi-v3-primary-mss-tests.yml`: executa a
+  regressão na CI com XP simulado.
+- Rota restrita às três iluminações e sem NG físico; outros casos
+  sem autorização seguem a política existente. A decisão OK
+  automática não equivale a um rótulo humano confirmado.
+
 ## 06/11/2026 — KNN C: registro visual controlado e telemetria de comparação
 
 - `src/services/startup_regression/knn_archive_focus_signature.py`:
