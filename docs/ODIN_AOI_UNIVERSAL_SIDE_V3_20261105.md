@@ -1,3 +1,17 @@
+## 09/11/2026 — All-clear de três iluminações em Produção supervisionada
+
+A rota `multilight_all_clear`, quando SIDE/TOP/MID realmente
+concluíram e todas as análises V3 época 5 têm identidade SHA íntegra,
+score NG menor que 1%, físico zero e KNN diagnóstica A/B OK com fonte
+top-1 coincidente por iluminação, pode concluir 0/OK em Modo Produção
+binário após 1 segundo sem botão humano. O gate de produção reconstrói
+a prova a partir de `cnn_v3_light_diagnostics`,
+`multilight_evidence`, `knn_c_light_observer_votes` e
+`knn_c_light_neighbor_evidence`. Captura incompleta, voto
+contraditório ou ausência de prova não são autorizados. Isto não
+muda a rota SIDE, não equivale à homologação estatística da V3
+e não transforma a KNN em rótulo humano de treinamento.
+
 ## 06/11/2026 — Similaridade do arquivo não equivale a igualdade da imagem
 
 A comparação KNN C A/B usa mapas de diferença LAB entre gabarito e
