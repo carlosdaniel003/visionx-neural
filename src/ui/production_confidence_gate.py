@@ -978,6 +978,31 @@ def production_decision_policy(analysis: dict | None) -> dict[str, Any]:
                         "source_reason": policy.get("reason", ""),
                     }
 
+    # Três iluminações concluídas com a mesma V3 verificada, sinais
+    # físicos nulos e KNN A/B apontando a mesma fonte OK por iluminação:
+    # no ciclo supervisionado este contrato multilight é revalidado aqui
+    # e novamente no momento da emissão, sem solicitar 0 por peça.
+    # A V3 SIDE isolada continua incapaz de autorizar OK por confiança.
+    if detail.get("cnn_v3_primary") is True and v3_status == "READY":
+        from src.core.production_multilight_all_clear import (
+            RULE as V3_MULTILIGHT_OK_RULE,
+            verified_supervised_multilight_all_clear,
+        )
+        if (
+            _completed_continuous_inspection(analysis, detail)
+            and verified_supervised_multilight_all_clear(analysis)
+        ):
+            return {
+                **policy,
+                "verdict": "FALHA FALSA",
+                "auto_allowed": True,
+                "operator_review_required": False,
+                "proposed_decision": "OK",
+                "reason": V3_MULTILIGHT_OK_RULE,
+                "unverified_physical_label": True,
+                "source_reason": policy.get("reason", ""),
+            }
+
     # Troca do classificador visual V2 -> V3: nenhum score V3 OK isolado
     # autoriza liberar um produto na linha. A V3 época 3 ainda perdeu
     # NG físicos no treino/validação; somente prova humana independente
