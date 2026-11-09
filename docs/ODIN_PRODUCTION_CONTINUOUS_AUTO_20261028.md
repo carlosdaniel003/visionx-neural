@@ -506,3 +506,25 @@ A KNN C passou a estabilizar pequenos deslocamentos desses mapas
 (ganho máximo 0,04 por ROI) e registrar detalhamento por vizinho no
 JSON. A alteração não inverte votos físicos nem transforma imagem
 parecida em 0/OK: os contratos de produção e os vetos V3 são os mesmos.
+
+## 09/11/2026 — Corrigir solicitação indevida de 0/1 após all-clear multilight V3
+
+Evento `ac3fa0e828d1489eb21e325b948d88c8`: captura XP válida,
+FALTANDO, SIDE/TOP/MID classificados OK pela V3 época 5,
+`multilight_all_clear`, físico 0, sem revisão visual.
+A política XP anterior `cnn_v3_primary_ok_requires_independent_confirmation`
+entrou em `operator_review`, embora o operador já estivesse
+supervisionando Produção.
+
+O contrato `production_supervised_v3_multilight_all_clear_ok_v1`
+elimina a tecla manual por peça **nessa rota** e revalida
+`cnn_v3_all_ok_verified`, prova dos três votos no mesmo SHA/epoch,
+scores OK em cada luz, captura completa, ausência de veto físico,
+KNN A/B OK + mesma referência SHA top-1 por iluminação e
+coerência dos scores locais e final. Sob flags armadas pelo controller,
+o resultado segue 0/OK após 1 segundo, com Espaço/generation/ACK.
+
+A ausência de prova, mismatch, captura incompleta ou contradição
+nunca autoriza 0. A KNN é diagnóstica, fontes do archive podem
+ter rótulos provisórios; não alegar 100% de acerto validado
+nem promover a saída automática a verdade de treino.
