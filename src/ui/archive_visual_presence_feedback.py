@@ -173,6 +173,30 @@ def submit_side_archive_presence(
     image = frames.get("SIDE")
     if not isinstance(image, np.ndarray) or image.size == 0:
         return False
+    # Resultado exato já verificado na SIDE: não exibir PENDING / SEM PAR
+    # enquanto outro worker repete a mesma consulta diagnóstica.
+    detail = analysis.get("detail") if isinstance(analysis, dict) else None
+    proof = detail.get("archive_exact_frame") if isinstance(detail, dict) else None
+    if not all_lights and isinstance(proof, dict):
+        from src.core.archive_frame_identity import verified_archive_exact_frame
+        from src.services.image_archive_dedup import image_fingerprint
+        if (verified_archive_exact_frame(proof)
+                and image_fingerprint(image) == proof["frame_sha256"]):
+            exact = {
+                "schema": SCHEMA, "status": "EXACT_FRAME",
+                "label": proof["label"], "lighting": "SIDE",
+                "source": "PUBLIC_ARCHIVE_PNG",
+                "diagnostic_only": True, "decision_authorized": False,
+                "matched_labels": [proof["label"]],
+                "exact_frame_labels": [proof["label"]],
+                "exact_frame_sha256": proof["frame_sha256"],
+                "exact_frame_paths": {proof["label"]: [proof["source_path"]]},
+            }
+            detail["side_archive_visual_presence"] = {
+                **exact, "by_light": {"SIDE": dict(exact)},
+                "exact_frame_lights": ["SIDE"],
+            }
+            return True
     controller = getattr(panel, "_side_archive_presence_feedback", None)
     if controller is None:
         controller = SideArchivePresenceFeedback(panel)

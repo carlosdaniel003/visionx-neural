@@ -742,6 +742,13 @@ def _eligible_v3_side_for_review(
             or physical_score != 0.0):
         return None
 
+    # Identidade comprovada do frame completo, corroborada pela própria
+    # CNN V3, veto físico e dois vizinhos que apontam a MESMA fonte PNG.
+    # Não usa scores aproximados como se fossem identidade RGB.
+    from src.core.archive_frame_identity import corroborated_archive_exact_side
+    if corroborated_archive_exact_side(analysis):
+        return "ARCHIVE_EXACT_FRAME_V3_AGREEMENT"
+
     knn = detail.get("knn_c")
     label = "NG" if defect else "OK"
     selected = "SUGERE_" + label
@@ -904,6 +911,8 @@ def build_side_early_decision(
         + ("V3 época 5 corroborada por KNN C A/B"
            + (" e memória humana OK" if v3_corroboration
               == "HUMAN_OK_KNN_C_A_B_TOP5_UNANIMOUS" else
+              " e identidade RGB do frame completo no acervo, validada pela V3 e KNN A/B"
+              if v3_corroboration == "ARCHIVE_EXACT_FRAME_V3_AGREEMENT" else
               " e memória humana NG (acervo reconciliado, top-3 NG em A/B)"
               if v3_corroboration == "HUMAN_NG_KNN_C_A_B_ARCHIVE_RECONCILED" else
               " e memória humana OK (top-1 acima de NG em A/B)"

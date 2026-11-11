@@ -8,6 +8,8 @@ de fundo a partir dos PNGs OK/NG já existentes, sem treinar nem criar dados.
 from __future__ import annotations
 
 from collections import defaultdict
+from src.core.archive_frame_identity import SCHEMA as EXACT_FRAME_SCHEMA, verified_archive_exact_frame
+from src.services.image_archive_dedup import image_fingerprint
 from pathlib import Path
 from threading import Lock, Thread
 from time import perf_counter
@@ -54,6 +56,8 @@ class LiveKNNStrategyC:
         self._state = "NOT_READY"
         self._reason = "MEMORIA_VISUAL_EM_PREPARACAO"
         self._pools = {}
+        self._exact_frames = {}
+        self._exact_conflicts = frozenset()
         self._thread = None
         self._progress = {
             "phase": "NOT_READY", "total": 0, "processed": 0,
@@ -79,6 +83,44 @@ class LiveKNNStrategyC:
         with self._lock:
             self._progress.update(kwargs)
 
+    def lookup_exact_frame(self, frame, lighting: str) -> dict:
+        """O(1) no inventário já aquecido; só relê PNG se SHA casar.
+
+        Diferente do par AOI exato (dois recortes) e do KNN visual.
+        Nenhuma semelhança é elevada a identidade ou rótulo confirmado.
+        """
+        digest = image_fingerprint(frame)
+        light = canonical_memory_lighting(lighting)
+        base = {
+            "schema": EXACT_FRAME_SCHEMA, "status": "UNAVAILABLE",
+            "lighting_mode": light, "label": "",
+            "diagnostic_only": True, "decision_authorized": False,
+            "index_status": "", "frame_sha256": digest,
+        }
+        if not digest or light not in LIGHTS:
+            return base
+        with self._lock:
+            state = self._state
+            entries = tuple(self._exact_frames.get((light, digest), ()))
+            conflict = digest in self._exact_conflicts
+        base["index_status"] = state
+        if state != "READY":
+            return base
+        if conflict or len({item["label"] for item in entries}) > 1:
+            return {**base, "status": "EXACT_FRAME_CONFLICT"}
+        if not entries:
+            return {**base, "status": "NO_EXACT_FRAME"}
+        for entry in entries:
+            candidate = {
+                **base, "status": "EXACT_FRAME", "label": entry["label"],
+                "source_path": entry["path"], "root": str(self.root),
+                "source_pixel_sha256": digest,
+                "source_file_sha256": entry["file_sha256"],
+            }
+            if verified_archive_exact_frame(candidate):
+                return candidate
+        return {**base, "status": "UNAVAILABLE", "reason": "SOURCE_CHANGED"}
+
     def warmup(self) -> dict:
         """Índice tolerante a PNG isolado inválido, com fallback e cache seguro.
 
@@ -90,6 +132,8 @@ class LiveKNNStrategyC:
         with self._lock:
             self._state = "LOADING"
             self._reason = "MEMORIA_VISUAL_EM_PREPARACAO"
+            self._exact_frames = {}
+            self._exact_conflicts = frozenset()
             self._progress = {
                 "phase": "INVENTORY", "total": 0, "processed": 0,
                 "usable": 0, "excluded": 0, "cached": 0,
@@ -148,6 +192,22 @@ class LiveKNNStrategyC:
                 d for d, labels in labels_by_digest.items()
                 if "OK" in labels and "NG" in labels
             )
+            # Índice de identidade do FRAME inteiro, derivado do inventário
+            # SHA validado. Não depende da ordenação, pesos ou top-5 da KNN.
+            exact_frames = defaultdict(list)
+            for item in items:
+                digest = item.get("pixel_sha256")
+                label = item.get("expected_label")
+                light = canonical_memory_lighting(item.get("lighting_mode"))
+                if (item.get("status") == "VALID_PNG"
+                        and digest and digest not in bad_digests
+                        and label in {"OK", "NG"} and light in LIGHTS
+                        and item.get("file_sha256")
+                        and item.get("path") != RETIRED_SOURCE):
+                    exact_frames[(light, digest)].append({
+                        "label": label, "path": item["path"],
+                        "file_sha256": item["file_sha256"],
+                    })
             self._publish_progress(
                 inventory_elapsed_ms=inventory_ms,
                 inventory_reused_pixel_hashes=inv.get(
@@ -245,6 +305,8 @@ class LiveKNNStrategyC:
             elapsed = round((perf_counter() - begin) * 1000, 2)
             with self._lock:
                 self._pools = frozen
+                self._exact_frames = dict(exact_frames)
+                self._exact_conflicts = frozenset(bad_digests)
                 self._state = "READY"
                 self._reason = "OK"
                 self._progress.update(
@@ -279,6 +341,8 @@ class LiveKNNStrategyC:
             LOG.warning("KNN C indisponível (sem influência no veredito): %s", exc)
             with self._lock:
                 self._pools = {}
+                self._exact_frames = {}
+                self._exact_conflicts = frozenset()
                 self._state = "UNAVAILABLE"
                 self._reason = f"{type(exc).__name__}: {exc}"
                 self._progress.update(

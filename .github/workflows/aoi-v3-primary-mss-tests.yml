@@ -12,6 +12,11 @@ on:
       - "src/scripts/activate_aoi_quality_v3_epoch5.py"
       - "src/core/verified_memory_router.py"
       - "src/ui/archive_visual_presence_feedback.py"
+      - "src/core/archive_frame_identity.py"
+      - "src/core/knn_c_live.py"
+      - "src/core/side_early_decision.py"
+      - "src/ui/adhesive_multilight_inspection.py"
+      - "tests/test_archive_frame_identity.py"
       - "src/services/archive_rendered_source_match.py"
       - "src/services/aoi_paired_photo_geometry.py"
       - "src/services/screen_monitor.py"
@@ -58,4 +63,4 @@ jobs:
           python -m py_compile main.py src/core/neural/aoi_quality_cnn_v3_primary.py src/core/neural/aoi_v3_epoch5_contract.py src/core/neural/aoi_quality_cnn_v3_trial_consensus.py src/core/production_multilight_all_clear.py tests/test_production_multilight_all_clear.py src/core/neural/aoi_quality_cnn_v3_production_trial.py src/ui/archive_visual_presence_feedback.py src/services/archive_rendered_source_match.py src/ui/local_capture_safety.py src/core/verified_memory_router.py src/core/multilight_fusion.py src/ui/neural_telemetry_model.py src/ui/production_confidence_gate.py src/services/capture_debug_payload.py src/scripts/audit_v3_archive_image.py src/services/aoi_paired_photo_geometry.py src/services/screen_monitor.py tests/test_aoi_paired_photo_geometry.py tests/test_aoi_v3_primary_mss.py tests/test_audit_v3_archive_image.py
       - name: Test V3 and MSS contracts without physical XP
         run: |
-          python -m unittest tests.test_production_multilight_all_clear tests.test_aoi_v3_primary_mss tests.test_archive_rendered_source_match tests.test_aoi_paired_photo_geometry tests.test_audit_v3_archive_image tests.test_aoi_quality_v3_production_policy tests.test_archive_visual_presence tests.test_neural_telemetry_panels tests.test_local_capture_network_takeover -v
+          python -m unittest tests.test_archive_frame_identity tests.test_side_early_decision tests.test_production_multilight_all_clear tests.test_aoi_v3_primary_mss tests.test_archive_rendered_source_match tests.test_aoi_paired_photo_geometry tests.test_audit_v3_archive_image tests.test_aoi_quality_v3_production_policy tests.test_archive_visual_presence tests.test_neural_telemetry_panels tests.test_local_capture_network_takeover -v

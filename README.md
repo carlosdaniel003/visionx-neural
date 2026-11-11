@@ -1,3 +1,24 @@
+## 11/11/2026 — identidade do frame completo no início da SIDE
+
+O inventário SHA já aquecido da KNN C agora permite consultar em O(1) se
+a **tela inteira XP** corresponde a um PNG do acervo OK/NG na mesma luz.
+O arquivo correspondente é revalidado por SHA antes do resultado, e
+novamente no gate de Produção. Não é igual ao par AOI exato (recortes
+gabarito/teste) nem converte similaridade KNN em identidade.
+
+Quando a CNN V3 época 5 concorda com a identidade exata e as referências
+top-1 da KNN A/B apontam para o mesmo PNG/SHA, a SIDE pode terminar
+sem TOP/MID, inclusive quando os votos ponderados KNN divergem.
+Para OK a sonda física de ausência precisa retornar NO_STRONG_EVIDENCE,
+e conflitos humanos ou entre pastas bloqueiam a antecipação.
+Não há exceções por evento/categoria/arquivo nem alteração de pesos.
+O indicador visual mostra FRAME EXATO já na SIDE em vez de PENDING;
+julgamento automático continua não confirmado para treinamento.
+O caso real de 10/11 exige replay com o PNG XP original para determinar
+se a captura foi realmente pixel-idêntica.
+
+---
+
 ## 09/11/2026 — Produção: decisão automática após V3 all-clear nas três luzes
 
 O evento FALTANDO `ac3fa0e828d1489eb21e325b948d88c8` teve

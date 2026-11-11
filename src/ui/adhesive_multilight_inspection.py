@@ -474,6 +474,37 @@ def _resolve_side_completion(panel, category: str, mode: str) -> dict | None:
         if isinstance(replay, dict):
             return replay
 
+    # O warmup da KNN C já validou os SHA dos PNGs. Reutilizar seu
+    # índice de frame inteiro ANTES de pedir TOP/MID, sem nova varredura
+    # de arquivo e sem atribuir autoridade à similaridade dos recortes.
+    if isinstance(side_analysis, dict) and isinstance(side_sample, dict):
+        bank = getattr(
+            getattr(panel, "orchestrator", None),
+            "_live_knn_strategy_c_bank", None,
+        )
+        source_frame = side_sample.get("source_frame")
+        lookup = getattr(bank, "lookup_exact_frame", None)
+        if callable(lookup) and _valid_image(source_frame):
+            archive = lookup(source_frame, "SIDE")
+            if isinstance(archive, dict):
+                if archive.get("status") == "EXACT_FRAME":
+                    from src.core.physical_missing_veto import physical_absence_probe
+                    if archive.get("label") == "OK":
+                        probe = physical_absence_probe(
+                            side_sample.get("sample_image"),
+                            side_sample.get("test_image"),
+                        )
+                        archive["physical_probe_status"] = (
+                            probe.get("status") if isinstance(probe, dict) else ""
+                        )
+                    side_analysis.setdefault("detail", {})[
+                        "archive_exact_frame"
+                    ] = archive
+                elif archive.get("status") == "EXACT_FRAME_CONFLICT":
+                    side_analysis.setdefault("detail", {})[
+                        "archive_exact_frame"
+                    ] = archive
+
     return build_side_early_decision(
         side_analysis, category, allow_supervised_v3=True,
     )
