@@ -124,5 +124,49 @@ class ArchiveFrameIdentityTests(unittest.TestCase):
         self.assertFalse(corroborated_archive_exact_side(side))
 
 
+    def test_production_gate_revalidates_exact_archive_before_xp(self):
+        from src.ui.production_confidence_gate import production_decision_policy
+
+        proof = self.proof()
+        proof["physical_probe_status"] = "NO_STRONG_EVIDENCE"
+        side = _v3_side(score=8.112491741485428e-06)
+        knn = side["detail"]["knn_c"]
+        knn.update(
+            status="REVISAO", reason="DISCORDANCIA_KNN_A_B",
+            vote_A="NG", vote_B="OK",
+            suggestion_A="REVISAO", suggestion_B="REVISAO",
+            production_approved=False,
+        )
+        for key in ("neighbors_A", "neighbors_B"):
+            knn[key][0].update(
+                label="OK", source_pixel_sha256=self.pixel_sha,
+                path=self.relative,
+            )
+        side["detail"]["archive_exact_frame"] = proof
+        final = build_side_early_decision(
+            side, "UNKNOWN", allow_supervised_v3=True,
+        )
+        self.assertIsNotNone(final)
+        final["detail"]["production_continuous_auto"] = True
+        final["detail"]["production_binary_auto"] = True
+        decision = production_decision_policy(final)
+        self.assertTrue(decision["auto_allowed"])
+        self.assertEqual(decision["proposed_decision"], "OK")
+        self.assertEqual(decision["reason"], "production_supervised_v3_side_visual_ok")
+
+        # Nenhuma etiqueta provisória autoriza o XP após mudar a fonte.
+        changed = self.frame.copy()
+        changed[100, 100, 0] ^= 1
+        self.assertTrue(cv2.imwrite(str(self.path), changed))
+        stale = production_decision_policy(final)
+        self.assertFalse(stale["auto_allowed"])
+        self.assertNotEqual(stale["proposed_decision"], "OK")
+
+    def test_archive_conflict_cannot_be_reported_as_exact_ok(self):
+        self.bank._exact_conflicts = frozenset({self.pixel_sha})
+        result = self.bank.lookup_exact_frame(self.frame, "SIDE")
+        self.assertEqual(result["status"], "EXACT_FRAME_CONFLICT")
+        self.assertEqual(result["label"], "")
+
 if __name__ == "__main__":
     unittest.main()
